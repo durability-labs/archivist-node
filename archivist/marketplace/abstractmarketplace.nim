@@ -313,13 +313,3 @@ method queryPastStorageRequestedEvents*(
     marketplace: AbstractMarketplace, blocksAgo: int
 ): Future[seq[StorageRequested]] {.base, async.} =
   raiseAssert("not implemented")
-
-method slotCollateral*(
-    marketplace: AbstractMarketplace, requestId: RequestId, slotIndex: uint64
-): Future[?!UInt256] {.base, async: (raises: [CancelledError]).} =
-  raiseAssert("not implemented")
-
-method slotCollateral*(
-    marketplace: AbstractMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): UInt256 {.base, gcsafe, raises: [].} =
-  raiseAssert("not implemented")

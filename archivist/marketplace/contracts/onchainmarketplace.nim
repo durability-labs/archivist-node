@@ -571,31 +571,3 @@ method queryPastStorageRequestedEvents*(
     let fromBlock = await marketplace.contract.provider.pastBlockTag(blocksAgo)
 
     return await marketplace.queryPastStorageRequestedEvents(fromBlock)
-
-method slotCollateral*(
-    marketplace: OnChainMarketplace, requestId: RequestId, slotIndex: uint64
-): Future[?!UInt256] {.async: (raises: [CancelledError]).} =
-  let slotid = slotId(requestId, slotIndex)
-
-  try:
-    let slotState = await marketplace.slotState(slotid)
-
-    without request =? await marketplace.getRequest(requestId):
-      return failure newException(
-        MarketplaceError,
-        "Failure calculating the slotCollateral, cannot get the request",
-      )
-
-    return success marketplace.slotCollateral(request.ask.collateralPerSlot, slotState)
-  except MarketplaceError as error:
-    error "Error when trying to calculate the slotCollateral", error = error.msg
-    return failure error
-
-method slotCollateral*(
-    marketplace: OnChainMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): UInt256 =
-  if slotState == SlotState.Repair:
-    let percentage = marketplace.configuration.collateral.repairRewardPercentage
-    return collateralPerSlot - (collateralPerSlot * percentage.u256).div(100.u256)
-
-  return collateralPerSlot

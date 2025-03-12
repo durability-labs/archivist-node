@@ -188,9 +188,7 @@ proc onStorageRequested(
 
   trace "storage requested, adding slots to queue"
 
-  let marketplace = sales.context.marketplace
-
-  let collateral = marketplace.slotCollateral(ask.collateralPerSlot, SlotState.Free)
+  let collateral = ask.collateralPerSlot().stuint(256)
 
   without items =? SlotQueueItem.init(requestId, ask, expiry, collateral).catch, err:
     if err of SlotsOutOfRangeError:
@@ -227,13 +225,7 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
         error "unknown request in contract", error = err.msgDetail
         return
 
-      # Take the repairing state into consideration to calculate the collateral.
-      # This is particularly needed because it will affect the priority in the queue
-      # and we want to give the user the ability to tweak the parameters.
-      # Adding the repairing state directly in the queue priority calculation
-      # would not allow this flexibility.
-      let collateral =
-        marketplace.slotCollateral(request.ask.collateralPerSlot, SlotState.Repair)
+      let collateral = request.ask.collateralPerSlot.stuint(256)
 
       if slotIndex > uint16.high.uint64:
         error "Cannot cast slot index to uint16, value = ", slotIndex

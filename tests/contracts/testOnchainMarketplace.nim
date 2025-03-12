@@ -701,35 +701,6 @@ suite "On-Chain Marketplace":
     check endBalanceHost == (startBalanceHost + request.ask.collateralPerSlot)
     check endBalanceReward == (startBalanceReward + expectedPayout)
 
-  test "returns the collateral when the slot is not being repaired":
-    await marketplace.requestStorage(request)
-    await marketplace.reserveSlot(request.id, 0.uint64)
-    await marketplace.fillSlot(
-      request.id, 0.uint64, proof, request.ask.collateralPerSlot
-    )
-
-    without collateral =? await marketplace.slotCollateral(request.id, 0.uint64), error:
-      fail()
-
-    check collateral == request.ask.collateralPerSlot
-
-  test "calculates correctly the collateral when the slot is being repaired":
-    await marketplace.requestStorage(request)
-    await marketplace.reserveSlot(request.id, 0.uint64)
-    await marketplace.fillSlot(
-      request.id, 0.uint64, proof, request.ask.collateralPerSlot
-    )
-    await marketplace.freeSlot(slotId(request.id, 0.uint64))
-
-    without collateral =? await marketplace.slotCollateral(request.id, 0.uint64), error:
-      fail()
-
-    # slotCollateral
-    # repairRewardPercentage = 10
-    # expected collateral = slotCollateral - slotCollateral * 0.1
-    check collateral ==
-      request.ask.collateralPerSlot - (request.ask.collateralPerSlot * 10).div(100.u256)
-
   test "the request is added to cache after the first access":
     await marketplace.requestStorage(request)
 

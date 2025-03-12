@@ -596,31 +596,3 @@ method unsubscribe*(subscription: Subscription) {.async: (raises: []).} =
   marketplace.subscriptions.onRequestFailed.keepItIf(subscription != it)
   marketplace.subscriptions.onProofSubmitted.keepItIf(subscription != it)
   marketplace.subscriptions.onSlotReservationsFull.keepItIf(subscription != it)
-
-method slotCollateral*(
-    marketplace: MockMarketplace, requestId: RequestId, slotIndex: uint64
-): Future[?!UInt256] {.async: (raises: [CancelledError]).} =
-  let slotid = slotId(requestId, slotIndex)
-
-  try:
-    let state = await slotState(marketplace, slotid)
-
-    without request =? await marketplace.getRequest(requestId):
-      return failure newException(
-        MarketplaceError,
-        "Failure calculating the slotCollateral, cannot get the request",
-      )
-
-    success marketplace.slotCollateral(request.ask.collateralPerSlot, state)
-  except MarketplaceError as error:
-    error "Error when trying to calculate the slotCollateral", error = error.msg
-    failure error
-
-method slotCollateral*(
-    marketplace: MockMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): UInt256 {.raises: [].} =
-  if slotState == SlotState.Repair:
-    let percentage = marketplace.config.collateral.repairRewardPercentage.u256
-    return collateralPerSlot - (collateralPerSlot * percentage).div(100.u256)
-
-  return collateralPerSlot
