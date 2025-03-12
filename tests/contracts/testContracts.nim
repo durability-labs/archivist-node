@@ -32,7 +32,7 @@ suite "Marketplace contracts":
   var filledAt: uint64
 
   proc expectedPayout(endTimestamp: uint64): UInt256 =
-    return (endTimestamp - filledAt).u256 * request.ask.pricePerSlotPerSecond()
+    return (endTimestamp - filledAt).u256 * request.ask.pricePerSlotPerSecond.stuint(256)
 
   proc switchAccount(account: Signer) =
     marketplace = marketplace.connect(account)
@@ -49,17 +49,17 @@ suite "Marketplace contracts":
     token = Erc20Token.new(tokenAddress, provider.getSigner())
 
     let config = await marketplace.configuration()
-    periodicity = Periodicity(seconds: config.proofs.period)
+    periodicity = Periodicity(seconds: config.proofs.period.u64)
 
     request = StorageRequest.example
     request.client = await client.getAddress()
 
     switchAccount(client)
-    discard await token.approve(marketplace.address, request.totalPrice).confirm(1)
+    discard await token.approve(marketplace.address, request.totalPrice.stuint(256)).confirm(1)
     discard await marketplace.requestStorage(request).confirm(1)
     switchAccount(host)
     discard
-      await token.approve(marketplace.address, request.ask.collateralPerSlot).confirm(1)
+      await token.approve(marketplace.address, request.ask.collateralPerSlot.stuint(256)).confirm(1)
     discard await marketplace.reserveSlot(request.id, 0.uint64).confirm(1)
     let receipt = await marketplace.fillSlot(request.id, 0.uint64, proof).confirm(1)
     filledAt = await testbed.eth.time.blockTime(BlockTag.init(!receipt.blockNumber))
@@ -81,7 +81,7 @@ suite "Marketplace contracts":
   proc startContract() {.async.} =
     for slotIndex in 1 ..< request.ask.slots:
       discard await token
-      .approve(marketplace.address, request.ask.collateralPerSlot)
+      .approve(marketplace.address, request.ask.collateralPerSlot.stuint(256))
       .confirm(1)
       discard await marketplace.reserveSlot(request.id, slotIndex.uint64).confirm(1)
       discard await marketplace.fillSlot(request.id, slotIndex.uint64, proof).confirm(1)
@@ -98,7 +98,7 @@ suite "Marketplace contracts":
     let endOfPeriod = periodicity.periodEnd(missingPeriod)
     await testbed.eth.time.advanceTo(endOfPeriod + 1)
     switchAccount(client)
-    discard await marketplace.markProofAsMissing(slotId, missingPeriod).confirm(1)
+    discard await marketplace.markProofAsMissing(slotId, missingPeriod.stuint(40)).confirm(1)
 
   test "can be paid out at the end":
     switchAccount(host)
@@ -110,7 +110,7 @@ suite "Marketplace contracts":
     discard await marketplace.freeSlot(slotId).confirm(1)
     let endBalance = await token.balanceOf(address)
     check endBalance ==
-      (startBalance + expectedPayout(requestEnd) + request.ask.collateralPerSlot)
+      (startBalance + expectedPayout(requestEnd) + request.ask.collateralPerSlot.stuint(256))
 
   test "cannot mark proofs missing for cancelled request":
     let expiry = (await marketplace.requestExpiry(request.id)).uint64
@@ -119,4 +119,4 @@ suite "Marketplace contracts":
     let missingPeriod = periodicity.periodOf((await testbed.eth.time.now()).uint64)
     await testbed.eth.time.advance(periodicity.seconds)
     expect Marketplace_SlotNotAcceptingProofs:
-      discard await marketplace.markProofAsMissing(slotId, missingPeriod).confirm(1)
+      discard await marketplace.markProofAsMissing(slotId, missingPeriod.stuint(40)).confirm(1)

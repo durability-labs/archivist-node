@@ -37,7 +37,7 @@ type
   StorageRequested* = object of MarketplaceEvent
     requestId*: RequestId
     ask*: StorageAsk
-    expiry*: uint64
+    expiry*: StorageDuration
 
   SlotFilled* = object of MarketplaceEvent
     requestId* {.indexed.}: RequestId
@@ -152,7 +152,7 @@ method getHost*(
 
 method currentCollateral*(
     marketplace: AbstractMarketplace, slotId: SlotId
-): Future[UInt256] {.base, async: (raises: [MarketplaceError, CancelledError]).} =
+): Future[UInt128] {.base, async: (raises: [MarketplaceError, CancelledError]).} =
   raiseAssert("not implemented")
 
 method getActiveSlot*(
@@ -165,7 +165,7 @@ method fillSlot*(
     requestId: RequestId,
     slotIndex: uint64,
     proof: Groth16Proof,
-    collateral: UInt256,
+    collateral: UInt128,
 ) {.base, async: (raises: [CancelledError, MarketplaceError]).} =
   raiseAssert("not implemented")
 

@@ -61,7 +61,7 @@ proc configuration*(
 proc token*(marketplace: MarketplaceContract): Address {.contract, view.}
 proc currentCollateral*(
   marketplace: MarketplaceContract, id: SlotId
-): UInt256 {.contract, view.}
+): UInt128 {.contract, view.}
 
 proc requestStorage*(
   marketplace: MarketplaceContract, request: StorageRequest
@@ -173,7 +173,7 @@ proc submitProof*(
 .}
 
 proc markProofAsMissing*(
-  marketplace: MarketplaceContract, id: SlotId, period: uint64
+  marketplace: MarketplaceContract, id: SlotId, period: StUint[40]
 ): Confirmable {.
   contract,
   errors: [

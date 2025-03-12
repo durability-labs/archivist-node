@@ -65,7 +65,7 @@ type
     slotIndex*: uint64
     proof*: Groth16Proof
     timestamp: SecondsSince1970
-    collateral*: UInt256
+    collateral*: UInt128
 
   Subscriptions = object
     onRequest: seq[RequestSubscription]
@@ -119,13 +119,13 @@ proc new*(_: type MockMarketplace, clock: Clock = MockClock.new()): MockMarketpl
       validatorRewardPercentage: 20,
     ),
     proofs: ProofConfig(
-      period: 10.Period,
-      timeout: 5.uint64,
+      period: 10.stuint(40),
+      timeout: 5.stuint(40),
       downtime: 64.uint8,
       downtimeProduct: 67.uint8,
     ),
     reservations: SlotReservationsConfig(maxReservations: 3),
-    requestDurationLimit: (60 * 60 * 24 * 30).uint64,
+    requestDurationLimit: (60 * 60 * 24 * 30).stuint(40),
   )
   MockMarketplace(
     signer: Address.example, config: config, canReserveSlot: true, clock: clock
@@ -137,13 +137,13 @@ method getSigner*(
   return marketplace.signer
 
 method periodicity*(mock: MockMarketplace): Periodicity =
-  return Periodicity(seconds: mock.config.proofs.period)
+  return Periodicity(seconds: mock.config.proofs.period.u64)
 
 method proofTimeout*(marketplace: MockMarketplace): uint64 =
-  return marketplace.config.proofs.timeout
+  return marketplace.config.proofs.timeout.u64
 
 method requestDurationLimit*(marketplace: MockMarketplace): uint64 =
-  return marketplace.config.requestDurationLimit
+  return marketplace.config.requestDurationLimit.u64
 
 method proofDowntime*(marketplace: MockMarketplace): uint8 =
   return marketplace.config.proofs.downtime
@@ -231,11 +231,11 @@ method getHost*(
 
 method currentCollateral*(
     marketplace: MockMarketplace, slotId: SlotId
-): Future[UInt256] {.async: (raises: [MarketplaceError, CancelledError]).} =
+): Future[UInt128] {.async: (raises: [MarketplaceError, CancelledError]).} =
   for slot in marketplace.filled:
     if slotId == slotId(slot.requestId, slot.slotIndex):
       return slot.collateral
-  return 0.u256
+  return 0.u128
 
 proc emitSlotFilled*(
     marketplace: MockMarketplace, requestId: RequestId, slotIndex: uint64
@@ -281,7 +281,7 @@ proc fillSlot*(
     slotIndex: uint64,
     proof: Groth16Proof,
     host: Address,
-    collateral = 0.u256,
+    collateral = 0.u128,
 ) =
   if error =? marketplace.errorOnFillSlot:
     raise error
@@ -303,7 +303,7 @@ method fillSlot*(
     requestId: RequestId,
     slotIndex: uint64,
     proof: Groth16Proof,
-    collateral: UInt256,
+    collateral: UInt128,
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.fillSlot(requestId, slotIndex, proof, marketplace.signer, collateral)
 
@@ -512,7 +512,7 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id].uint64,
+        expiry: marketplace.requestExpiry[request.id].stuint(40),
       )
   )
 
@@ -524,7 +524,7 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id].uint64,
+        expiry: marketplace.requestExpiry[request.id].stuint(40),
       )
   )
 

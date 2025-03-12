@@ -47,7 +47,7 @@ suite "On-Chain Marketplace":
   proc expectedPayout(
       r: StorageRequest, startTimestamp: uint64, endTimestamp: uint64
   ): UInt256 =
-    return (endTimestamp - startTimestamp).u256 * r.ask.pricePerSlotPerSecond
+    return (endTimestamp - startTimestamp).u256 * r.ask.pricePerSlotPerSecond.stuint(256)
 
   proc switchAccount(account: Signer) {.async.} =
     contract = contract.connect(account)
@@ -63,7 +63,7 @@ suite "On-Chain Marketplace":
     let tokenAddress = await contract.token()
     token = Erc20Token.new(tokenAddress, provider.getSigner())
 
-    periodicity = Periodicity(seconds: config.proofs.period)
+    periodicity = Periodicity(seconds: config.proofs.period.u64)
 
     request = StorageRequest.example
     request.client = accounts[0]
@@ -104,12 +104,12 @@ suite "On-Chain Marketplace":
     let periodicity = marketplace.periodicity()
     let config = await contract.configuration()
     let periodLength = config.proofs.period
-    check periodicity.seconds == periodLength
+    check periodicity.seconds == periodLength.u64
 
   test "can retrieve proof timeout":
     let proofTimeout = marketplace.proofTimeout()
     let config = await contract.configuration()
-    check proofTimeout == config.proofs.timeout
+    check proofTimeout == config.proofs.timeout.u64
 
   test "supports marketplace requests":
     await marketplace.requestStorage(request)
@@ -130,7 +130,7 @@ suite "On-Chain Marketplace":
 
     let endBalanceClient = await token.balanceOf(clientAddress)
 
-    check endBalanceClient == (startBalanceClient + request.totalPrice)
+    check endBalanceClient == (startBalanceClient + request.totalPrice.stuint(256))
 
   test "supports request subscriptions":
     var receivedIds: seq[RequestId]
@@ -402,7 +402,7 @@ suite "On-Chain Marketplace":
         await waitUntilProofRequired(slotId)
         let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
         await advanceToNextPeriod()
-        discard await contract.markProofAsMissing(slotId, missingPeriod).confirm(1)
+        discard await contract.markProofAsMissing(slotId, missingPeriod.stuint(40)).confirm(1)
     check eventually receivedIds == @[request.id]
     await subscription.unsubscribe()
 
@@ -630,7 +630,7 @@ suite "On-Chain Marketplace":
     let endBalance = await token.balanceOf(address)
 
     let expectedPayout = request.expectedPayout(filledAt, requestEnd)
-    check endBalance == (startBalance + expectedPayout + request.ask.collateralPerSlot)
+    check endBalance == (startBalance + expectedPayout + request.ask.collateralPerSlot.stuint(256))
 
   test "the request is added to cache after the first access":
     await marketplace.requestStorage(request)

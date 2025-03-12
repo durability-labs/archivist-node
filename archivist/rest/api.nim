@@ -562,7 +562,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
         )
 
       let durationLimit = marketplace.purchasing.durationLimit
-      if params.duration > durationLimit:
+      if params.duration.u64 > durationLimit:
         return RestApiResponse.error(
           Http422,
           "Duration exceeds limit of " & $durationLimit & " seconds",

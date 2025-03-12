@@ -104,16 +104,16 @@ method getSigner*(
 
 method periodicity*(marketplace: OnChainMarketplace): Periodicity =
   let period = marketplace.configuration.proofs.period
-  Periodicity(seconds: period)
+  Periodicity(seconds: period.u64)
 
 method proofTimeout*(marketplace: OnChainMarketplace): uint64 =
-  marketplace.configuration.proofs.timeout
+  marketplace.configuration.proofs.timeout.u64
 
 method repairRewardPercentage*(marketplace: OnChainMarketplace): uint8 =
   marketplace.configuration.collateral.repairRewardPercentage
 
 method requestDurationLimit*(marketplace: OnChainMarketplace): uint64 =
-  marketplace.configuration.requestDurationLimit
+  marketplace.configuration.requestDurationLimit.u64
 
 method proofDowntime*(marketplace: OnChainMarketplace): uint8 =
   marketplace.configuration.proofs.downtime
@@ -141,7 +141,7 @@ method requestStorage(
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to request storage"):
     debug "Requesting storage"
-    await marketplace.approveFunds(request.totalPrice())
+    await marketplace.approveFunds(request.totalPrice().stuint(256))
     discard await marketplace.contract.requestStorage(request).confirm(1)
 
 method getRequest*(
@@ -205,7 +205,7 @@ method getHost(
 
 method currentCollateral*(
     marketplace: OnChainMarketplace, slotId: SlotId
-): Future[UInt256] {.async: (raises: [MarketplaceError, CancelledError]).} =
+): Future[UInt128] {.async: (raises: [MarketplaceError, CancelledError]).} =
   convertEthersError("Failed to get slot's current collateral"):
     return await marketplace.contract.currentCollateral(slotId)
 
@@ -223,7 +223,7 @@ method fillSlot(
     requestId: RequestId,
     slotIndex: uint64,
     proof: Groth16Proof,
-    collateral: UInt256,
+    collateral: UInt128,
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to fill slot"):
     logScope:
@@ -231,7 +231,7 @@ method fillSlot(
       slotIndex
 
     try:
-      await marketplace.approveFunds(collateral)
+      await marketplace.approveFunds(collateral.stuint(256))
 
       # Add 10% to gas estimate to deal with different evm code flow when we
       # happen to be the last one to fill a slot in this request
@@ -321,7 +321,7 @@ method markProofAsMissing*(
   convertEthersError("Failed to mark proof as missing"):
     # Add 50% to gas estimate to deal with different evm code flow when we
     # happen to be the one to make the request fail
-    let gas = await marketplace.contract.estimateGas.markProofAsMissing(id, period)
+    let gas = await marketplace.contract.estimateGas.markProofAsMissing(id, period.stuint(40))
     let gasLimit = (gas * 150) div 100
     let overrides = TransactionOverrides(gasLimit: some gasLimit)
 
@@ -329,14 +329,14 @@ method markProofAsMissing*(
       estimatedGas = gas, gasLimit = gasLimit
 
     discard
-      await marketplace.contract.markProofAsMissing(id, period, overrides).confirm(1)
+      await marketplace.contract.markProofAsMissing(id, period.stuint(40), overrides).confirm(1)
 
 method canMarkProofAsMissing*(
     marketplace: OnChainMarketplace, id: SlotId, period: Period
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   try:
     let overrides = CallOverrides(blockTag: some BlockTag.pending)
-    await marketplace.contract.canMarkProofAsMissing(id, period, overrides)
+    await marketplace.contract.canMarkProofAsMissing(id, period.stuint(40), overrides)
     return true
   except EthersError as e:
     trace "Proof cannot be marked as missing", msg = e.msg
@@ -374,7 +374,7 @@ method subscribeRequests*(
     marketplace: OnChainMarketplace, callback: OnRequest
 ): Future[MarketSubscription] {.async.} =
   proc onEvent(event: StorageRequested) {.raises: [].} =
-    callback(event.requestId, event.ask, event.expiry)
+    callback(event.requestId, event.ask, event.expiry.truncate(uint64))
 
   convertEthersError("Failed to subscribe to StorageRequested events"):
     let subscription = await marketplace.contract.subscribe(StorageRequested, onEvent)

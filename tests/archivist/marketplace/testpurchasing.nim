@@ -30,8 +30,8 @@ asyncchecksuite "Purchasing":
       ask: StorageAsk(
         slots: uint8.example.uint64,
         slotSize: uint32.example.uint64,
-        duration: uint16.example.uint64,
-        pricePerBytePerSecond: uint8.example.u256,
+        duration: uint16.example.stuint(40),
+        pricePerBytePerSecond: uint8.example.stuint(96),
       )
     )
 
@@ -129,8 +129,8 @@ suite "Purchasing state machine":
       ask: StorageAsk(
         slots: uint8.example.uint64,
         slotSize: uint32.example.uint64,
-        duration: uint16.example.uint64,
-        pricePerBytePerSecond: uint8.example.u256,
+        duration: uint16.example.stuint(40),
+        pricePerBytePerSecond: uint8.example.stuint(96),
       )
     )
 
@@ -183,7 +183,8 @@ suite "Purchasing state machine":
   test "moves to PurchaseStarted when request state is Started":
     let request = StorageRequest.example
     let purchase = Purchase.new(request, marketplace, clock)
-    marketplace.requestEnds[request.id] = clock.now() + request.ask.duration.int64
+    let duration = request.ask.duration.toSecondsSince1970
+    marketplace.requestEnds[request.id] = clock.now() + duration
     marketplace.requested = @[request]
     marketplace.requestState[request.id] = RequestState.Started
     let next = await PurchaseUnknown().run(purchase)
@@ -216,7 +217,8 @@ suite "Purchasing state machine":
   test "moves to PurchaseFailed state once RequestFailed emitted":
     let request = StorageRequest.example
     let purchase = Purchase.new(request, marketplace, clock)
-    marketplace.requestEnds[request.id] = clock.now() + request.ask.duration.int64
+    let duration = request.ask.duration.toSecondsSince1970
+    marketplace.requestEnds[request.id] = clock.now() + duration
     let future = PurchaseStarted().run(purchase)
 
     marketplace.emitRequestFailed(request.id)
@@ -227,10 +229,11 @@ suite "Purchasing state machine":
   test "moves to PurchaseFinished state once request finishes":
     let request = StorageRequest.example
     let purchase = Purchase.new(request, marketplace, clock)
-    marketplace.requestEnds[request.id] = clock.now() + request.ask.duration.int64
+    let duration = request.ask.duration.toSecondsSince1970
+    marketplace.requestEnds[request.id] = clock.now() + duration
     let future = PurchaseStarted().run(purchase)
 
-    clock.advance(request.ask.duration.int64 + 1)
+    clock.advance(duration + 1)
 
     let next = await future
     check !next of PurchaseFinished

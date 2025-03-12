@@ -38,9 +38,9 @@ asyncchecksuite "sales state 'preparing'":
       clock.now() + cast[int64](request.ask.duration)
 
     terms = AvailabilityTerms(
-      maximumduration: request.ask.duration + 60.uint64,
-      minimumPricePerBytePerSecond: request.ask.pricePerBytePerSecond,
-      maximumCollateralPerByte: request.ask.collateralPerByte,
+      maximumduration: request.ask.duration.u64 + 60.uint64,
+      minimumPricePerBytePerSecond: request.ask.pricePerBytePerSecond.stuint(256),
+      maximumCollateralPerByte: request.ask.collateralPerByte.stuint(256),
       availableUntil: none SecondsSince1970,
     )
 
@@ -85,19 +85,19 @@ asyncchecksuite "sales state 'preparing'":
     check ignored.reprocessSlot
 
   test "switches to ignored state when duration is too long":
-    terms.maximumDuration = request.ask.duration - 1
+    terms.maximumDuration = request.ask.duration.u64 - 1
     context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored
 
   test "switches to ignored state when reward is too low":
-    terms.minimumPricePerBytePerSecond = request.ask.pricePerBytePerSecond + 1
+    terms.minimumPricePerBytePerSecond = request.ask.pricePerBytePerSecond.stuint(256) + 1
     context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored
 
   test "switches to ignored state when collateral is too high":
-    terms.maximumCollateralPerByte = request.ask.collateralPerByte - 1
+    terms.maximumCollateralPerByte = request.ask.collateralPerByte.stuint(256) - 1
     context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored
