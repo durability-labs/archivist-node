@@ -28,7 +28,7 @@ func jsonRpcUrl*(hardhat: Hardhat): string =
   "ws://localhost:8545"
 
 func marketplaceAddress*(hardhat: Hardhat): string =
-  "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"
+  "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 proc installHardhat() {.async.} =
   if not dirExists(hardhatBinDir):
