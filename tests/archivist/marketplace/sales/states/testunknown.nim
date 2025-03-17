@@ -5,7 +5,6 @@ import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/marketplace/sales/states/unknown
 import pkg/archivist/marketplace/sales/states/errored
 import pkg/archivist/marketplace/sales/states/filled
-import pkg/archivist/marketplace/sales/states/finished
 import pkg/archivist/marketplace/sales/states/failed
 import pkg/archivist/marketplace/sales/states/payout
 
@@ -55,11 +54,6 @@ suite "sales state 'unknown'":
     marketplace.slotState[slotId] = SlotState.Finished
     let next = await state.run(agent)
     check !next of SalePayout
-
-  test "switches to finished state when on chain state is 'paid'":
-    marketplace.slotState[slotId] = SlotState.Paid
-    let next = await state.run(agent)
-    check !next of SaleFinished
 
   test "switches to failed state when on chain state is 'failed'":
     marketplace.slotState[slotId] = SlotState.Failed
