@@ -73,7 +73,6 @@ type
     onSlotFilled: seq[SlotFilledSubscription]
     onSlotFreed: seq[SlotFreedSubscription]
     onSlotReservationsFull: seq[SlotReservationsFullSubscription]
-    onRequestCancelled: seq[RequestCancelledSubscription]
     onRequestFailed: seq[RequestFailedSubscription]
     onProofSubmitted: seq[ProofSubmittedSubscription]
 
@@ -98,13 +97,9 @@ type
   SlotReservationsFullSubscription* = ref object of MockSubscription
     callback: OnSlotReservationsFull
 
-  RequestCancelledSubscription* = ref object of MockSubscription
-    requestId: ?RequestId
-    callback: OnRequestCancelled
-
   RequestFailedSubscription* = ref object of MockSubscription
     requestId: ?RequestId
-    callback: OnRequestCancelled
+    callback: OnRequestFailed
 
   ProofSubmittedSubscription = ref object of MockSubscription
     callback: OnProofSubmitted
@@ -268,12 +263,6 @@ proc emitSlotReservationsFull*(
   for subscription in subscriptions:
     subscription.callback(requestId, slotIndex)
 
-proc emitRequestCancelled*(marketplace: MockMarketplace, requestId: RequestId) =
-  var subscriptions = marketplace.subscriptions.onRequestCancelled
-  for subscription in subscriptions:
-    if subscription.requestId == requestId.some or subscription.requestId.isNone:
-      subscription.callback(requestId)
-
 proc emitRequestFulfilled*(marketplace: MockMarketplace, requestId: RequestId) =
   var subscriptions = marketplace.subscriptions.onFulfillment
   for subscription in subscriptions:
@@ -335,9 +324,6 @@ method withdrawFunds*(
     marketplace: MockMarketplace, requestId: RequestId
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.withdrawn.add(requestId)
-
-  if state =? marketplace.requestState .? [requestId] and state == RequestState.Cancelled:
-    marketplace.emitRequestCancelled(requestId)
 
 proc setProofRequired*(mock: MockMarketplace, id: SlotId, required: bool) =
   if required:
@@ -493,24 +479,6 @@ method subscribeSlotReservationsFull*(
   marketplace.subscriptions.onSlotReservationsFull.add(subscription)
   return subscription
 
-method subscribeRequestCancelled*(
-    marketplace: MockMarketplace, callback: OnRequestCancelled
-): Future[Subscription] {.async.} =
-  let subscription = RequestCancelledSubscription(
-    marketplace: marketplace, requestId: none RequestId, callback: callback
-  )
-  marketplace.subscriptions.onRequestCancelled.add(subscription)
-  return subscription
-
-method subscribeRequestCancelled*(
-    marketplace: MockMarketplace, requestId: RequestId, callback: OnRequestCancelled
-): Future[Subscription] {.async.} =
-  let subscription = RequestCancelledSubscription(
-    marketplace: marketplace, requestId: some requestId, callback: callback
-  )
-  marketplace.subscriptions.onRequestCancelled.add(subscription)
-  return subscription
-
 method subscribeRequestFailed*(
     marketplace: MockMarketplace, callback: OnRequestFailed
 ): Future[Subscription] {.async.} =
@@ -592,7 +560,6 @@ method unsubscribe*(subscription: Subscription) {.async: (raises: []).} =
   marketplace.subscriptions.onFulfillment.keepItIf(subscription != it)
   marketplace.subscriptions.onSlotFilled.keepItIf(subscription != it)
   marketplace.subscriptions.onSlotFreed.keepItIf(subscription != it)
-  marketplace.subscriptions.onRequestCancelled.keepItIf(subscription != it)
   marketplace.subscriptions.onRequestFailed.keepItIf(subscription != it)
   marketplace.subscriptions.onProofSubmitted.keepItIf(subscription != it)
   marketplace.subscriptions.onSlotReservationsFull.keepItIf(subscription != it)

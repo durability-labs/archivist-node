@@ -445,27 +445,6 @@ method subscribeFulfillment(
     let subscription = await marketplace.contract.subscribe(RequestFulfilled, onEvent)
     return OnChainMarketSubscription(eventSubscription: subscription)
 
-method subscribeRequestCancelled*(
-    marketplace: OnChainMarketplace, callback: OnRequestCancelled
-): Future[MarketSubscription] {.async.} =
-  proc onEvent(event: RequestCancelled) {.raises: [].} =
-    callback(event.requestId)
-
-  convertEthersError("Failed to subscribe to RequestCancelled events"):
-    let subscription = await marketplace.contract.subscribe(RequestCancelled, onEvent)
-    return OnChainMarketSubscription(eventSubscription: subscription)
-
-method subscribeRequestCancelled*(
-    marketplace: OnChainMarketplace, requestId: RequestId, callback: OnRequestCancelled
-): Future[MarketSubscription] {.async.} =
-  proc onEvent(event: RequestCancelled) {.raises: [].} =
-    if event.requestId == requestId:
-      callback(event.requestId)
-
-  convertEthersError("Failed to subscribe to RequestCancelled events"):
-    let subscription = await marketplace.contract.subscribe(RequestCancelled, onEvent)
-    return OnChainMarketSubscription(eventSubscription: subscription)
-
 method subscribeRequestFailed*(
     marketplace: OnChainMarketplace, callback: OnRequestFailed
 ): Future[MarketSubscription] {.async.} =

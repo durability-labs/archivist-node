@@ -378,21 +378,6 @@ suite "On-Chain Marketplace":
 
     await subscription.unsubscribe()
 
-  test "support request cancelled subscriptions":
-    await marketplace.requestStorage(request)
-
-    var receivedIds: seq[RequestId]
-    proc onRequestCancelled(id: RequestId) =
-      receivedIds.add(id)
-
-    let subscription =
-      await marketplace.subscribeRequestCancelled(request.id, onRequestCancelled)
-
-    await advanceToCancelledRequest(request)
-    await marketplace.withdrawFunds(request.id)
-    check eventually receivedIds == @[request.id]
-    await subscription.unsubscribe()
-
   test "support request failed subscriptions":
     await marketplace.requestStorage(request)
 
@@ -418,24 +403,6 @@ suite "On-Chain Marketplace":
         let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
         await advanceToNextPeriod()
         discard await contract.markProofAsMissing(slotId, missingPeriod).confirm(1)
-    check eventually receivedIds == @[request.id]
-    await subscription.unsubscribe()
-
-  test "subscribes only to a certain request cancellation":
-    var otherRequest = request
-    otherRequest.nonce = Nonce.example
-    await marketplace.requestStorage(request)
-    await marketplace.requestStorage(otherRequest)
-
-    var receivedIds: seq[RequestId]
-    proc onRequestCancelled(requestId: RequestId) =
-      receivedIds.add(requestId)
-
-    let subscription =
-      await marketplace.subscribeRequestCancelled(request.id, onRequestCancelled)
-    await advanceToCancelledRequest(otherRequest) # shares expiry with otherRequest
-    await marketplace.withdrawFunds(otherRequest.id)
-    await marketplace.withdrawFunds(request.id)
     check eventually receivedIds == @[request.id]
     await subscription.unsubscribe()
 

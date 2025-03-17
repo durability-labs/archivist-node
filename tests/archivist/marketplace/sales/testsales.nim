@@ -215,11 +215,6 @@ asyncchecksuite "Sales":
     let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
     check eventually items.allIt(itemsProcessed.contains(it))
 
-  test "removes slots from slot queue once RequestCancelled emitted":
-    let request1 = await addRequestToSaturatedQueue()
-    marketplace.emitRequestCancelled(request1.id)
-    check always itemsProcessed.notProcessed(request1)
-
   test "removes request from slot queue once RequestFailed emitted":
     let request1 = await addRequestToSaturatedQueue()
     marketplace.emitRequestFailed(request1.id)
