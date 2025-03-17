@@ -43,7 +43,6 @@ suite "On-Chain Marketplace":
   var periodicity: Periodicity
   var host: Signer
   var otherHost: Signer
-  var hostRewardRecipient: Address
 
   proc expectedPayout(
       r: StorageRequest, startTimestamp: uint64, endTimestamp: uint64
@@ -53,13 +52,12 @@ suite "On-Chain Marketplace":
   proc switchAccount(account: Signer) {.async.} =
     contract = contract.connect(account)
     token = token.connect(account)
-    marketplace = !await OnChainMarketplace.load(contract, marketplace.rewardRecipient)
+    marketplace = !await OnChainMarketplace.load(contract)
 
   setup:
     let address = MarketplaceContract.address(dummyVerifier = true)
     contract = MarketplaceContract.new(address, provider.getSigner())
     let config = await contract.configuration()
-    hostRewardRecipient = accounts[2]
 
     marketplace = !await OnChainMarketplace.load(contract)
     let tokenAddress = await contract.token()
@@ -666,40 +664,6 @@ suite "On-Chain Marketplace":
 
     let expectedPayout = request.expectedPayout(filledAt, requestEnd)
     check endBalance == (startBalance + expectedPayout + request.ask.collateralPerSlot)
-
-  test "pays rewards to reward recipient, collateral to host":
-    marketplace = !await OnChainMarketplace.load(contract, hostRewardRecipient.some)
-    let hostAddress = await host.getAddress()
-
-    await marketplace.requestStorage(request)
-
-    await switchAccount(host)
-    await marketplace.reserveSlot(request.id, 0.uint64)
-    await marketplace.fillSlot(
-      request.id, 0.uint64, proof, request.ask.collateralPerSlot
-    )
-    let filledAt = await testbed.eth.time.blockTime(BlockTag.latest)
-
-    for slotIndex in 1 ..< request.ask.slots:
-      await marketplace.reserveSlot(request.id, slotIndex.uint64)
-      await marketplace.fillSlot(
-        request.id, slotIndex.uint64, proof, request.ask.collateralPerSlot
-      )
-
-    let requestEnd = (await marketplace.getRequestEnd(request.id)).uint64
-    await testbed.eth.time.advanceTo(requestEnd + 1)
-
-    let startBalanceHost = await token.balanceOf(hostAddress)
-    let startBalanceReward = await token.balanceOf(hostRewardRecipient)
-
-    await marketplace.freeSlot(request.slotId(0.uint64))
-
-    let endBalanceHost = await token.balanceOf(hostAddress)
-    let endBalanceReward = await token.balanceOf(hostRewardRecipient)
-
-    let expectedPayout = request.expectedPayout(filledAt, requestEnd)
-    check endBalanceHost == (startBalanceHost + request.ask.collateralPerSlot)
-    check endBalanceReward == (startBalanceReward + expectedPayout)
 
   test "the request is added to cache after the first access":
     await marketplace.requestStorage(request)

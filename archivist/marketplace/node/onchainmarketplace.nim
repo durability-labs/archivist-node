@@ -12,5 +12,5 @@ proc load*(
     options: MarketplaceOptions,
 ): Future[?!OnchainMarketplace] {.async: (raises: [CancelledError]).} =
   await OnchainMarketplace.load(
-    contract, options.rewardRecipient, options.requestCacheSize
+    contract, options.requestCacheSize
   )

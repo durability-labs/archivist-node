@@ -24,7 +24,6 @@ suite "Marketplace contracts":
   let proof = Groth16Proof.example
 
   var client, host: Signer
-  var rewardRecipient, collateralRecipient: Address
   var marketplace: MarketplaceContract
   var token: Erc20Token
   var periodicity: Periodicity
@@ -42,8 +41,6 @@ suite "Marketplace contracts":
   setup:
     client = provider.getSigner(accounts[0])
     host = provider.getSigner(accounts[1])
-    rewardRecipient = accounts[2]
-    collateralRecipient = accounts[3]
 
     let address = MarketplaceContract.address(dummyVerifier = true)
     marketplace = MarketplaceContract.new(address, provider.getSigner())
@@ -114,27 +111,6 @@ suite "Marketplace contracts":
     let endBalance = await token.balanceOf(address)
     check endBalance ==
       (startBalance + expectedPayout(requestEnd) + request.ask.collateralPerSlot)
-
-  test "can be paid out at the end, specifying reward and collateral recipient":
-    switchAccount(host)
-    let hostAddress = await host.getAddress()
-    await startContract()
-    let requestEnd = (await marketplace.requestEnd(request.id)).uint64
-    await testbed.eth.time.advanceTo(requestEnd + 1)
-    let startBalanceHost = await token.balanceOf(hostAddress)
-    let startBalanceReward = await token.balanceOf(rewardRecipient)
-    let startBalanceCollateral = await token.balanceOf(collateralRecipient)
-    discard await marketplace
-    .freeSlot(slotId, rewardRecipient, collateralRecipient)
-    .confirm(1)
-    let endBalanceHost = await token.balanceOf(hostAddress)
-    let endBalanceReward = await token.balanceOf(rewardRecipient)
-    let endBalanceCollateral = await token.balanceOf(collateralRecipient)
-
-    check endBalanceHost == startBalanceHost
-    check endBalanceReward == (startBalanceReward + expectedPayout(requestEnd))
-    check endBalanceCollateral ==
-      (startBalanceCollateral + request.ask.collateralPerSlot)
 
   test "cannot mark proofs missing for cancelled request":
     let expiry = (await marketplace.requestExpiry(request.id)).uint64

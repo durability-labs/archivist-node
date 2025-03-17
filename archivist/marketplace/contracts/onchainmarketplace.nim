@@ -19,7 +19,6 @@ type
   OnChainMarketplace* = ref object of AbstractMarketplace
     contract: MarketplaceContract
     signer: Signer
-    rewardRecipient: ?Address
     configuration: MarketplaceConfig
     requestCache: LruCache[string, StorageRequest]
     allowanceLock: AsyncLock
@@ -41,7 +40,6 @@ proc load(
 proc load*(
     _: type OnChainMarketplace,
     contract: MarketplaceContract,
-    rewardRecipient = Address.none,
     requestCacheSize: uint16 = DefaultRequestCacheSize,
 ): Future[?!OnChainMarketplace] {.async: (raises: [CancelledError]).} =
   without signer =? contract.signer:
@@ -50,7 +48,6 @@ proc load*(
   let marketplace = OnChainMarketplace(
     contract: contract,
     signer: signer,
-    rewardRecipient: rewardRecipient,
     requestCache: requestCache,
   )
   ?await marketplace.load()
@@ -260,43 +257,15 @@ method freeSlot*(
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to free slot"):
     try:
-      var freeSlot: Future[Confirmable]
-      if rewardRecipient =? marketplace.rewardRecipient:
-        # If --reward-recipient specified, use it as the reward recipient, and use
-        # the SP's address as the collateral recipient
-        let collateralRecipient = await marketplace.getSigner()
+      # Add 200% to gas estimate to deal with different evm code flow when we
+      # happen to be the one to make the request fail
+      let gas = await marketplace.contract.estimateGas.freeSlot(slotId)
+      let gasLimit = gas * 3
+      let overrides = TransactionOverrides(gasLimit: some (gasLimit))
 
-        # Add 200% to gas estimate to deal with different evm code flow when we
-        # happen to be the one to make the request fail
-        let gas = await marketplace.contract.estimateGas.freeSlot(
-          slotId, rewardRecipient, collateralRecipient
-        )
-        let gasLimit = gas * 3
-        let overrides = TransactionOverrides(gasLimit: some gasLimit)
+      trace "calling freeSlot on contract", estimatedGas = gas, gasLimit = gasLimit
 
-        trace "calling freeSlot on contract", estimatedGas = gas, gasLimit = gasLimit
-
-        freeSlot = marketplace.contract.freeSlot(
-          slotId,
-          rewardRecipient, # --reward-recipient
-          collateralRecipient, # SP's address
-          overrides,
-        )
-      else:
-        # Otherwise, use the SP's address as both the reward and collateral
-        # recipient (the contract will use msg.sender for both)
-
-        # Add 200% to gas estimate to deal with different evm code flow when we
-        # happen to be the one to make the request fail
-        let gas = await marketplace.contract.estimateGas.freeSlot(slotId)
-        let gasLimit = gas * 3
-        let overrides = TransactionOverrides(gasLimit: some (gasLimit))
-
-        trace "calling freeSlot on contract", estimatedGas = gas, gasLimit = gasLimit
-
-        freeSlot = marketplace.contract.freeSlot(slotId, overrides)
-
-      discard await freeSlot.confirm(1)
+      discard await marketplace.contract.freeSlot(slotId, overrides).confirm(1)
     except Marketplace_SlotIsFree as parent:
       raise newException(
         SlotStateMismatchError, "Failed to free slot, slot is already free", parent

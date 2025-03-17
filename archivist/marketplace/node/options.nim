@@ -9,7 +9,6 @@ export validationconfig.ValidationGroups
 
 type MarketplaceOptions* = object
   marketplaceAddress*: ?Address
-  rewardRecipient*: ?Address
   maxPriorityFeePerGas*: uint64 = DefaultMaxPriorityFeePerGas
   requestCacheSize*: uint16 = DefaultRequestCacheSize
   validationEnabled*: bool
