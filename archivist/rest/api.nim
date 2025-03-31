@@ -464,28 +464,23 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
       without restAv =? RestAvailability.fromJson(body), error:
         return RestApiResponse.error(Http400, error.msg, headers = headers)
 
-      if restAv.maximumDuration == 0:
+      if restAv.maximumDuration.u64 == 0:
         return RestApiResponse.error(
           Http422, "maximumDuration must be larger than zero", headers = headers
         )
 
-      if restAv.minimumPricePerBytePerSecond == 0:
+      if restAv.minimumPricePerBytePerSecond.u256 == 0.u256:
         return RestApiResponse.error(
           Http422,
           "minimumPricePerBytePerSecond must be larger than zero",
           headers = headers,
         )
 
-      if restAv.maximumCollateralPerByte == 0:
+      if restAv.maximumCollateralPerByte.u256 == 0.u256:
         return RestApiResponse.error(
           Http422,
           "maximumCollateralPerByte must be larger than zero",
           headers = headers,
-        )
-
-      if availableUntil =? restAv.availableUntil and availableUntil < 0:
-        return RestApiResponse.error(
-          Http422, "availableUntil must not be negative", headers = headers
         )
 
       let terms = AvailabilityTerms(
@@ -537,7 +532,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
 
       let expiry = params.expiry
 
-      if expiry <= 0 or expiry >= params.duration:
+      if expiry.u64 == 0 or expiry >= params.duration:
         return RestApiResponse.error(
           Http422,
           "Expiry must be greater than zero and less than the request's duration",
@@ -549,20 +544,8 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
           Http422, "Proof probability must be greater than zero", headers = headers
         )
 
-      if params.collateralPerByte <= 0:
-        return RestApiResponse.error(
-          Http422, "Collateral per byte must be greater than zero", headers = headers
-        )
-
-      if params.pricePerBytePerSecond <= 0:
-        return RestApiResponse.error(
-          Http422,
-          "Price per byte per second must be greater than zero",
-          headers = headers,
-        )
-
       let durationLimit = marketplace.purchasing.durationLimit
-      if params.duration.u64 > durationLimit:
+      if params.duration > durationLimit:
         return RestApiResponse.error(
           Http422,
           "Duration exceeds limit of " & $durationLimit & " seconds",

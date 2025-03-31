@@ -28,9 +28,9 @@ method onFailed*(state: SaleInitialProving, request: StorageRequest): ?State =
 
 proc waitUntilNextPeriod(clock: Clock, periodicity: Periodicity) {.async.} =
   trace "Waiting until next period"
-  let period = periodicity.periodOf(clock.now().Timestamp)
+  let period = periodicity.periodOf(clock.now())
   let periodEnd = periodicity.periodEnd(period)
-  await clock.waitUntil((periodEnd + 1).toSecondsSince1970)
+  await clock.waitUntil((periodEnd + 1'u8).toSecondsSince1970)
 
 proc waitForStableChallenge(
     marketplace: AbstractMarketplace,
@@ -61,7 +61,7 @@ method run*(
     debug "Waiting for a proof challenge that is valid for the entire period"
     let slot = Slot(request: request, slotIndex: data.slotIndex)
     await waitForStableChallenge(marketplace, clock, periodicity, slot.id)
-    let provingPeriod = periodicity.periodOf(clock.now().Timestamp)
+    let provingPeriod = periodicity.periodOf(StorageTimestamp.init(clock.now()))
 
     info "Generating initial proof",
       provingPeriod = provingPeriod,
@@ -74,7 +74,7 @@ method run*(
       error "Failed to generate initial proof", error = err.msg
       return some State(SaleErrored(error: err))
 
-    let periodAtFinish = periodicity.periodOf(clock.now().Timestamp)
+    let periodAtFinish = periodicity.periodOf(StorageTimestamp.init(clock.now()))
     if periodAtFinish != provingPeriod:
       warn "Failed to generate initial proof in time",
         provingPeriod = provingPeriod, periodAtFinish = periodAtFinish

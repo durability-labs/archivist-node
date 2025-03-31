@@ -1,7 +1,6 @@
 import pkg/chronos
 import pkg/questionable/results
 import pkg/libp2p/cid
-import ../clock
 import ./contracts/proofs
 import ./abstractmarketplace
 
@@ -21,7 +20,7 @@ method storeSlot*(
     cid: Cid,
     slotIndex: uint64,
     slotSize: uint64,
-    expiry: SecondsSince1970,
+    expiry: StorageTimestamp,
     repair: bool,
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =
   raiseAssert "not implemented"
@@ -32,6 +31,6 @@ method proveSlot*(
   raiseAssert "not implemented"
 
 method updateSlotExpiry*(
-    storage: StorageInterface, cid: Cid, slotIndex: uint64, expiry: SecondsSince1970
+    storage: StorageInterface, cid: Cid, slotIndex: uint64, expiry: StorageTimestamp
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =
   raiseAssert "not implemented"

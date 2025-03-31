@@ -22,7 +22,7 @@ type
   ProofInvalidError* = object of MarketplaceError
   Subscription* = ref object of RootObj
   OnRequest* =
-    proc(id: RequestId, ask: StorageAsk, expiry: uint64) {.gcsafe, raises: [].}
+    proc(id: RequestId, ask: StorageAsk, expiry: StorageTimestamp) {.gcsafe, raises: [].}
   OnFulfillment* = proc(requestId: RequestId) {.gcsafe, raises: [].}
   OnSlotFilled* = proc(requestId: RequestId, slotIndex: uint64) {.gcsafe, raises: [].}
   OnSlotFreed* = proc(requestId: RequestId, slotIndex: uint64) {.gcsafe, raises: [].}
@@ -37,7 +37,7 @@ type
   StorageRequested* = object of MarketplaceEvent
     requestId*: RequestId
     ask*: StorageAsk
-    expiry*: StorageDuration
+    expiry*: StorageTimestamp
 
   SlotFilled* = object of MarketplaceEvent
     requestId* {.indexed.}: RequestId
@@ -77,7 +77,7 @@ method periodicity*(
 
 method proofTimeout*(
     marketplace: AbstractMarketplace
-): uint64 {.base, gcsafe, raises: [].} =
+): StorageDuration {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method repairRewardPercentage*(
@@ -87,7 +87,7 @@ method repairRewardPercentage*(
 
 method requestDurationLimit*(
     marketplace: AbstractMarketplace
-): uint64 {.base, gcsafe, raises: [].} =
+): StorageDuration {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method proofDowntime*(
@@ -137,12 +137,12 @@ method slotState*(
 
 method getRequestEnd*(
     marketplace: AbstractMarketplace, id: RequestId
-): Future[SecondsSince1970] {.base, async.} =
+): Future[StorageTimestamp] {.base, async.} =
   raiseAssert("not implemented")
 
 method requestExpiresAt*(
     marketplace: AbstractMarketplace, id: RequestId
-): Future[SecondsSince1970] {.base, async.} =
+): Future[StorageTimestamp] {.base, async.} =
   raiseAssert("not implemented")
 
 method getHost*(
@@ -152,7 +152,7 @@ method getHost*(
 
 method currentCollateral*(
     marketplace: AbstractMarketplace, slotId: SlotId
-): Future[UInt128] {.base, async: (raises: [MarketplaceError, CancelledError]).} =
+): Future[Tokens] {.base, async: (raises: [MarketplaceError, CancelledError]).} =
   raiseAssert("not implemented")
 
 method getActiveSlot*(
@@ -165,7 +165,7 @@ method fillSlot*(
     requestId: RequestId,
     slotIndex: uint64,
     proof: Groth16Proof,
-    collateral: UInt128,
+    collateral: Tokens,
 ) {.base, async: (raises: [CancelledError, MarketplaceError]).} =
   raiseAssert("not implemented")
 
@@ -205,12 +205,12 @@ method submitProof*(
   raiseAssert("not implemented")
 
 method markProofAsMissing*(
-    marketplace: AbstractMarketplace, id: SlotId, period: Period
+    marketplace: AbstractMarketplace, id: SlotId, period: ProofPeriod
 ) {.base, async: (raises: [CancelledError, MarketplaceError]).} =
   raiseAssert("not implemented")
 
 method canMarkProofAsMissing*(
-    marketplace: AbstractMarketplace, id: SlotId, period: Period
+    marketplace: AbstractMarketplace, id: SlotId, period: ProofPeriod
 ): Future[bool] {.base, async: (raises: [CancelledError]).} =
   raiseAssert("not implemented")
 

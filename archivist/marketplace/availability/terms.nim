@@ -1,12 +1,14 @@
-import pkg/stint
 import pkg/questionable
-import ../../clock
+import ../timestamps
+import ../tokens
 
-export stint.UInt256
-export clock.SecondsSince1970
+export timestamps.StorageDuration
+export timestamps.StorageTimestamp
+export tokens.Tokens
+export tokens.TokensPerSecond
 
 type AvailabilityTerms* = object
-  minimumPricePerBytePerSecond*: UInt256
-  maximumCollateralPerByte*: UInt256
-  maximumDuration*: uint64
-  availableUntil*: ?SecondsSince1970
+  minimumPricePerBytePerSecond*: TokensPerSecond
+  maximumCollateralPerByte*: Tokens
+  maximumDuration*: StorageDuration
+  availableUntil*: ?StorageTimestamp

@@ -563,7 +563,7 @@ proc setupRequest(
     nodes: uint,
     tolerance: uint,
     pricePerBytePerSecond: TokensPerSecond,
-    collateralPerByte: UInt128,
+    collateralPerByte: Tokens,
     expiry: StorageDuration,
 ): Future[?!StorageRequest] {.async: (raises: [CancelledError]).} =
   ## Setup slots for a given dataset
@@ -620,7 +620,7 @@ proc requestStorage*(
     nodes: uint,
     tolerance: uint,
     pricePerBytePerSecond: TokensPerSecond,
-    collateralPerByte: UInt128,
+    collateralPerByte: Tokens,
     expiry: StorageDuration,
 ): Future[?!PurchaseId] {.async: (raises: [CancelledError]).} =
   ## Initiate a request for storage sequence, this might

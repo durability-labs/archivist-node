@@ -57,7 +57,7 @@ method run*(
     let repair = (await marketplace.slotState(slotId)) == SlotState.Repair
 
     trace "Retrieving expiry"
-    var expiry: SecondsSince1970
+    var expiry: StorageTimestamp
     if state =? requestState and state == RequestState.Started:
       expiry = await marketplace.getRequestEnd(requestId)
     else:

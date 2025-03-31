@@ -32,7 +32,7 @@ method run*(
     raiseAssert "no sale request"
 
   try:
-    var returnedCollateral = UInt256.none
+    var returnedCollateral = Tokens.none
 
     if await slotIsFilledByMe(marketplace, data.requestId, data.slotIndex):
       debug "Collecting collateral and partial payout",
@@ -51,7 +51,7 @@ method run*(
     if onCleanUp =? agent.onCleanUp:
       await onCleanUp(
         reprocessSlot = false,
-        returnedCollateral = some currentCollateral.stuint(256),
+        returnedCollateral = returnedCollateral,
       )
 
     warn "Sale cancelled due to timeout",

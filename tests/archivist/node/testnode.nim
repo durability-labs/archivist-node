@@ -111,7 +111,6 @@ asyncchecksuite "Test Node - Basic":
       )
     )
     check res.isFailure
-    check res.error of CatchableError
     check res.error.msg == "Some blocks failed (Result) to fetch (1)"
 
   test "Should store Data Stream":
@@ -250,11 +249,11 @@ asyncchecksuite "Test Node - Purchase request":
         cid = manifestBlock.cid,
         nodes = 5,
         tolerance = 2,
-        duration = 100.stuint(40),
-        pricePerBytePerSecond = 1.stuint(96),
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
         proofProbability = 3.u256,
-        expiry = 200.stuint(40),
-        collateralPerByte = 1.u128,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
       )
     ).tryGet
 
@@ -271,11 +270,11 @@ asyncchecksuite "Test Node - Purchase request":
         cid = protectedManifestBlock.cid,
         nodes = 5,
         tolerance = 2,
-        duration = 100.uint64,
-        pricePerBytePerSecond = 1.u256,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
         proofProbability = 3.u256,
-        expiry = 200.uint64,
-        collateralPerByte = 1.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
       )
     ).tryGet
 
@@ -292,11 +291,11 @@ asyncchecksuite "Test Node - Purchase request":
         cid = verifiableBlock.cid,
         nodes = 5,
         tolerance = 2,
-        duration = 100.uint64,
-        pricePerBytePerSecond = 1.u256,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
         proofProbability = 3.u256,
-        expiry = 200.uint64,
-        collateralPerByte = 1.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
       )
     ).tryGet
 
@@ -312,11 +311,11 @@ asyncchecksuite "Test Node - Purchase request":
         cid = verifiableBlock.cid,
         nodes = 6,
         tolerance = 2,
-        duration = 100.uint64,
-        pricePerBytePerSecond = 1.u256,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
         proofProbability = 3.u256,
-        expiry = 200.uint64,
-        collateralPerByte = 1.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
       )
     )
 

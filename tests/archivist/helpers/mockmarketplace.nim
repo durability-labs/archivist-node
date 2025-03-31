@@ -28,8 +28,8 @@ type
     activeRequests*: Table[Address, seq[RequestId]]
     activeSlots*: Table[Address, seq[SlotId]]
     requested*: seq[StorageRequest]
-    requestEnds*: Table[RequestId, SecondsSince1970]
-    requestExpiry*: Table[RequestId, SecondsSince1970]
+    requestEnds*: Table[RequestId, StorageTimestamp]
+    requestExpiry*: Table[RequestId, StorageTimestamp]
     requestState*: Table[RequestId, RequestState]
     slotState*: Table[SlotId, SlotState]
     fulfilled*: seq[Fulfillment]
@@ -65,7 +65,7 @@ type
     slotIndex*: uint64
     proof*: Groth16Proof
     timestamp: SecondsSince1970
-    collateral*: UInt128
+    collateral*: Tokens
 
   Subscriptions = object
     onRequest: seq[RequestSubscription]
@@ -119,13 +119,13 @@ proc new*(_: type MockMarketplace, clock: Clock = MockClock.new()): MockMarketpl
       validatorRewardPercentage: 20,
     ),
     proofs: ProofConfig(
-      period: 10.stuint(40),
-      timeout: 5.stuint(40),
+      period: 10'StorageDuration,
+      timeout: 5'StorageDuration,
       downtime: 64.uint8,
       downtimeProduct: 67.uint8,
     ),
     reservations: SlotReservationsConfig(maxReservations: 3),
-    requestDurationLimit: (60 * 60 * 24 * 30).stuint(40),
+    requestDurationLimit: StorageDuration.init(60 * 60 * 24 * 30.stuint(40)),
   )
   MockMarketplace(
     signer: Address.example, config: config, canReserveSlot: true, clock: clock
@@ -137,13 +137,13 @@ method getSigner*(
   return marketplace.signer
 
 method periodicity*(mock: MockMarketplace): Periodicity =
-  return Periodicity(seconds: mock.config.proofs.period.u64)
+  return Periodicity(seconds: mock.config.proofs.period)
 
-method proofTimeout*(marketplace: MockMarketplace): uint64 =
-  return marketplace.config.proofs.timeout.u64
+method proofTimeout*(marketplace: MockMarketplace): StorageDuration =
+  return marketplace.config.proofs.timeout
 
-method requestDurationLimit*(marketplace: MockMarketplace): uint64 =
-  return marketplace.config.requestDurationLimit.u64
+method requestDurationLimit*(marketplace: MockMarketplace): StorageDuration =
+  return marketplace.config.requestDurationLimit
 
 method proofDowntime*(marketplace: MockMarketplace): uint8 =
   return marketplace.config.proofs.downtime
@@ -159,15 +159,15 @@ method getPointer*(
 method requestStorage*(
     marketplace: MockMarketplace, request: StorageRequest
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
-  let now = marketplace.clock.now()
-  let requestExpiresAt = now + request.expiry.toSecondsSince1970
-  let requestEndsAt = now + request.ask.duration.toSecondsSince1970
+  let now = StorageTimestamp.init(marketplace.clock.now())
+  let requestExpiresAt = now + request.expiry
+  let requestEndsAt = now + request.ask.duration
   marketplace.requested.add(request)
   marketplace.requestExpiry[request.id] = requestExpiresAt
   marketplace.requestEnds[request.id] = requestEndsAt
   var subscriptions = marketplace.subscriptions.onRequest
   for subscription in subscriptions:
-    subscription.callback(request.id, request.ask, requestExpiresAt.uint64)
+    subscription.callback(request.id, request.ask, requestExpiresAt)
 
 method myRequests*(marketplace: MockMarketplace): Future[seq[RequestId]] {.async.} =
   return marketplace.activeRequests[marketplace.signer]
@@ -210,12 +210,12 @@ method slotState*(
 
 method getRequestEnd*(
     marketplace: MockMarketplace, id: RequestId
-): Future[SecondsSince1970] {.async.} =
+): Future[StorageTimestamp] {.async.} =
   return marketplace.requestEnds[id]
 
 method requestExpiresAt*(
     marketplace: MockMarketplace, id: RequestId
-): Future[SecondsSince1970] {.async.} =
+): Future[StorageTimestamp] {.async.} =
   return marketplace.requestExpiry[id]
 
 method getHost*(
@@ -231,11 +231,11 @@ method getHost*(
 
 method currentCollateral*(
     marketplace: MockMarketplace, slotId: SlotId
-): Future[UInt128] {.async: (raises: [MarketplaceError, CancelledError]).} =
+): Future[Tokens] {.async: (raises: [MarketplaceError, CancelledError]).} =
   for slot in marketplace.filled:
     if slotId == slotId(slot.requestId, slot.slotIndex):
       return slot.collateral
-  return 0.u128
+  return 0'Tokens
 
 proc emitSlotFilled*(
     marketplace: MockMarketplace, requestId: RequestId, slotIndex: uint64
@@ -281,7 +281,7 @@ proc fillSlot*(
     slotIndex: uint64,
     proof: Groth16Proof,
     host: Address,
-    collateral = 0.u128,
+    collateral = 0'Tokens,
 ) =
   if error =? marketplace.errorOnFillSlot:
     raise error
@@ -303,7 +303,7 @@ method fillSlot*(
     requestId: RequestId,
     slotIndex: uint64,
     proof: Groth16Proof,
-    collateral: UInt128,
+    collateral: Tokens,
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.fillSlot(requestId, slotIndex, proof, marketplace.signer, collateral)
 
@@ -359,7 +359,7 @@ method submitProof*(
     subscription.callback(id)
 
 method markProofAsMissing*(
-    marketplace: MockMarketplace, id: SlotId, period: Period
+    marketplace: MockMarketplace, id: SlotId, period: ProofPeriod
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.markedAsMissingProofs.add(id)
 
@@ -370,7 +370,7 @@ proc setCanMarkProofAsMissing*(mock: MockMarketplace, id: SlotId, required: bool
     mock.canBeMarkedAsMissing.excl(id)
 
 method canMarkProofAsMissing*(
-    marketplace: MockMarketplace, id: SlotId, period: Period
+    marketplace: MockMarketplace, id: SlotId, period: ProofPeriod
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   return marketplace.canBeMarkedAsMissing.contains(id)
 
@@ -512,7 +512,7 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id].stuint(40),
+        expiry: marketplace.requestExpiry[request.id],
       )
   )
 
@@ -524,7 +524,7 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id].stuint(40),
+        expiry: marketplace.requestExpiry[request.id],
       )
   )
 

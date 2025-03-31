@@ -72,9 +72,9 @@ method run*(
     var match = true
     match = match and terms =? context.availabilityTerms
     match = match and ask.slotSize <= context.storage.available
-    match = match and ask.duration.u64 <= terms.maximumDuration
-    match = match and ask.pricePerBytePerSecond.stuint(256) >= terms.minimumPricePerBytePerSecond
-    match = match and ask.collateralPerByte.stuint(256) <= terms.maximumCollateralPerByte
+    match = match and ask.duration <= terms.maximumDuration
+    match = match and ask.pricePerBytePerSecond >= terms.minimumPricePerBytePerSecond
+    match = match and ask.collateralPerByte <= terms.maximumCollateralPerByte
     match = match and (not (until =? terms.availableUntil) or requestEnd <= until)
     if not match:
       debug "No availability found for request, ignoring"

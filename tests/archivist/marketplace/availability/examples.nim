@@ -1,12 +1,12 @@
 import archivist/marketplace/availability/terms
 import ../../../examples
 
-export example
+export examples.example
 
 proc example*(_: type AvailabilityTerms): AvailabilityTerms =
   AvailabilityTerms(
-    minimumPricePerBytePerSecond: UInt256.example,
-    maximumCollateralPerByte: UInt256.example,
-    maximumDuration: uint64.example,
-    availableUntil: some SecondsSince1970.example,
+    minimumPricePerBytePerSecond: TokensPerSecond.example,
+    maximumCollateralPerByte: Tokens.example,
+    maximumDuration: StorageDuration.example,
+    availableUntil: some StorageTimestamp.example,
   )
