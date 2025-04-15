@@ -196,6 +196,15 @@ suite "On-Chain Marketplace":
     await marketplace.markProofAsMissing(slotId, missingPeriod)
     check (await contract.missingProofs(slotId)) == 1
 
+  test "cannot mark proofs missing for cancelled request":
+    let slotId = slotId(request, slotIndex)
+    await marketplace.requestStorage(request)
+    await advanceToCancelledRequest(request)
+    let missingPeriod = periodicity.periodOf((await testbed.eth.time.now()).int64)
+    await advanceToNextPeriod()
+    expect MarketplaceError:
+      await marketplace.markProofAsMissing(slotId, missingPeriod)
+
   test "can check whether a proof can be marked as missing":
     let slotId = slotId(request, slotIndex)
     await marketplace.requestStorage(request)
