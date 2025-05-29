@@ -48,6 +48,7 @@ import ./errors
 import ./logutils
 import ./utils/asynciter
 import ./utils/trackedfutures
+import ./utils/poseidon2digest
 
 export logutils
 
@@ -109,7 +110,7 @@ proc ethAddress*(self: ArchivistNodeRef): Future[?ethers.Address] {.async.} =
 
 proc storeManifest*(
     self: ArchivistNodeRef, manifest: Manifest
-): Future[?!bt.Block] {.async.} =
+): Future[?!bt.Block] {.async: (raises: [CancelledError]).} =
   without encodedVerifiable =? manifest.encode(), err:
     trace "Unable to encode manifest"
     return failure(err)
@@ -364,7 +365,9 @@ proc retrieve*(
 
   await self.streamEntireDataset(manifest, cid)
 
-proc deleteSingleBlock(self: ArchivistNodeRef, cid: Cid): Future[?!void] {.async.} =
+proc deleteSingleBlock(
+  self: ArchivistNodeRef, cid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
   if err =? (await self.networkStore.delBlock(cid)).errorOption:
     error "Error deleting block", cid, err = err.msg
     return failure(err)
@@ -372,7 +375,9 @@ proc deleteSingleBlock(self: ArchivistNodeRef, cid: Cid): Future[?!void] {.async
   trace "Deleted block", cid
   return success()
 
-proc deleteEntireDataset(self: ArchivistNodeRef, cid: Cid): Future[?!void] {.async.} =
+proc deleteEntireDataset(
+  self: ArchivistNodeRef, cid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
   # Deletion is a strictly local operation
   var store = self.networkStore.localStore
 
@@ -429,7 +434,7 @@ proc store*(
     filename: ?string = string.none,
     mimetype: ?string = string.none,
     blockSize = DefaultBlockSize,
-): Future[?!Cid] {.async.} =
+): Future[?!Cid] {.async: (raises: [CancelledError]).} =
   ## Save stream contents as dataset with given blockSize
   ## to nodes's BlockStore, and return Cid of its manifest
   ##
@@ -504,7 +509,9 @@ proc store*(
 
   return manifestBlk.cid.success
 
-proc iterateManifests*(self: ArchivistNodeRef, onManifest: OnManifest) {.async.} =
+proc iterateManifests*(
+  self: ArchivistNodeRef, onManifest: OnManifest
+) {.async: (raises: [CancelledError]).} =
   without cidsIter =? await self.networkStore.listBlocks(BlockType.Manifest):
     warn "Failed to listBlocks"
     return
@@ -531,7 +538,7 @@ proc setupRequest(
     pricePerBytePerSecond: UInt256,
     collateralPerByte: UInt256,
     expiry: uint64,
-): Future[?!StorageRequest] {.async.} =
+): Future[?!StorageRequest] {.async: (raises: [CancelledError]).} =
   ## Setup slots for a given dataset
   ##
 
@@ -553,32 +560,20 @@ proc setupRequest(
 
   trace "Setting up slots"
 
-  without manifest =? await self.fetchManifest(cid), error:
-    trace "Unable to fetch manifest for cid"
-    return failure error
-
-  # Erasure code the dataset according to provided parameters
-  let erasure = Erasure.new(
-    self.networkStore.localStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
-  )
-
-  without encoded =? (await erasure.encode(manifest, ecK, ecM)), error:
-    trace "Unable to erasure code dataset"
-    return failure(error)
-
-  without builder =? Poseidon2Builder.new(self.networkStore.localStore, encoded), err:
-    trace "Unable to create slot builder"
-    return failure(err)
-
-  without verifiable =? (await builder.buildManifest()), err:
-    trace "Unable to build verifiable manifest"
-    return failure(err)
-
-  without manifestBlk =? await self.storeManifest(verifiable), err:
-    trace "Unable to store verifiable manifest"
-    return failure(err)
-
   let
+    manifest = ?await self.fetchManifest(cid)
+
+    # Erasure code the dataset according to provided parameters
+    erasure = Erasure.new(
+      self.networkStore.localStore, leoEncoderProvider, leoDecoderProvider,
+      self.taskpool,
+    )
+
+    encoded = ?await erasure.encode(manifest, ecK, ecM)
+    builder = ?Poseidon2Builder.new(self.networkStore.localStore, encoded)
+    verifiable = ?await builder.buildManifest()
+    manifestBlk = ?await self.storeManifest(verifiable)
+
     verifyRoot =
       if builder.verifyRoot.isNone:
         return failure("No slots root")
@@ -612,7 +607,7 @@ proc requestStorage*(
     pricePerBytePerSecond: UInt256,
     collateralPerByte: UInt256,
     expiry: uint64,
-): Future[?!PurchaseId] {.async.} =
+): Future[?!PurchaseId] {.async: (raises: [CancelledError]).} =
   ## Initiate a request for storage sequence, this might
   ## be a multistep procedure.
   ##
@@ -643,7 +638,17 @@ proc requestStorage*(
     trace "Unable to setup request"
     return failure err
 
-  let purchase = await contracts.purchasing.purchase(request)
+  # TODO: remove try/except once state machine has checked exceptions
+  let purchase =
+    try:
+      await contracts.purchasing.purchase(request)
+    except CancelledError as err:
+      trace "Purchase cancelled", err = err.msg
+      raise err
+    except CatchableError as err:
+      trace "Unable to purchase storage", err = err.msg
+      return failure(err)
+
   success purchase.id
 
 proc onStore(
@@ -769,36 +774,26 @@ proc onProve(
   if prover =? self.prover:
     trace "Prover enabled"
 
-    without cid =? Cid.init(cidStr).mapFailure, err:
-      error "Unable to parse Cid", cid, err = err.msg
-      return failure(err)
-
-    without manifest =? await self.fetchManifest(cid), err:
-      error "Unable to fetch manifest for cid", err = err.msg
-      return failure(err)
+    let
+      cid = ?Cid.init(cidStr).mapFailure
+      manifest = ?await self.fetchManifest(cid)
+      builder =
+        ?Poseidon2Builder.new(self.networkStore, manifest, manifest.verifiableStrategy)
+      sampler = ?Poseidon2Sampler.new(slotIdx, self.networkStore, builder)
 
     when defined(verify_circuit):
-      without (inputs, proof) =? await prover.prove(slotIdx.int, manifest, challenge),
-        err:
-        error "Unable to generate proof", err = err.msg
-        return failure(err)
+      let (proof, checked) =
+        ?await prover.prove(sampler, manifest, challenge, verify = true)
 
-      without checked =? await prover.verify(proof, inputs), err:
-        error "Unable to verify proof", err = err.msg
-        return failure(err)
-
-      if not checked:
+      if checked.isSome and not checked.get:
         error "Proof verification failed"
         return failure("Proof verification failed")
 
       trace "Proof verified successfully"
     else:
-      without (_, proof) =? await prover.prove(slotIdx.int, manifest, challenge), err:
-        error "Unable to generate proof", err = err.msg
-        return failure(err)
+      let (proof, _) = ?await prover.prove(sampler, manifest, challenge, verify = false)
 
-    let groth16Proof = proof.toGroth16Proof()
-    trace "Proof generated successfully", groth16Proof
+    trace "Proof generated successfully", proof
 
     # Update proofs/period metric:
     if self.currentPeriod != period:
@@ -811,7 +806,7 @@ proc onProve(
     else:
       inc self.numProofs
 
-    success groth16Proof
+    success proof
   else:
     warn "Prover not enabled"
     failure "Prover not enabled"
