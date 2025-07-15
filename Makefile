@@ -1,3 +1,4 @@
+# Copyright (c) 2025 Archivist Authors
 # Copyright (c) 2020 Status Research & Development GmbH. Licensed under
 # either of:
 # - Apache License, version 2.0
