@@ -3,17 +3,17 @@ import ../../asynctest
 import pkg/chronos
 import pkg/libp2p/cid
 
-import pkg/codex/merkletree
-import pkg/codex/chunker
-import pkg/codex/blocktype as bt
-import pkg/codex/slots
-import pkg/codex/stores
-import pkg/codex/conf
+import pkg/archivist/merkletree
+import pkg/archivist/chunker
+import pkg/archivist/blocktype as bt
+import pkg/archivist/slots
+import pkg/archivist/stores
+import pkg/archivist/conf
 import pkg/confutils/defs
 import pkg/poseidon2/io
-import pkg/codex/utils/poseidon2digest
-import pkg/codex/nat
-import pkg/codex/utils/natutils
+import pkg/archivist/utils/poseidon2digest
+import pkg/archivist/nat
+import pkg/archivist/utils/natutils
 import ./helpers
 import ../helpers
 

@@ -4,14 +4,14 @@ import std/hashes
 import std/sets
 import std/sugar
 import pkg/questionable
-import pkg/codex/market
-import pkg/codex/contracts/requests
-import pkg/codex/contracts/proofs
-import pkg/codex/contracts/config
+import pkg/archivist/market
+import pkg/archivist/contracts/requests
+import pkg/archivist/contracts/proofs
+import pkg/archivist/contracts/config
 import pkg/questionable/results
 
 from pkg/ethers import BlockTag
-import codex/clock
+import archivist/clock
 
 import ../examples
 import ./mockclock

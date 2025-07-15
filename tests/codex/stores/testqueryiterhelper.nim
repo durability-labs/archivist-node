@@ -5,8 +5,8 @@ import pkg/questionable
 import pkg/chronos
 import pkg/datastore/typedds
 import pkg/datastore/sql/sqliteds
-import pkg/codex/stores/queryiterhelper
-import pkg/codex/utils/asynciter
+import pkg/archivist/stores/queryiterhelper
+import pkg/archivist/utils/asynciter
 
 import ../../asynctest
 import ../helpers

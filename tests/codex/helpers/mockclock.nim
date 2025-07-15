@@ -1,6 +1,6 @@
 import std/times
 import pkg/chronos
-import codex/clock
+import archivist/clock
 
 export clock
 

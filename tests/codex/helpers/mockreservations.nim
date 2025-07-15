@@ -1,8 +1,8 @@
 import pkg/chronos
-import pkg/codex/sales
-import pkg/codex/stores
+import pkg/archivist/sales
+import pkg/archivist/stores
 import pkg/questionable/results
-import pkg/codex/clock
+import pkg/archivist/clock
 
 type MockReservations* = ref object of Reservations
   createReservationThrowBytesOutOfBoundsError: bool

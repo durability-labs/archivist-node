@@ -1,6 +1,6 @@
 import pkg/unittest2
 
-import pkg/codex/merkletree
+import pkg/archivist/merkletree
 
 proc testGenericTree*[H, K, U](
     name: string,

@@ -4,11 +4,11 @@ from pkg/libp2p import Cid, `$`, init
 import pkg/stint
 import pkg/questionable/results
 import pkg/chronos/apps/http/[httpserver, shttpserver, httpclient, httptable]
-import pkg/codex/logutils
-import pkg/codex/rest/json
-import pkg/codex/purchasing
-import pkg/codex/errors
-import pkg/codex/sales/reservations
+import pkg/archivist/logutils
+import pkg/archivist/rest/json
+import pkg/archivist/purchasing
+import pkg/archivist/errors
+import pkg/archivist/sales/reservations
 
 export purchasing, httptable, httpclient
 

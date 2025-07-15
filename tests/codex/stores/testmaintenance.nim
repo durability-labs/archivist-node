@@ -8,9 +8,9 @@
 ## those terms.
 
 import pkg/chronos
-import pkg/codex/blocktype as bt
-import pkg/codex/stores/repostore
-import pkg/codex/clock
+import pkg/archivist/blocktype as bt
+import pkg/archivist/stores/repostore
+import pkg/archivist/clock
 
 import ../../asynctest
 import ../helpers
@@ -19,7 +19,7 @@ import ../helpers/mockrepostore
 import ../helpers/mockclock
 import ../examples
 
-import codex/stores/maintenance
+import archivist/stores/maintenance
 
 suite "BlockMaintainer":
   var mockRepoStore: MockRepoStore

@@ -5,11 +5,11 @@ import pkg/questionable/results
 import pkg/chronos
 import pkg/datastore
 
-import pkg/codex/stores
-import pkg/codex/errors
-import pkg/codex/sales
-import pkg/codex/clock
-import pkg/codex/utils/json
+import pkg/archivist/stores
+import pkg/archivist/errors
+import pkg/archivist/sales
+import pkg/archivist/clock
+import pkg/archivist/utils/json
 
 import ../../asynctest
 import ../examples

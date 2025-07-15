@@ -14,23 +14,23 @@ import pkg/taskpools
 import pkg/nitro
 import pkg/codexdht/discv5/protocol as discv5
 
-import pkg/codex/logutils
-import pkg/codex/stores
-import pkg/codex/clock
-import pkg/codex/contracts
-import pkg/codex/systemclock
-import pkg/codex/blockexchange
-import pkg/codex/chunker
-import pkg/codex/slots
-import pkg/codex/manifest
-import pkg/codex/discovery
-import pkg/codex/erasure
-import pkg/codex/blocktype as bt
-import pkg/codex/stores/repostore/coders
-import pkg/codex/utils/asynciter
-import pkg/codex/indexingstrategy
+import pkg/archivist/logutils
+import pkg/archivist/stores
+import pkg/archivist/clock
+import pkg/archivist/contracts
+import pkg/archivist/systemclock
+import pkg/archivist/blockexchange
+import pkg/archivist/chunker
+import pkg/archivist/slots
+import pkg/archivist/manifest
+import pkg/archivist/discovery
+import pkg/archivist/erasure
+import pkg/archivist/blocktype as bt
+import pkg/archivist/stores/repostore/coders
+import pkg/archivist/utils/asynciter
+import pkg/archivist/indexingstrategy
 
-import pkg/codex/node {.all.}
+import pkg/archivist/node {.all.}
 
 import ../../asynctest
 import ../../examples

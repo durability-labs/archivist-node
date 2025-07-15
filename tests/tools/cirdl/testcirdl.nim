@@ -2,7 +2,7 @@ import std/os
 import std/osproc
 import std/options
 import pkg/chronos
-import pkg/codex/contracts
+import pkg/archivist/contracts
 import ../../asynctest
 import ../../contracts/deployment
 

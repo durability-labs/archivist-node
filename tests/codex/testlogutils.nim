@@ -2,13 +2,13 @@ import std/options
 import std/strutils
 
 import pkg/unittest2
-import pkg/codex/blocktype
-import pkg/codex/conf
-import pkg/codex/contracts/requests
-import pkg/codex/logutils
-import pkg/codex/purchasing/purchaseid
-import pkg/codex/units
-import pkg/codex/utils/json
+import pkg/archivist/blocktype
+import pkg/archivist/conf
+import pkg/archivist/contracts/requests
+import pkg/archivist/logutils
+import pkg/archivist/purchasing/purchaseid
+import pkg/archivist/units
+import pkg/archivist/utils/json
 import pkg/libp2p/cid
 import pkg/libp2p/multiaddress
 import pkg/questionable

@@ -7,8 +7,8 @@ import pkg/ethers
 import pkg/libp2p
 import std/os
 import std/strutils
-import codex/conf
-import ./codexclient
+import archivist/conf
+import ./archivistclient
 import ./nodeprocess
 
 export codexclient
@@ -51,7 +51,7 @@ proc ethAccount*(node: CodexProcess): Address =
 
 proc apiUrl*(node: CodexProcess): string =
   let config = CodexConf.load(cmdLine = node.arguments, quitOnFailure = false)
-  return "http://" & config.apiBindAddress & ":" & $config.apiPort & "/api/codex/v1"
+  return "http://" & config.apiBindAddress & ":" & $config.apiPort & "/api/archivist/v1"
 
 proc client*(node: CodexProcess): CodexClient =
   if client =? node.client:

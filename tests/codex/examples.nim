@@ -3,12 +3,12 @@ import std/sequtils
 import pkg/libp2p
 import pkg/nitro
 import pkg/stint
-import pkg/codex/rng
-import pkg/codex/stores
-import pkg/codex/blocktype as bt
-import pkg/codex/sales
-import pkg/codex/merkletree
-import pkg/codex/manifest
+import pkg/archivist/rng
+import pkg/archivist/stores
+import pkg/archivist/blocktype as bt
+import pkg/archivist/sales
+import pkg/archivist/merkletree
+import pkg/archivist/manifest
 import ../examples
 
 export examples

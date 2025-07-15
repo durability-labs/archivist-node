@@ -1,6 +1,6 @@
 import pkg/chronos
 import pkg/stew/byteutils
-import pkg/codex/stores
+import pkg/archivist/stores
 
 import ../../../asynctest
 import ../../examples

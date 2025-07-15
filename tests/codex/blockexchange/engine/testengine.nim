@@ -8,13 +8,13 @@ import pkg/libp2p/errors
 import pkg/libp2p/routing_record
 import pkg/codexdht/discv5/protocol as discv5
 
-import pkg/codex/rng
-import pkg/codex/blockexchange
-import pkg/codex/stores
-import pkg/codex/chunker
-import pkg/codex/discovery
-import pkg/codex/blocktype
-import pkg/codex/utils/asyncheapqueue
+import pkg/archivist/rng
+import pkg/archivist/blockexchange
+import pkg/archivist/stores
+import pkg/archivist/chunker
+import pkg/archivist/discovery
+import pkg/archivist/blocktype
+import pkg/archivist/utils/asyncheapqueue
 
 import ../../../asynctest
 import ../../helpers

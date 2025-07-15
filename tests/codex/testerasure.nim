@@ -5,15 +5,15 @@ import std/times
 import pkg/chronos
 import pkg/questionable/results
 
-import pkg/codex/erasure
-import pkg/codex/manifest
-import pkg/codex/stores
-import pkg/codex/blocktype as bt
-import pkg/codex/rng
-import pkg/codex/utils
-import pkg/codex/indexingstrategy
+import pkg/archivist/erasure
+import pkg/archivist/manifest
+import pkg/archivist/stores
+import pkg/archivist/blocktype as bt
+import pkg/archivist/rng
+import pkg/archivist/utils
+import pkg/archivist/indexingstrategy
 import pkg/taskpools
-import pkg/codex/utils/arrayutils
+import pkg/archivist/utils/arrayutils
 
 import ../asynctest
 import ./helpers

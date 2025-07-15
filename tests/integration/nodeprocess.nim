@@ -6,10 +6,10 @@ import pkg/chronos/asyncproc
 import pkg/libp2p
 import std/os
 import std/strutils
-import codex/conf
-import codex/utils/exceptions
-import codex/utils/trackedfutures
-import ./codexclient
+import archivist/conf
+import archivist/utils/exceptions
+import archivist/utils/trackedfutures
+import ./archivistclient
 
 export codexclient
 export chronicles

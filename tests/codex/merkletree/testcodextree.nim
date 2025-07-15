@@ -5,9 +5,9 @@ import pkg/questionable/results
 import pkg/stew/byteutils
 import pkg/libp2p
 
-import pkg/codex/codextypes
-import pkg/codex/merkletree
-import pkg/codex/utils/digest
+import pkg/archivist/archivisttypes
+import pkg/archivist/merkletree
+import pkg/archivist/utils/digest
 
 import ./helpers
 import ./generictreetests

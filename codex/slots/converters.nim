@@ -16,7 +16,7 @@ import pkg/questionable/results
 import pkg/poseidon2
 import pkg/poseidon2/io
 
-import ../codextypes
+import ../archivisttypes
 import ../merkletree
 import ../errors
 import ../utils/digest

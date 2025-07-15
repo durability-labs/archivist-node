@@ -35,7 +35,7 @@ import pkg/ethers
 import pkg/questionable
 import pkg/questionable/results
 
-import ./codextypes
+import ./archivisttypes
 import ./discovery
 import ./logutils
 import ./stores
@@ -47,7 +47,7 @@ import ./utils/natutils
 from ./contracts/config import DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
 from ./validationconfig import MaxSlots, ValidationGroups
 
-export units, net, codextypes, logutils, completeCmdArg, parseCmdArg, NatConfig
+export units, net, archivisttypes, logutils, completeCmdArg, parseCmdArg, NatConfig
 export ValidationGroups, MaxSlots
 
 export

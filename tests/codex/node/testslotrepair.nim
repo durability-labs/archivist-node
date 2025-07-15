@@ -7,16 +7,16 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 
-import pkg/codex/logutils
-import pkg/codex/stores
-import pkg/codex/contracts
-import pkg/codex/slots
-import pkg/codex/manifest
-import pkg/codex/erasure
-import pkg/codex/blocktype as bt
+import pkg/archivist/logutils
+import pkg/archivist/stores
+import pkg/archivist/contracts
+import pkg/archivist/slots
+import pkg/archivist/manifest
+import pkg/archivist/erasure
+import pkg/archivist/blocktype as bt
 import pkg/chronos/transports/stream
 
-import pkg/codex/node {.all.}
+import pkg/archivist/node {.all.}
 
 import ../../asynctest
 import ../../examples

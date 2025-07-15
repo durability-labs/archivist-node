@@ -3,9 +3,9 @@ import pkg/chronos
 import pkg/libp2p/[multiaddress, multihash, multicodec]
 import pkg/results
 
-import ../../codex/nat
-import ../../codex/utils/natutils
-import ../../codex/utils
+import ../../archivist/nat
+import ../../archivist/utils/natutils
+import ../../archivist/utils
 
 suite "NAT Address Tests":
   test "nattedAddress with local addresses":

@@ -12,9 +12,9 @@ import std/sequtils
 import pkg/chronos
 import pkg/questionable/results
 import pkg/libp2p
-import pkg/codex/blocktype as bt
-import pkg/codex/stores/repostore
-import pkg/codex/clock
+import pkg/archivist/blocktype as bt
+import pkg/archivist/stores/repostore
+import pkg/archivist/clock
 
 import ../../asynctest
 import ../helpers/mocktimer
@@ -23,7 +23,7 @@ import ../helpers/mockclock
 import ../examples
 
 import codex/namespaces
-import codex/stores/keyutils
+import archivist/stores/keyutils
 
 proc createManifestCid(): ?!Cid =
   let

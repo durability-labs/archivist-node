@@ -5,8 +5,8 @@ import std/strutils
 import std/sugar
 import std/tables
 from pkg/chronicles import LogLevel
-import pkg/codex/conf
-import pkg/codex/units
+import pkg/archivist/conf
+import pkg/archivist/units
 import pkg/confutils
 import pkg/confutils/defs
 import libp2p except setup

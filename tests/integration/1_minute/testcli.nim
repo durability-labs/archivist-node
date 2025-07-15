@@ -1,9 +1,9 @@
 import std/tempfiles
-import codex/conf
-import codex/utils/fileutils
+import archivist/conf
+import archivist/utils/fileutils
 import ../../asynctest
 import ../../checktest
-import ../codexprocess
+import ../archivistprocess
 import ../nodeprocess
 import ../../examples
 

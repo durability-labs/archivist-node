@@ -1,7 +1,7 @@
 import pkg/questionable
 import pkg/chronos
 import pkg/upraises
-import codex/utils/asyncstatemachine
+import archivist/utils/asyncstatemachine
 
 import ../../asynctest
 import ../helpers

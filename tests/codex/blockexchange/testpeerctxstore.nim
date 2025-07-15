@@ -4,9 +4,9 @@ import std/sequtils
 import pkg/unittest2
 import pkg/libp2p
 
-import pkg/codex/blockexchange/peers
-import pkg/codex/blockexchange/protobuf/blockexc
-import pkg/codex/blockexchange/protobuf/presence
+import pkg/archivist/blockexchange/peers
+import pkg/archivist/blockexchange/protobuf/blockexc
+import pkg/archivist/blockexchange/protobuf/presence
 
 import ../helpers
 import ../examples

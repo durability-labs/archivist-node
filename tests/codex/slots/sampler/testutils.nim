@@ -8,16 +8,16 @@ import pkg/constantine/math/io/io_fields
 import pkg/poseidon2/io
 import pkg/poseidon2
 import pkg/chronos
-import pkg/codex/chunker
-import pkg/codex/stores
-import pkg/codex/blocktype as bt
-import pkg/codex/contracts/requests
-import pkg/codex/contracts
-import pkg/codex/merkletree
-import pkg/codex/stores/cachestore
-import pkg/codex/slots/types
-import pkg/codex/slots/sampler/utils
-import pkg/codex/utils/json
+import pkg/archivist/chunker
+import pkg/archivist/stores
+import pkg/archivist/blocktype as bt
+import pkg/archivist/contracts/requests
+import pkg/archivist/contracts
+import pkg/archivist/merkletree
+import pkg/archivist/stores/cachestore
+import pkg/archivist/slots/types
+import pkg/archivist/slots/sampler/utils
+import pkg/archivist/utils/json
 
 import ../backends/helpers
 import ../../helpers

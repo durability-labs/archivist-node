@@ -1,5 +1,5 @@
 import pkg/questionable
-import ./codexconfig
+import ./archivistconfig
 import ./hardhatconfig
 
 type NodeConfigs* = object

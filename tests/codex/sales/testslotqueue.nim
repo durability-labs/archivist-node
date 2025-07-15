@@ -3,8 +3,8 @@ import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
 
-import pkg/codex/logutils
-import pkg/codex/sales/slotqueue
+import pkg/archivist/logutils
+import pkg/archivist/sales/slotqueue
 
 import ../../asynctest
 import ../helpers

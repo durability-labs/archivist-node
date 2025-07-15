@@ -6,12 +6,12 @@ import pkg/chronos
 import pkg/poseidon2
 import pkg/serde/json
 
-import pkg/codex/slots {.all.}
-import pkg/codex/slots/types {.all.}
-import pkg/codex/merkletree
-import pkg/codex/codextypes
-import pkg/codex/manifest
-import pkg/codex/stores
+import pkg/archivist/slots {.all.}
+import pkg/archivist/slots/types {.all.}
+import pkg/archivist/merkletree
+import pkg/archivist/archivisttypes
+import pkg/archivist/manifest
+import pkg/archivist/stores
 
 import ./helpers
 import ../helpers

@@ -1,12 +1,12 @@
 import std/sequtils
 import pkg/chronos
 
-import pkg/codex/utils/asynciter
+import pkg/archivist/utils/asynciter
 
 import ../asynctest
 import ./helpers
 
-import pkg/codex/indexingstrategy
+import pkg/archivist/indexingstrategy
 
 for offset in @[0, 1, 2, 100]:
   suite "Indexing strategies (Offset: " & $offset & ")":

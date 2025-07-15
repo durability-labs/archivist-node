@@ -1,7 +1,7 @@
 import std/os
 import std/options
 import pkg/ethers
-import pkg/codex/contracts/marketplace
+import pkg/archivist/contracts/marketplace
 
 const hardhatMarketAddress =
   Address.init("0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44").get()

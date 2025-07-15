@@ -1,4 +1,4 @@
-import pkg/codex/market
+import pkg/archivist/market
 import ../../helpers/mockclock
 
 proc advanceToNextPeriod*(clock: MockClock, market: Market) {.async.} =

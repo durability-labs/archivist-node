@@ -1,6 +1,6 @@
 import pkg/constantine/platforms/abstractions
 
-import pkg/codex/merkletree
+import pkg/archivist/merkletree
 import ../helpers
 
 export merkletree, helpers

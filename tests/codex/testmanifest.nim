@@ -1,13 +1,13 @@
 import pkg/chronos
 import pkg/questionable/results
-import pkg/codex/chunker
-import pkg/codex/blocktype as bt
-import pkg/codex/manifest
+import pkg/archivist/chunker
+import pkg/archivist/blocktype as bt
+import pkg/archivist/manifest
 import pkg/poseidon2
 
-import pkg/codex/slots
-import pkg/codex/merkletree
-import pkg/codex/indexingstrategy
+import pkg/archivist/slots
+import pkg/archivist/merkletree
+import pkg/archivist/indexingstrategy
 
 import ../asynctest
 import ./helpers

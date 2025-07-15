@@ -1,5 +1,5 @@
 import pkg/chronos
-import codex/contracts
+import archivist/contracts
 import ../asynctest
 import ../ethertest
 import ./time

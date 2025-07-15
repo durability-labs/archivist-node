@@ -1,6 +1,6 @@
 import pkg/unittest2
 
-import codex/clock
+import archivist/clock
 import ./helpers
 
 suite "Clock":

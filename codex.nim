@@ -18,19 +18,19 @@ import pkg/confutils/toml/std/uri as confTomlUri
 import pkg/toml_serialization
 import pkg/libp2p
 
-import ./codex/conf
-import ./codex/codex
-import ./codex/logutils
-import ./codex/units
-import ./codex/utils/keyutils
-import ./codex/codextypes
+import ./archivist/conf
+import ./archivist/archivist
+import ./archivist/logutils
+import ./archivist/units
+import ./archivist/utils/keyutils
+import ./archivist/archivisttypes
 
 export codex, conf, libp2p, chronos, logutils
 
 when isMainModule:
   import std/os
   import pkg/confutils/defs
-  import ./codex/utils/fileutils
+  import ./archivist/utils/fileutils
 
   logScope:
     topics = "codex"

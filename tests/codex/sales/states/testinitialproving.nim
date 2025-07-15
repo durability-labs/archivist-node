@@ -1,14 +1,14 @@
 import pkg/questionable
 import pkg/chronos
-import pkg/codex/contracts/requests
-import pkg/codex/sales/states/initialproving
-import pkg/codex/sales/states/cancelled
-import pkg/codex/sales/states/failed
-import pkg/codex/sales/states/filling
-import pkg/codex/sales/states/errored
-import pkg/codex/sales/salesagent
-import pkg/codex/sales/salescontext
-import pkg/codex/market
+import pkg/archivist/contracts/requests
+import pkg/archivist/sales/states/initialproving
+import pkg/archivist/sales/states/cancelled
+import pkg/archivist/sales/states/failed
+import pkg/archivist/sales/states/filling
+import pkg/archivist/sales/states/errored
+import pkg/archivist/sales/salesagent
+import pkg/archivist/sales/salescontext
+import pkg/archivist/market
 
 import ../../../asynctest
 import ../../examples

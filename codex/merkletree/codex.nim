@@ -1,4 +1,4 @@
-import ./codex/codex
-import ./codex/coders
+import ./archivist/archivist
+import ./archivist/coders
 
 export codex, coders

@@ -1,11 +1,11 @@
 from std/times import inMilliseconds, initDuration, inSeconds, fromUnix
 import std/sugar
-import pkg/codex/logutils
+import pkg/archivist/logutils
 import pkg/questionable/results
 import pkg/ethers/provider
 import ../../contracts/time
 import ../../contracts/deployment
-import ../../codex/helpers
+import ../../archivist/helpers
 import ../../examples
 import ../marketplacesuite
 import ../nodeconfigs

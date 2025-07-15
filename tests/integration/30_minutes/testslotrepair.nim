@@ -1,8 +1,8 @@
 import pkg/questionable
-import pkg/codex/logutils
+import pkg/archivist/logutils
 import ../../contracts/time
 import ../../contracts/deployment
-import ../../codex/helpers
+import ../../archivist/helpers
 import ../../examples
 import ../marketplacesuite
 import ../nodeconfigs

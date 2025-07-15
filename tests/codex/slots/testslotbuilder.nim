@@ -5,14 +5,14 @@ import ../../asynctest
 
 import pkg/chronos
 import pkg/questionable/results
-import pkg/codex/blocktype as bt
-import pkg/codex/rng
-import pkg/codex/stores
-import pkg/codex/chunker
-import pkg/codex/merkletree
-import pkg/codex/manifest {.all.}
-import pkg/codex/utils
-import pkg/codex/utils/digest
+import pkg/archivist/blocktype as bt
+import pkg/archivist/rng
+import pkg/archivist/stores
+import pkg/archivist/chunker
+import pkg/archivist/merkletree
+import pkg/archivist/manifest {.all.}
+import pkg/archivist/utils
+import pkg/archivist/utils/digest
 import pkg/poseidon2
 import pkg/poseidon2/io
 
@@ -21,8 +21,8 @@ import ../helpers
 import ../examples
 import ../merkletree/helpers
 
-import pkg/codex/indexingstrategy {.all.}
-import pkg/codex/slots {.all.}
+import pkg/archivist/indexingstrategy {.all.}
+import pkg/archivist/slots {.all.}
 
 privateAccess(Poseidon2Builder) # enable access to private fields
 privateAccess(Manifest) # enable access to private fields

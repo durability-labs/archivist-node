@@ -3,12 +3,12 @@ import std/net
 import std/sequtils
 import std/strformat
 from pkg/libp2p import `==`, `$`, Cid
-import pkg/codex/units
-import pkg/codex/manifest
+import pkg/archivist/units
+import pkg/archivist/manifest
 import ../twonodes
 import ../../examples
-import ../../codex/examples
-import ../../codex/slots/helpers
+import ../../archivist/examples
+import ../../archivist/slots/helpers
 import json
 
 twonodessuite "REST API":

@@ -1,5 +1,5 @@
-import pkg/codex/contracts/requests
-import pkg/codex/sales/slotqueue
+import pkg/archivist/contracts/requests
+import pkg/archivist/sales/slotqueue
 
 type MockSlotQueueItem* = object
   requestId*: RequestId

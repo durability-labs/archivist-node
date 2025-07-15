@@ -1,10 +1,10 @@
 import pkg/unittest2
 import pkg/questionable
-import pkg/codex/contracts/requests
-import pkg/codex/sales/states/cancelled
-import pkg/codex/sales/states/downloading
-import pkg/codex/sales/states/failed
-import pkg/codex/sales/states/filled
+import pkg/archivist/contracts/requests
+import pkg/archivist/sales/states/cancelled
+import pkg/archivist/sales/states/downloading
+import pkg/archivist/sales/states/failed
+import pkg/archivist/sales/states/filled
 import ../../examples
 import ../../helpers
 

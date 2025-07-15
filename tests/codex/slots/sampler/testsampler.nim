@@ -5,14 +5,14 @@ import ../../../asynctest
 
 import pkg/questionable/results
 
-import pkg/codex/stores
-import pkg/codex/merkletree
-import pkg/codex/utils/json
-import pkg/codex/codextypes
-import pkg/codex/slots
-import pkg/codex/slots/builder
-import pkg/codex/utils/poseidon2digest
-import pkg/codex/slots/sampler/utils
+import pkg/archivist/stores
+import pkg/archivist/merkletree
+import pkg/archivist/utils/json
+import pkg/archivist/archivisttypes
+import pkg/archivist/slots
+import pkg/archivist/slots/builder
+import pkg/archivist/utils/poseidon2digest
+import pkg/archivist/slots/sampler/utils
 
 import pkg/constantine/math/arithmetic
 import pkg/constantine/math/io/io_bigints

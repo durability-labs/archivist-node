@@ -3,9 +3,9 @@ import std/times
 
 import pkg/libp2p
 import pkg/chronos
-import pkg/codex/codextypes
-import pkg/codex/chunker
-import pkg/codex/stores
+import pkg/archivist/archivisttypes
+import pkg/archivist/chunker
+import pkg/archivist/stores
 import pkg/taskpools
 
 import ../../asynctest

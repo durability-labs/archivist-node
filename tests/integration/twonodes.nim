@@ -1,9 +1,9 @@
 import std/macros
 import pkg/questionable
 import ./multinodes
-import ./codexconfig
-import ./codexprocess
-import ./codexclient
+import ./archivistconfig
+import ./archivistprocess
+import ./archivistclient
 import ./nodeconfigs
 
 export codexclient

@@ -13,15 +13,15 @@
 ## 6. Remove need to [avoid importing or exporting `toJson`, `%`, `%*` to prevent
 ##    conflicts](https://github.com/codex-storage/nim-codex/pull/645#issuecomment-1838834467)
 ##
-## When declaring a new type, one should consider importing the `codex/logutils`
+## When declaring a new type, one should consider importing the `archivist/logutils`
 ## module, and specifying `formatIt`. If textlines log output and json log output
 ## need to be different, overload `formatIt` and specify a `LogFormat`. If json
 ## serialization is needed, it can be declared with a `%` proc. `logutils`
 ## imports and exports `nim-serde` which handles the de/serialization, examples
-## below. **Only `codex/logutils` needs to be imported.**
+## below. **Only `archivist/logutils` needs to be imported.**
 ##
 ## Using `logutils` in the Codex codebase:
-## - Instead of importing `pkg/chronicles`, import `pkg/codex/logutils`
+## - Instead of importing `pkg/chronicles`, import `pkg/archivist/logutils`
 ##     - most of `chronicles` is exported by `logutils`
 ## - Instead of importing `std/json`, import `pkg/serde/json`
 ##     - `std/json` is exported by `serde` which is exported by `logutils`
@@ -30,7 +30,7 @@
 ##     - one of the goals is to remove the use of `nim-json-serialization`
 ##
 ## ```nim
-## import pkg/codex/logutils
+## import pkg/archivist/logutils
 ##
 ## type
 ##   BlockAddress* = object

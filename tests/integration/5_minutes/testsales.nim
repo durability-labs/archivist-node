@@ -1,12 +1,12 @@
 import std/httpclient
 import std/times
-import pkg/codex/contracts
-from pkg/codex/stores/repostore/types import DefaultQuotaBytes
+import pkg/archivist/contracts
+from pkg/archivist/stores/repostore/types import DefaultQuotaBytes
 import ../twonodes
-import ../../codex/examples
+import ../../archivist/examples
 import ../../contracts/time
-import ../codexconfig
-import ../codexclient
+import ../archivistconfig
+import ../archivistclient
 import ../nodeconfigs
 import ../marketplacesuite
 

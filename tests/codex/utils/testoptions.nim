@@ -1,5 +1,5 @@
 import pkg/unittest2
-import pkg/codex/utils/options
+import pkg/archivist/utils/options
 
 import ../helpers
 

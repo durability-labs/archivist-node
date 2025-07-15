@@ -3,18 +3,18 @@ import std/sequtils
 import std/times
 import std/typetraits
 
-import pkg/codex/contracts/requests
-import pkg/codex/rng
-import pkg/codex/contracts/proofs
-import pkg/codex/sales/slotqueue
-import pkg/codex/stores
-import pkg/codex/units
+import pkg/archivist/contracts/requests
+import pkg/archivist/rng
+import pkg/archivist/contracts/proofs
+import pkg/archivist/sales/slotqueue
+import pkg/archivist/stores
+import pkg/archivist/units
 
 import pkg/chronos
 import pkg/stew/byteutils
 import pkg/stint
 
-import ./codex/helpers/randomchunker
+import ./archivist/helpers/randomchunker
 
 export randomchunker
 export units

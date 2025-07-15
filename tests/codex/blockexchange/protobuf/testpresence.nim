@@ -1,6 +1,6 @@
 import pkg/chronos
 
-import pkg/codex/blockexchange/protobuf/presence
+import pkg/archivist/blockexchange/protobuf/presence
 
 import ../../../asynctest
 import ../../examples

@@ -1,6 +1,6 @@
 import pkg/unittest2
 
-import pkg/codex/stores
+import pkg/archivist/stores
 import ../../examples
 import ../../helpers
 

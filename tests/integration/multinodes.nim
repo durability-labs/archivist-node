@@ -3,13 +3,13 @@ import std/sequtils
 import std/strutils
 import std/sugar
 import std/times
-import pkg/codex/conf
-import pkg/codex/logutils
+import pkg/archivist/conf
+import pkg/archivist/logutils
 import pkg/chronos/transports/stream
 import pkg/ethers
 import pkg/questionable
-import ./codexconfig
-import ./codexprocess
+import ./archivistconfig
+import ./archivistprocess
 import ./hardhatconfig
 import ./hardhatprocess
 import ./nodeconfigs

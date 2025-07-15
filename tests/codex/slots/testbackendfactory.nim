@@ -3,11 +3,11 @@ import ../../asynctest
 
 import pkg/chronos
 import pkg/confutils/defs
-import pkg/codex/conf
-import pkg/codex/slots/proofs/backends
-import pkg/codex/slots/proofs/backendfactory
-import pkg/codex/slots/proofs/backendutils
-import pkg/codex/utils/natutils
+import pkg/archivist/conf
+import pkg/archivist/slots/proofs/backends
+import pkg/archivist/slots/proofs/backendfactory
+import pkg/archivist/slots/proofs/backendutils
+import pkg/archivist/utils/natutils
 
 import ../helpers
 import ../examples

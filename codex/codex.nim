@@ -42,7 +42,7 @@ import ./contracts/clock
 import ./contracts/deployment
 import ./utils/addrutils
 import ./namespaces
-import ./codextypes
+import ./archivisttypes
 import ./logutils
 import ./nat
 

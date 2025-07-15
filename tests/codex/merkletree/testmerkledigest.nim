@@ -7,8 +7,8 @@ import pkg/poseidon2/sponge
 
 import pkg/questionable/results
 
-import pkg/codex/merkletree
-import pkg/codex/utils/poseidon2digest
+import pkg/archivist/merkletree
+import pkg/archivist/utils/poseidon2digest
 
 import ./helpers
 

@@ -9,7 +9,8 @@
 
 import pkg/chronos
 
-import codex/utils/timer
+
+import archivist/utils/timer
 
 import ../../asynctest
 import ../helpers

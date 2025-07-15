@@ -8,10 +8,10 @@ import pkg/constantine/math/arithmetic
 import pkg/constantine/math/io/io_bigints
 import pkg/constantine/math/io/io_fields
 
-import pkg/codex/merkletree
-import pkg/codex/slots
-import pkg/codex/slots/types
-import pkg/codex/utils/json
+import pkg/archivist/merkletree
+import pkg/archivist/slots
+import pkg/archivist/slots/types
+import pkg/archivist/utils/json
 
 export types
 

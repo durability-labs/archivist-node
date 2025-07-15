@@ -7,8 +7,8 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/zippy/tarballs
 import pkg/chronos/apps/http/httpclient
-import ../../codex/contracts/marketplace
-import ../../codex/contracts/deployment
+import ../../archivist/contracts/marketplace
+import ../../archivist/contracts/deployment
 
 proc consoleLog(logLevel: LogLevel, msg: LogOutputStr) {.gcsafe.} =
   try:

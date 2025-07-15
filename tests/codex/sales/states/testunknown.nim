@@ -1,13 +1,13 @@
-import pkg/codex/contracts/requests
-import pkg/codex/sales
-import pkg/codex/sales/salesagent
-import pkg/codex/sales/salescontext
-import pkg/codex/sales/states/unknown
-import pkg/codex/sales/states/errored
-import pkg/codex/sales/states/filled
-import pkg/codex/sales/states/finished
-import pkg/codex/sales/states/failed
-import pkg/codex/sales/states/payout
+import pkg/archivist/contracts/requests
+import pkg/archivist/sales
+import pkg/archivist/sales/salesagent
+import pkg/archivist/sales/salescontext
+import pkg/archivist/sales/states/unknown
+import pkg/archivist/sales/states/errored
+import pkg/archivist/sales/states/filled
+import pkg/archivist/sales/states/finished
+import pkg/archivist/sales/states/failed
+import pkg/archivist/sales/states/payout
 
 import ../../../asynctest
 import ../../helpers/mockmarket

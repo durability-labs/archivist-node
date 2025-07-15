@@ -7,11 +7,11 @@ import pkg/libp2p/multicodec
 import pkg/stew/byteutils
 import pkg/questionable
 import pkg/questionable/results
-import pkg/codex/stores/cachestore
-import pkg/codex/chunker
-import pkg/codex/manifest
-import pkg/codex/merkletree
-import pkg/codex/utils
+import pkg/archivist/stores/cachestore
+import pkg/archivist/chunker
+import pkg/archivist/manifest
+import pkg/archivist/merkletree
+import pkg/archivist/utils
 
 import ../../asynctest
 import ../helpers

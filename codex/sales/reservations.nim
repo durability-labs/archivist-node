@@ -43,7 +43,7 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 import pkg/stew/byteutils
-import ../codextypes
+import ../archivisttypes
 import ../logutils
 import ../clock
 import ../stores

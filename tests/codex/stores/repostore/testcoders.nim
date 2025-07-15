@@ -5,9 +5,9 @@ import pkg/stew/objects
 import pkg/questionable
 import pkg/questionable/results
 
-import pkg/codex/clock
-import pkg/codex/stores/repostore/types
-import pkg/codex/stores/repostore/coders
+import pkg/archivist/clock
+import pkg/archivist/stores/repostore/types
+import pkg/archivist/stores/repostore/coders
 
 import ../../helpers
 

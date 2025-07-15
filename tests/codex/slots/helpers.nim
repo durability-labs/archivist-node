@@ -3,15 +3,15 @@ import std/sugar
 import pkg/chronos
 import pkg/libp2p/cid
 
-import pkg/codex/codextypes
-import pkg/codex/stores
-import pkg/codex/merkletree
-import pkg/codex/manifest
-import pkg/codex/blocktype as bt
-import pkg/codex/chunker
-import pkg/codex/indexingstrategy
-import pkg/codex/slots
-import pkg/codex/rng
+import pkg/archivist/archivisttypes
+import pkg/archivist/stores
+import pkg/archivist/merkletree
+import pkg/archivist/manifest
+import pkg/archivist/blocktype as bt
+import pkg/archivist/chunker
+import pkg/archivist/indexingstrategy
+import pkg/archivist/slots
+import pkg/archivist/rng
 
 import ../helpers
 

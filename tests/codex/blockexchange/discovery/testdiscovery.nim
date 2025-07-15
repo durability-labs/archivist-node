@@ -6,13 +6,13 @@ import pkg/chronos
 
 import pkg/libp2p/errors
 
-import pkg/codex/rng
-import pkg/codex/stores
-import pkg/codex/blockexchange
-import pkg/codex/chunker
-import pkg/codex/manifest
-import pkg/codex/merkletree
-import pkg/codex/blocktype as bt
+import pkg/archivist/rng
+import pkg/archivist/stores
+import pkg/archivist/blockexchange
+import pkg/archivist/chunker
+import pkg/archivist/manifest
+import pkg/archivist/merkletree
+import pkg/archivist/blocktype as bt
 
 import ../../../asynctest
 import ../../helpers

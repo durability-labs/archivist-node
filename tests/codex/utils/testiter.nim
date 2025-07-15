@@ -2,7 +2,7 @@ import std/sugar
 
 import pkg/questionable
 import pkg/chronos
-import pkg/codex/utils/iter
+import pkg/archivist/utils/iter
 
 import ../../asynctest
 import ../helpers

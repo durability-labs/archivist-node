@@ -1,9 +1,9 @@
 import std/times
 import pkg/chronos
-import pkg/codex/sales
-import pkg/codex/sales/salesagent
-import pkg/codex/sales/salescontext
-import pkg/codex/sales/statemachine
+import pkg/archivist/sales
+import pkg/archivist/sales/salesagent
+import pkg/archivist/sales/salescontext
+import pkg/archivist/sales/statemachine
 
 import ../../asynctest
 import ../helpers/mockmarket

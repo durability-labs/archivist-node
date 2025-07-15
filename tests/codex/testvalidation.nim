@@ -2,9 +2,9 @@ import pkg/chronos
 import std/strformat
 import std/times
 
-import codex/validation
-import codex/periods
-import codex/clock
+import archivist/validation
+import archivist/periods
+import archivist/clock
 
 import ../asynctest
 import ./helpers/mockmarket

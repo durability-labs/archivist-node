@@ -8,7 +8,7 @@ import pkg/results
 import pkg/stew/byteutils
 import pkg/stew/arrayops
 
-import pkg/codex/merkletree
+import pkg/archivist/merkletree
 
 import ./generictreetests
 import ./helpers

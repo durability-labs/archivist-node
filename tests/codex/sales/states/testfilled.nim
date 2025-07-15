@@ -1,13 +1,13 @@
 import pkg/questionable/results
 
-import pkg/codex/clock
-import pkg/codex/contracts/requests
-import pkg/codex/sales
-import pkg/codex/sales/salesagent
-import pkg/codex/sales/salescontext
-import pkg/codex/sales/states/filled
-import pkg/codex/sales/states/errored
-import pkg/codex/sales/states/proving
+import pkg/archivist/clock
+import pkg/archivist/contracts/requests
+import pkg/archivist/sales
+import pkg/archivist/sales/salesagent
+import pkg/archivist/sales/salescontext
+import pkg/archivist/sales/states/filled
+import pkg/archivist/sales/states/errored
+import pkg/archivist/sales/states/proving
 
 import ../../../asynctest
 import ../../helpers/mockmarket

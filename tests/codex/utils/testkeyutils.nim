@@ -1,7 +1,7 @@
 import std/os
 
 import pkg/unittest2
-import pkg/codex/utils/keyutils
+import pkg/archivist/utils/keyutils
 
 import ../helpers
 

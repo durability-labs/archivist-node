@@ -21,7 +21,7 @@ import pkg/serde/json
 import ../../units
 import ../../errors
 
-import ./codex
+import ./archivist
 
 const MaxMerkleTreeSize = 100.MiBs.uint
 const MaxMerkleProofSize = 1.MiBs.uint

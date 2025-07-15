@@ -1,5 +1,5 @@
 import pkg/chronos
-import pkg/codex/chunker
+import pkg/archivist/chunker
 
 export chunker
 

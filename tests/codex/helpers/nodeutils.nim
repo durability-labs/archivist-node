@@ -5,16 +5,16 @@ import pkg/taskpools
 import pkg/libp2p
 import pkg/libp2p/errors
 
-import pkg/codex/discovery
-import pkg/codex/stores
-import pkg/codex/blocktype as bt
-import pkg/codex/blockexchange
-import pkg/codex/systemclock
-import pkg/codex/nat
-import pkg/codex/utils/natutils
-import pkg/codex/slots
+import pkg/archivist/discovery
+import pkg/archivist/stores
+import pkg/archivist/blocktype as bt
+import pkg/archivist/blockexchange
+import pkg/archivist/systemclock
+import pkg/archivist/nat
+import pkg/archivist/utils/natutils
+import pkg/archivist/slots
 
-import pkg/codex/node
+import pkg/archivist/node
 
 import ../examples
 import ../../helpers

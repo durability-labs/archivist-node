@@ -1,4 +1,4 @@
-import pkg/codex/sales/salesagent
+import pkg/archivist/sales/salesagent
 
 type MockSalesAgent = ref object of SalesAgent
   fulfilledCalled*: bool

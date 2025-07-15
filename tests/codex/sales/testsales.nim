@@ -5,15 +5,15 @@ import pkg/chronos
 import pkg/datastore/typedds
 import pkg/questionable
 import pkg/questionable/results
-import pkg/codex/sales
-import pkg/codex/sales/salesdata
-import pkg/codex/sales/salescontext
-import pkg/codex/sales/reservations
-import pkg/codex/sales/slotqueue
-import pkg/codex/stores/repostore
-import pkg/codex/blocktype as bt
-import pkg/codex/node
-import pkg/codex/utils/asyncstatemachine
+import pkg/archivist/sales
+import pkg/archivist/sales/salesdata
+import pkg/archivist/sales/salescontext
+import pkg/archivist/sales/reservations
+import pkg/archivist/sales/slotqueue
+import pkg/archivist/stores/repostore
+import pkg/archivist/blocktype as bt
+import pkg/archivist/node
+import pkg/archivist/utils/asyncstatemachine
 import times
 import ../../asynctest
 import ../helpers
