@@ -43,7 +43,7 @@ import ../slots/helpers
 
 import ./helpers
 
-privateAccess(CodexNodeRef) # enable access to private fields
+privateAccess(ArchivistNodeRef) # enable access to private fields
 
 asyncchecksuite "Test Node - Basic":
   setupAndTearDown()

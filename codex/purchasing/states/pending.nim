@@ -5,7 +5,7 @@ import ../statemachine
 import ./submitted
 import ./error
 
-declareCounter(codex_purchases_pending, "codex purchases pending")
+declareCounter(archivist_purchases_pending, "archivist purchases pending")
 
 type PurchasePending* = ref object of PurchaseState
 
@@ -15,7 +15,7 @@ method `$`*(state: PurchasePending): string =
 method run*(
     state: PurchasePending, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
-  codex_purchases_pending.inc()
+  archivist_purchases_pending.inc()
   let purchase = Purchase(machine)
   try:
     let request = !purchase.request

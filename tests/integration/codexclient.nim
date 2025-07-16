@@ -12,18 +12,18 @@ import pkg/archivist/sales/reservations
 
 export purchasing, httptable, httpclient
 
-type CodexClient* = ref object
+type ArchivistClient* = ref object
   baseurl: string
   session: HttpSessionRef
 
-proc new*(_: type CodexClient, baseurl: string): CodexClient =
-  CodexClient(session: HttpSessionRef.new(), baseurl: baseurl)
+proc new*(_: type ArchivistClient, baseurl: string): ArchivistClient =
+  ArchivistClient(session: HttpSessionRef.new(), baseurl: baseurl)
 
-proc close*(self: CodexClient): Future[void] {.async: (raises: []).} =
+proc close*(self: ArchivistClient): Future[void] {.async: (raises: []).} =
   await self.session.closeWait()
 
 proc request(
-    self: CodexClient,
+    self: ArchivistClient,
     httpMethod: httputils.HttpMethod,
     url: string,
     body: openArray[char] = [],
@@ -45,34 +45,28 @@ proc request(
   .send()
 
 proc post*(
-    self: CodexClient,
-    url: string,
-    body: string = "",
-    headers: seq[HttpHeaderTuple] = @[],
+    self: ArchivistClient, url: string, body: string = "", headers: seq[HttpHeaderTuple] = @[]
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
   return self.request(MethodPost, url, headers = headers, body = body)
 
 proc get(
-    self: CodexClient, url: string, headers: seq[HttpHeaderTuple] = @[]
+    self: ArchivistClient, url: string, headers: seq[HttpHeaderTuple] = @[]
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
   return self.request(MethodGet, url, headers = headers)
 
 proc delete(
-    self: CodexClient, url: string, headers: seq[HttpHeaderTuple] = @[]
+    self: ArchivistClient, url: string, headers: seq[HttpHeaderTuple] = @[]
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
   return self.request(MethodDelete, url, headers = headers)
 
 proc patch*(
-    self: CodexClient,
-    url: string,
-    body: string = "",
-    headers: seq[HttpHeaderTuple] = @[],
+    self: ArchivistClient, url: string, body: string = "", headers: seq[HttpHeaderTuple] = @[]
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
@@ -84,19 +78,19 @@ proc body*(
   return bytesToString (await response.getBodyBytes())
 
 proc getContent(
-    client: CodexClient, url: string, headers: seq[HttpHeaderTuple] = @[]
+    client: ArchivistClient, url: string, headers: seq[HttpHeaderTuple] = @[]
 ): Future[string] {.async: (raises: [CancelledError, HttpError]).} =
   let response = await client.get(url, headers)
   return await response.body
 
 proc info*(
-    client: CodexClient
+    client: ArchivistClient
 ): Future[?!JsonNode] {.async: (raises: [CancelledError, HttpError]).} =
   let response = await client.get(client.baseurl & "/debug/info")
   return JsonNode.parse(await response.body)
 
 proc setLogLevel*(
-    client: CodexClient, level: string
+    client: ArchivistClient, level: string
 ): Future[void] {.async: (raises: [CancelledError, HttpError]).} =
   let
     url = client.baseurl & "/debug/chronicles/loglevel?level=" & level
@@ -105,26 +99,26 @@ proc setLogLevel*(
   assert response.status == 200
 
 proc uploadRaw*(
-    client: CodexClient, contents: string, headers: seq[HttpHeaderTuple] = @[]
+    client: ArchivistClient, contents: string, headers: seq[HttpHeaderTuple] = @[]
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
   return client.post(client.baseurl & "/data", body = contents, headers = headers)
 
 proc upload*(
-    client: CodexClient, contents: string
+    client: ArchivistClient, contents: string
 ): Future[?!Cid] {.async: (raises: [CancelledError, HttpError]).} =
   let response = await client.uploadRaw(contents)
   assert response.status == 200
   Cid.init(await response.body).mapFailure
 
 proc upload*(
-    client: CodexClient, bytes: seq[byte]
+    client: ArchivistClient, bytes: seq[byte]
 ): Future[?!Cid] {.async: (raw: true).} =
   return client.upload(string.fromBytes(bytes))
 
 proc downloadRaw*(
-    client: CodexClient, cid: string, local = false
+    client: ArchivistClient, cid: string, local = false
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
@@ -132,7 +126,7 @@ proc downloadRaw*(
     client.get(client.baseurl & "/data/" & cid & (if local: "" else: "/network/stream"))
 
 proc downloadBytes*(
-    client: CodexClient, cid: Cid, local = false
+    client: ArchivistClient, cid: Cid, local = false
 ): Future[?!seq[byte]] {.async: (raises: [CancelledError, HttpError]).} =
   let response = await client.downloadRaw($cid, local = local)
 
@@ -142,14 +136,14 @@ proc downloadBytes*(
   success await response.getBodyBytes()
 
 proc download*(
-    client: CodexClient, cid: Cid, local = false
+    client: ArchivistClient, cid: Cid, local = false
 ): Future[?!string] {.async: (raises: [CancelledError, HttpError]).} =
   without response =? await client.downloadBytes(cid, local = local), err:
     return failure(err)
   return success bytesToString(response)
 
 proc downloadNoStream*(
-    client: CodexClient, cid: Cid
+    client: ArchivistClient, cid: Cid
 ): Future[?!string] {.async: (raises: [CancelledError, HttpError]).} =
   let response = await client.post(client.baseurl & "/data/" & $cid & "/network")
 
@@ -159,7 +153,7 @@ proc downloadNoStream*(
   success await response.body
 
 proc downloadManifestOnly*(
-    client: CodexClient, cid: Cid
+    client: ArchivistClient, cid: Cid
 ): Future[?!string] {.async: (raises: [CancelledError, HttpError]).} =
   let response =
     await client.get(client.baseurl & "/data/" & $cid & "/network/manifest")
@@ -170,14 +164,14 @@ proc downloadManifestOnly*(
   success await response.body
 
 proc deleteRaw*(
-    client: CodexClient, cid: string
+    client: ArchivistClient, cid: string
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
   return client.delete(client.baseurl & "/data/" & cid)
 
 proc delete*(
-    client: CodexClient, cid: Cid
+    client: ArchivistClient, cid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError, HttpError]).} =
   let response = await client.deleteRaw($cid)
 
@@ -187,14 +181,14 @@ proc delete*(
   success()
 
 proc listRaw*(
-    client: CodexClient
+    client: ArchivistClient
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
   return client.get(client.baseurl & "/data")
 
 proc list*(
-    client: CodexClient
+    client: ArchivistClient
 ): Future[?!RestContentList] {.async: (raises: [CancelledError, HttpError]).} =
   let response = await client.listRaw()
 
@@ -204,7 +198,7 @@ proc list*(
   RestContentList.fromJson(await response.body)
 
 proc space*(
-    client: CodexClient
+    client: ArchivistClient
 ): Future[?!RestRepoStore] {.async: (raises: [CancelledError, HttpError]).} =
   let url = client.baseurl & "/space"
   let response = await client.get(url)
@@ -215,7 +209,7 @@ proc space*(
   RestRepoStore.fromJson(await response.body)
 
 proc requestStorageRaw*(
-    client: CodexClient,
+    client: ArchivistClient,
     cid: Cid,
     duration: uint64,
     pricePerBytePerSecond: UInt256,
@@ -246,7 +240,7 @@ proc requestStorageRaw*(
   return client.post(url, $json)
 
 proc requestStorage*(
-    client: CodexClient,
+    client: ArchivistClient,
     cid: Cid,
     duration: uint64,
     pricePerBytePerSecond: UInt256,
@@ -270,7 +264,7 @@ proc requestStorage*(
   PurchaseId.fromHex(body).catch
 
 proc getPurchase*(
-    client: CodexClient, purchaseId: PurchaseId
+    client: ArchivistClient, purchaseId: PurchaseId
 ): Future[?!RestPurchase] {.async: (raises: [CancelledError, HttpError]).} =
   let url = client.baseurl & "/storage/purchases/" & purchaseId.toHex
   try:
@@ -280,7 +274,7 @@ proc getPurchase*(
     return failure e.msg
 
 proc getSalesAgent*(
-    client: CodexClient, slotId: SlotId
+    client: ArchivistClient, slotId: SlotId
 ): Future[?!RestSalesAgent] {.async: (raises: [CancelledError, HttpError]).} =
   let url = client.baseurl & "/sales/slots/" & slotId.toHex
   try:
@@ -290,7 +284,7 @@ proc getSalesAgent*(
     return failure e.msg
 
 proc postAvailabilityRaw*(
-    client: CodexClient,
+    client: ArchivistClient,
     totalSize, duration: uint64,
     minPricePerBytePerSecond, totalCollateral: UInt256,
     enabled: ?bool = bool.none,
@@ -311,7 +305,7 @@ proc postAvailabilityRaw*(
   return await client.post(url, $json)
 
 proc postAvailability*(
-    client: CodexClient,
+    client: ArchivistClient,
     totalSize, duration: uint64,
     minPricePerBytePerSecond, totalCollateral: UInt256,
     enabled: ?bool = bool.none,
@@ -333,7 +327,7 @@ proc postAvailability*(
   Availability.fromJson(body)
 
 proc patchAvailabilityRaw*(
-    client: CodexClient,
+    client: ArchivistClient,
     availabilityId: AvailabilityId,
     totalSize, freeSize, duration: ?uint64 = uint64.none,
     minPricePerBytePerSecond, totalCollateral: ?UInt256 = UInt256.none,
@@ -373,7 +367,7 @@ proc patchAvailabilityRaw*(
   client.patch(url, $json)
 
 proc patchAvailability*(
-    client: CodexClient,
+    client: ArchivistClient,
     availabilityId: AvailabilityId,
     totalSize, duration: ?uint64 = uint64.none,
     minPricePerBytePerSecond, totalCollateral: ?UInt256 = UInt256.none,
@@ -392,7 +386,7 @@ proc patchAvailability*(
   doAssert response.status == 204, "expected No Content, got " & $response.status
 
 proc getAvailabilities*(
-    client: CodexClient
+    client: ArchivistClient
 ): Future[?!seq[Availability]] {.async: (raises: [CancelledError, HttpError]).} =
   ## Call sales availability REST endpoint
   let url = client.baseurl & "/sales/availability"
@@ -400,7 +394,7 @@ proc getAvailabilities*(
   seq[Availability].fromJson(body)
 
 proc getAvailabilityReservations*(
-    client: CodexClient, availabilityId: AvailabilityId
+    client: ArchivistClient, availabilityId: AvailabilityId
 ): Future[?!seq[Reservation]] {.async: (raises: [CancelledError, HttpError]).} =
   ## Retrieves Availability's Reservations
   let url = client.baseurl & "/sales/availability/" & $availabilityId & "/reservations"
@@ -408,25 +402,25 @@ proc getAvailabilityReservations*(
   seq[Reservation].fromJson(body)
 
 proc purchaseStateIs*(
-    client: CodexClient, id: PurchaseId, state: string
+    client: ArchivistClient, id: PurchaseId, state: string
 ): Future[bool] {.async: (raises: [CancelledError, HttpError]).} =
   (await client.getPurchase(id)).option .? state == some state
 
 proc saleStateIs*(
-    client: CodexClient, id: SlotId, state: string
+    client: ArchivistClient, id: SlotId, state: string
 ): Future[bool] {.async: (raises: [CancelledError, HttpError]).} =
   (await client.getSalesAgent(id)).option .? state == some state
 
 proc requestId*(
-    client: CodexClient, id: PurchaseId
+    client: ArchivistClient, id: PurchaseId
 ): Future[?RequestId] {.async: (raises: [CancelledError, HttpError]).} =
   return (await client.getPurchase(id)).option .? requestId
 
-proc buildUrl*(client: CodexClient, path: string): string =
+proc buildUrl*(client: ArchivistClient, path: string): string =
   return client.baseurl & path
 
 proc getSlots*(
-    client: CodexClient
+    client: ArchivistClient
 ): Future[?!seq[Slot]] {.async: (raises: [CancelledError, HttpError]).} =
   let url = client.baseurl & "/sales/slots"
   let body = await client.getContent(url)

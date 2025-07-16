@@ -72,7 +72,7 @@ template setupAndTearDown*() {.dirty.} =
     localStoreMetaDs: Datastore
     engine: BlockExcEngine
     store: NetworkStore
-    node: CodexNodeRef
+    node: ArchivistNodeRef
     blockDiscovery: Discovery
     peerStore: PeerCtxStore
     pendingBlocks: PendingBlocksManager
@@ -113,7 +113,7 @@ template setupAndTearDown*() {.dirty.} =
       localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
     )
     store = NetworkStore.new(engine, localStore)
-    node = CodexNodeRef.new(
+    node = ArchivistNodeRef.new(
       switch = switch,
       networkStore = store,
       engine = engine,

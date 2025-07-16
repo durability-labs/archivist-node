@@ -32,7 +32,7 @@ import ../../utils
 export blocktype, cid
 
 logScope:
-  topics = "codex repostore"
+  topics = "archivist repostore"
 
 ###########################################################
 # BlockStore API
@@ -67,7 +67,7 @@ method getBlock*(
 
 method getBlockAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
-): Future[?!(Block, CodexProof)] {.async: (raises: [CancelledError]).} =
+): Future[?!(Block, ArchivistProof)] {.async: (raises: [CancelledError]).} =
   without leafMd =? await self.getLeafMetadata(treeCid, index), err:
     return failure(err)
 
@@ -121,7 +121,7 @@ method ensureExpiry*(
   await self.ensureExpiry(leafMd.blkCid, expiry)
 
 method putCidAndProof*(
-    self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: CodexProof
+    self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Put a block to the blockstore
   ##
@@ -148,7 +148,7 @@ method putCidAndProof*(
 
 method getCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
-): Future[?!(Cid, CodexProof)] {.async: (raises: [CancelledError]).} =
+): Future[?!(Cid, ArchivistProof)] {.async: (raises: [CancelledError]).} =
   without leafMd =? await self.getLeafMetadata(treeCid, index), err:
     return failure(err)
 
@@ -304,9 +304,9 @@ method listBlocks*(
 
   let key =
     case blockType
-    of BlockType.Manifest: CodexManifestKey
-    of BlockType.Block: CodexBlocksKey
-    of BlockType.Both: CodexRepoKey
+    of BlockType.Manifest: ArchivistManifestKey
+    of BlockType.Block: ArchivistBlocksKey
+    of BlockType.Both: ArchivistRepoKey
 
   let query = Query.init(key, value = false)
   without queryIter =? (await self.repoDs.query(query)), err:
@@ -425,7 +425,7 @@ proc release*(
 
 proc start*(
     self: RepoStore
-): Future[void] {.async: (raises: [CancelledError, CodexError]).} =
+): Future[void] {.async: (raises: [CancelledError, ArchivistError]).} =
   ## Start repo
   ##
 
@@ -435,10 +435,10 @@ proc start*(
 
   trace "Starting rep"
   if err =? (await self.updateTotalBlocksCount()).errorOption:
-    raise newException(CodexError, err.msg)
+    raise newException(ArchivistError, err.msg)
 
   if err =? (await self.updateQuotaUsage()).errorOption:
-    raise newException(CodexError, err.msg)
+    raise newException(ArchivistError, err.msg)
 
   self.started = true
 

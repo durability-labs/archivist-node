@@ -97,11 +97,11 @@
             "type": "prometheus",
             "uid": "_v_qlxkVz"
           },
-          "expr": "codex_inflight_discovery{}",
+          "expr": "archivist_inflight_discovery{}",
           "refId": "A"
         }
       ],
-      "title": "Codex Inflight Discovery",
+      "title": "Archivist Inflight Discovery",
       "type": "stat"
     },
     {
@@ -347,7 +347,7 @@
             "type": "prometheus",
             "uid": "_v_qlxkVz"
           },
-          "expr": "rate(node_cpu_seconds_total{job=\"codex\"}[1m])",
+          "expr": "rate(node_cpu_seconds_total{job=\"archivist\"}[1m])",
           "refId": "A"
         }
       ],
@@ -1103,7 +1103,7 @@
               "options": {
                 "mode": "exclude",
                 "names": [
-                  "discovery_session_lru_cache_hits_total{instance=\"127.0.0.1:8008\", job=\"codex\"}"
+                  "discovery_session_lru_cache_hits_total{instance=\"127.0.0.1:8008\", job=\"archivist\"}"
                 ],
                 "prefix": "All except:",
                 "readOnly": true
@@ -1219,7 +1219,7 @@
     ]
   },
   "timezone": "",
-  "title": "Codex Dashboard",
+  "title": "Archivist Dashboard",
   "uid": "pgeNfj2Wz2b",
   "version": 24,
   "weekStart": ""

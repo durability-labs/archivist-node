@@ -50,7 +50,7 @@ import ./utils/trackedfutures
 export logutils
 
 logScope:
-  topics = "codex node"
+  topics = "archivist node"
 
 const DefaultFetchBatch = 10
 
@@ -62,7 +62,7 @@ type
       validator: ?ValidatorInteractions,
     ]
 
-  CodexNode* = object
+  ArchivistNode* = object
     switch: Switch
     networkId: PeerId
     networkStore: NetworkStore
@@ -75,27 +75,27 @@ type
     taskpool: Taskpool
     trackedFutures: TrackedFutures
 
-  CodexNodeRef* = ref CodexNode
+  ArchivistNodeRef* = ref ArchivistNode
 
   OnManifest* = proc(cid: Cid, manifest: Manifest): void {.gcsafe, raises: [].}
   BatchProc* = proc(blocks: seq[bt.Block]): Future[?!void] {.
     gcsafe, async: (raises: [CancelledError])
   .}
 
-func switch*(self: CodexNodeRef): Switch =
+func switch*(self: ArchivistNodeRef): Switch =
   return self.switch
 
-func blockStore*(self: CodexNodeRef): BlockStore =
+func blockStore*(self: ArchivistNodeRef): BlockStore =
   return self.networkStore
 
-func engine*(self: CodexNodeRef): BlockExcEngine =
+func engine*(self: ArchivistNodeRef): BlockExcEngine =
   return self.engine
 
-func discovery*(self: CodexNodeRef): Discovery =
+func discovery*(self: ArchivistNodeRef): Discovery =
   return self.discovery
 
 proc storeManifest*(
-    self: CodexNodeRef, manifest: Manifest
+    self: ArchivistNodeRef, manifest: Manifest
 ): Future[?!bt.Block] {.async.} =
   without encodedVerifiable =? manifest.encode(), err:
     trace "Unable to encode manifest"
@@ -112,7 +112,7 @@ proc storeManifest*(
   success blk
 
 proc fetchManifest*(
-    self: CodexNodeRef, cid: Cid
+    self: ArchivistNodeRef, cid: Cid
 ): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
   ## Fetch and decode a manifest block
   ##
@@ -136,18 +136,18 @@ proc fetchManifest*(
 
   return manifest.success
 
-proc findPeer*(self: CodexNodeRef, peerId: PeerId): Future[?PeerRecord] {.async.} =
-  ## Find peer using the discovery service from the given CodexNode
+proc findPeer*(self: ArchivistNodeRef, peerId: PeerId): Future[?PeerRecord] {.async.} =
+  ## Find peer using the discovery service from the given ArchivistNode
   ##
   return await self.discovery.findPeer(peerId)
 
 proc connect*(
-    self: CodexNodeRef, peerId: PeerId, addrs: seq[MultiAddress]
+    self: ArchivistNodeRef, peerId: PeerId, addrs: seq[MultiAddress]
 ): Future[void] =
   self.switch.connect(peerId, addrs)
 
 proc updateExpiry*(
-    self: CodexNodeRef, manifestCid: Cid, expiry: SecondsSince1970
+    self: ArchivistNodeRef, manifestCid: Cid, expiry: SecondsSince1970
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   without manifest =? await self.fetchManifest(manifestCid), error:
     trace "Unable to fetch manifest for cid", manifestCid
@@ -170,7 +170,7 @@ proc updateExpiry*(
   return success()
 
 proc fetchBatched*(
-    self: CodexNodeRef,
+    self: ArchivistNodeRef,
     cid: Cid,
     iter: Iter[int],
     batchSize = DefaultFetchBatch,
@@ -217,7 +217,7 @@ proc fetchBatched*(
   success()
 
 proc fetchBatched*(
-    self: CodexNodeRef,
+    self: ArchivistNodeRef,
     manifest: Manifest,
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
@@ -233,7 +233,7 @@ proc fetchBatched*(
   self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal)
 
 proc fetchDatasetAsync*(
-    self: CodexNodeRef, manifest: Manifest, fetchLocal = true
+    self: ArchivistNodeRef, manifest: Manifest, fetchLocal = true
 ): Future[void] {.async: (raises: []).} =
   ## Asynchronously fetch a dataset in the background.
   ## This task will be tracked and cleaned up on node shutdown.
@@ -248,14 +248,14 @@ proc fetchDatasetAsync*(
   except CancelledError as exc:
     trace "Cancelled fetching blocks", exc = exc.msg
 
-proc fetchDatasetAsyncTask*(self: CodexNodeRef, manifest: Manifest) =
+proc fetchDatasetAsyncTask*(self: ArchivistNodeRef, manifest: Manifest) =
   ## Start fetching a dataset in the background.
   ## The task will be tracked and cleaned up on node shutdown.
   ##
   self.trackedFutures.track(self.fetchDatasetAsync(manifest, fetchLocal = false))
 
 proc streamSingleBlock(
-    self: CodexNodeRef, cid: Cid
+    self: ArchivistNodeRef, cid: Cid
 ): Future[?!LPStream] {.async: (raises: [CancelledError]).} =
   ## Streams the contents of a single block.
   ##
@@ -280,7 +280,7 @@ proc streamSingleBlock(
   LPStream(stream).success
 
 proc streamEntireDataset(
-    self: CodexNodeRef, manifest: Manifest, manifestCid: Cid
+    self: ArchivistNodeRef, manifest: Manifest, manifestCid: Cid
 ): Future[?!LPStream] {.async: (raises: [CancelledError]).} =
   ## Streams the contents of the entire dataset described by the manifest.
   ##
@@ -322,7 +322,7 @@ proc streamEntireDataset(
   stream.success
 
 proc retrieve*(
-    self: CodexNodeRef, cid: Cid, local: bool = true
+    self: ArchivistNodeRef, cid: Cid, local: bool = true
 ): Future[?!LPStream] {.async: (raises: [CancelledError]).} =
   ## Retrieve by Cid a single block or an entire dataset described by manifest
   ##
@@ -338,7 +338,7 @@ proc retrieve*(
 
   await self.streamEntireDataset(manifest, cid)
 
-proc deleteSingleBlock(self: CodexNodeRef, cid: Cid): Future[?!void] {.async.} =
+proc deleteSingleBlock(self: ArchivistNodeRef, cid: Cid): Future[?!void] {.async.} =
   if err =? (await self.networkStore.delBlock(cid)).errorOption:
     error "Error deleting block", cid, err = err.msg
     return failure(err)
@@ -346,7 +346,7 @@ proc deleteSingleBlock(self: CodexNodeRef, cid: Cid): Future[?!void] {.async.} =
   trace "Deleted block", cid
   return success()
 
-proc deleteEntireDataset(self: CodexNodeRef, cid: Cid): Future[?!void] {.async.} =
+proc deleteEntireDataset(self: ArchivistNodeRef, cid: Cid): Future[?!void] {.async.} =
   # Deletion is a strictly local operation
   var store = self.networkStore.localStore
 
@@ -380,7 +380,7 @@ proc deleteEntireDataset(self: CodexNodeRef, cid: Cid): Future[?!void] {.async.}
   success()
 
 proc delete*(
-    self: CodexNodeRef, cid: Cid
+    self: ArchivistNodeRef, cid: Cid
 ): Future[?!void] {.async: (raises: [CatchableError]).} =
   ## Deletes a whole dataset, if Cid is a Manifest Cid, or a single block, if Cid a block Cid,
   ## from the underlying block store. This is a strictly local operation.
@@ -398,7 +398,7 @@ proc delete*(
   await self.deleteEntireDataset(cid)
 
 proc store*(
-    self: CodexNodeRef,
+    self: ArchivistNodeRef,
     stream: LPStream,
     filename: ?string = string.none,
     mimetype: ?string = string.none,
@@ -439,7 +439,7 @@ proc store*(
   finally:
     await stream.close()
 
-  without tree =? CodexTree.init(cids), err:
+  without tree =? ArchivistTree.init(cids), err:
     return failure(err)
 
   without treeCid =? tree.rootCid(CIDv1, dataCodec), err:
@@ -478,7 +478,7 @@ proc store*(
 
   return manifestBlk.cid.success
 
-proc iterateManifests*(self: CodexNodeRef, onManifest: OnManifest) {.async.} =
+proc iterateManifests*(self: ArchivistNodeRef, onManifest: OnManifest) {.async.} =
   without cidsIter =? await self.networkStore.listBlocks(BlockType.Manifest):
     warn "Failed to listBlocks"
     return
@@ -496,7 +496,7 @@ proc iterateManifests*(self: CodexNodeRef, onManifest: OnManifest) {.async.} =
       onManifest(cid, manifest)
 
 proc setupRequest(
-    self: CodexNodeRef,
+    self: ArchivistNodeRef,
     cid: Cid,
     duration: uint64,
     proofProbability: UInt256,
@@ -577,7 +577,7 @@ proc setupRequest(
   success request
 
 proc requestStorage*(
-    self: CodexNodeRef,
+    self: ArchivistNodeRef,
     cid: Cid,
     duration: uint64,
     proofProbability: UInt256,
@@ -621,7 +621,7 @@ proc requestStorage*(
   success purchase.id
 
 proc onStore(
-    self: CodexNodeRef,
+    self: ArchivistNodeRef,
     request: StorageRequest,
     expiry: SecondsSince1970,
     slotIdx: uint64,
@@ -650,7 +650,7 @@ proc onStore(
 
   if slotIdx > manifest.slotRoots.high.uint64:
     trace "Slot index not in manifest", slotIdx
-    return failure(newException(CodexError, "Slot index not in manifest"))
+    return failure(newException(ArchivistError, "Slot index not in manifest"))
 
   proc updateExpiry(
       blocks: seq[bt.Block]
@@ -713,14 +713,14 @@ proc onStore(
   if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[slotIdx]:
     trace "Slot root mismatch",
       manifest = manifest.slotRoots[slotIdx.int], recovered = slotRoot.toSlotCid()
-    return failure(newException(CodexError, "Slot root mismatch"))
+    return failure(newException(ArchivistError, "Slot root mismatch"))
 
   trace "Slot successfully retrieved and reconstructed"
 
   return success()
 
 proc onProve(
-    self: CodexNodeRef, slot: Slot, challenge: ProofChallenge
+    self: ArchivistNodeRef, slot: Slot, challenge: ProofChallenge
 ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
   ## Generats a proof for a given slot and challenge
   ##
@@ -776,15 +776,15 @@ proc onProve(
     failure "Prover not enabled"
 
 proc onExpiryUpdate(
-    self: CodexNodeRef, rootCid: Cid, expiry: SecondsSince1970
+    self: ArchivistNodeRef, rootCid: Cid, expiry: SecondsSince1970
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   return await self.updateExpiry(rootCid, expiry)
 
-proc onClear(self: CodexNodeRef, request: StorageRequest, slotIndex: uint64) =
+proc onClear(self: ArchivistNodeRef, request: StorageRequest, slotIndex: uint64) =
   # TODO: remove data from local storage
   discard
 
-proc start*(self: CodexNodeRef) {.async.} =
+proc start*(self: ArchivistNodeRef) {.async.} =
   if not self.engine.isNil:
     await self.engine.start()
 
@@ -846,9 +846,9 @@ proc start*(self: CodexNodeRef) {.async.} =
       self.contracts.validator = ValidatorInteractions.none
 
   self.networkId = self.switch.peerInfo.peerId
-  notice "Started codex node", id = self.networkId, addrs = self.switch.peerInfo.addrs
+  notice "Started node", id = self.networkId, addrs = self.switch.peerInfo.addrs
 
-proc stop*(self: CodexNodeRef) {.async.} =
+proc stop*(self: ArchivistNodeRef) {.async.} =
   trace "Stopping node"
 
   await self.trackedFutures.cancelTracked()
@@ -875,7 +875,7 @@ proc stop*(self: CodexNodeRef) {.async.} =
     await self.networkStore.close
 
 proc new*(
-    T: type CodexNodeRef,
+    T: type ArchivistNodeRef,
     switch: Switch,
     networkStore: NetworkStore,
     engine: BlockExcEngine,
@@ -883,11 +883,11 @@ proc new*(
     taskpool: Taskpool,
     prover = Prover.none,
     contracts = Contracts.default,
-): CodexNodeRef =
-  ## Create new instance of a Codex self, call `start` to run it
+): ArchivistNodeRef =
+  ## Create new instance of a node, call `start` to run it
   ##
 
-  CodexNodeRef(
+  ArchivistNodeRef(
     switch: switch,
     networkStore: networkStore,
     engine: engine,

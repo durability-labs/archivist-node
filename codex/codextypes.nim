@@ -46,13 +46,13 @@ const
   BlockCodec* = multiCodec("codex-block")
   SlotRootCodec* = multiCodec("codex-slot-root")
   SlotProvingRootCodec* = multiCodec("codex-proving-root")
-  CodexSlotCellCodec* = multiCodec("codex-slot-cell")
+  SlotCellCodec* = multiCodec("codex-slot-cell")
 
-  CodexHashesCodecs* = [Sha256HashCodec, Pos2Bn128SpngCodec, Pos2Bn128MrklCodec]
+  HashesCodecs* = [Sha256HashCodec, Pos2Bn128SpngCodec, Pos2Bn128MrklCodec]
 
-  CodexPrimitivesCodecs* = [
+  PrimitivesCodecs* = [
     ManifestCodec, DatasetRootCodec, BlockCodec, SlotRootCodec, SlotProvingRootCodec,
-    CodexSlotCellCodec,
+    SlotCellCodec,
   ]
 
 proc initEmptyCidTable(): ?!Table[(CidVersion, MultiCodec, MultiCodec), Cid] =

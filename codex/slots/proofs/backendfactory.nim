@@ -11,7 +11,7 @@ import ../../conf
 import ./backends
 import ./backendutils
 
-proc initializeFromConfig(config: CodexConf, utils: BackendUtils): ?!AnyBackend =
+proc initializeFromConfig(config: NodeConf, utils: BackendUtils): ?!AnyBackend =
   if not fileAccessible($config.circomR1cs, {AccessFlags.Read}) or
       not endsWith($config.circomR1cs, ".r1cs"):
     return failure("Circom R1CS file not accessible")
@@ -31,17 +31,17 @@ proc initializeFromConfig(config: CodexConf, utils: BackendUtils): ?!AnyBackend 
     )
   )
 
-proc r1csFilePath(config: CodexConf): string =
+proc r1csFilePath(config: NodeConf): string =
   config.circuitDir / "proof_main.r1cs"
 
-proc wasmFilePath(config: CodexConf): string =
+proc wasmFilePath(config: NodeConf): string =
   config.circuitDir / "proof_main.wasm"
 
-proc zkeyFilePath(config: CodexConf): string =
+proc zkeyFilePath(config: NodeConf): string =
   config.circuitDir / "proof_main.zkey"
 
 proc initializeFromCircuitDirFiles(
-    config: CodexConf, utils: BackendUtils
+    config: NodeConf, utils: BackendUtils
 ): ?!AnyBackend {.gcsafe.} =
   if fileExists(config.r1csFilePath) and fileExists(config.wasmFilePath) and
       fileExists(config.zkeyFilePath):
@@ -54,7 +54,7 @@ proc initializeFromCircuitDirFiles(
 
   failure("Circuit files not found")
 
-proc suggestDownloadTool(config: CodexConf) =
+proc suggestDownloadTool(config: NodeConf) =
   without address =? config.marketplaceAddress:
     raise (ref Defect)(
       msg: "Proving backend initializing while marketplace address not set."
@@ -68,7 +68,7 @@ proc suggestDownloadTool(config: CodexConf) =
     instructions
 
 proc initializeBackend*(
-    config: CodexConf, utils: BackendUtils = BackendUtils()
+    config: NodeConf, utils: BackendUtils = BackendUtils()
 ): ?!AnyBackend =
   without backend =? initializeFromConfig(config, utils), cliErr:
     info "Could not initialize prover backend from CLI options...", msg = cliErr.msg

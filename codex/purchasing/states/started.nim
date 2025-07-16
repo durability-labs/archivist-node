@@ -7,7 +7,7 @@ import ./finished
 import ./failed
 import ./error
 
-declareCounter(codex_purchases_started, "codex purchases started")
+declareCounter(archivist_purchases_started, "archivist purchases started")
 
 logScope:
   topics = "marketplace purchases started"
@@ -20,7 +20,7 @@ method `$`*(state: PurchaseStarted): string =
 method run*(
     state: PurchaseStarted, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
-  codex_purchases_started.inc()
+  archivist_purchases_started.inc()
   let purchase = Purchase(machine)
 
   let clock = purchase.clock

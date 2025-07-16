@@ -28,10 +28,10 @@ import ./networkpeer
 export networkpeer, payments
 
 logScope:
-  topics = "codex blockexcnetwork"
+  topics = "archivist blockexcnetwork"
 
 const
-  Codec* = "/codex/blockexc/1.0.0"
+  Codec* = "/archivist/blockexc/1.0.0"
   DefaultMaxInflight* = 100
 
 type

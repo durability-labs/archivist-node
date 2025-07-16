@@ -25,7 +25,7 @@ const
   DefaultQuotaBytes* = 20.GiBs
 
 type
-  QuotaNotEnoughError* = object of CodexError
+  QuotaNotEnoughError* = object of ArchivistError
 
   RepoStore* = ref object of BlockStore
     postFixLen*: int
@@ -49,7 +49,7 @@ type
 
   LeafMetadata* {.serialize.} = object
     blkCid*: Cid
-    proof*: CodexProof
+    proof*: ArchivistProof
 
   BlockExpiration* {.serialize.} = object
     cid*: Cid

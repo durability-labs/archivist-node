@@ -1,6 +1,6 @@
 version = "0.1.0"
-author = "Codex Team"
-description = "p2p data durability engine"
+author = "Archivist Team"
+description = "data durability engine"
 license = "MIT"
 binDir = "build"
 srcDir = "."

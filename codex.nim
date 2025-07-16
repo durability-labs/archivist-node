@@ -25,7 +25,7 @@ import ./archivist/units
 import ./archivist/utils/keyutils
 import ./archivist/archivisttypes
 
-export codex, conf, libp2p, chronos, logutils
+export archivist, conf, libp2p, chronos, logutils
 
 when isMainModule:
   import std/os
@@ -33,21 +33,21 @@ when isMainModule:
   import ./archivist/utils/fileutils
 
   logScope:
-    topics = "codex"
+    topics = "archivist"
 
   when defined(posix):
     import system/ansi_c
 
-  type CodexStatus {.pure.} = enum
+  type NodeStatus {.pure.} = enum
     Stopped
     Stopping
     Running
 
-  let config = CodexConf.load(
-    version = codexFullVersion,
-    envVarsPrefix = "codex",
+  let config = NodeConf.load(
+    version = nodeFullVersion,
+    envVarsPrefix = "archivist",
     secondarySources = proc(
-        config: CodexConf, sources: auto
+        config: NodeConf, sources: auto
     ) {.gcsafe, raises: [ConfigurationError].} =
       if configFile =? config.configFile:
         sources.addConfigFile(Toml, configFile)
@@ -74,7 +74,7 @@ when isMainModule:
   trace "Repo dir initialized", dir = config.dataDir / "repo"
 
   var
-    state: CodexStatus
+    state: NodeStatus
     shutdown: Future[void]
 
   let
@@ -87,17 +87,17 @@ when isMainModule:
     privateKey = setupKey(keyPath).expect("Should setup private key!")
     server =
       try:
-        CodexServer.new(config, privateKey)
+        NodeServer.new(config, privateKey)
       except Exception as exc:
-        error "Failed to start Codex", msg = exc.msg
+        error "Failed to start Archivist Node", msg = exc.msg
         quit QuitFailure
 
   ## Ctrl+C handling
   proc doShutdown() =
     shutdown = server.stop()
-    state = CodexStatus.Stopping
+    state = NodeStatus.Stopping
 
-    notice "Stopping Codex"
+    notice "Stopping Archivist Node"
 
   proc controlCHandler() {.noconv.} =
     when defined(windows):
@@ -128,15 +128,15 @@ when isMainModule:
   try:
     waitFor server.start()
   except CatchableError as error:
-    error "Codex failed to start", error = error.msg
+    error "Archivist Node failed to start", error = error.msg
     # XXX ideally we'd like to issue a stop instead of quitting cold turkey,
     #   but this would mean we'd have to fix the implementation of all
     #   services so they won't crash if we attempt to stop them before they
     #   had a chance to start (currently you'll get a SISGSEV if you try to).
     quit QuitFailure
 
-  state = CodexStatus.Running
-  while state == CodexStatus.Running:
+  state = NodeStatus.Running
+  while state == NodeStatus.Running:
     try:
       # poll chronos
       chronos.poll()
@@ -149,7 +149,7 @@ when isMainModule:
     # be assigned before state switches to Stopping
     waitFor shutdown
   except CatchableError as error:
-    error "Codex didn't shutdown correctly", error = error.msg
+    error "Archivist Node didn't shutdown correctly", error = error.msg
     quit QuitFailure
 
-  notice "Exited codex"
+  notice "Exited Archivist Node"

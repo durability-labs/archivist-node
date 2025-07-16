@@ -47,18 +47,18 @@ import ./logutils
 import ./nat
 
 logScope:
-  topics = "codex node"
+  topics = "archivist node"
 
 type
-  CodexServer* = ref object
-    config: CodexConf
+  NodeServer* = ref object
+    config: NodeConf
     restServer: RestServerRef
-    codexNode: CodexNodeRef
+    archivistNode: ArchivistNodeRef
     repoStore: RepoStore
     maintenance: BlockMaintainer
     taskpool: Taskpool
 
-  CodexPrivateKey* = libp2p.PrivateKey # alias
+  NodePrivateKey* = libp2p.PrivateKey # alias
   EthWallet = ethers.Wallet
 
 proc waitForSync(provider: Provider): Future[void] {.async.} =
@@ -71,7 +71,7 @@ proc waitForSync(provider: Provider): Future[void] {.async.} =
       inc sleepTime
   trace "Ethereum provider is synced."
 
-proc bootstrapInteractions(s: CodexServer): Future[void] {.async.} =
+proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
   ## bootstrap interactions and return contracts
   ## using clients, hosts, validators pairings
   ##
@@ -122,13 +122,13 @@ proc bootstrapInteractions(s: CodexServer): Future[void] {.async.} =
     var validator: ?ValidatorInteractions
 
     if config.validator or config.persistence:
-      s.codexNode.clock = clock
+      s.archivistNode.clock = clock
     else:
-      s.codexNode.clock = SystemClock()
+      s.archivistNode.clock = SystemClock()
 
     # This is used for simulation purposes. Normal nodes won't be compiled with this flag
     # and hence the proof failure will always be 0.
-    when codex_enable_proof_failures:
+    when archivist_enable_proof_failures:
       let proofFailures = config.simulateProofFailures
       if proofFailures > 0:
         warn "Enabling proof failure simulation!"
@@ -156,51 +156,50 @@ proc bootstrapInteractions(s: CodexServer): Future[void] {.async.} =
       let validation = Validation.new(clock, market, validationConfig)
       validator = some ValidatorInteractions.new(clock, validation)
 
-    s.codexNode.contracts = (client, host, validator)
+    s.archivistNode.contracts = (client, host, validator)
 
-proc start*(s: CodexServer) {.async.} =
-  trace "Starting codex node", config = $s.config
+proc start*(s: NodeServer) {.async.} =
+  trace "Starting node", config = $s.config
 
   await s.repoStore.start()
   s.maintenance.start()
 
-  await s.codexNode.switch.start()
+  await s.archivistNode.switch.start()
 
-  let (announceAddrs, discoveryAddrs) = nattedAddress(
-    s.config.nat, s.codexNode.switch.peerInfo.addrs, s.config.discoveryPort
-  )
+  let (announceAddrs, discoveryAddrs) =
+    nattedAddress(s.config.nat, s.archivistNode.switch.peerInfo.addrs, s.config.discoveryPort)
 
-  s.codexNode.discovery.updateAnnounceRecord(announceAddrs)
-  s.codexNode.discovery.updateDhtRecord(discoveryAddrs)
+  s.archivistNode.discovery.updateAnnounceRecord(announceAddrs)
+  s.archivistNode.discovery.updateDhtRecord(discoveryAddrs)
 
   await s.bootstrapInteractions()
-  await s.codexNode.start()
+  await s.archivistNode.start()
   s.restServer.start()
 
-proc stop*(s: CodexServer) {.async.} =
-  notice "Stopping codex node"
+proc stop*(s: NodeServer) {.async.} =
+  notice "Stopping node"
 
   let res = await noCancel allFinishedFailed[void](
     @[
       s.restServer.stop(),
-      s.codexNode.switch.stop(),
-      s.codexNode.stop(),
+      s.archivistNode.switch.stop(),
+      s.archivistNode.stop(),
       s.repoStore.stop(),
       s.maintenance.stop(),
     ]
   )
 
   if res.failure.len > 0:
-    error "Failed to stop codex node", failures = res.failure.len
-    raiseAssert "Failed to stop codex node"
+    error "Failed to stop node", failures = res.failure.len
+    raiseAssert "Failed to stop node"
 
   if not s.taskpool.isNil:
     s.taskpool.shutdown()
 
 proc new*(
-    T: type CodexServer, config: CodexConf, privateKey: CodexPrivateKey
-): CodexServer =
-  ## create CodexServer including setting up datastore, repostore, etc
+    T: type NodeServer, config: NodeConf, privateKey: NodePrivateKey
+): NodeServer =
+  ## create NodeServer including setting up datastore, repostore, etc
   let switch = SwitchBuilder
     .new()
     .withPrivateKey(privateKey)
@@ -231,7 +230,7 @@ proc new*(
     cache = CacheStore.new(cacheSize = config.cacheSize)
     ## Is unused?
 
-  let discoveryDir = config.dataDir / CodexDhtNamespace
+  let discoveryDir = config.dataDir / ArchivistDhtNamespace
 
   if io2.createPath(discoveryDir).isErr:
     trace "Unable to create discovery directory for block store",
@@ -242,7 +241,7 @@ proc new*(
 
   let
     discoveryStore = Datastore(
-      LevelDbDatastore.new(config.dataDir / CodexDhtProvidersNamespace).expect(
+      LevelDbDatastore.new(config.dataDir / ArchivistDhtProvidersNamespace).expect(
         "Should create discovery datastore!"
       )
     )
@@ -281,7 +280,7 @@ proc new*(
 
     repoStore = RepoStore.new(
       repoDs = repoData,
-      metaDs = LevelDbDatastore.new(config.dataDir / CodexMetaNamespace).expect(
+      metaDs = LevelDbDatastore.new(config.dataDir / ArchivistMetaNamespace).expect(
           "Should create metadata store!"
         ),
       quotaMaxBytes = config.storageQuota,
@@ -311,7 +310,7 @@ proc new*(
       else:
         none Prover
 
-    codexNode = CodexNodeRef.new(
+    archivistNode = ArchivistNodeRef.new(
       switch = switch,
       networkStore = store,
       engine = engine,
@@ -322,7 +321,7 @@ proc new*(
 
     restServer = RestServerRef
       .new(
-        codexNode.initRestApi(config, repoStore, config.apiCorsAllowedOrigin),
+        archivistNode.initRestApi(config, repoStore, config.apiCorsAllowedOrigin),
         initTAddress(config.apiBindAddress, config.apiPort),
         bufferSize = (1024 * 64),
         maxRequestBodySize = int.high,
@@ -331,9 +330,9 @@ proc new*(
 
   switch.mount(network)
 
-  CodexServer(
+  NodeServer(
     config: config,
-    codexNode: codexNode,
+    archivistNode: archivistNode,
     restServer: restServer,
     repoStore: repoStore,
     maintenance: maintenance,

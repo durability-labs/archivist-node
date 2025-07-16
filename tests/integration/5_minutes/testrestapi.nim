@@ -16,7 +16,7 @@ twonodessuite "REST API":
     check !(await client1.info()) != !(await client2.info())
 
   test "nodes can set chronicles log level", twoNodesConfig:
-    await client1.setLogLevel("DEBUG;TRACE:codex")
+    await client1.setLogLevel("DEBUG;TRACE:archivist")
 
   test "node accepts file uploads", twoNodesConfig:
     let cid1 = (await client1.upload("some file contents")).get

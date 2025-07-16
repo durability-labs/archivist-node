@@ -43,26 +43,24 @@ import ./pendingblocks
 export peers, pendingblocks, payments, discovery
 
 logScope:
-  topics = "codex blockexcengine"
+  topics = "archivist blockexcengine"
 
 declareCounter(
-  codex_block_exchange_want_have_lists_sent, "codex blockexchange wantHave lists sent"
+  archivist_block_exchange_want_have_lists_sent, "archivist blockexchange wantHave lists sent"
 )
 declareCounter(
-  codex_block_exchange_want_have_lists_received,
-  "codex blockexchange wantHave lists received",
+  archivist_block_exchange_want_have_lists_received,
+  "archivist blockexchange wantHave lists received",
 )
 declareCounter(
-  codex_block_exchange_want_block_lists_sent, "codex blockexchange wantBlock lists sent"
+  archivist_block_exchange_want_block_lists_sent, "archivist blockexchange wantBlock lists sent"
 )
 declareCounter(
-  codex_block_exchange_want_block_lists_received,
-  "codex blockexchange wantBlock lists received",
+  archivist_block_exchange_want_block_lists_received,
+  "archivist blockexchange wantBlock lists received",
 )
-declareCounter(codex_block_exchange_blocks_sent, "codex blockexchange blocks sent")
-declareCounter(
-  codex_block_exchange_blocks_received, "codex blockexchange blocks received"
-)
+declareCounter(archivist_block_exchange_blocks_sent, "archivist blockexchange blocks sent")
+declareCounter(archivist_block_exchange_blocks_received, "archivist blockexchange blocks received")
 
 const
   DefaultMaxPeersPerRequest* = 10
@@ -143,7 +141,7 @@ proc sendWantHave(
     let toAsk = addresses.filterIt(it notin p.peerHave)
     trace "Sending wantHave request", toAsk, peer = p.id
     await self.network.request.sendWantList(p.id, toAsk, wantType = WantType.WantHave)
-    codex_block_exchange_want_have_lists_sent.inc()
+    archivist_block_exchange_want_have_lists_sent.inc()
 
 proc sendWantBlock(
     self: BlockExcEngine, addresses: seq[BlockAddress], blockPeer: BlockExcPeerCtx
@@ -152,7 +150,7 @@ proc sendWantBlock(
   await self.network.request.sendWantList(
     blockPeer.id, addresses, wantType = WantType.WantBlock
   ) # we want this remote to send us a block
-  codex_block_exchange_want_block_lists_sent.inc()
+  archivist_block_exchange_want_block_lists_sent.inc()
 
 proc randomPeer(peers: seq[BlockExcPeerCtx]): BlockExcPeerCtx =
   Rng.instance.sample(peers)
@@ -428,7 +426,7 @@ proc blocksDeliveryHandler*(
 
     validatedBlocksDelivery.add(bd)
 
-  codex_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
+  archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
 
   let peerCtx = self.peers.get(peer)
   if peerCtx != nil:
@@ -495,11 +493,11 @@ proc wantListHandler*(
                 )
               )
 
-          codex_block_exchange_want_have_lists_received.inc()
+          archivist_block_exchange_want_have_lists_received.inc()
         of WantType.WantBlock:
           peerCtx.peerWants.add(e)
           schedulePeer = true
-          codex_block_exchange_want_block_lists_received.inc()
+          archivist_block_exchange_want_block_lists_received.inc()
       else: # Updating existing entry in peer wants
         # peer doesn't want this block anymore
         if e.cancel:
@@ -609,7 +607,7 @@ proc taskHandler*(
     proc localLookup(e: WantListEntry): Future[?!BlockDelivery] {.async.} =
       if e.address.leaf:
         (await self.localStore.getBlockAndProof(e.address.treeCid, e.address.index)).map(
-          (blkAndProof: (Block, CodexProof)) =>
+          (blkAndProof: (Block, ArchivistProof)) =>
             BlockDelivery(
               address: e.address, blk: blkAndProof[0], proof: blkAndProof[1].some
             )
@@ -617,7 +615,7 @@ proc taskHandler*(
       else:
         (await self.localStore.getBlock(e.address)).map(
           (blk: Block) =>
-            BlockDelivery(address: e.address, blk: blk, proof: CodexProof.none)
+            BlockDelivery(address: e.address, blk: blk, proof: ArchivistProof.none)
         )
 
     let
@@ -639,7 +637,7 @@ proc taskHandler*(
         peer = task.id, blocks = (blocksDelivery.mapIt(it.address))
       await self.network.request.sendBlocksDelivery(task.id, blocksDelivery)
 
-      codex_block_exchange_blocks_sent.inc(blocksDelivery.len.int64)
+      archivist_block_exchange_blocks_sent.inc(blocksDelivery.len.int64)
 
       task.peerWants.keepItIf(it.address notin successAddresses)
 

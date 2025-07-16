@@ -9,8 +9,7 @@ that reduces the time spent in macOS jobs will have a positive impact on the
 time waiting for runners to become available. On the Github enterprise plan,
 this is not the case and you can more freely use parallelization on multiple
 runners. The usage limits for Github Actions are [described here][limits]. You
-can see a breakdown of runner usage for your jobs in the Github Actions tab
-([example][usage]).
+can see a breakdown of runner usage for your jobs in the Github Actions tab.
 
 ### Windows is slow ###
 
@@ -70,7 +69,6 @@ runners busy for longer on a workflow that you know is going to fail anyway.
 Consequent runs will therefore take longer to start. Fail fast is most likely
 better for overall development speed.
 
-[usage]: https://github.com/codex-storage/nim-codex/actions/runs/3462031231/usage
 [composite]: https://docs.github.com/en/actions/creating-actions/creating-a-composite-action
 [reusable]: https://docs.github.com/en/actions/using-workflows/reusing-workflows
 [cache]: https://github.com/actions/cache/blob/main/workarounds.md#update-a-cache

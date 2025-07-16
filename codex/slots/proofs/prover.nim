@@ -32,7 +32,7 @@ import ../types
 export backends
 
 logScope:
-  topics = "codex prover"
+  topics = "archivist prover"
 
 type
   AnyProof* = CircomProof

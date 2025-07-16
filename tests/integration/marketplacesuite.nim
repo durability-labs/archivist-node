@@ -100,7 +100,7 @@ template marketplacesuite*(name: string, stopOnRequestFail: bool, body: untyped)
         )
 
     proc requestStorage(
-        client: CodexClient,
+        client: ArchivistClient,
         cid: Cid,
         proofProbability = 1.u256,
         duration: uint64 = 12.periods,

@@ -75,7 +75,7 @@ suite "Manifest - Attribute Inheritance":
         treeCid = Cid.example,
         blockSize = 1.MiBs,
         datasetSize = 100.MiBs,
-        filename = "codex.png".some,
+        filename = "example.png".some,
         mimetype = "image/png".some,
       ),
       treeCid = Cid.example,
@@ -116,6 +116,6 @@ suite "Manifest - Attribute Inheritance":
       .tryGet()
 
     check verifiable.filename.isSome == true
-    check verifiable.filename.get() == "codex.png"
+    check verifiable.filename.get() == "example.png"
     check verifiable.mimetype.isSome == true
     check verifiable.mimetype.get() == "image/png"

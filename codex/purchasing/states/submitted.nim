@@ -10,7 +10,7 @@ import ./error
 logScope:
   topics = "marketplace purchases submitted"
 
-declareCounter(codex_purchases_submitted, "codex purchases submitted")
+declareCounter(archivist_purchases_submitted, "archivist purchases submitted")
 
 type PurchaseSubmitted* = ref object of PurchaseState
 
@@ -20,7 +20,7 @@ method `$`*(state: PurchaseSubmitted): string =
 method run*(
     state: PurchaseSubmitted, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
-  codex_purchases_submitted.inc()
+  archivist_purchases_submitted.inc()
   let purchase = Purchase(machine)
   let request = !purchase.request
   let market = purchase.market

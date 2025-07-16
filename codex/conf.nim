@@ -61,18 +61,18 @@ proc `==`*(a, b: ThreadCount): bool {.borrow.}
 proc defaultDataDir*(): string =
   let dataDir =
     when defined(windows):
-      "AppData" / "Roaming" / "Codex"
+      "AppData" / "Roaming" / "Archivist"
     elif defined(macosx):
-      "Library" / "Application Support" / "Codex"
+      "Library" / "Application Support" / "Archivist"
     else:
-      ".cache" / "codex"
+      ".cache" / "archivist"
 
   getHomeDir() / dataDir
 
 const
-  codex_enable_api_debug_peers* {.booldefine.} = false
-  codex_enable_proof_failures* {.booldefine.} = false
-  codex_enable_log_counter* {.booldefine.} = false
+  archivist_enable_api_debug_peers* {.booldefine.} = false
+  archivist_enable_proof_failures* {.booldefine.} = false
+  archivist_enable_log_counter* {.booldefine.} = false
 
   DefaultThreadCount* = ThreadCount(0)
 
@@ -97,7 +97,7 @@ type
     repoSQLite = "sqlite"
     repoLevelDb = "leveldb"
 
-  CodexConf* = object
+  NodeConf* = object
     configFile* {.
       desc: "Loads the configuration from a TOML file",
       defaultValueDesc: "none",
@@ -135,7 +135,7 @@ type
     .}: Port
 
     dataDir* {.
-      desc: "The directory where codex will store configuration and data",
+      desc: "The directory where the node will store configuration and data",
       defaultValue: defaultDataDir(),
       defaultValueDesc: "",
       abbr: "d",
@@ -196,7 +196,7 @@ type
     .}: ThreadCount
 
     agentString* {.
-      defaultValue: "Codex",
+      defaultValue: "Archivist Node",
       desc: "Node agent string which is used as identifier in network",
       name: "agent-string"
     .}: string
@@ -380,7 +380,7 @@ type
       case persistenceCmd* {.defaultValue: noCmd, command.}: PersistenceCmd
       of PersistenceCmd.prover:
         circuitDir* {.
-          desc: "Directory where Codex will store proof circuit data",
+          desc: "Directory where the node will store proof circuit data",
           defaultValue: defaultDataDir() / "circuits",
           defaultValueDesc: "data/circuits",
           abbr: "cd",
@@ -461,30 +461,30 @@ logutils.formatIt(LogFormat.textLines, EthAddress):
 logutils.formatIt(LogFormat.json, EthAddress):
   %it
 
-func defaultAddress*(conf: CodexConf): IpAddress =
+func defaultAddress*(conf: NodeConf): IpAddress =
   result = static parseIpAddress("127.0.0.1")
 
 func defaultNatConfig*(): NatConfig =
   result = NatConfig(hasExtIp: false, nat: NatStrategy.NatAny)
 
-func persistence*(self: CodexConf): bool =
+func persistence*(self: NodeConf): bool =
   self.cmd == StartUpCmd.persistence
 
-func prover*(self: CodexConf): bool =
+func prover*(self: NodeConf): bool =
   self.persistence and self.persistenceCmd == PersistenceCmd.prover
 
-proc getCodexVersion(): string =
+proc getNodeVersion(): string =
   let tag = strip(staticExec("git tag"))
   if tag.isEmptyOrWhitespace:
     return "untagged build"
   return tag
 
-proc getCodexRevision(): string =
+proc getNodeRevision(): string =
   # using a slice in a static context breaks nimsuggest for some reason
   var res = strip(staticExec("git rev-parse --short HEAD"))
   return res
 
-proc getCodexContractsRevision(): string =
+proc getContractsRevision(): string =
   let res = strip(staticExec("git rev-parse --short HEAD:vendor/codex-contracts-eth"))
   return res
 
@@ -492,14 +492,14 @@ proc getNimBanner(): string =
   staticExec("nim --version | grep Version")
 
 const
-  codexVersion* = getCodexVersion()
-  codexRevision* = getCodexRevision()
-  codexContractsRevision* = getCodexContractsRevision()
+  nodeVersion* = getNodeVersion()
+  nodeRevision* = getNodeRevision()
+  contractsRevision* = getContractsRevision()
   nimBanner* = getNimBanner()
 
-  codexFullVersion* =
-    "Codex version:  " & codexVersion & "\p" & "Codex revision: " & codexRevision & "\p" &
-    "Codex contracts revision: " & codexContractsRevision & "\p" & nimBanner
+  nodeFullVersion* =
+    "Archivist node version:  " & nodeVersion & "\p" & "Archivist node revision: " & nodeRevision &
+    "contracts revision: " & contractsRevision & "\p" & nimBanner
 
 proc parseCmdArg*(
     T: typedesc[MultiAddress], input: string
@@ -715,7 +715,7 @@ proc updateLogLevel*(logLevel: string) {.upraises: [ValueError].} =
       if not setTopicState(topicName, settings.state, settings.logLevel):
         warn "Unrecognized logging topic", topic = topicName
 
-proc setupLogging*(conf: CodexConf) =
+proc setupLogging*(conf: NodeConf) =
   when defaultChroniclesStream.outputs.type.arity != 3:
     warn "Logging configuration options not enabled in the current build"
   else:
@@ -768,7 +768,7 @@ proc setupLogging*(conf: CodexConf) =
       of LogKind.None:
         noOutput
 
-    when codex_enable_log_counter:
+    when archivist_enable_log_counter:
       var counter = 0.uint64
       proc numberedWriter(logLevel: LogLevel, msg: LogOutputStr) =
         inc(counter)
@@ -788,7 +788,7 @@ proc setupLogging*(conf: CodexConf) =
       echo "Invalid value for --log-level. " & err.msg
     quit QuitFailure
 
-proc setupMetrics*(config: CodexConf) =
+proc setupMetrics*(config: NodeConf) =
   if config.metricsEnabled:
     let metricsAddress = config.metricsAddress
     notice "Starting metrics HTTP server",

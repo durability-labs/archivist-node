@@ -19,14 +19,14 @@ import ../namespaces
 import ../manifest
 
 const
-  CodexMetaKey* = Key.init(CodexMetaNamespace).tryGet
-  CodexRepoKey* = Key.init(CodexRepoNamespace).tryGet
-  CodexBlocksKey* = Key.init(CodexBlocksNamespace).tryGet
-  CodexTotalBlocksKey* = Key.init(CodexBlockTotalNamespace).tryGet
-  CodexManifestKey* = Key.init(CodexManifestNamespace).tryGet
-  BlocksTtlKey* = Key.init(CodexBlocksTtlNamespace).tryGet
-  BlockProofKey* = Key.init(CodexBlockProofNamespace).tryGet
-  QuotaKey* = Key.init(CodexQuotaNamespace).tryGet
+  ArchivistMetaKey* = Key.init(ArchivistMetaNamespace).tryGet
+  ArchivistRepoKey* = Key.init(ArchivistRepoNamespace).tryGet
+  ArchivistBlocksKey* = Key.init(ArchivistBlocksNamespace).tryGet
+  ArchivistTotalBlocksKey* = Key.init(ArchivistBlockTotalNamespace).tryGet
+  ArchivistManifestKey* = Key.init(ArchivistManifestNamespace).tryGet
+  BlocksTtlKey* = Key.init(ArchivistBlocksTtlNamespace).tryGet
+  BlockProofKey* = Key.init(ArchivistBlockProofNamespace).tryGet
+  QuotaKey* = Key.init(ArchivistQuotaNamespace).tryGet
   QuotaUsedKey* = (QuotaKey / "used").tryGet
   QuotaReservedKey* = (QuotaKey / "reserved").tryGet
 
@@ -34,9 +34,9 @@ func makePrefixKey*(postFixLen: int, cid: Cid): ?!Key =
   let cidKey = ?Key.init(($cid)[^postFixLen ..^ 1] & "/" & $cid)
 
   if ?cid.isManifest:
-    success CodexManifestKey / cidKey
+    success ArchivistManifestKey / cidKey
   else:
-    success CodexBlocksKey / cidKey
+    success ArchivistBlocksKey / cidKey
 
 proc createBlockExpirationMetadataKey*(cid: Cid): ?!Key =
   BlocksTtlKey / $cid

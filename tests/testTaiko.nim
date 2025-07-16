@@ -14,7 +14,7 @@ suite "Taiko L2 Integration Tests":
   var node1, node2: NodeProcess
 
   setup:
-    doAssert existsEnv("CODEX_ETH_PRIVATE_KEY"), "Key for Taiko account missing"
+    doAssert existsEnv("ARCHIVIST_ETH_PRIVATE_KEY"), "Key for Taiko account missing"
 
     node1 = startNode(
       [

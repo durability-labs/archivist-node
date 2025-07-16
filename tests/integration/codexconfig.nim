@@ -17,40 +17,40 @@ export clioption
 export confutils
 
 type
-  CodexConfigs* = object
-    configs*: seq[CodexConfig]
+  ArchivistConfigs* = object
+    configs*: seq[ArchivistConfig]
 
-  CodexConfig* = object
+  ArchivistConfig* = object
     cliOptions: Table[StartUpCmd, Table[string, CliOption]]
     cliPersistenceOptions: Table[PersistenceCmd, Table[string, CliOption]]
     debugEnabled*: bool
 
-  CodexConfigError* = object of CatchableError
+  ArchivistConfigError* = object of CatchableError
 
-proc cliArgs*(config: CodexConfig): seq[string] {.gcsafe, raises: [CodexConfigError].}
+proc cliArgs*(config: ArchivistConfig): seq[string] {.gcsafe, raises: [ArchivistConfigError].}
 
-proc raiseCodexConfigError(msg: string) {.raises: [CodexConfigError].} =
-  raise newException(CodexConfigError, msg)
+proc raiseConfigError(msg: string) {.raises: [ArchivistConfigError].} =
+  raise newException(ArchivistConfigError, msg)
 
 template convertError(body) =
   try:
     body
   except CatchableError as e:
-    raiseCodexConfigError e.msg
+    raiseConfigError e.msg
 
-proc init*(_: type CodexConfigs, nodes = 1): CodexConfigs {.raises: [].} =
-  CodexConfigs(configs: newSeq[CodexConfig](nodes))
+proc init*(_: type ArchivistConfigs, nodes = 1): ArchivistConfigs {.raises: [].} =
+  ArchivistConfigs(configs: newSeq[ArchivistConfig](nodes))
 
-func nodes*(self: CodexConfigs): int =
+func nodes*(self: ArchivistConfigs): int =
   self.configs.len
 
-proc checkBounds(self: CodexConfigs, idx: int) {.raises: [CodexConfigError].} =
+proc checkBounds(self: ArchivistConfigs, idx: int) {.raises: [ArchivistConfigError].} =
   if idx notin 0 ..< self.configs.len:
-    raiseCodexConfigError "index must be in bounds of the number of nodes"
+    raiseConfigError "index must be in bounds of the number of nodes"
 
 proc buildConfig(
-    config: CodexConfig, msg: string
-): CodexConf {.raises: [CodexConfigError].} =
+    config: ArchivistConfig, msg: string
+): NodeConf {.raises: [ArchivistConfigError].} =
   proc postFix(msg: string): string =
     if msg.len > 0:
       ": " & msg
@@ -58,51 +58,51 @@ proc buildConfig(
       ""
 
   try:
-    return CodexConf.load(cmdLine = config.cliArgs, quitOnFailure = false)
+    return NodeConf.load(cmdLine = config.cliArgs, quitOnFailure = false)
   except ConfigurationError as e:
-    raiseCodexConfigError msg & e.msg.postFix
+    raiseConfigError msg & e.msg.postFix
   except Exception as e:
     ## TODO: remove once proper exception handling added to nim-confutils
-    raiseCodexConfigError msg & e.msg.postFix
+    raiseConfigError msg & e.msg.postFix
 
 proc addCliOption*(
-    config: var CodexConfig, group = PersistenceCmd.noCmd, cliOption: CliOption
-) {.raises: [CodexConfigError].} =
+    config: var ArchivistConfig, group = PersistenceCmd.noCmd, cliOption: CliOption
+) {.raises: [ArchivistConfigError].} =
   var options = config.cliPersistenceOptions.getOrDefault(group)
   options[cliOption.key] = cliOption # overwrite if already exists
   config.cliPersistenceOptions[group] = options
   discard config.buildConfig("Invalid cli arg " & $cliOption)
 
 proc addCliOption*(
-    config: var CodexConfig, group = PersistenceCmd.noCmd, key: string, value = ""
-) {.raises: [CodexConfigError].} =
+    config: var ArchivistConfig, group = PersistenceCmd.noCmd, key: string, value = ""
+) {.raises: [ArchivistConfigError].} =
   config.addCliOption(group, CliOption(key: key, value: value))
 
 proc addCliOption*(
-    config: var CodexConfig, group = StartUpCmd.noCmd, cliOption: CliOption
-) {.raises: [CodexConfigError].} =
+    config: var ArchivistConfig, group = StartUpCmd.noCmd, cliOption: CliOption
+) {.raises: [ArchivistConfigError].} =
   var options = config.cliOptions.getOrDefault(group)
   options[cliOption.key] = cliOption # overwrite if already exists
   config.cliOptions[group] = options
   discard config.buildConfig("Invalid cli arg " & $cliOption)
 
 proc addCliOption*(
-    config: var CodexConfig, group = StartUpCmd.noCmd, key: string, value = ""
-) {.raises: [CodexConfigError].} =
+    config: var ArchivistConfig, group = StartUpCmd.noCmd, key: string, value = ""
+) {.raises: [ArchivistConfigError].} =
   config.addCliOption(group, CliOption(key: key, value: value))
 
 proc addCliOption*(
-    config: var CodexConfig, cliOption: CliOption
-) {.raises: [CodexConfigError].} =
+    config: var ArchivistConfig, cliOption: CliOption
+) {.raises: [ArchivistConfigError].} =
   config.addCliOption(StartUpCmd.noCmd, cliOption)
 
 proc addCliOption*(
-    config: var CodexConfig, key: string, value = ""
-) {.raises: [CodexConfigError].} =
+    config: var ArchivistConfig, key: string, value = ""
+) {.raises: [ArchivistConfigError].} =
   config.addCliOption(StartUpCmd.noCmd, CliOption(key: key, value: value))
 
-proc cliArgs*(config: CodexConfig): seq[string] {.gcsafe, raises: [CodexConfigError].} =
-  ## converts CodexConfig cli options and command groups in a sequence of args
+proc cliArgs*(config: ArchivistConfig): seq[string] {.gcsafe, raises: [ArchivistConfigError].} =
+  ## converts ArchivistConfig cli options and command groups in a sequence of args
   ## and filters out cli options by node index if provided in the CliOption
   var args: seq[string] = @[]
 
@@ -123,18 +123,18 @@ proc cliArgs*(config: CodexConfig): seq[string] {.gcsafe, raises: [CodexConfigEr
 
     return args
 
-proc logFile*(config: CodexConfig): ?string {.raises: [CodexConfigError].} =
-  let built = config.buildConfig("Invalid codex config cli params")
+proc logFile*(config: ArchivistConfig): ?string {.raises: [ArchivistConfigError].} =
+  let built = config.buildConfig("Invalid node config cli params")
   built.logFile
 
-proc logLevel*(config: CodexConfig): LogLevel {.raises: [CodexConfigError].} =
+proc logLevel*(config: ArchivistConfig): LogLevel {.raises: [ArchivistConfigError].} =
   convertError:
-    let built = config.buildConfig("Invalid codex config cli params")
+    let built = config.buildConfig("Invalid node config cli params")
     return parseEnum[LogLevel](built.logLevel.toUpperAscii)
 
 proc debug*(
-    self: CodexConfigs, idx: int, enabled = true
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, enabled = true
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   ## output log in stdout for a specific node in the group
 
   self.checkBounds idx
@@ -143,23 +143,21 @@ proc debug*(
   startConfig.configs[idx].debugEnabled = enabled
   return startConfig
 
-proc debug*(self: CodexConfigs, enabled = true): CodexConfigs {.raises: [].} =
+proc debug*(self: ArchivistConfigs, enabled = true): ArchivistConfigs {.raises: [].} =
   ## output log in stdout for all nodes in group
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.debugEnabled = enabled
   return startConfig
 
-proc withLogFile*(
-    self: CodexConfigs, idx: int
-): CodexConfigs {.raises: [CodexConfigError].} =
+proc withLogFile*(self: ArchivistConfigs, idx: int): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
   startConfig.configs[idx].addCliOption("--log-file", "<updated_in_test>")
   return startConfig
 
-proc withLogFile*(self: CodexConfigs): CodexConfigs {.raises: [CodexConfigError].} =
+proc withLogFile*(self: ArchivistConfigs): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   ## typically called from test, sets config such that a log file should be
   ## created
   var startConfig = self
@@ -167,9 +165,8 @@ proc withLogFile*(self: CodexConfigs): CodexConfigs {.raises: [CodexConfigError]
     config.addCliOption("--log-file", "<updated_in_test>")
   return startConfig
 
-proc withLogFile*(
-    self: var CodexConfig, logFile: string
-) {.raises: [CodexConfigError].} = #: CodexConfigs =
+proc withLogFile*(self: var ArchivistConfig, logFile: string) {.raises: [ArchivistConfigError].} =
+  #: ArchivistConfigs =
   ## typically called internally from the test suite, sets a log file path to
   ## be created during the test run, for a specified node in the group
   # var config = self
@@ -177,15 +174,15 @@ proc withLogFile*(
   # return startConfig
 
 proc withLogLevel*(
-    self: CodexConfig, level: LogLevel | string
-): CodexConfig {.raises: [CodexConfigError].} =
+    self: ArchivistConfig, level: LogLevel | string
+): ArchivistConfig {.raises: [ArchivistConfigError].} =
   var config = self
   config.addCliOption("--log-level", $level)
   return config
 
 proc withLogLevel*(
-    self: CodexConfigs, idx: int, level: LogLevel | string
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, level: LogLevel | string
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
@@ -193,23 +190,21 @@ proc withLogLevel*(
   return startConfig
 
 proc withLogLevel*(
-    self: CodexConfigs, level: LogLevel | string
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, level: LogLevel | string
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.addCliOption("--log-level", $level)
   return startConfig
 
-proc withBlockTtl*(
-    self: CodexConfig, ttl: int
-): CodexConfig {.raises: [CodexConfigError].} =
+proc withBlockTtl*(self: ArchivistConfig, ttl: int): ArchivistConfig {.raises: [ArchivistConfigError].} =
   var config = self
   config.addCliOption("--block-ttl", $ttl)
   return config
 
 proc withBlockTtl*(
-    self: CodexConfigs, idx: int, ttl: int
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, ttl: int
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
@@ -217,23 +212,23 @@ proc withBlockTtl*(
   return startConfig
 
 proc withBlockTtl*(
-    self: CodexConfigs, ttl: int
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, ttl: int
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.addCliOption("--block-ttl", $ttl)
   return startConfig
 
 proc withBlockMaintenanceInterval*(
-    self: CodexConfig, interval: int
-): CodexConfig {.raises: [CodexConfigError].} =
+    self: ArchivistConfig, interval: int
+): ArchivistConfig {.raises: [ArchivistConfigError].} =
   var config = self
   config.addCliOption("--block-mi", $interval)
   return config
 
 proc withBlockMaintenanceInterval*(
-    self: CodexConfigs, idx: int, interval: int
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, interval: int
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
@@ -241,16 +236,16 @@ proc withBlockMaintenanceInterval*(
   return startConfig
 
 proc withBlockMaintenanceInterval*(
-    self: CodexConfigs, interval: int
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, interval: int
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.addCliOption("--block-mi", $interval)
   return startConfig
 
 proc withSimulateProofFailures*(
-    self: CodexConfigs, idx: int, failEveryNProofs: int
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, failEveryNProofs: int
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
@@ -260,8 +255,8 @@ proc withSimulateProofFailures*(
   return startConfig
 
 proc withSimulateProofFailures*(
-    self: CodexConfigs, failEveryNProofs: int
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, failEveryNProofs: int
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.addCliOption(
@@ -270,16 +265,16 @@ proc withSimulateProofFailures*(
   return startConfig
 
 proc withValidationGroups*(
-    self: CodexConfigs, groups: ValidationGroups
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, groups: ValidationGroups
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.addCliOption(StartUpCmd.persistence, "--validator-groups", $(groups))
   return startConfig
 
 proc withValidationGroupIndex*(
-    self: CodexConfigs, idx: int, groupIndex: uint16
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, groupIndex: uint16
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
@@ -289,8 +284,8 @@ proc withValidationGroupIndex*(
   return startConfig
 
 proc withEthProvider*(
-    self: CodexConfigs, idx: int, ethProvider: string
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, ethProvider: string
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
@@ -300,26 +295,26 @@ proc withEthProvider*(
   return startConfig
 
 proc withEthProvider*(
-    self: CodexConfigs, ethProvider: string
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, ethProvider: string
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.addCliOption(StartUpCmd.persistence, "--eth-provider", ethProvider)
   return startConfig
 
 proc logLevelWithTopics(
-    config: CodexConfig, topics: varargs[string]
-): string {.raises: [CodexConfigError].} =
+    config: ArchivistConfig, topics: varargs[string]
+): string {.raises: [ArchivistConfigError].} =
   convertError:
     var logLevel = LogLevel.INFO
-    let built = config.buildConfig("Invalid codex config cli params")
+    let built = config.buildConfig("Invalid node config cli params")
     logLevel = parseEnum[LogLevel](built.logLevel.toUpperAscii)
     let level = $logLevel & ";TRACE: " & topics.join(",")
     return level
 
 proc withLogTopics*(
-    self: CodexConfigs, idx: int, topics: varargs[string]
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, topics: varargs[string]
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   convertError:
@@ -329,8 +324,8 @@ proc withLogTopics*(
     return startConfig.withLogLevel(idx, level)
 
 proc withLogTopics*(
-    self: CodexConfigs, topics: varargs[string]
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, topics: varargs[string]
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     let level = config.logLevelWithTopics(topics)
@@ -338,8 +333,8 @@ proc withLogTopics*(
   return startConfig
 
 proc withStorageQuota*(
-    self: CodexConfigs, idx: int, quota: NBytes
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, idx: int, quota: NBytes
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
@@ -347,8 +342,8 @@ proc withStorageQuota*(
   return startConfig
 
 proc withStorageQuota*(
-    self: CodexConfigs, quota: NBytes
-): CodexConfigs {.raises: [CodexConfigError].} =
+    self: ArchivistConfigs, quota: NBytes
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   var startConfig = self
   for config in startConfig.configs.mitems:
     config.addCliOption("--storage-quota", $quota)

@@ -22,25 +22,25 @@ import ../rng
 export crypto
 
 type
-  CodexKeyError = object of CodexError
-  CodexKeyUnsafeError = object of CodexKeyError
+  ArchivistKeyError = object of ArchivistError
+  ArchivistKeyUnsafeError = object of ArchivistKeyError
 
 proc setupKey*(path: string): ?!PrivateKey =
   if not path.fileAccessible({AccessFlags.Find}):
     info "Creating a private key and saving it"
     let
-      res = ?PrivateKey.random(Rng.instance()[]).mapFailure(CodexKeyError)
-      bytes = ?res.getBytes().mapFailure(CodexKeyError)
+      res = ?PrivateKey.random(Rng.instance()[]).mapFailure(ArchivistKeyError)
+      bytes = ?res.getBytes().mapFailure(ArchivistKeyError)
 
-    ?path.secureWriteFile(bytes).mapFailure(CodexKeyError)
-    return PrivateKey.init(bytes).mapFailure(CodexKeyError)
+    ?path.secureWriteFile(bytes).mapFailure(ArchivistKeyError)
+    return PrivateKey.init(bytes).mapFailure(ArchivistKeyError)
 
   info "Found a network private key"
-  if not ?checkSecureFile(path).mapFailure(CodexKeyError):
+  if not ?checkSecureFile(path).mapFailure(ArchivistKeyError):
     warn "The network private key file is not safe, aborting"
     return failure newException(
-      CodexKeyUnsafeError, "The network private key file is not safe"
+      ArchivistKeyUnsafeError, "The network private key file is not safe"
     )
 
-  let kb = ?path.readAllBytes().mapFailure(CodexKeyError)
-  return PrivateKey.init(kb).mapFailure(CodexKeyError)
+  let kb = ?path.readAllBytes().mapFailure(ArchivistKeyError)
+  return PrivateKey.init(kb).mapFailure(ArchivistKeyError)

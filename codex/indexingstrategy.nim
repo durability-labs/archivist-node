@@ -21,7 +21,7 @@ type
   # Representing a strategy for grouping indices (of blocks usually)
   # Given an interation-count as input, will produce a seq of
   # selected indices.
-  IndexingError* = object of CodexError
+  IndexingError* = object of ArchivistError
   IndexingWrongIndexError* = object of IndexingError
   IndexingWrongIterationsError* = object of IndexingError
   IndexingWrongGroupCountError* = object of IndexingError

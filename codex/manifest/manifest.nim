@@ -135,7 +135,7 @@ func mimetype*(self: Manifest): ?string =
 ############################################################
 
 func isManifest*(cid: Cid): ?!bool =
-  success (ManifestCodec == ?cid.contentType().mapFailure(CodexError))
+  success (ManifestCodec == ?cid.contentType().mapFailure(ArchivistError))
 
 func isManifest*(mc: MultiCodec): ?!bool =
   success mc == ManifestCodec
@@ -157,8 +157,7 @@ func verify*(self: Manifest): ?!void =
   ##
 
   if self.protected and (self.blocksCount != self.steps * (self.ecK + self.ecM)):
-    return
-      failure newException(CodexError, "Broken manifest: wrong originalBlocksCount")
+    return failure newException(ArchivistError, "Broken manifest: wrong originalBlocksCount")
 
   return success()
 
@@ -333,11 +332,11 @@ func new*(
 
   if not manifest.protected:
     return failure newException(
-      CodexError, "Can create verifiable manifest only from protected manifest."
+      ArchivistError, "Can create verifiable manifest only from protected manifest."
     )
 
   if slotRoots.len != manifest.numSlots:
-    return failure newException(CodexError, "Wrong number of slot roots.")
+    return failure newException(ArchivistError, "Wrong number of slot roots.")
 
   success Manifest(
     treeCid: manifest.treeCid,

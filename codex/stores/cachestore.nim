@@ -30,16 +30,16 @@ import ../clock
 export blockstore
 
 logScope:
-  topics = "codex cachestore"
+  topics = "archivist cachestore"
 
 type
   CacheStore* = ref object of BlockStore
     currentSize*: NBytes
     size*: NBytes
     cache: LruCache[Cid, Block]
-    cidAndProofCache: LruCache[(Cid, Natural), (Cid, CodexProof)]
+    cidAndProofCache: LruCache[(Cid, Natural), (Cid, ArchivistProof)]
 
-  InvalidBlockSize* = object of CodexError
+  InvalidBlockSize* = object of ArchivistError
 
 const DefaultCacheSize*: NBytes = 5.MiBs
 
@@ -68,7 +68,7 @@ method getBlock*(
 
 method getCidAndProof*(
     self: CacheStore, treeCid: Cid, index: Natural
-): Future[?!(Cid, CodexProof)] {.async: (raises: [CancelledError]).} =
+): Future[?!(Cid, ArchivistProof)] {.async: (raises: [CancelledError]).} =
   if cidAndProof =? self.cidAndProofCache.getOption((treeCid, index)):
     success(cidAndProof)
   else:
@@ -88,7 +88,7 @@ method getBlock*(
 
 method getBlockAndProof*(
     self: CacheStore, treeCid: Cid, index: Natural
-): Future[?!(Block, CodexProof)] {.async: (raises: [CancelledError]).} =
+): Future[?!(Block, ArchivistProof)] {.async: (raises: [CancelledError]).} =
   without cidAndProof =? (await self.getCidAndProof(treeCid, index)), err:
     return failure(err)
 
@@ -211,7 +211,7 @@ method putBlock*(
   return success()
 
 method putCidAndProof*(
-    self: CacheStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: CodexProof
+    self: CacheStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   self.cidAndProofCache[(treeCid, index)] = (blockCid, proof)
   success()
@@ -286,7 +286,7 @@ proc new*(
     currentSize = 0'nb
     size = int(cacheSize div chunkSize)
     cache = newLruCache[Cid, Block](size)
-    cidAndProofCache = newLruCache[(Cid, Natural), (Cid, CodexProof)](size)
+    cidAndProofCache = newLruCache[(Cid, Natural), (Cid, ArchivistProof)](size)
     store = CacheStore(
       cache: cache,
       cidAndProofCache: cidAndProofCache,

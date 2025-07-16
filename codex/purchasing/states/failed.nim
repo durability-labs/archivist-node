@@ -4,7 +4,7 @@ import ../../logutils
 import ../../utils/exceptions
 import ./error
 
-declareCounter(codex_purchases_failed, "codex purchases failed")
+declareCounter(archivist_purchases_failed, "archivist purchases failed")
 
 type PurchaseFailed* = ref object of PurchaseState
 
@@ -14,7 +14,7 @@ method `$`*(state: PurchaseFailed): string =
 method run*(
     state: PurchaseFailed, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
-  codex_purchases_failed.inc()
+  archivist_purchases_failed.inc()
   let purchase = Purchase(machine)
 
   try:

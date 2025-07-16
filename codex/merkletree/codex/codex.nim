@@ -28,7 +28,7 @@ import ../merkletree
 export merkletree
 
 logScope:
-  topics = "codex merkletree"
+  topics = "archivist merkletree"
 
 type
   ByteTreeKey* {.pure.} = enum
@@ -41,10 +41,10 @@ type
   ByteTree* = MerkleTree[ByteHash, ByteTreeKey]
   ByteProof* = MerkleProof[ByteHash, ByteTreeKey]
 
-  CodexTree* = ref object of ByteTree
+  ArchivistTree* = ref object of ByteTree
     mcodec*: MultiCodec
 
-  CodexProof* = ref object of ByteProof
+  ArchivistProof* = ref object of ByteProof
     mcodec*: MultiCodec
 
 # CodeHashes is not exported from libp2p
@@ -63,20 +63,20 @@ func mhash*(mcodec: MultiCodec): ?!MHash =
 
   success mhash
 
-func digestSize*(self: (CodexTree or CodexProof)): int =
+func digestSize*(self: (ArchivistTree or ArchivistProof)): int =
   ## Number of leaves
   ##
 
   self.mhash.size
 
-func getProof*(self: CodexTree, index: int): ?!CodexProof =
-  var proof = CodexProof(mcodec: self.mcodec)
+func getProof*(self: ArchivistTree, index: int): ?!ArchivistProof =
+  var proof = ArchivistProof(mcodec: self.mcodec)
 
   ?self.getProof(index, proof)
 
   success proof
 
-func verify*(self: CodexProof, leaf: MultiHash, root: MultiHash): ?!bool =
+func verify*(self: ArchivistProof, leaf: MultiHash, root: MultiHash): ?!bool =
   ## Verify hash
   ##
 
@@ -92,10 +92,10 @@ func verify*(self: CodexProof, leaf: MultiHash, root: MultiHash): ?!bool =
 
   self.verify(leafBytes, rootBytes)
 
-func verify*(self: CodexProof, leaf: Cid, root: Cid): ?!bool =
+func verify*(self: ArchivistProof, leaf: Cid, root: Cid): ?!bool =
   self.verify(?leaf.mhash.mapFailure, ?leaf.mhash.mapFailure)
 
-proc rootCid*(self: CodexTree, version = CIDv1, dataCodec = DatasetRootCodec): ?!Cid =
+proc rootCid*(self: ArchivistTree, version = CIDv1, dataCodec = DatasetRootCodec): ?!Cid =
   if (?self.root).len == 0:
     return failure "Empty root"
 
@@ -104,7 +104,7 @@ proc rootCid*(self: CodexTree, version = CIDv1, dataCodec = DatasetRootCodec): ?
   Cid.init(version, DatasetRootCodec, mhash).mapFailure
 
 func getLeafCid*(
-    self: CodexTree, i: Natural, version = CIDv1, dataCodec = BlockCodec
+    self: ArchivistTree, i: Natural, version = CIDv1, dataCodec = BlockCodec
 ): ?!Cid =
   if i >= self.leavesCount:
     return failure "Invalid leaf index " & $i
@@ -115,17 +115,17 @@ func getLeafCid*(
 
   Cid.init(version, dataCodec, mhash).mapFailure
 
-proc `$`*(self: CodexTree): string =
+proc `$`*(self: ArchivistTree): string =
   let root =
     if self.root.isOk:
       byteutils.toHex(self.root.get)
     else:
       "none"
-  "CodexTree(" & " root: " & root & ", leavesCount: " & $self.leavesCount & ", levels: " &
+  "ArchivistTree(" & " root: " & root & ", leavesCount: " & $self.leavesCount & ", levels: " &
     $self.levels & ", mcodec: " & $self.mcodec & " )"
 
-proc `$`*(self: CodexProof): string =
-  "CodexProof(" & " nleaves: " & $self.nleaves & ", index: " & $self.index & ", path: " &
+proc `$`*(self: ArchivistProof): string =
+  "ArchivistProof(" & " nleaves: " & $self.nleaves & ", index: " & $self.index & ", path: " &
     $self.path.mapIt(byteutils.toHex(it)) & ", mcodec: " & $self.mcodec & " )"
 
 func compress*(x, y: openArray[byte], key: ByteTreeKey, mhash: MHash): ?!ByteHash =
@@ -141,8 +141,8 @@ func compress*(x, y: openArray[byte], key: ByteTreeKey, mhash: MHash): ?!ByteHas
   success @digest
 
 func init*(
-    _: type CodexTree, mcodec: MultiCodec = Sha256HashCodec, leaves: openArray[ByteHash]
-): ?!CodexTree =
+    _: type ArchivistTree, mcodec: MultiCodec = Sha256HashCodec, leaves: openArray[ByteHash]
+): ?!ArchivistTree =
   if leaves.len == 0:
     return failure "Empty leaves"
 
@@ -155,12 +155,12 @@ func init*(
   if mhash.size != leaves[0].len:
     return failure "Invalid hash length"
 
-  var self = CodexTree(mcodec: mcodec, compress: compressor, zero: Zero)
+  var self = ArchivistTree(mcodec: mcodec, compress: compressor, zero: Zero)
 
   self.layers = ?merkleTreeWorker(self, leaves, isBottomLayer = true)
   success self
 
-func init*(_: type CodexTree, leaves: openArray[MultiHash]): ?!CodexTree =
+func init*(_: type ArchivistTree, leaves: openArray[MultiHash]): ?!ArchivistTree =
   if leaves.len == 0:
     return failure "Empty leaves"
 
@@ -168,9 +168,9 @@ func init*(_: type CodexTree, leaves: openArray[MultiHash]): ?!CodexTree =
     mcodec = leaves[0].mcodec
     leaves = leaves.mapIt(it.digestBytes)
 
-  CodexTree.init(mcodec, leaves)
+  ArchivistTree.init(mcodec, leaves)
 
-func init*(_: type CodexTree, leaves: openArray[Cid]): ?!CodexTree =
+func init*(_: type ArchivistTree, leaves: openArray[Cid]): ?!ArchivistTree =
   if leaves.len == 0:
     return failure "Empty leaves"
 
@@ -178,14 +178,14 @@ func init*(_: type CodexTree, leaves: openArray[Cid]): ?!CodexTree =
     mcodec = (?leaves[0].mhash.mapFailure).mcodec
     leaves = leaves.mapIt((?it.mhash.mapFailure).digestBytes)
 
-  CodexTree.init(mcodec, leaves)
+  ArchivistTree.init(mcodec, leaves)
 
 proc fromNodes*(
-    _: type CodexTree,
+    _: type ArchivistTree,
     mcodec: MultiCodec = Sha256HashCodec,
     nodes: openArray[ByteHash],
     nleaves: int,
-): ?!CodexTree =
+): ?!ArchivistTree =
   if nodes.len == 0:
     return failure "Empty nodes"
 
@@ -199,7 +199,7 @@ proc fromNodes*(
     return failure "Invalid hash length"
 
   var
-    self = CodexTree(compress: compressor, zero: Zero, mcodec: mcodec)
+    self = ArchivistTree(compress: compressor, zero: Zero, mcodec: mcodec)
     layer = nleaves
     pos = 0
 
@@ -218,12 +218,12 @@ proc fromNodes*(
   success self
 
 func init*(
-    _: type CodexProof,
+    _: type ArchivistProof,
     mcodec: MultiCodec = Sha256HashCodec,
     index: int,
     nleaves: int,
     nodes: openArray[ByteHash],
-): ?!CodexProof =
+): ?!ArchivistProof =
   if nodes.len == 0:
     return failure "Empty nodes"
 
@@ -233,7 +233,7 @@ func init*(
     compressor = proc(x, y: seq[byte], key: ByteTreeKey): ?!seq[byte] {.noSideEffect.} =
       compress(x, y, key, mhash)
 
-  success CodexProof(
+  success ArchivistProof(
     compress: compressor,
     zero: Zero,
     mcodec: mcodec,

@@ -46,14 +46,14 @@ proc lenPrefix*(msg: openArray[byte]): seq[byte] =
 
   return buf
 
-proc makeManifestAndTree*(blocks: seq[Block]): ?!(Manifest, CodexTree) =
+proc makeManifestAndTree*(blocks: seq[Block]): ?!(Manifest, ArchivistTree) =
   if blocks.len == 0:
     return failure("Blocks list was empty")
 
   let
     datasetSize = blocks.mapIt(it.data.len).foldl(a + b)
     blockSize = blocks.mapIt(it.data.len).foldl(max(a, b))
-    tree = ?CodexTree.init(blocks.mapIt(it.cid))
+    tree = ?ArchivistTree.init(blocks.mapIt(it.cid))
     treeCid = ?tree.rootCid
     manifest = Manifest.new(
       treeCid = treeCid,

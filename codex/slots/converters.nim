@@ -46,10 +46,10 @@ proc toPoseidon2Hash(
   success hash
 
 func toCellCid*(hash: Poseidon2Hash): ?!Cid =
-  toCid(hash, Pos2Bn128MrklCodec, CodexSlotCellCodec)
+  toCid(hash, Pos2Bn128MrklCodec, SlotCellCodec)
 
 func fromCellCid*(cid: Cid): ?!Poseidon2Hash =
-  toPoseidon2Hash(cid, Pos2Bn128MrklCodec, CodexSlotCellCodec)
+  toPoseidon2Hash(cid, Pos2Bn128MrklCodec, SlotCellCodec)
 
 func toSlotCid*(hash: Poseidon2Hash): ?!Cid =
   toCid(hash, multiCodec("identity"), SlotRootCodec)
@@ -66,8 +66,8 @@ func toVerifyCid*(hash: Poseidon2Hash): ?!Cid =
 func fromVerifyCid*(cid: Cid): ?!Poseidon2Hash =
   toPoseidon2Hash(cid, multiCodec("identity"), SlotProvingRootCodec)
 
-func toEncodableProof*(proof: Poseidon2Proof): ?!CodexProof =
-  let encodableProof = CodexProof(
+func toEncodableProof*(proof: Poseidon2Proof): ?!ArchivistProof =
+  let encodableProof = ArchivistProof(
     mcodec: multiCodec("identity"),
     index: proof.index,
     nleaves: proof.nleaves,
@@ -76,7 +76,7 @@ func toEncodableProof*(proof: Poseidon2Proof): ?!CodexProof =
 
   success encodableProof
 
-func toVerifiableProof*(proof: CodexProof): ?!Poseidon2Proof =
+func toVerifiableProof*(proof: ArchivistProof): ?!Poseidon2Proof =
   let nodes = proof.path.mapIt(?Poseidon2Hash.fromBytes(it.toArray32).toFailure)
 
   Poseidon2Proof.init(index = proof.index, nleaves = proof.nleaves, nodes = nodes)

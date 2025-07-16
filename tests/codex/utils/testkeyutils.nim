@@ -9,7 +9,7 @@ when defined(windows):
   import stew/windows/acl
 
 suite "keyutils":
-  let path = getTempDir() / "CodexTest"
+  let path = getTempDir() / "ArchivistTest"
 
   setup:
     os.createDir(path)

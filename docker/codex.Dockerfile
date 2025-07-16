@@ -43,4 +43,4 @@ COPY --from=builder --chmod=0755 ${BUILD_HOME}/docker/docker-entrypoint.sh /
 RUN apt-get update && apt-get install -y libgomp1 curl jq && rm -rf /var/lib/apt/lists/*
 ENV NAT_IP_AUTO=${NAT_IP_AUTO}
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["codex"]
+CMD ["codex "]

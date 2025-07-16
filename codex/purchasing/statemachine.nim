@@ -16,4 +16,4 @@ type
     request*: ?StorageRequest
 
   PurchaseState* = ref object of State
-  PurchaseError* = object of CodexError
+  PurchaseError* = object of ArchivistError

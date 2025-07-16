@@ -40,7 +40,7 @@ import ../helpers/mockclock
 
 import ./helpers
 
-privateAccess(CodexNodeRef) # enable access to private fields
+privateAccess(ArchivistNodeRef) # enable access to private fields
 
 asyncchecksuite "Test Node - Host contracts":
   setupAndTearDown()

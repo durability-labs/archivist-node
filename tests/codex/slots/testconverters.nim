@@ -39,8 +39,8 @@ suite "Converters":
 
   test "Proof":
     let
-      codexProof = toEncodableProof(Poseidon2Proof.example).tryGet()
-      poseidonProof = toVerifiableProof(codexProof).tryGet()
+      archivistProof = toEncodableProof(Poseidon2Proof.example).tryGet()
+      poseidonProof = toVerifiableProof(archivistProof).tryGet()
 
     check:
       Poseidon2Proof.example == poseidonProof

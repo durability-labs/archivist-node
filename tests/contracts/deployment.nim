@@ -7,7 +7,7 @@ const hardhatMarketAddress =
   Address.init("0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44").get()
 const hardhatMarketWithDummyVerifier =
   Address.init("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f").get()
-const marketAddressEnvName = "CODEX_MARKET_ADDRESS"
+const marketAddressEnvName = "ARCHIVIST_MARKET_ADDRESS"
 
 proc address*(_: type Marketplace, dummyVerifier = false): Address =
   if existsEnv(marketAddressEnvName):

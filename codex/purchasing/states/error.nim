@@ -3,7 +3,7 @@ import ../statemachine
 import ../../utils/exceptions
 import ../../logutils
 
-declareCounter(codex_purchases_error, "codex purchases error")
+declareCounter(archivist_purchases_error, "archivist purchases error")
 
 logScope:
   topics = "marketplace purchases errored"
@@ -17,7 +17,7 @@ method `$`*(state: PurchaseErrored): string =
 method run*(
     state: PurchaseErrored, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
-  codex_purchases_error.inc()
+  archivist_purchases_error.inc()
   let purchase = Purchase(machine)
 
   error "Purchasing error",

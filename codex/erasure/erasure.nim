@@ -40,7 +40,7 @@ import ./backend
 export backend
 
 logScope:
-  topics = "codex erasure"
+  topics = "archivist erasure"
 
 type
   ## Encode a manifest into one that is erasure protected.
@@ -85,7 +85,7 @@ type
     blocksCount: Natural
     strategy: StrategyType
 
-  ErasureError* = object of CodexError
+  ErasureError* = object of ArchivistError
   InsufficientBlocksError* = object of ErasureError
     # Minimum size, in bytes, that the dataset must have had
     # for the encoding request to have succeeded with the parameters
@@ -428,7 +428,7 @@ proc encodeData(
           return failure("Unable to store block!")
         idx.inc(params.steps)
 
-    without tree =? CodexTree.init(cids[]), err:
+    without tree =? ArchivistTree.init(cids[]), err:
       return failure(err)
 
     without treeCid =? tree.rootCid, err:
@@ -649,7 +649,7 @@ proc decode*(self: Erasure, encoded: Manifest): Future[?!Manifest] {.async.} =
   without (cids, recoveredIndices) =? (await self.decodeInternal(encoded)), err:
     return failure(err)
 
-  without tree =? CodexTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
+  without tree =? ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
     return failure(err)
 
   without treeCid =? tree.rootCid, err:
@@ -680,7 +680,7 @@ proc repair*(self: Erasure, encoded: Manifest): Future[?!void] {.async.} =
   without (cids, _) =? (await self.decodeInternal(encoded)), err:
     return failure(err)
 
-  without tree =? CodexTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
+  without tree =? ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
     return failure(err)
 
   without treeCid =? tree.rootCid, err:

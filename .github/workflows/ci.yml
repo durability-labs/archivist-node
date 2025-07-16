@@ -47,7 +47,7 @@ jobs:
         uses: arnetheduck/nph-action@v1
         with:
           version: 0.6.1
-          options: "codex/ tests/"
+          options: "archivist/ tests/"
           fail: true
           suggest: true
 

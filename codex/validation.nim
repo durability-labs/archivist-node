@@ -24,7 +24,7 @@ type Validation* = ref object
   config: ValidationConfig
 
 logScope:
-  topics = "codex validator"
+  topics = "archivist validator"
 
 proc new*(
     _: type Validation, clock: Clock, market: Market, config: ValidationConfig

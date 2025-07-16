@@ -11,8 +11,8 @@ import ../archivistclient
 import ../multinodes
 
 multinodesuite "Rest API validation":
-  let config = NodeConfigs(clients: CodexConfigs.init(nodes = 1).some)
-  var client: CodexClient
+  let config = NodeConfigs(clients: ArchivistConfigs.init(nodes = 1).some)
+  var client: ArchivistClient
 
   setup:
     client = clients()[0].client

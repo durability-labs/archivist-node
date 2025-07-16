@@ -27,8 +27,8 @@ suite "Digest - MerkleTree":
     let
       digest = Poseidon2Tree.digest(bytes, chunkSize = 2 * KB).tryGet
       spongeDigest = SpongeMerkle.digest(bytes, chunkSize = 2 * KB)
-      codexPosTree = Poseidon2Tree.init(leaves).tryGet
-      rootDigest = codexPosTree.root.tryGet
+      posTree = Poseidon2Tree.init(leaves).tryGet
+      rootDigest = posTree.root.tryGet
 
     check:
       bool(digest == spongeDigest)
@@ -49,8 +49,8 @@ suite "Digest - MerkleTree":
     let
       digest = Poseidon2Tree.digest(bytes, chunkSize = 2 * KB).tryGet
       spongeDigest = SpongeMerkle.digest(bytes, chunkSize = 2 * KB)
-      codexPosTree = Poseidon2Tree.init(leaves).tryGet
-      rootDigest = codexPosTree.root.tryGet
+      posTree = Poseidon2Tree.init(leaves).tryGet
+      rootDigest = posTree.root.tryGet
 
     check:
       bool(digest == spongeDigest)

@@ -1,6 +1,6 @@
-import ./merkletree/testcodextree
+import ./merkletree/testarchivisttree
 import ./merkletree/testposeidon2tree
-import ./merkletree/testcodexcoders
+import ./merkletree/testarchivistcoders
 import ./merkletree/testmerkledigest
 
 {.warning[UnusedImport]: off.}

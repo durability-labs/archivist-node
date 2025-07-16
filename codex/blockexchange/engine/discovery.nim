@@ -30,9 +30,9 @@ import ../../logutils
 import ../../manifest
 
 logScope:
-  topics = "codex discoveryengine"
+  topics = "archivist discoveryengine"
 
-declareGauge(codex_inflight_discovery, "inflight discovery requests")
+declareGauge(archivist_inflight_discovery, "inflight discovery requests")
 
 const
   DefaultConcurrentDiscRequests = 10
@@ -83,11 +83,11 @@ proc discoveryTaskLoop(b: DiscoveryEngine) {.async: (raises: []).} =
       if haves.len < b.minPeersPerBlock:
         let request = b.discovery.find(cid)
         b.inFlightDiscReqs[cid] = request
-        codex_inflight_discovery.set(b.inFlightDiscReqs.len.int64)
+        archivist_inflight_discovery.set(b.inFlightDiscReqs.len.int64)
 
         defer:
           b.inFlightDiscReqs.del(cid)
-          codex_inflight_discovery.set(b.inFlightDiscReqs.len.int64)
+          archivist_inflight_discovery.set(b.inFlightDiscReqs.len.int64)
 
         if (await request.withTimeout(DefaultDiscoveryTimeout)) and
             peers =? (await request).catch:

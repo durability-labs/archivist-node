@@ -9,17 +9,16 @@
 
 const
   # Namespaces
-  CodexMetaNamespace* = "meta" # meta info stored here
-  CodexRepoNamespace* = "repo" # repository namespace, blocks and manifests are subkeys
-  CodexBlockTotalNamespace* = CodexMetaNamespace & "/total"
-    # number of blocks in the repo
-  CodexBlocksNamespace* = CodexRepoNamespace & "/blocks" # blocks namespace
-  CodexManifestNamespace* = CodexRepoNamespace & "/manifests" # manifest namespace
-  CodexBlocksTtlNamespace* = # Cid TTL
-    CodexMetaNamespace & "/ttl"
-  CodexBlockProofNamespace* = # Cid and Proof
-    CodexMetaNamespace & "/proof"
-  CodexDhtNamespace* = "dht" # Dht namespace
-  CodexDhtProvidersNamespace* = # Dht providers namespace
-    CodexDhtNamespace & "/providers"
-  CodexQuotaNamespace* = CodexMetaNamespace & "/quota" # quota's namespace
+  ArchivistMetaNamespace* = "meta" # meta info stored here
+  ArchivistRepoNamespace* = "repo" # repository namespace, blocks and manifests are subkeys
+  ArchivistBlockTotalNamespace* = ArchivistMetaNamespace & "/total" # number of blocks in the repo
+  ArchivistBlocksNamespace* = ArchivistRepoNamespace & "/blocks" # blocks namespace
+  ArchivistManifestNamespace* = ArchivistRepoNamespace & "/manifests" # manifest namespace
+  ArchivistBlocksTtlNamespace* = # Cid TTL
+    ArchivistMetaNamespace & "/ttl"
+  ArchivistBlockProofNamespace* = # Cid and Proof
+    ArchivistMetaNamespace & "/proof"
+  ArchivistDhtNamespace* = "dht" # Dht namespace
+  ArchivistDhtProvidersNamespace* = # Dht providers namespace
+    ArchivistDhtNamespace & "/providers"
+  ArchivistQuotaNamespace* = ArchivistMetaNamespace & "/quota" # quota's namespace

@@ -9,11 +9,11 @@ multinodesuite "Node block expiration tests":
 
   test "node retains not-expired file",
     NodeConfigs(
-      clients: CodexConfigs
+      clients: ArchivistConfigs
         .init(nodes = 1)
         .withBlockTtl(0, 10)
         .withBlockMaintenanceInterval(0, 1).some,
-      providers: CodexConfigs.none,
+      providers: ArchivistConfigs.none,
     ):
     let client = clients()[0]
     let clientApi = client.client
@@ -30,11 +30,11 @@ multinodesuite "Node block expiration tests":
 
   test "node deletes expired file",
     NodeConfigs(
-      clients: CodexConfigs
+      clients: ArchivistConfigs
         .init(nodes = 1)
         .withBlockTtl(0, 1)
         .withBlockMaintenanceInterval(0, 1).some,
-      providers: CodexConfigs.none,
+      providers: ArchivistConfigs.none,
     ):
     let client = clients()[0]
     let clientApi = client.client

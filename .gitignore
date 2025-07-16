@@ -35,7 +35,7 @@ nimble.paths
 .env
 
 .update.timestamp
-codex.nims
+node.nims
 nimbus-build-system.paths
 docker/hostdatadir
 docker/prometheus-data

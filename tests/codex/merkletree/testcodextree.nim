@@ -29,23 +29,23 @@ const
   ]
   sha256 = Sha256HashCodec
 
-suite "Test CodexTree":
+suite "Test ArchivistTree":
   test "Cannot init tree without any multihash leaves":
     check:
-      CodexTree.init(leaves = newSeq[MultiHash]()).isErr
+      ArchivistTree.init(leaves = newSeq[MultiHash]()).isErr
 
   test "Cannot init tree without any cid leaves":
     check:
-      CodexTree.init(leaves = newSeq[Cid]()).isErr
+      ArchivistTree.init(leaves = newSeq[Cid]()).isErr
 
   test "Cannot init tree without any byte leaves":
     check:
-      CodexTree.init(sha256, leaves = newSeq[ByteHash]()).isErr
+      ArchivistTree.init(sha256, leaves = newSeq[ByteHash]()).isErr
 
   test "Should build tree from multihash leaves":
     var expectedLeaves = data.mapIt(MultiHash.digest($sha256, it).tryGet())
 
-    var tree = CodexTree.init(leaves = expectedLeaves)
+    var tree = ArchivistTree.init(leaves = expectedLeaves)
     check:
       tree.isOk
       tree.get().leaves == expectedLeaves.mapIt(it.digestBytes)
@@ -56,7 +56,7 @@ suite "Test CodexTree":
       Cid.init(CidVersion.CIDv1, BlockCodec, MultiHash.digest($sha256, it).tryGet).tryGet
     )
 
-    let tree = CodexTree.init(leaves = expectedLeaves)
+    let tree = ArchivistTree.init(leaves = expectedLeaves)
 
     check:
       tree.isOk
@@ -64,7 +64,7 @@ suite "Test CodexTree":
       tree.get().mcodec == sha256
 
   test "Should build from raw digestbytes (should not hash leaves)":
-    let tree = CodexTree.init(sha256, leaves = data).tryGet
+    let tree = ArchivistTree.init(sha256, leaves = data).tryGet
 
     check:
       tree.mcodec == sha256
@@ -72,10 +72,9 @@ suite "Test CodexTree":
 
   test "Should build from nodes":
     let
-      tree = CodexTree.init(sha256, leaves = data).tryGet
-      fromNodes = CodexTree.fromNodes(
-        nodes = toSeq(tree.nodes), nleaves = tree.leavesCount
-      ).tryGet
+      tree = ArchivistTree.init(sha256, leaves = data).tryGet
+      fromNodes =
+        ArchivistTree.fromNodes(nodes = toSeq(tree.nodes), nleaves = tree.leavesCount).tryGet
 
     check:
       tree.mcodec == sha256
@@ -87,7 +86,7 @@ let
   compress = proc(x, y: seq[byte], key: ByteTreeKey): seq[byte] =
     compress(x, y, key, mhash).tryGet
 
-  makeTree = proc(data: seq[seq[byte]]): CodexTree =
-    CodexTree.init(sha256, leaves = data).tryGet
+  makeTree = proc(data: seq[seq[byte]]): ArchivistTree =
+    ArchivistTree.init(sha256, leaves = data).tryGet
 
-testGenericTree("CodexTree", @data, zero, compress, makeTree)
+testGenericTree("ArchivistTree", @data, zero, compress, makeTree)

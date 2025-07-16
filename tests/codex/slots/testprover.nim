@@ -34,7 +34,7 @@ suite "Test Prover":
     let
       repoDs = repoTmp.newDb()
       metaDs = metaTmp.newDb()
-      config = CodexConf(
+      config = NodeConf(
         cmd: StartUpCmd.persistence,
         nat: NatConfig(hasExtIp: false, nat: NatNone),
         metricsAddress: parseIpAddress("127.0.0.1"),

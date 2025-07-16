@@ -15,7 +15,7 @@ import ./slotreserving
 import ./errored
 
 declareCounter(
-  codex_reservations_availability_mismatch, "codex reservations availability_mismatch"
+  archivist_reservations_availability_mismatch, "archivist reservations availability_mismatch"
 )
 
 type SalePreparing* = ref object of SaleState
@@ -94,7 +94,7 @@ method run*(
       # Should createReservation fail because there's no space, we proceed to SaleIgnored.
       if error of BytesOutOfBoundsError:
         # Lets monitor how often this happen and if it is often we can make it more inteligent to handle it
-        codex_reservations_availability_mismatch.inc()
+        archivist_reservations_availability_mismatch.inc()
         return some State(SaleIgnored(reprocessSlot: true))
 
       return some State(SaleErrored(error: error))

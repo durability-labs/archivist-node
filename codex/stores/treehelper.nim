@@ -24,7 +24,7 @@ import ../utils/asynciter
 import ../merkletree
 
 proc putSomeProofs*(
-    store: BlockStore, tree: CodexTree, iter: Iter[int]
+    store: BlockStore, tree: ArchivistTree, iter: Iter[int]
 ): Future[?!void] {.async.} =
   without treeCid =? tree.rootCid, err:
     return failure(err)
@@ -50,9 +50,9 @@ proc putSomeProofs*(
   success()
 
 proc putSomeProofs*(
-    store: BlockStore, tree: CodexTree, iter: Iter[Natural]
+    store: BlockStore, tree: ArchivistTree, iter: Iter[Natural]
 ): Future[?!void] =
   store.putSomeProofs(tree, iter.map((i: Natural) => i.ord))
 
-proc putAllProofs*(store: BlockStore, tree: CodexTree): Future[?!void] =
+proc putAllProofs*(store: BlockStore, tree: ArchivistTree): Future[?!void] =
   store.putSomeProofs(tree, Iter[int].new(0 ..< tree.leavesCount))

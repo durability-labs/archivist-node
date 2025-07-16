@@ -22,7 +22,7 @@ import ../utils
 export blocktype
 
 type
-  BlockNotFoundError* = object of CodexError
+  BlockNotFoundError* = object of ArchivistError
 
   BlockType* {.pure.} = enum
     Manifest
@@ -72,7 +72,7 @@ method completeBlock*(
 
 method getBlockAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural
-): Future[?!(Block, CodexProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!(Block, ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Get a block and associated inclusion proof by Cid of a merkle tree and an index of a leaf in a tree
   ##
 
@@ -87,7 +87,7 @@ method putBlock*(
   raiseAssert("putBlock not implemented!")
 
 method putCidAndProof*(
-    self: BlockStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: CodexProof
+    self: BlockStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Put a block proof to the blockstore
   ##
@@ -96,7 +96,7 @@ method putCidAndProof*(
 
 method getCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural
-): Future[?!(Cid, CodexProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!(Cid, ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Get a block proof from the blockstore
   ##
 

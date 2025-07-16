@@ -45,7 +45,7 @@ type
     discovery*: DiscoveryEngine
     engine*: BlockExcEngine
     networkStore*: NetworkStore
-    node*: CodexNodeRef = nil
+    node*: ArchivistNodeRef = nil
     tempDbs*: seq[TempLevelDb] = @[]
 
   NodesCluster* = ref object
@@ -81,7 +81,7 @@ converter toTuple*(
 converter toComponents*(cluster: NodesCluster): seq[NodesComponents] =
   cluster.components
 
-proc nodes*(cluster: NodesCluster): seq[CodexNodeRef] =
+proc nodes*(cluster: NodesCluster): seq[ArchivistNodeRef] =
   cluster.components.filterIt(it.node != nil).mapIt(it.node)
 
 proc localStores*(cluster: NodesCluster): seq[BlockStore] =
@@ -175,7 +175,7 @@ proc generateNodes*(
 
     let node =
       if config.createFullNode:
-        let fullNode = CodexNodeRef.new(
+        let fullNode = ArchivistNodeRef.new(
           switch = switch,
           networkStore = networkStore,
           engine = engine,

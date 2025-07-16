@@ -17,7 +17,7 @@ export periods
 
 type
   Market* = ref object of RootObj
-  MarketError* = object of CodexError
+  MarketError* = object of ArchivistError
   SlotStateMismatchError* = object of MarketError
   SlotReservationNotAllowedError* = object of MarketError
   ProofInvalidError* = object of MarketError

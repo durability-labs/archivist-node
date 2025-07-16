@@ -24,7 +24,7 @@ import ../helpers
 
 import ./helpers
 
-privateAccess(CodexNodeRef) # enable access to private fields
+privateAccess(ArchivistNodeRef) # enable access to private fields
 
 logScope:
   topics = "testSlotRepair"
@@ -57,7 +57,7 @@ asyncchecksuite "Test Node - Slot Repair":
     protected: Manifest
     cluster: NodesCluster
 
-    nodes: seq[CodexNodeRef]
+    nodes: seq[ArchivistNodeRef]
     localStores: seq[BlockStore]
 
   setup:

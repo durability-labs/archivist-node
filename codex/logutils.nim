@@ -20,13 +20,13 @@
 ## imports and exports `nim-serde` which handles the de/serialization, examples
 ## below. **Only `archivist/logutils` needs to be imported.**
 ##
-## Using `logutils` in the Codex codebase:
+## Using `logutils` in the Archivist codebase:
 ## - Instead of importing `pkg/chronicles`, import `pkg/archivist/logutils`
 ##     - most of `chronicles` is exported by `logutils`
 ## - Instead of importing `std/json`, import `pkg/serde/json`
 ##     - `std/json` is exported by `serde` which is exported by `logutils`
 ## - Instead of importing `pkg/nim-json-serialization`, import
-##   `pkg/serde/json` or use codex-specific overloads by importing `utils/json`
+##   `pkg/serde/json` or use Archivist-specific overloads by importing `utils/json`
 ##     - one of the goals is to remove the use of `nim-json-serialization`
 ##
 ## ```nim

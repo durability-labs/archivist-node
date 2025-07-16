@@ -9,7 +9,7 @@ import ./finished
 import ./failed
 import ./error
 
-declareCounter(codex_purchases_unknown, "codex purchases unknown")
+declareCounter(archivist_purchases_unknown, "archivist purchases unknown")
 
 type PurchaseUnknown* = ref object of PurchaseState
 
@@ -20,7 +20,7 @@ method run*(
     state: PurchaseUnknown, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
   try:
-    codex_purchases_unknown.inc()
+    archivist_purchases_unknown.inc()
     let purchase = Purchase(machine)
     if (request =? await purchase.market.getRequest(purchase.requestId)) and
         (requestState =? await purchase.market.requestState(purchase.requestId)):

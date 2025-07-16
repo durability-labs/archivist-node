@@ -15,9 +15,9 @@ proc `==`*(a, b: Poseidon2Proof): bool =
   (a.nleaves == b.nleaves) and (a.index == b.index) and (a.path.len == b.path.len) and
     (a.path == b.path)
 
-proc `==`*(a, b: CodexTree): bool =
+proc `==`*(a, b: ArchivistTree): bool =
   (a.mcodec == b.mcodec) and (a.leavesCount == b.leavesCount) and (a.levels == b.levels)
 
-proc `==`*(a, b: CodexProof): bool =
+proc `==`*(a, b: ArchivistProof): bool =
   (a.mcodec == b.mcodec) and (a.nleaves == b.nleaves) and (a.path == b.path) and
     (a.index == b.index)

@@ -45,7 +45,7 @@ type
     trackedFutures: TrackedFutures
     unpaused: AsyncEvent
 
-  SlotQueueError = object of CodexError
+  SlotQueueError = object of ArchivistError
   SlotQueueItemExistsError* = object of SlotQueueError
   SlotQueueItemNotExistsError* = object of SlotQueueError
   SlotsOutOfRangeError* = object of SlotQueueError

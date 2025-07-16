@@ -105,7 +105,7 @@ type
     next*: GetNext
     dispose*: IterDispose
 
-  ReservationsError* = object of CodexError
+  ReservationsError* = object of ArchivistError
   ReserveFailedError* = object of ReservationsError
   ReleaseFailedError* = object of ReservationsError
   DeleteFailedError* = object of ReservationsError
@@ -117,7 +117,7 @@ type
   UntilOutOfBoundsError* = object of ReservationsError
 
 const
-  SalesKey = (CodexMetaKey / "sales").tryGet # TODO: move to sales module
+  SalesKey = (ArchivistMetaKey / "sales").tryGet # TODO: move to sales module
   ReservationsKey = (SalesKey / "reservations").tryGet
 
 proc hash*(x: AvailabilityId): Hash {.borrow.}

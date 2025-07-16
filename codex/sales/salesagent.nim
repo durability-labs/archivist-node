@@ -32,7 +32,7 @@ type
   .}
   OnFilled* = proc(request: StorageRequest, slotIndex: uint64) {.gcsafe, raises: [].}
 
-  SalesAgentError = object of CodexError
+  SalesAgentError = object of ArchivistError
   AllSlotsFilledError* = object of SalesAgentError
 
 func `==`*(a, b: SalesAgent): bool =

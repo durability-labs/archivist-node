@@ -1,4 +1,4 @@
-# Protocol of data exchange between Codex nodes
+# Protocol of data exchange between nodes
 # and Protobuf encoder/decoder for these messages.
 #
 # Eventually all this code should be auto-generated from message.proto.
@@ -38,7 +38,7 @@ type
   BlockDelivery* = object
     blk*: Block
     address*: BlockAddress
-    proof*: ?CodexProof # Present only if `address.leaf` is true
+    proof*: ?ArchivistProof # Present only if `address.leaf` is true
 
   BlockPresenceType* = enum
     Have = 0
@@ -218,12 +218,12 @@ proc decode*(_: type BlockDelivery, pb: ProtoBuffer): ProtoResult[BlockDelivery]
   if value.address.leaf:
     var proofBuf = newSeq[byte]()
     if ?pb.getField(4, proofBuf):
-      let proof = ?CodexProof.decode(proofBuf).mapErr(x => ProtoError.IncorrectBlob)
+      let proof = ?ArchivistProof.decode(proofBuf).mapErr(x => ProtoError.IncorrectBlob)
       value.proof = proof.some
     else:
-      value.proof = CodexProof.none
+      value.proof = ArchivistProof.none
   else:
-    value.proof = CodexProof.none
+    value.proof = ArchivistProof.none
 
   ok(value)
 

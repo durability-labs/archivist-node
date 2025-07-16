@@ -42,7 +42,7 @@ suite "Test BackendFactory":
 
   test "Should create backend from cli config":
     let
-      config = CodexConf(
+      config = NodeConf(
         cmd: StartUpCmd.persistence,
         nat: NatConfig(hasExtIp: false, nat: NatNone),
         metricsAddress: parseIpAddress("127.0.0.1"),
@@ -62,7 +62,7 @@ suite "Test BackendFactory":
 
   test "Should create backend from local files":
     let
-      config = CodexConf(
+      config = NodeConf(
         cmd: StartUpCmd.persistence,
         nat: NatConfig(hasExtIp: false, nat: NatNone),
         metricsAddress: parseIpAddress("127.0.0.1"),
@@ -83,7 +83,7 @@ suite "Test BackendFactory":
 
   test "Should suggest usage of downloader tool when files not available":
     let
-      config = CodexConf(
+      config = NodeConf(
         cmd: StartUpCmd.persistence,
         nat: NatConfig(hasExtIp: false, nat: NatNone),
         metricsAddress: parseIpAddress("127.0.0.1"),

@@ -24,12 +24,12 @@ marketplacesuite(name = "Hosts submit regular proofs", stopOnRequestFail = false
     NodeConfigs(
       # Uncomment to start Hardhat automatically, typically so logs can be inspected locally
       hardhat: HardhatConfig.none,
-      clients: CodexConfigs.init(nodes = 1)
+      clients: ArchivistConfigs.init(nodes = 1)
       # .debug() # uncomment to enable console log output
       # .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
       # .withLogTopics("node, marketplace")
       .some,
-      providers: CodexConfigs.init(nodes = 1)
+      providers: ArchivistConfigs.init(nodes = 1)
       # .debug() # uncomment to enable console log output
       # .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
       # .withLogTopics("marketplace", "sales", "reservations", "node", "clock")
@@ -92,12 +92,12 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
     NodeConfigs(
       # Uncomment to start Hardhat automatically, typically so logs can be inspected locally
       hardhat: HardhatConfig.none,
-      clients: CodexConfigs.init(nodes = 1)
+      clients: ArchivistConfigs.init(nodes = 1)
       # .debug() # uncomment to enable console log output
       # .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
       # .withLogTopics("node", "marketplace", "clock")
       .some,
-      providers: CodexConfigs
+      providers: ArchivistConfigs
         .init(nodes = 1)
         .withSimulateProofFailures(idx = 0, failEveryNProofs = 1)
         # .debug()
@@ -108,7 +108,7 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
         #   "marketplace", "sales", "reservations", "node", "clock", "slotsbuilder"
         # )
         .some,
-      validators: CodexConfigs.init(nodes = 1)
+      validators: ArchivistConfigs.init(nodes = 1)
       # .debug()
       # uncomment to enable console log output
       # .withLogFile()
@@ -161,19 +161,19 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
     NodeConfigs(
       # Uncomment to start Hardhat automatically, typically so logs can be inspected locally
       hardhat: HardhatConfig.none,
-      clients: CodexConfigs.init(nodes = 1)
+      clients: ArchivistConfigs.init(nodes = 1)
       # .debug() # uncomment to enable console log output
       # .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
       # .withLogTopics("marketplace", "sales", "reservations", "node", "clock")
       .some,
-      providers: CodexConfigs
+      providers: ArchivistConfigs
         .init(nodes = 1)
         .withSimulateProofFailures(idx = 0, failEveryNProofs = 1)
         # .debug() # uncomment to enable console log output
         # .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
         # .withLogTopics("marketplace", "sales", "reservations", "node")
         .some,
-      validators: CodexConfigs.init(nodes = 1)
+      validators: ArchivistConfigs.init(nodes = 1)
       # .debug()
       # .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
       # .withLogTopics("validator", "onchain", "ethers", "clock")
@@ -241,14 +241,14 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
   #   # hardhat: HardhatConfig().withLogFile(),
 
   #   clients:
-  #     CodexConfig()
+  #     ArchivistConfig()
   #       .nodes(1)
   #       # .debug() # uncomment to enable console log output.debug()
   #       .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
   #       .withLogTopics("node", "erasure", "clock", "purchases"),
 
   #   providers:
-  #     CodexConfig()
+  #     ArchivistConfig()
   #       .nodes(3)
   #       .simulateProofFailuresFor(providerIdx=0, failEveryNProofs=2)
   #       # .debug() # uncomment to enable console log output
@@ -256,7 +256,7 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
   #       .withLogTopics("marketplace", "sales", "reservations", "node"),
 
   #   validators:
-  #     CodexConfig()
+  #     ArchivistConfig()
   #       .nodes(1)
   #       # .debug()
   #       .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log

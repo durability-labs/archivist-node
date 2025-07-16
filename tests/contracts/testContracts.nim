@@ -1,6 +1,6 @@
 import pkg/chronos
 import pkg/ethers/erc20
-import codex/contracts
+import archivist/contracts
 import ../ethertest
 import ./examples
 import ./time

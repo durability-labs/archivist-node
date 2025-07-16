@@ -22,14 +22,13 @@ import ../../blocktype
 import ../../logutils
 
 logScope:
-  topics = "codex pendingblocks"
+  topics = "archivist pendingblocks"
 
 declareGauge(
-  codex_block_exchange_pending_block_requests,
-  "codex blockexchange pending block requests",
+  archivist_block_exchange_pending_block_requests, "archivist blockexchange pending block requests"
 )
 declareGauge(
-  codex_block_exchange_retrieval_time_us, "codex blockexchange block retrieval time us"
+  archivist_block_exchange_retrieval_time_us, "archivist blockexchange block retrieval time us"
 )
 
 const
@@ -52,7 +51,7 @@ type
     blocks*: Table[BlockAddress, BlockReq] # pending Block requests
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
-  codex_block_exchange_pending_block_requests.set(p.blocks.len.int64)
+  archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
 
 proc getWantHandle*(
     self: PendingBlocksManager, address: BlockAddress, inFlight = false
@@ -120,7 +119,7 @@ proc resolve*(
 
         blockReq.handle.complete(bd.blk)
 
-        codex_block_exchange_retrieval_time_us.set(retrievalDurationUs)
+        archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
 
         if retrievalDurationUs > 500000:
           warn "High block retrieval time", retrievalDurationUs, address = bd.address

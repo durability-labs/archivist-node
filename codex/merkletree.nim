@@ -2,9 +2,9 @@ import ./merkletree/merkletree
 import ./merkletree/archivist
 import ./merkletree/poseidon2
 
-export codex, poseidon2, merkletree
+export archivist, poseidon2, merkletree
 
 type
-  SomeMerkleTree* = ByteTree | CodexTree | Poseidon2Tree
-  SomeMerkleProof* = ByteProof | CodexProof | Poseidon2Proof
+  SomeMerkleTree* = ByteTree | ArchivistTree | Poseidon2Tree
+  SomeMerkleProof* = ByteProof | ArchivistProof | Poseidon2Proof
   SomeMerkleHash* = ByteHash | Poseidon2Hash

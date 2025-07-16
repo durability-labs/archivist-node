@@ -47,7 +47,7 @@ proc makeManifest*(
     hcodec = Sha256HashCodec,
     dataCodec = BlockCodec,
 ): Future[?!Manifest] {.async.} =
-  without tree =? CodexTree.init(cids), err:
+  without tree =? ArchivistTree.init(cids), err:
     return failure(err)
 
   without treeCid =? tree.rootCid(CIDv1, dataCodec), err:
@@ -97,10 +97,10 @@ proc createProtectedManifest*(
 ): Future[tuple[manifest: Manifest, protected: Manifest]] {.async.} =
   let
     cids = datasetBlocks.mapIt(it.cid)
-    datasetTree = CodexTree.init(cids[0 ..< numDatasetBlocks]).tryGet()
+    datasetTree = ArchivistTree.init(cids[0 ..< numDatasetBlocks]).tryGet()
     datasetTreeCid = datasetTree.rootCid().tryGet()
 
-    protectedTree = CodexTree.init(cids).tryGet()
+    protectedTree = ArchivistTree.init(cids).tryGet()
     protectedTreeCid = protectedTree.rootCid().tryGet()
 
   for index, cid in cids[0 ..< numDatasetBlocks]:

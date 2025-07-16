@@ -14,7 +14,7 @@ import pkg/archivist/utils/trackedfutures
 import ./archivistclient
 import ./nodeprocess
 
-export codexclient
+export archivistclient
 export chronicles
 
 logScope:

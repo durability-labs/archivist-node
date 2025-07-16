@@ -22,7 +22,7 @@ import ../helpers/mockrepostore
 import ../helpers/mockclock
 import ../examples
 
-import codex/namespaces
+import Archivist/Namespaces
 import archivist/stores/keyutils
 
 proc createManifestCid(): ?!Cid =
@@ -49,7 +49,7 @@ suite "KeyUtils":
 
     check:
       namespaces.len == 4
-      namespaces[0].value == CodexRepoNamespace
+      namespaces[0].value == ArchivistRepoNamespace
       namespaces[1].value == "blocks"
       namespaces[2].value == expectedPrefix
       namespaces[3].value == expectedPostfix
@@ -65,7 +65,7 @@ suite "KeyUtils":
 
     check:
       namespaces.len == 4
-      namespaces[0].value == CodexRepoNamespace
+      namespaces[0].value == ArchivistRepoNamespace
       namespaces[1].value == "manifests"
       namespaces[2].value == expectedPrefix
       namespaces[3].value == expectedPostfix
@@ -78,7 +78,7 @@ suite "KeyUtils":
 
     check:
       namespaces.len == 3
-      namespaces[0].value == CodexMetaNamespace
+      namespaces[0].value == ArchivistMetaNamespace
       namespaces[1].value == "ttl"
       namespaces[2].value == $cid
 
@@ -88,6 +88,6 @@ suite "KeyUtils":
 
     check:
       namespaces.len == 3
-      namespaces[0].value == CodexMetaNamespace
+      namespaces[0].value == ArchivistMetaNamespace
       namespaces[1].value == "ttl"
       namespaces[2].value == "*"

@@ -26,7 +26,7 @@ import ./archivist
 const MaxMerkleTreeSize = 100.MiBs.uint
 const MaxMerkleProofSize = 1.MiBs.uint
 
-proc encode*(self: CodexTree): seq[byte] =
+proc encode*(self: ArchivistTree): seq[byte] =
   var pb = initProtoBuffer()
   pb.write(1, self.mcodec.uint64)
   pb.write(2, self.leavesCount.uint64)
@@ -39,7 +39,7 @@ proc encode*(self: CodexTree): seq[byte] =
   pb.finish
   pb.buffer
 
-proc decode*(_: type CodexTree, data: seq[byte]): ?!CodexTree =
+proc decode*(_: type ArchivistTree, data: seq[byte]): ?!ArchivistTree =
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var leavesCount: uint64
@@ -60,9 +60,9 @@ proc decode*(_: type CodexTree, data: seq[byte]): ?!CodexTree =
       discard ?initProtoBuffer(nodeBuff).getField(1, node).mapFailure
       nodes.add node
 
-  CodexTree.fromNodes(mcodec, nodes, leavesCount.int)
+  ArchivistTree.fromNodes(mcodec, nodes, leavesCount.int)
 
-proc encode*(self: CodexProof): seq[byte] =
+proc encode*(self: ArchivistProof): seq[byte] =
   var pb = initProtoBuffer()
   pb.write(1, self.mcodec.uint64)
   pb.write(2, self.index.uint64)
@@ -77,7 +77,7 @@ proc encode*(self: CodexProof): seq[byte] =
   pb.finish
   pb.buffer
 
-proc decode*(_: type CodexProof, data: seq[byte]): ?!CodexProof =
+proc decode*(_: type ArchivistProof, data: seq[byte]): ?!ArchivistProof =
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var index: uint64
@@ -102,9 +102,9 @@ proc decode*(_: type CodexProof, data: seq[byte]): ?!CodexProof =
       discard ?nodePb.getField(1, node).mapFailure
       nodes.add node
 
-  CodexProof.init(mcodec, index.int, nleaves.int, nodes)
+  ArchivistProof.init(mcodec, index.int, nleaves.int, nodes)
 
-proc fromJson*(_: type CodexProof, json: JsonNode): ?!CodexProof =
+proc fromJson*(_: type ArchivistProof, json: JsonNode): ?!ArchivistProof =
   expectJsonKind(Cid, JString, json)
   var bytes: seq[byte]
   try:
@@ -112,7 +112,7 @@ proc fromJson*(_: type CodexProof, json: JsonNode): ?!CodexProof =
   except ValueError as err:
     return failure(err)
 
-  CodexProof.decode(bytes)
+  ArchivistProof.decode(bytes)
 
-func `%`*(proof: CodexProof): JsonNode =
+func `%`*(proof: ArchivistProof): JsonNode =
   %byteutils.toHex(proof.encode())
