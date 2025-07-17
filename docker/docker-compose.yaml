@@ -1,6 +1,6 @@
 services:
   codex-node1:
-    image: codexstorage/nim-codex:sha-82b0399
+    image: archivist:latest
     environment:
       - CODEX_LOG_LEVEL=${CODEX_LOG_LEVEL:-TRACE}
       - CODEX_METRICS=${CODEX_METRICS:-false}

@@ -11,7 +11,8 @@ fi
 
 # Codex Network
 if [[ -n "${NETWORK}" ]]; then
-  export BOOTSTRAP_NODE_FROM_URL="${BOOTSTRAP_NODE_FROM_URL:-https://spr.codex.storage/${NETWORK}}"
+  BOOTSTRAP_SERVICE_URL=https://spr.example.com #TODO
+  export BOOTSTRAP_NODE_FROM_URL="${BOOTSTRAP_NODE_FROM_URL:-${BOOTSTRAP_SERVICE_URL}/${NETWORK}}"
 fi
 
 # Bootstrap node URL
