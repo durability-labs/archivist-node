@@ -498,8 +498,8 @@ const
   nimBanner* = getNimBanner()
 
   nodeFullVersion* =
-    "Archivist node version:  " & nodeVersion & "\p" & "Archivist node revision: " & nodeRevision &
-    "contracts revision: " & contractsRevision & "\p" & nimBanner
+    "Archivist node version:  " & nodeVersion & "\p" & "Archivist node revision: " &
+    nodeRevision & "contracts revision: " & contractsRevision & "\p" & nimBanner
 
 proc parseCmdArg*(
     T: typedesc[MultiAddress], input: string

@@ -995,7 +995,10 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
         return RestApiResponse.error(Http500, headers = headers)
 
 proc initRestApi*(
-    node: ArchivistNodeRef, conf: NodeConf, repoStore: RepoStore, corsAllowedOrigin: ?string
+    node: ArchivistNodeRef,
+    conf: NodeConf,
+    repoStore: RepoStore,
+    corsAllowedOrigin: ?string,
 ): RestRouter =
   var router = RestRouter.init(validate, corsAllowedOrigin)
 

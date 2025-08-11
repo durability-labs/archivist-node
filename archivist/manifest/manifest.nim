@@ -157,7 +157,8 @@ func verify*(self: Manifest): ?!void =
   ##
 
   if self.protected and (self.blocksCount != self.steps * (self.ecK + self.ecM)):
-    return failure newException(ArchivistError, "Broken manifest: wrong originalBlocksCount")
+    return
+      failure newException(ArchivistError, "Broken manifest: wrong originalBlocksCount")
 
   return success()
 

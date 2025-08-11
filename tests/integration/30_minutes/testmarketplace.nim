@@ -9,7 +9,8 @@ import ../nodeconfigs
 
 marketplacesuite(name = "Marketplace", stopOnRequestFail = true):
   let marketplaceConfig = NodeConfigs(
-    clients: ArchivistConfigs.init(nodes = 1).some, providers: ArchivistConfigs.init(nodes = 1).some
+    clients: ArchivistConfigs.init(nodes = 1).some,
+    providers: ArchivistConfigs.init(nodes = 1).some,
   )
 
   var host: ArchivistClient

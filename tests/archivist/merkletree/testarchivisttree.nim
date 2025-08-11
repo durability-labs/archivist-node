@@ -73,8 +73,9 @@ suite "Test ArchivistTree":
   test "Should build from nodes":
     let
       tree = ArchivistTree.init(sha256, leaves = data).tryGet
-      fromNodes =
-        ArchivistTree.fromNodes(nodes = toSeq(tree.nodes), nleaves = tree.leavesCount).tryGet
+      fromNodes = ArchivistTree.fromNodes(
+        nodes = toSeq(tree.nodes), nleaves = tree.leavesCount
+      ).tryGet
 
     check:
       tree.mcodec == sha256

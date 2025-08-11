@@ -166,8 +166,9 @@ proc start*(s: NodeServer) {.async.} =
 
   await s.archivistNode.switch.start()
 
-  let (announceAddrs, discoveryAddrs) =
-    nattedAddress(s.config.nat, s.archivistNode.switch.peerInfo.addrs, s.config.discoveryPort)
+  let (announceAddrs, discoveryAddrs) = nattedAddress(
+    s.config.nat, s.archivistNode.switch.peerInfo.addrs, s.config.discoveryPort
+  )
 
   s.archivistNode.discovery.updateAnnounceRecord(announceAddrs)
   s.archivistNode.discovery.updateDhtRecord(discoveryAddrs)

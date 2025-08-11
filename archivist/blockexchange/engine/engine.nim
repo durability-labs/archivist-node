@@ -46,21 +46,27 @@ logScope:
   topics = "archivist blockexcengine"
 
 declareCounter(
-  archivist_block_exchange_want_have_lists_sent, "archivist blockexchange wantHave lists sent"
+  archivist_block_exchange_want_have_lists_sent,
+  "archivist blockexchange wantHave lists sent",
 )
 declareCounter(
   archivist_block_exchange_want_have_lists_received,
   "archivist blockexchange wantHave lists received",
 )
 declareCounter(
-  archivist_block_exchange_want_block_lists_sent, "archivist blockexchange wantBlock lists sent"
+  archivist_block_exchange_want_block_lists_sent,
+  "archivist blockexchange wantBlock lists sent",
 )
 declareCounter(
   archivist_block_exchange_want_block_lists_received,
   "archivist blockexchange wantBlock lists received",
 )
-declareCounter(archivist_block_exchange_blocks_sent, "archivist blockexchange blocks sent")
-declareCounter(archivist_block_exchange_blocks_received, "archivist blockexchange blocks received")
+declareCounter(
+  archivist_block_exchange_blocks_sent, "archivist blockexchange blocks sent"
+)
+declareCounter(
+  archivist_block_exchange_blocks_received, "archivist blockexchange blocks received"
+)
 
 const
   DefaultMaxPeersPerRequest* = 10

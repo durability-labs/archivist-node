@@ -10,10 +10,13 @@
 const
   # Namespaces
   ArchivistMetaNamespace* = "meta" # meta info stored here
-  ArchivistRepoNamespace* = "repo" # repository namespace, blocks and manifests are subkeys
-  ArchivistBlockTotalNamespace* = ArchivistMetaNamespace & "/total" # number of blocks in the repo
+  ArchivistRepoNamespace* = "repo"
+    # repository namespace, blocks and manifests are subkeys
+  ArchivistBlockTotalNamespace* = ArchivistMetaNamespace & "/total"
+    # number of blocks in the repo
   ArchivistBlocksNamespace* = ArchivistRepoNamespace & "/blocks" # blocks namespace
-  ArchivistManifestNamespace* = ArchivistRepoNamespace & "/manifests" # manifest namespace
+  ArchivistManifestNamespace* = ArchivistRepoNamespace & "/manifests"
+    # manifest namespace
   ArchivistBlocksTtlNamespace* = # Cid TTL
     ArchivistMetaNamespace & "/ttl"
   ArchivistBlockProofNamespace* = # Cid and Proof

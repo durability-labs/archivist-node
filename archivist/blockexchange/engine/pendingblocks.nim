@@ -25,10 +25,12 @@ logScope:
   topics = "archivist pendingblocks"
 
 declareGauge(
-  archivist_block_exchange_pending_block_requests, "archivist blockexchange pending block requests"
+  archivist_block_exchange_pending_block_requests,
+  "archivist blockexchange pending block requests",
 )
 declareGauge(
-  archivist_block_exchange_retrieval_time_us, "archivist blockexchange block retrieval time us"
+  archivist_block_exchange_retrieval_time_us,
+  "archivist blockexchange block retrieval time us",
 )
 
 const

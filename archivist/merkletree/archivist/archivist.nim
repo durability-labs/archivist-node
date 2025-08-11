@@ -95,7 +95,9 @@ func verify*(self: ArchivistProof, leaf: MultiHash, root: MultiHash): ?!bool =
 func verify*(self: ArchivistProof, leaf: Cid, root: Cid): ?!bool =
   self.verify(?leaf.mhash.mapFailure, ?leaf.mhash.mapFailure)
 
-proc rootCid*(self: ArchivistTree, version = CIDv1, dataCodec = DatasetRootCodec): ?!Cid =
+proc rootCid*(
+    self: ArchivistTree, version = CIDv1, dataCodec = DatasetRootCodec
+): ?!Cid =
   if (?self.root).len == 0:
     return failure "Empty root"
 
@@ -121,12 +123,13 @@ proc `$`*(self: ArchivistTree): string =
       byteutils.toHex(self.root.get)
     else:
       "none"
-  "ArchivistTree(" & " root: " & root & ", leavesCount: " & $self.leavesCount & ", levels: " &
-    $self.levels & ", mcodec: " & $self.mcodec & " )"
+  "ArchivistTree(" & " root: " & root & ", leavesCount: " & $self.leavesCount &
+    ", levels: " & $self.levels & ", mcodec: " & $self.mcodec & " )"
 
 proc `$`*(self: ArchivistProof): string =
-  "ArchivistProof(" & " nleaves: " & $self.nleaves & ", index: " & $self.index & ", path: " &
-    $self.path.mapIt(byteutils.toHex(it)) & ", mcodec: " & $self.mcodec & " )"
+  "ArchivistProof(" & " nleaves: " & $self.nleaves & ", index: " & $self.index &
+    ", path: " & $self.path.mapIt(byteutils.toHex(it)) & ", mcodec: " & $self.mcodec &
+    " )"
 
 func compress*(x, y: openArray[byte], key: ByteTreeKey, mhash: MHash): ?!ByteHash =
   ## Compress two hashes
@@ -141,7 +144,9 @@ func compress*(x, y: openArray[byte], key: ByteTreeKey, mhash: MHash): ?!ByteHas
   success @digest
 
 func init*(
-    _: type ArchivistTree, mcodec: MultiCodec = Sha256HashCodec, leaves: openArray[ByteHash]
+    _: type ArchivistTree,
+    mcodec: MultiCodec = Sha256HashCodec,
+    leaves: openArray[ByteHash],
 ): ?!ArchivistTree =
   if leaves.len == 0:
     return failure "Empty leaves"

@@ -45,7 +45,10 @@ proc request(
   .send()
 
 proc post*(
-    self: ArchivistClient, url: string, body: string = "", headers: seq[HttpHeaderTuple] = @[]
+    self: ArchivistClient,
+    url: string,
+    body: string = "",
+    headers: seq[HttpHeaderTuple] = @[],
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =
@@ -66,7 +69,10 @@ proc delete(
   return self.request(MethodDelete, url, headers = headers)
 
 proc patch*(
-    self: ArchivistClient, url: string, body: string = "", headers: seq[HttpHeaderTuple] = @[]
+    self: ArchivistClient,
+    url: string,
+    body: string = "",
+    headers: seq[HttpHeaderTuple] = @[],
 ): Future[HttpClientResponseRef] {.
     async: (raw: true, raises: [CancelledError, HttpError])
 .} =

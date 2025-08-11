@@ -27,7 +27,9 @@ type
 
   ArchivistConfigError* = object of CatchableError
 
-proc cliArgs*(config: ArchivistConfig): seq[string] {.gcsafe, raises: [ArchivistConfigError].}
+proc cliArgs*(
+  config: ArchivistConfig
+): seq[string] {.gcsafe, raises: [ArchivistConfigError].}
 
 proc raiseConfigError(msg: string) {.raises: [ArchivistConfigError].} =
   raise newException(ArchivistConfigError, msg)
@@ -101,7 +103,9 @@ proc addCliOption*(
 ) {.raises: [ArchivistConfigError].} =
   config.addCliOption(StartUpCmd.noCmd, CliOption(key: key, value: value))
 
-proc cliArgs*(config: ArchivistConfig): seq[string] {.gcsafe, raises: [ArchivistConfigError].} =
+proc cliArgs*(
+    config: ArchivistConfig
+): seq[string] {.gcsafe, raises: [ArchivistConfigError].} =
   ## converts ArchivistConfig cli options and command groups in a sequence of args
   ## and filters out cli options by node index if provided in the CliOption
   var args: seq[string] = @[]
@@ -150,14 +154,18 @@ proc debug*(self: ArchivistConfigs, enabled = true): ArchivistConfigs {.raises: 
     config.debugEnabled = enabled
   return startConfig
 
-proc withLogFile*(self: ArchivistConfigs, idx: int): ArchivistConfigs {.raises: [ArchivistConfigError].} =
+proc withLogFile*(
+    self: ArchivistConfigs, idx: int
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   self.checkBounds idx
 
   var startConfig = self
   startConfig.configs[idx].addCliOption("--log-file", "<updated_in_test>")
   return startConfig
 
-proc withLogFile*(self: ArchivistConfigs): ArchivistConfigs {.raises: [ArchivistConfigError].} =
+proc withLogFile*(
+    self: ArchivistConfigs
+): ArchivistConfigs {.raises: [ArchivistConfigError].} =
   ## typically called from test, sets config such that a log file should be
   ## created
   var startConfig = self
@@ -165,7 +173,9 @@ proc withLogFile*(self: ArchivistConfigs): ArchivistConfigs {.raises: [Archivist
     config.addCliOption("--log-file", "<updated_in_test>")
   return startConfig
 
-proc withLogFile*(self: var ArchivistConfig, logFile: string) {.raises: [ArchivistConfigError].} =
+proc withLogFile*(
+    self: var ArchivistConfig, logFile: string
+) {.raises: [ArchivistConfigError].} =
   #: ArchivistConfigs =
   ## typically called internally from the test suite, sets a log file path to
   ## be created during the test run, for a specified node in the group
@@ -197,7 +207,9 @@ proc withLogLevel*(
     config.addCliOption("--log-level", $level)
   return startConfig
 
-proc withBlockTtl*(self: ArchivistConfig, ttl: int): ArchivistConfig {.raises: [ArchivistConfigError].} =
+proc withBlockTtl*(
+    self: ArchivistConfig, ttl: int
+): ArchivistConfig {.raises: [ArchivistConfigError].} =
   var config = self
   config.addCliOption("--block-ttl", $ttl)
   return config

@@ -15,7 +15,8 @@ import ./slotreserving
 import ./errored
 
 declareCounter(
-  archivist_reservations_availability_mismatch, "archivist reservations availability_mismatch"
+  archivist_reservations_availability_mismatch,
+  "archivist reservations availability_mismatch",
 )
 
 type SalePreparing* = ref object of SaleState
