@@ -2,8 +2,8 @@ openapi: 3.0.3
 
 info:
   version: 0.0.1
-  title: Codex API
-  description: "List of endpoints and interfaces available to Codex API users"
+  title: Archivist API
+  description: "List of endpoints and interfaces available to Archivist API users"
 
 security:
   - {}
@@ -115,7 +115,7 @@ components:
         seen:
           type: boolean
 
-    CodexVersion:
+    ArchivistVersion:
       type: object
       properties:
         version:
@@ -150,7 +150,7 @@ components:
         - spr
         - announceAddresses
         - table
-        - codex
+        - archivist
       properties:
         id:
           $ref: "#/components/schemas/PeerId"
@@ -169,8 +169,8 @@ components:
             $ref: "#/components/schemas/MultiAddress"
         table:
           $ref: "#/components/schemas/PeersTable"
-        codex:
-          $ref: "#/components/schemas/CodexVersion"
+        archivist:
+          $ref: "#/components/schemas/ArchivistVersion"
 
     SalesAvailability:
       type: object
@@ -463,7 +463,7 @@ components:
           type: string
           nullable: true
           description: "The original name of the uploaded content (optional)"
-          example: codex.png
+          example: example.png
         mimetype:
           type: string
           nullable: true
@@ -485,18 +485,18 @@ components:
         quotaMaxBytes:
           type: integer
           format: int64
-          description: "Maximum storage space (in bytes) available for the node in Codex's local repository."
+          description: "Maximum storage space (in bytes) available for the node in its local repository."
         quotaUsedBytes:
           type: integer
           format: int64
-          description: "Amount of storage space (in bytes) currently used for storing files in Codex's local repository."
+          description: "Amount of storage space (in bytes) currently used for storing files in its local repository."
         quotaReservedBytes:
           type: integer
           format: int64
-          description: "Amount of storage reserved (in bytes) in the Codex's local repository for future use when storage requests will be picked up and hosted by the node using node's availabilities. This does not include the storage currently in use."
+          description: "Amount of storage reserved (in bytes) in the node's local repository for future use when storage requests will be picked up and hosted by the node using node's availabilities. This does not include the storage currently in use."
 
 servers:
-  - url: "http://localhost:8080/api/codex/v1"
+  - url: "http://localhost:8080/api/archivist/v1"
 
 tags:
   - name: Marketplace
@@ -581,7 +581,7 @@ paths:
           description: The content disposition used to send the filename.
           schema:
             type: string
-            example: 'attachment; filename="codex.png"'
+            example: 'attachment; filename="example.png"'
       requestBody:
         content:
           application/octet-stream:

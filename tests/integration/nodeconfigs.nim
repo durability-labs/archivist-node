@@ -1,9 +1,9 @@
 import pkg/questionable
-import ./codexconfig
+import ./archivistconfig
 import ./hardhatconfig
 
 type NodeConfigs* = object
-  clients*: ?CodexConfigs
-  providers*: ?CodexConfigs
-  validators*: ?CodexConfigs
+  clients*: ?ArchivistConfigs
+  providers*: ?ArchivistConfigs
+  validators*: ?ArchivistConfigs
   hardhat*: ?HardhatConfig

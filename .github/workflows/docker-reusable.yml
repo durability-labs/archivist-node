@@ -5,12 +5,12 @@ on:
   workflow_call:
     inputs:
       docker_file:
-        default: docker/codex.Dockerfile
+        default: docker/archivist.Dockerfile
         description: Dockerfile
         required: false
         type: string
       docker_repo:
-        default: codexstorage/nim-codex
+        default:
         description: DockerHub repository
         required: false
         type: string

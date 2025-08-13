@@ -7,8 +7,8 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/zippy/tarballs
 import pkg/chronos/apps/http/httpclient
-import ../../codex/contracts/marketplace
-import ../../codex/contracts/deployment
+import ../../archivist/contracts/marketplace
+import ../../archivist/contracts/deployment
 
 proc consoleLog(logLevel: LogLevel, msg: LogOutputStr) {.gcsafe.} =
   try:
@@ -28,7 +28,7 @@ proc printHelp() =
   info "Usage: ./cirdl [circuitPath] [rpcEndpoint] ([marketplaceAddress])"
   info "  circuitPath: path where circuit files will be placed."
   info "  rpcEndpoint: URL of web3 RPC endpoint."
-  info "  marketplaceAddress: Address of deployed Codex marketplace contracts. If left out, will auto-discover based on connected network."
+  info "  marketplaceAddress: Address of deployed marketplace contracts. If left out, will auto-discover based on connected network."
 
 proc getMarketplaceAddress(
     provider: JsonRpcProvider, mpAddressOverride: ?Address
@@ -46,7 +46,7 @@ proc getCircuitHash(
   return success config.proofs.zkeyHash
 
 proc formatUrl(hash: string): string =
-  "https://circuit.codex.storage/proving-key/" & hash
+  "https://circuit.codex.storage/proving-key/" & hash # TODO: update URL
 
 proc retrieveUrl(uri: string): Future[seq[byte]] {.async.} =
   let httpSession = HttpSessionRef.new()
@@ -83,7 +83,7 @@ proc copyFiles(unpackDir: string, circuitPath: string): ?!void =
   success()
 
 proc main() {.async.} =
-  info "Codex Circuit Downloader, Aww yeah!"
+  info "Circuit Downloader, Aww yeah!"
   let args = os.commandLineParams()
   if args.len < 2 or args.len > 3:
     printHelp()
@@ -135,7 +135,7 @@ proc main() {.async.} =
 
   # Unpack library cannot unpack into existing directory. We also cannot
   # delete the targer directory and have the library recreate it because
-  # Codex has likely created it and set correct permissions.
+  # the node has likely created it and set correct permissions.
   # So, we unpack to a temp folder and move the files.
   if err =? copyFiles(unpackFolder, circuitPath).errorOption:
     error "Failed to copy files", msg = err.msg

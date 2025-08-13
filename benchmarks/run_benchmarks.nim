@@ -5,9 +5,9 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/datastore
 
-import pkg/codex/[rng, stores, merkletree, codextypes, slots]
-import pkg/codex/utils/[json, poseidon2digest]
-import pkg/codex/slots/[builder, sampler/utils, backends/helpers]
+import pkg/archivist/[rng, stores, merkletree, archivisttypes, slots]
+import pkg/archivist/utils/[json, poseidon2digest]
+import pkg/archivist/slots/[builder, sampler/utils, backends/helpers]
 import pkg/constantine/math/[arithmetic, io/io_bigints, io/io_fields]
 
 import ./utils

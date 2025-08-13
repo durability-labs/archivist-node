@@ -6,12 +6,12 @@ import pkg/chronos/asyncproc
 import pkg/libp2p
 import std/os
 import std/strutils
-import codex/conf
-import codex/utils/exceptions
-import codex/utils/trackedfutures
-import ./codexclient
+import archivist/conf
+import archivist/utils/exceptions
+import archivist/utils/trackedfutures
+import ./archivistclient
 
-export codexclient
+export archivistclient
 export chronicles
 
 logScope:
@@ -60,7 +60,7 @@ method start*(node: NodeProcess) {.base, async.} =
 
   try:
     if node.debug:
-      echo "starting codex node with args: ", node.arguments.join(" ")
+      echo "starting node with args: ", node.arguments.join(" ")
     node.process = await startProcess(
       node.executable,
       node.workingDir,
@@ -105,7 +105,7 @@ proc captureOutput(
 proc startNode*[T: NodeProcess](
     _: type T, args: seq[string], debug: string | bool = false, name: string
 ): Future[T] {.async.} =
-  ## Starts a Codex Node with the specified arguments.
+  ## Starts a node with the specified arguments.
   ## Set debug to 'true' to see output of the node.
   let node = T(
     arguments: @args,

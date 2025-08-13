@@ -1,27 +1,27 @@
 import std/tempfiles
-import codex/conf
-import codex/utils/fileutils
+import archivist/conf
+import archivist/utils/fileutils
 import ../../asynctest
 import ../../checktest
-import ../codexprocess
+import ../archivistprocess
 import ../nodeprocess
 import ../../examples
 
 asyncchecksuite "Command line interface":
   let key = "4242424242424242424242424242424242424242424242424242424242424242"
 
-  proc startCodex(args: seq[string]): Future[CodexProcess] {.async.} =
-    return await CodexProcess.startNode(args, false, "cli-test-node")
+  proc startNode(args: seq[string]): Future[ArchivistProcess] {.async.} =
+    return await ArchivistProcess.startNode(args, false, "cli-test-node")
 
   test "complains when persistence is enabled without ethereum account":
-    let node = await startCodex(@["persistence"])
+    let node = await startNode(@["persistence"])
     await node.waitUntilOutput("Persistence enabled, but no Ethereum account was set")
     await node.stop()
 
   test "complains when ethereum private key file has wrong permissions":
     let unsafeKeyFile = genTempPath("", "")
     discard unsafeKeyFile.writeFile(key, 0o666)
-    let node = await startCodex(@["persistence", "--eth-private-key=" & unsafeKeyFile])
+    let node = await startNode(@["persistence", "--eth-private-key=" & unsafeKeyFile])
     await node.waitUntilOutput(
       "Ethereum private key file does not have safe file permissions"
     )
@@ -34,12 +34,12 @@ asyncchecksuite "Command line interface":
       "Proving circuit files are not found. Please run the following to download them:"
 
   test "suggests downloading of circuit files when persistence is enabled without accessible r1cs file":
-    let node = await startCodex(@["persistence", "prover", marketplaceArg])
+    let node = await startNode(@["persistence", "prover", marketplaceArg])
     await node.waitUntilOutput(expectedDownloadInstruction)
     await node.stop()
 
   test "suggests downloading of circuit files when persistence is enabled without accessible wasm file":
-    let node = await startCodex(
+    let node = await startNode(
       @[
         "persistence", "prover", marketplaceArg,
         "--circom-r1cs=tests/circuits/fixtures/proof_main.r1cs",
@@ -49,7 +49,7 @@ asyncchecksuite "Command line interface":
     await node.stop()
 
   test "suggests downloading of circuit files when persistence is enabled without accessible zkey file":
-    let node = await startCodex(
+    let node = await startNode(
       @[
         "persistence", "prover", marketplaceArg,
         "--circom-r1cs=tests/circuits/fixtures/proof_main.r1cs",

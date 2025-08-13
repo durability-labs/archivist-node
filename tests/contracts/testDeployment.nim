@@ -1,7 +1,7 @@
 import pkg/ethers
 import pkg/questionable
-import codex/contracts/deployment
-import codex/contracts
+import archivist/contracts/deployment
+import archivist/contracts
 
 import ../asynctest
 import ../checktest

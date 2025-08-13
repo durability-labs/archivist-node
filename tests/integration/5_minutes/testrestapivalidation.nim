@@ -1,18 +1,18 @@
 import std/times
 import pkg/ethers
-import pkg/codex/conf
-import pkg/codex/contracts
+import pkg/archivist/conf
+import pkg/archivist/contracts
 import ../../asynctest
 import ../../checktest
 import ../../examples
-import ../../codex/examples
-import ../codexconfig
-import ../codexclient
+import ../../archivist/examples
+import ../archivistconfig
+import ../archivistclient
 import ../multinodes
 
 multinodesuite "Rest API validation":
-  let config = NodeConfigs(clients: CodexConfigs.init(nodes = 1).some)
-  var client: CodexClient
+  let config = NodeConfigs(clients: ArchivistConfigs.init(nodes = 1).some)
+  var client: ArchivistClient
 
   setup:
     client = clients()[0].client

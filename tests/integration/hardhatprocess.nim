@@ -9,12 +9,12 @@ import std/os
 import std/sets
 import std/sequtils
 import std/strutils
-import pkg/codex/conf
-import pkg/codex/utils/trackedfutures
-import ./codexclient
+import pkg/archivist/conf
+import pkg/archivist/utils/trackedfutures
+import ./archivistclient
 import ./nodeprocess
 
-export codexclient
+export archivistclient
 export chronicles
 
 logScope:

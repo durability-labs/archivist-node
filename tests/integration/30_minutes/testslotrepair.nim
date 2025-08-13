@@ -1,8 +1,8 @@
 import pkg/questionable
-import pkg/codex/logutils
+import pkg/archivist/logutils
 import ../../contracts/time
 import ../../contracts/deployment
-import ../../codex/helpers
+import ../../archivist/helpers
 import ../../examples
 import ../marketplacesuite
 import ../nodeconfigs
@@ -46,7 +46,7 @@ marketplacesuite(name = "SP Slot Repair", stopOnRequestFail = true):
       filledSlotIds.del(filledSlotIds.find(slotId))
       freedSlotId = some(slotId)
 
-  proc createPurchase(client: CodexClient): Future[PurchaseId] {.async.} =
+  proc createPurchase(client: ArchivistClient): Future[PurchaseId] {.async.} =
     let data = await RandomChunker.example(blocks = blocks)
     let cid = (await client.upload(data)).get
 
@@ -64,7 +64,7 @@ marketplacesuite(name = "SP Slot Repair", stopOnRequestFail = true):
 
     return purchaseId
 
-  proc freeSlot(provider: CodexClient): Future[void] {.async.} =
+  proc freeSlot(provider: ArchivistClient): Future[void] {.async.} =
     # Get the second provider signer.
     let signer = ethProvider.getSigner(accounts[2])
     let marketplaceWithSecondProviderSigner = marketplace.connect(signer)
@@ -83,17 +83,17 @@ marketplacesuite(name = "SP Slot Repair", stopOnRequestFail = true):
 
   test "repair from local store",
     NodeConfigs(
-      clients: CodexConfigs.init(nodes = 1).some,
+      clients: ArchivistConfigs.init(nodes = 1).some,
         # .debug()
         # .withLogFile()
         # .withLogTopics("node", "erasure").some,
-      providers: CodexConfigs
+      providers: ArchivistConfigs
         .init(nodes = 2)
         .withSimulateProofFailures(idx = 1, failEveryNProofs = 1)
         # .debug()
         .withLogFile()
         .withLogTopics("marketplace", "sales", "reservations", "statemachine").some,
-      validators: CodexConfigs.init(nodes = 1).some,
+      validators: ArchivistConfigs.init(nodes = 1).some,
         # .debug()
         # .withLogFile()
         # .withLogTopics("validator").some,
@@ -162,11 +162,11 @@ marketplacesuite(name = "SP Slot Repair", stopOnRequestFail = true):
 
   test "repair from local and remote store",
     NodeConfigs(
-      clients: CodexConfigs.init(nodes = 1)
+      clients: ArchivistConfigs.init(nodes = 1)
       # .debug()
       # .withLogTopics("node", "erasure")
       .some,
-      providers: CodexConfigs.init(nodes = 3)
+      providers: ArchivistConfigs.init(nodes = 3)
       # .debug()
       # .withLogFile()
       # .withLogTopics("marketplace", "sales", "statemachine", "reservations")
@@ -239,12 +239,12 @@ marketplacesuite(name = "SP Slot Repair", stopOnRequestFail = true):
 
   test "repair from remote store only",
     NodeConfigs(
-      clients: CodexConfigs.init(nodes = 1)
+      clients: ArchivistConfigs.init(nodes = 1)
       # .debug()
       #   .withLogFile()
       # .withLogTopics("node", "erasure")
       .some,
-      providers: CodexConfigs.init(nodes = 3)
+      providers: ArchivistConfigs.init(nodes = 3)
       # .debug()
       # .withLogFile()
       # .withLogTopics("marketplace", "sales", "statemachine", "reservations")

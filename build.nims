@@ -29,46 +29,46 @@ proc test(name: string, srcDir = "tests/", params = "", lang = "c") =
   buildBinary name, srcDir, params
   exec "build/" & name
 
-task codex, "build codex binary":
-  buildBinary "codex",
+task node, "build node binary":
+  buildBinary "archivist",
     params = "-d:chronicles_runtime_filtering -d:chronicles_log_level=TRACE"
 
 task toolsCirdl, "build tools/cirdl binary":
   buildBinary "tools/cirdl/cirdl"
 
-task testCodex, "Build & run Codex tests":
-  test "testCodex", params = "-d:codex_enable_proof_failures=true"
+task testNode, "Build & run node tests":
+  test "testNode", params = "-d:archivist_enable_proof_failures=true"
 
-task testContracts, "Build & run Codex Contract tests":
+task testContracts, "Build & run contract tests":
   test "testContracts"
 
 task testIntegration, "Run integration tests":
-  buildBinary "codex",
+  buildBinary "archivist",
     params =
-      "-d:chronicles_runtime_filtering -d:chronicles_log_level=TRACE -d:codex_enable_proof_failures=true"
+      "-d:chronicles_runtime_filtering -d:chronicles_log_level=TRACE -d:archivist_enable_proof_failures=true"
   test "testIntegration"
   # use params to enable logging from the integration test executable
   # test "testIntegration", params = "-d:chronicles_sinks=textlines[notimestamps,stdout],textlines[dynamic] " &
   #   "-d:chronicles_enabled_topics:integration:TRACE"  
 
-task build, "build codex binary":
-  codexTask()
+task build, "build node binary":
+  nodeTask()
 
 task test, "Run tests":
-  testCodexTask()
+  testNodeTask()
 
 task testTools, "Run Tools tests":
   toolsCirdlTask()
   test "testTools"
 
 task testAll, "Run all tests (except for Taiko L2 tests)":
-  testCodexTask()
+  testNodeTask()
   testContractsTask()
   testIntegrationTask()
   testToolsTask()
 
 task testTaiko, "Run Taiko L2 tests":
-  codexTask()
+  nodeTask()
   test "testTaiko"
 
 import strutils
@@ -93,7 +93,7 @@ task coverage, "generates code coverage report":
     echo "  *****************************************************************"
 
   var nimSrcs = " "
-  for f in walkDirRec("codex", {pcFile}):
+  for f in walkDirRec("archivist", {pcFile}):
     if f.endswith(".nim"):
       nimSrcs.add " " & f.absolutePath.quoteShell()
 
@@ -101,7 +101,7 @@ task coverage, "generates code coverage report":
   test "coverage",
     srcDir = "tests/",
     params =
-      " --nimcache:nimcache/coverage -d:release -d:codex_enable_proof_failures=true"
+      " --nimcache:nimcache/coverage -d:release -d:archivist_enable_proof_failures=true"
   exec("rm nimcache/coverage/*.c")
   rmDir("coverage")
   mkDir("coverage")

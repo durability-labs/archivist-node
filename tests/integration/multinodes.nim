@@ -3,13 +3,13 @@ import std/sequtils
 import std/strutils
 import std/sugar
 import std/times
-import pkg/codex/conf
-import pkg/codex/logutils
+import pkg/archivist/conf
+import pkg/archivist/logutils
 import pkg/chronos/transports/stream
 import pkg/ethers
 import pkg/questionable
-import ./codexconfig
-import ./codexprocess
+import ./archivistconfig
+import ./archivistprocess
 import ./hardhatconfig
 import ./hardhatprocess
 import ./nodeconfigs
@@ -19,9 +19,9 @@ import ../checktest
 export asynctest
 export ethers except `%`
 export hardhatprocess
-export codexprocess
+export archivistprocess
 export hardhatconfig
-export codexconfig
+export archivistconfig
 export nodeconfigs
 
 type
@@ -69,7 +69,7 @@ proc sanitize(pathSegment: string): string =
   sanitized
 
 proc getTempDirName*(starttime: string, role: Role, roleIdx: int): string =
-  getTempDir() / "Codex" / sanitize($starttime) / sanitize($role & "_" & $roleIdx)
+  getTempDir() / "Archivist" / sanitize($starttime) / sanitize($role & "_" & $roleIdx)
 
 template multinodesuite*(name: string, body: untyped) =
   asyncchecksuite name:
@@ -89,7 +89,7 @@ template multinodesuite*(name: string, body: untyped) =
     #     hardhat:
     #       HardhatConfig.none,
     #     clients:
-    #       CodexConfigs.init(nodes=1)
+    #       ArchivistConfigs.init(nodes=1)
     #         .withEthProvider("ws://localhost:8545")
     #         .some,
     #     ...
@@ -146,8 +146,8 @@ template multinodesuite*(name: string, body: untyped) =
       except NodeProcessError as e:
         raiseMultiNodeSuiteError "cannot start hardhat process: " & e.msg
 
-    proc newCodexProcess(
-        roleIdx: int, conf: CodexConfig, role: Role
+    proc newNodeProcess(
+        roleIdx: int, conf: ArchivistConfig, role: Role
     ): Future[NodeProcess] {.async.} =
       let nodeIdx = running.len
       var config = conf
@@ -170,10 +170,10 @@ template multinodesuite*(name: string, body: untyped) =
         config.addCliOption("--nat", "none")
         config.addCliOption("--listen-addrs", "/ip4/127.0.0.1/tcp/0")
         config.addCliOption("--disc-port", $await nextFreePort(8090 + nodeIdx))
-      except CodexConfigError as e:
+      except ArchivistConfigError as e:
         raiseMultiNodeSuiteError "invalid cli option, error: " & e.msg
 
-      let node = await CodexProcess.startNode(
+      let node = await ArchivistProcess.startNode(
         config.cliArgs, config.debugEnabled, $role & $roleIdx
       )
 
@@ -191,37 +191,37 @@ template multinodesuite*(name: string, body: untyped) =
           return HardhatProcess(r.node)
       return nil
 
-    proc clients(): seq[CodexProcess] {.used.} =
+    proc clients(): seq[ArchivistProcess] {.used.} =
       return collect:
         for r in running:
           if r.role == Role.Client:
-            CodexProcess(r.node)
+            ArchivistProcess(r.node)
 
-    proc providers(): seq[CodexProcess] {.used.} =
+    proc providers(): seq[ArchivistProcess] {.used.} =
       return collect:
         for r in running:
           if r.role == Role.Provider:
-            CodexProcess(r.node)
+            ArchivistProcess(r.node)
 
-    proc validators(): seq[CodexProcess] {.used.} =
+    proc validators(): seq[ArchivistProcess] {.used.} =
       return collect:
         for r in running:
           if r.role == Role.Validator:
-            CodexProcess(r.node)
+            ArchivistProcess(r.node)
 
     proc startHardhatNode(config: HardhatConfig): Future[NodeProcess] {.async.} =
       return await newHardhatProcess(config, Role.Hardhat)
 
-    proc startClientNode(conf: CodexConfig): Future[NodeProcess] {.async.} =
+    proc startClientNode(conf: ArchivistConfig): Future[NodeProcess] {.async.} =
       let clientIdx = clients().len
       var config = conf
       config.addCliOption(StartUpCmd.persistence, "--eth-provider", jsonRpcProviderUrl)
       config.addCliOption(
         StartUpCmd.persistence, "--eth-account", $accounts[running.len]
       )
-      return await newCodexProcess(clientIdx, config, Role.Client)
+      return await newNodeProcess(clientIdx, config, Role.Client)
 
-    proc startProviderNode(conf: CodexConfig): Future[NodeProcess] {.async.} =
+    proc startProviderNode(conf: ArchivistConfig): Future[NodeProcess] {.async.} =
       let providerIdx = providers().len
       var config = conf
       config.addCliOption(StartUpCmd.persistence, "--eth-provider", jsonRpcProviderUrl)
@@ -241,9 +241,9 @@ template multinodesuite*(name: string, body: untyped) =
         "vendor/codex-contracts-eth/verifier/networks/hardhat/proof_main.zkey",
       )
 
-      return await newCodexProcess(providerIdx, config, Role.Provider)
+      return await newNodeProcess(providerIdx, config, Role.Provider)
 
-    proc startValidatorNode(conf: CodexConfig): Future[NodeProcess] {.async.} =
+    proc startValidatorNode(conf: ArchivistConfig): Future[NodeProcess] {.async.} =
       let validatorIdx = validators().len
       var config = conf
       config.addCliOption(StartUpCmd.persistence, "--eth-provider", jsonRpcProviderUrl)
@@ -252,7 +252,7 @@ template multinodesuite*(name: string, body: untyped) =
       )
       config.addCliOption(StartUpCmd.persistence, "--validator")
 
-      return await newCodexProcess(validatorIdx, config, Role.Validator)
+      return await newNodeProcess(validatorIdx, config, Role.Validator)
 
     proc teardownImpl() {.async.} =
       for nodes in @[validators(), clients(), providers()]:
@@ -285,7 +285,7 @@ template multinodesuite*(name: string, body: untyped) =
         quit(1)
 
     proc updateBootstrapNodes(
-        node: CodexProcess
+        node: ArchivistProcess
     ): Future[void] {.async: (raises: [CatchableError]).} =
       without ninfo =? await node.client.info():
         # raise CatchableError instead of Defect (with .get or !) so we
@@ -324,14 +324,14 @@ template multinodesuite*(name: string, body: untyped) =
           for config in clients.configs:
             let node = await startClientNode(config)
             running.add RunningNode(role: Role.Client, node: node)
-            await CodexProcess(node).updateBootstrapNodes()
+            await ArchivistProcess(node).updateBootstrapNodes()
 
       if var providers =? nodeConfigs.providers:
         failAndTeardownOnError "failed to start provider nodes":
           for config in providers.configs.mitems:
             let node = await startProviderNode(config)
             running.add RunningNode(role: Role.Provider, node: node)
-            await CodexProcess(node).updateBootstrapNodes()
+            await ArchivistProcess(node).updateBootstrapNodes()
 
       if var validators =? nodeConfigs.validators:
         failAndTeardownOnError "failed to start validator nodes":

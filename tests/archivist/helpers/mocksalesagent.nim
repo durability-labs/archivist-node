@@ -1,0 +1,17 @@
+import pkg/archivist/sales/salesagent
+
+type MockSalesAgent = ref object of SalesAgent
+  fulfilledCalled*: bool
+  failedCalled*: bool
+  slotFilledCalled*: bool
+
+method onFulfilled*(agent: SalesAgent, requestId: RequestId) =
+  fulfilledCalled = true
+
+method onFailed*(agent: SalesAgent, requestId: RequestId) =
+  failedCalled = true
+
+method onSlotFilled*(
+    agent: SalesAgent, requestId: RequestId, slotIndex: uint64
+) {.base.} =
+  slotFilledCalled = true

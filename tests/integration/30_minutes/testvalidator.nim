@@ -1,11 +1,11 @@
 from std/times import inMilliseconds, initDuration, inSeconds, fromUnix
 import std/sugar
-import pkg/codex/logutils
+import pkg/archivist/logutils
 import pkg/questionable/results
 import pkg/ethers/provider
 import ../../contracts/time
 import ../../contracts/deployment
-import ../../codex/helpers
+import ../../archivist/helpers
 import ../../examples
 import ../marketplacesuite
 import ../nodeconfigs
@@ -28,20 +28,20 @@ marketplacesuite(name = "Validation", stopOnRequestFail = false):
     NodeConfigs(
       # Uncomment to start Hardhat automatically, typically so logs can be inspected locally
       hardhat: HardhatConfig.none,
-      clients: CodexConfigs
+      clients: ArchivistConfigs
         .init(nodes = 1)
         # .debug() # uncomment to enable console log output
         .withLogFile()
         # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
         .withLogTopics("purchases", "onchain").some,
-      providers: CodexConfigs
+      providers: ArchivistConfigs
         .init(nodes = 1)
         .withSimulateProofFailures(idx = 0, failEveryNProofs = 1)
         # .debug() # uncomment to enable console log output
         # .withLogFile() # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
         # .withLogTopics("sales", "onchain")
         .some,
-      validators: CodexConfigs
+      validators: ArchivistConfigs
         .init(nodes = 2)
         .withValidationGroups(groups = 2)
         .withValidationGroupIndex(idx = 0, groupIndex = 0)
@@ -100,13 +100,13 @@ marketplacesuite(name = "Validation", stopOnRequestFail = false):
     NodeConfigs(
       # Uncomment to start Hardhat automatically, typically so logs can be inspected locally
       hardhat: HardhatConfig.none,
-      clients: CodexConfigs
+      clients: ArchivistConfigs
         .init(nodes = 1)
         # .debug() # uncomment to enable console log output
         .withLogFile()
         # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
         .withLogTopics("purchases", "onchain").some,
-      providers: CodexConfigs
+      providers: ArchivistConfigs
         .init(nodes = 1)
         .withSimulateProofFailures(idx = 0, failEveryNProofs = 1)
         # .debug() # uncomment to enable console log output
@@ -153,7 +153,7 @@ marketplacesuite(name = "Validation", stopOnRequestFail = false):
     # from the block containing the last (past) SlotFilled event
     discard await ethProvider.send("evm_mine")
 
-    var validators = CodexConfigs
+    var validators = ArchivistConfigs
       .init(nodes = 2)
       .withValidationGroups(groups = 2)
       .withValidationGroupIndex(idx = 0, groupIndex = 0)

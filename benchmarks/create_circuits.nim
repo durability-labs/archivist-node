@@ -8,7 +8,7 @@ type
     circuitDirIncludes*: string
     ptauPath*: string
     ptauUrl*: Uri
-    codexProjDir*: string
+    projDir*: string
 
   CircuitArgs* = object
     depth*: int
@@ -22,26 +22,26 @@ type
     ncells*: int
     index*: int
 
-proc findCodexProjectDir(): string =
-  ## find codex proj dir -- assumes this script is in codex/benchmarks
+proc findProjectDir(): string =
+  ## find proj dir -- assumes this script is in subfolder benchmarks
   result = currentSourcePath().parentDir.parentDir
 
 func default*(tp: typedesc[CircuitEnv]): CircuitEnv =
-  let codexDir = findCodexProjectDir()
+  let projDir = findProjectDir()
   result.nimCircuitCli =
-    codexDir / "vendor" / "codex-storage-proofs-circuits" / "reference" / "nim" /
+    projDir / "vendor" / "codex-storage-proofs-circuits" / "reference" / "nim" /
     "proof_input" / "cli"
   result.circuitDirIncludes =
-    codexDir / "vendor" / "codex-storage-proofs-circuits" / "circuit"
+    projDir / "vendor" / "codex-storage-proofs-circuits" / "circuit"
   result.ptauPath =
-    codexDir / "benchmarks" / "ceremony" / "powersOfTau28_hez_final_23.ptau"
+    projDir / "benchmarks" / "ceremony" / "powersOfTau28_hez_final_23.ptau"
   result.ptauUrl = "https://storage.googleapis.com/zkevm/ptau".parseUri
-  result.codexProjDir = codexDir
+  result.projDir = projDir
 
 proc check*(env: var CircuitEnv) =
-  ## check that the CWD of script is in the codex parent
-  let codexProjDir = findCodexProjectDir()
-  echo "\n\nFound project dir: ", codexProjDir
+  ## check that the CWD of script is in the parent folder
+  let projDir = findProjectDir()
+  echo "\n\nFound project dir: ", projDir
 
   let snarkjs = findExe("snarkjs")
   if snarkjs == "":
@@ -94,7 +94,7 @@ proc getCircuitBenchStr*(args: CircuitArgs): string =
 
 proc getCircuitBenchPath*(args: CircuitArgs, env: CircuitEnv): string =
   ## generate folder name for unique circuit args
-  result = env.codexProjDir / "benchmarks/circuit_bench" & getCircuitBenchStr(args)
+  result = env.projDir / "benchmarks/circuit_bench" & getCircuitBenchStr(args)
 
 proc generateCircomAndSamples*(args: CircuitArgs, env: CircuitEnv, name: string) =
   ## run nim circuit and sample generator 
@@ -118,7 +118,7 @@ proc createCircuit*(
   ## 
   ## All needed circuit files will be generated as needed. 
   ## They will be located in `circBenchDir` which defaults to a folder like:
-  ##    `nim-codex/benchmarks/circuit_bench_depth32_maxslots256_cellsize2048_blocksize65536_nsamples9_entropy1234567_seed12345_nslots11_ncells512_index3`
+  ##    `benchmarks/circuit_bench_depth32_maxslots256_cellsize2048_blocksize65536_nsamples9_entropy1234567_seed12345_nslots11_ncells512_index3`
   ## with all the given CircuitArgs.
   ## 
   let circdir = circBenchDir
@@ -166,7 +166,7 @@ proc createCircuit*(
   return (circdir, name)
 
 when isMainModule:
-  echo "findCodexProjectDir: ", findCodexProjectDir()
+  echo "findProjectDir: ", findProjectDir()
   ## test run creating a circuit
   var env = CircuitEnv.default()
   env.check()

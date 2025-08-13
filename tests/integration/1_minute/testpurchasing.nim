@@ -1,6 +1,6 @@
 import std/options
 import std/httpclient
-import pkg/codex/rng
+import pkg/archivist/rng
 import ../twonodes
 import ../../contracts/time
 import ../../examples

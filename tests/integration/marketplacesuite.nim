@@ -1,10 +1,10 @@
 import pkg/chronos
 import pkg/ethers/erc20
 from pkg/libp2p import Cid
-import pkg/codex/contracts/marketplace as mp
-import pkg/codex/periods
-import pkg/codex/utils/json
-from pkg/codex/utils import roundUp, divUp
+import pkg/archivist/contracts/marketplace as mp
+import pkg/archivist/periods
+import pkg/archivist/utils/json
+from pkg/archivist/utils import roundUp, divUp
 import ./multinodes except Subscription
 import ../contracts/time
 import ../contracts/deployment
@@ -100,7 +100,7 @@ template marketplacesuite*(name: string, stopOnRequestFail: bool, body: untyped)
         )
 
     proc requestStorage(
-        client: CodexClient,
+        client: ArchivistClient,
         cid: Cid,
         proofProbability = 1.u256,
         duration: uint64 = 12.periods,
