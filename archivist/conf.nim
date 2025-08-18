@@ -499,7 +499,8 @@ const
 
   nodeFullVersion* =
     "Archivist node version:  " & nodeVersion & "\p" & "Archivist node revision: " &
-    nodeRevision & "contracts revision: " & contractsRevision & "\p" & nimBanner
+    nodeRevision & "\p" & "Archivist contracts revision: " & contractsRevision & "\p" &
+    nimBanner
 
 proc parseCmdArg*(
     T: typedesc[MultiAddress], input: string
