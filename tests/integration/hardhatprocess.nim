@@ -25,7 +25,7 @@ type HardhatProcess* = ref object of NodeProcess
   logFile: ?IoHandle
 
 method workingDir(node: HardhatProcess): string =
-  return currentSourcePath() / ".." / ".." / ".." / "vendor" / "codex-contracts-eth"
+  return currentSourcePath() / ".." / ".." / ".." / "vendor" / "archivist-contracts"
 
 method executable(node: HardhatProcess): string =
   return "node_modules" / ".bin" / "hardhat"

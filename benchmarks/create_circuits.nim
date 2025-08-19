@@ -29,10 +29,10 @@ proc findProjectDir(): string =
 func default*(tp: typedesc[CircuitEnv]): CircuitEnv =
   let projDir = findProjectDir()
   result.nimCircuitCli =
-    projDir / "vendor" / "codex-storage-proofs-circuits" / "reference" / "nim" /
+    projDir / "vendor" / "archivist-storage-proofs-circuits" / "reference" / "nim" /
     "proof_input" / "cli"
   result.circuitDirIncludes =
-    projDir / "vendor" / "codex-storage-proofs-circuits" / "circuit"
+    projDir / "vendor" / "archivist-storage-proofs-circuits" / "circuit"
   result.ptauPath =
     projDir / "benchmarks" / "ceremony" / "powersOfTau28_hez_final_23.ptau"
   result.ptauUrl = "https://storage.googleapis.com/zkevm/ptau".parseUri

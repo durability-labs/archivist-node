@@ -25,7 +25,7 @@
 	branch = master
 [submodule "vendor/nim-secp256k1"]
 	path = vendor/nim-secp256k1
-	url = https://github.com/status-im/nim-secp256k1.git
+	url = https://github.com/durability-labs/nim-secp256k1.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-stew"]
@@ -40,7 +40,7 @@
 	branch = master
 [submodule "vendor/questionable"]
 	path = vendor/questionable
-	url = https://github.com/status-im/questionable.git
+	url = https://github.com/durability-labs/questionable.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/upraises"]
@@ -50,7 +50,7 @@
 	branch = master
 [submodule "vendor/asynctest"]
 	path = vendor/asynctest
-	url = https://github.com/status-im/asynctest.git
+	url = https://github.com/durability-labs/asynctest.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-presto"]
@@ -60,12 +60,12 @@
 	branch = master
 [submodule "vendor/nim-confutils"]
 	path = vendor/nim-confutils
-	url = https://github.com/status-im/nim-confutils.git
+	url = https://github.com/durability-labs/nim-confutils.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-nat-traversal"]
 	path = vendor/nim-nat-traversal
-	url = https://github.com/status-im/nim-nat-traversal.git
+	url = https://github.com/durability-labs/nim-nat-traversal.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-libbacktrace"]
@@ -110,12 +110,12 @@
 	branch = master
 [submodule "vendor/nim-http-utils"]
 	path = vendor/nim-http-utils
-	url = https://github.com/status-im/nim-http-utils.git
+	url = https://github.com/durability-labs/nim-http-utils.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-toml-serialization"]
 	path = vendor/nim-toml-serialization
-	url = https://github.com/status-im/nim-toml-serialization.git
+	url = https://github.com/durability-labs/nim-toml-serialization.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-unittest2"]
@@ -135,25 +135,22 @@
 	branch = master
 [submodule "vendor/nim-contract-abi"]
 	path = vendor/nim-contract-abi
-	url = https://github.com/status-im/nim-contract-abi
+	url = https://github.com/durability-labs/nim-contract-abi.git
 [submodule "vendor/nim-json-rpc"]
 	path = vendor/nim-json-rpc
 	url = https://github.com/status-im/nim-json-rpc
 [submodule "vendor/nim-zlib"]
 	path = vendor/nim-zlib
-	url = https://github.com/status-im/nim-zlib
+	url = https://github.com/durability-labs/nim-zlib.git
 [submodule "vendor/nim-ethers"]
 	path = vendor/nim-ethers
-	url = https://github.com/status-im/nim-ethers
+	url = https://github.com/durability-labs/nim-ethers.git
 [submodule "vendor/lrucache.nim"]
 	path = vendor/lrucache.nim
-	url = https://github.com/status-im/lrucache.nim
+	url = https://github.com/durability-labs/lrucache.nim.git
 [submodule "vendor/nim-blscurve"]
 	path = vendor/nim-blscurve
-	url = https://github.com/status-im/nim-blscurve.git
-	ignore = untracked
-	branch = master
-[submodule "vendor/nim-taskpools.git"]
+	url = https://github.com/durability-labs/nim-blscurve.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-taskpools"]
@@ -163,27 +160,27 @@
 	branch = master
 [submodule "vendor/nim-leopard"]
 	path = vendor/nim-leopard
-	url = https://github.com/status-im/nim-leopard.git
-[submodule "vendor/nim-codex-dht"]
-	path = vendor/nim-codex-dht
-	url = https://github.com/codex-storage/nim-codex-dht.git
+	url = https://github.com/durability-labs/nim-leopard.git
+[submodule "vendor/archivist-dht"]
+	path = vendor/archivist-dht
+	url = https://github.com/durability-labs/archivist-dht.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-datastore"]
 	path = vendor/nim-datastore
-	url = https://github.com/status-im/nim-datastore.git
+	url = https://github.com/durability-labs/nim-datastore.git
 [submodule "vendor/nim-sqlite3-abi"]
 	path = vendor/nim-sqlite3-abi
 	url = https://github.com/arnetheduck/nim-sqlite3-abi.git
 [submodule "vendor/nim-eth"]
 	path = vendor/nim-eth
 	url = https://github.com/status-im/nim-eth
-[submodule "vendor/codex-contracts-eth"]
-	path = vendor/codex-contracts-eth
-	url = https://github.com/status-im/codex-contracts-eth
+[submodule "vendor/archivist-contracts"]
+	path = vendor/archivist-contracts
+	url = https://github.com/durability-labs/archivist-contracts.git
 [submodule "vendor/nim-protobuf-serialization"]
 	path = vendor/nim-protobuf-serialization
-	url = https://github.com/status-im/nim-protobuf-serialization
+	url = https://github.com/durability-labs/nim-protobuf-serialization.git
 [submodule "vendor/nim-results"]
 	path = vendor/nim-results
 	url = https://github.com/arnetheduck/nim-results
@@ -195,26 +192,26 @@
 	url = https://github.com/zevv/npeg
 [submodule "vendor/nim-poseidon2"]
 	path = vendor/nim-poseidon2
-	url = https://github.com/codex-storage/nim-poseidon2.git
+	url = https://github.com/durability-labs/nim-poseidon2.git
 [submodule "vendor/constantine"]
 	path = vendor/constantine
 	url = https://github.com/mratsim/constantine.git
 [submodule "vendor/nim-circom-compat"]
 	path = vendor/nim-circom-compat
-	url = https://github.com/codex-storage/nim-circom-compat.git
+	url = https://github.com/durability-labs/nim-circom-compat.git
 	ignore = untracked
 	branch = master
-[submodule "vendor/codex-storage-proofs-circuits"]
-	path = vendor/codex-storage-proofs-circuits
-	url = https://github.com/codex-storage/codex-storage-proofs-circuits.git
+[submodule "vendor/archivist-storage-proofs-circuits"]
+	path = vendor/archivist-storage-proofs-circuits
+	url = https://github.com/durability-labs/archivist-storage-proofs-circuits.git
 	ignore = untracked
 	branch = master
 [submodule "vendor/nim-serde"]
 	path = vendor/nim-serde
-	url = https://github.com/codex-storage/nim-serde.git
+	url = https://github.com/durability-labs/nim-serde.git
 [submodule "vendor/nim-leveldbstatic"]
 	path = vendor/nim-leveldbstatic
-	url = https://github.com/codex-storage/nim-leveldb.git
+	url = https://github.com/durability-labs/nim-leveldbstatic.git
 [submodule "vendor/nim-zippy"]
 	path = vendor/nim-zippy
 	url = https://github.com/status-im/nim-zippy.git

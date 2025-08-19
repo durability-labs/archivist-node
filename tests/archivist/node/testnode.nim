@@ -15,7 +15,7 @@ import pkg/poseidon2/io
 import pkg/taskpools
 
 import pkg/nitro
-import pkg/codexdht/discv5/protocol as discv5
+import pkg/archivistdht/discv5/protocol as discv5
 
 import pkg/archivist/logutils
 import pkg/archivist/stores

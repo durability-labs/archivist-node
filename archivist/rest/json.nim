@@ -1,8 +1,8 @@
 import pkg/questionable
 import pkg/stew/byteutils
 import pkg/libp2p
-import pkg/codexdht/discv5/node as dn
-import pkg/codexdht/discv5/routing_table as rt
+import pkg/archivistdht/discv5/node as dn
+import pkg/archivistdht/discv5/routing_table as rt
 import ../sales
 import ../purchasing
 import ../utils/json
