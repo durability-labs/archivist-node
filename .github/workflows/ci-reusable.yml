@@ -56,7 +56,7 @@ jobs:
 
       - name: Start Ethereum node with smart contracts
         if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools' || matrix.tests == 'all'
-        working-directory: vendor/codex-contracts-eth
+        working-directory: vendor/archivist-contracts
         env:
           MSYS2_PATH_TYPE: inherit
         run: |

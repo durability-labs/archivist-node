@@ -485,7 +485,7 @@ proc getNodeRevision(): string =
   return res
 
 proc getContractsRevision(): string =
-  let res = strip(staticExec("git rev-parse --short HEAD:vendor/codex-contracts-eth"))
+  let res = strip(staticExec("git rev-parse --short HEAD:vendor/archivist-contracts"))
   return res
 
 proc getNimBanner(): string =

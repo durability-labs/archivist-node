@@ -4,7 +4,7 @@ from pkg/ethers import Address
 from pkg/libp2p import
   Cid, PeerId, SignedPeerRecord, MultiAddress, AddressInfo, init, `$`
 import pkg/contractabi
-import pkg/codexdht/discv5/node as dn
+import pkg/archivistdht/discv5/node as dn
 import pkg/serde/json
 import pkg/questionable/results
 import ../errors

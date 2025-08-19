@@ -230,15 +230,15 @@ template multinodesuite*(name: string, body: untyped) =
       )
       config.addCliOption(
         PersistenceCmd.prover, "--circom-r1cs",
-        "vendor/codex-contracts-eth/verifier/networks/hardhat/proof_main.r1cs",
+        "vendor/archivist-contracts/verifier/networks/hardhat/proof_main.r1cs",
       )
       config.addCliOption(
         PersistenceCmd.prover, "--circom-wasm",
-        "vendor/codex-contracts-eth/verifier/networks/hardhat/proof_main.wasm",
+        "vendor/archivist-contracts/verifier/networks/hardhat/proof_main.wasm",
       )
       config.addCliOption(
         PersistenceCmd.prover, "--circom-zkey",
-        "vendor/codex-contracts-eth/verifier/networks/hardhat/proof_main.zkey",
+        "vendor/archivist-contracts/verifier/networks/hardhat/proof_main.zkey",
       )
 
       return await newNodeProcess(providerIdx, config, Role.Provider)
