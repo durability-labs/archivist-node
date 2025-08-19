@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       docker_repo:
-        default:
+        default: durabilitylabs/archivist-node
         description: DockerHub repository
         required: false
         type: string
@@ -68,6 +68,10 @@ on:
         description: Specifies compatible smart contract image
         required: false
         type: string
+    outputs:
+      archivist_image:
+        description: Archivist Docker image tag
+        value: ${{ jobs.publish.outputs.archivist_image }}
 
 
 env:
@@ -83,23 +87,24 @@ env:
   TAG_SUFFIX: ${{ inputs.tag_suffix }}
   CONTRACT_IMAGE: ${{ inputs.contract_image }}
   # Tests
-  TESTS_SOURCE: codex-storage/cs-codex-dist-tests
-  TESTS_BRANCH: master
+  TESTS_SOURCE: durability-labs/cs-archivist-dist-tests
+  TESTS_BRANCH: main
   CONTINUOUS_TESTS_LIST: ${{ inputs.continuous_tests_list }}
   CONTINUOUS_TESTS_DURATION: ${{ inputs.continuous_tests_duration }}
   CONTINUOUS_TESTS_NAMEPREFIX: c-tests-ci
 
 
 jobs:
+  # Compute variables
   compute:
-      name: Compute build ID
-      runs-on: ubuntu-latest
-      outputs:
-        build_id: ${{ steps.build_id.outputs.build_id }}
-      steps:
-        - name: Generate unique build id
-          id: build_id
-          run: echo "build_id=$(openssl rand -hex 5)" >> $GITHUB_OUTPUT
+    name: Compute build ID
+    runs-on: ubuntu-latest
+    outputs:
+      build_id: ${{ steps.build_id.outputs.build_id }}
+    steps:
+      - name: Generate unique build id
+        id: build_id
+        run: echo "build_id=$(openssl rand -hex 5)" >> $GITHUB_OUTPUT
 
   # Build platform specific image
   build:
@@ -134,7 +139,7 @@ jobs:
         run: |
           # Create contract label for compatible contract image if specified
           if [[ -n "${{ env.CONTRACT_IMAGE }}" ]]; then
-            echo "CONTRACT_LABEL=storage.codex.nim-codex.blockchain-image=${{ env.CONTRACT_IMAGE }}" >>$GITHUB_ENV
+            echo "CONTRACT_LABEL=storage.archivist.archivist-node.blockchain-image=${{ env.CONTRACT_IMAGE }}" >> $GITHUB_ENV
           fi
 
       - name: Docker - Meta
@@ -189,35 +194,35 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      archivist_image: ${{ steps.image_tag.outputs.archivist_image }}
     needs: [build, compute]
     steps:
-
       - name: Docker - Variables
         run: |
-          # Adjust custom suffix when set and
+          # Adjust custom suffix when set
           if [[ -n "${{ env.TAG_SUFFIX }}" ]]; then
-            echo "TAG_SUFFIX=-${{ env.TAG_SUFFIX }}" >>$GITHUB_ENV
+            echo "TAG_SUFFIX=-${{ env.TAG_SUFFIX }}" >> $GITHUB_ENV
           fi
           # Disable SHA tags on tagged release
           if [[ ${{ startsWith(github.ref, 'refs/tags/') }} == "true" ]]; then
-            echo "TAG_SHA=false" >>$GITHUB_ENV
+            echo "TAG_SHA=false" >> $GITHUB_ENV
           fi
           # Handle latest and latest-custom using raw
           if [[ ${{ env.TAG_SHA }} == "false" ]]; then
-            echo "TAG_LATEST=false" >>$GITHUB_ENV
-            echo "TAG_RAW=true" >>$GITHUB_ENV
+            echo "TAG_LATEST=false" >> $GITHUB_ENV
+            echo "TAG_RAW=true" >> $GITHUB_ENV
             if [[ -z "${{ env.TAG_SUFFIX }}" ]]; then
-              echo "TAG_RAW_VALUE=latest" >>$GITHUB_ENV
+              echo "TAG_RAW_VALUE=latest" >> $GITHUB_ENV
             else
-              echo "TAG_RAW_VALUE=latest-{{ env.TAG_SUFFIX }}" >>$GITHUB_ENV
+              echo "TAG_RAW_VALUE=latest-{{ env.TAG_SUFFIX }}" >> $GITHUB_ENV
             fi
           else
-            echo "TAG_RAW=false" >>$GITHUB_ENV
+            echo "TAG_RAW=false" >> $GITHUB_ENV
           fi
           
           # Create contract label for compatible contract image if specified
           if [[ -n "${{ env.CONTRACT_IMAGE }}" ]]; then
-            echo "CONTRACT_LABEL=storage.codex.nim-codex.blockchain-image=${{ env.CONTRACT_IMAGE }}" >>$GITHUB_ENV
+            echo "CONTRACT_LABEL=storage.archivist.archivist-node.blockchain-image=${{ env.CONTRACT_IMAGE }}" >> $GITHUB_ENV
           fi
 
       - name: Docker - Download digests
@@ -257,9 +262,12 @@ jobs:
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.DOCKER_REPO }}@sha256:%s ' *)
 
+      - name: Docker - Image tag
+        id: image_tag
+        run: echo "archivist_image=${{ env.DOCKER_REPO }}:${{ steps.meta.outputs.version }}" >> "$GITHUB_OUTPUT"
+
       - name: Docker - Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.DOCKER_REPO }}:${{ steps.meta.outputs.version }}
+        run: docker buildx imagetools inspect ${{ steps.image_tag.outputs.archivist_image }}
 
 
   # Compute Tests inputs
@@ -272,13 +280,13 @@ jobs:
       source: ${{ steps.compute.outputs.source }}
       branch: ${{ env.TESTS_BRANCH }}
       workflow_source: ${{ env.TESTS_SOURCE }}
-      codexdockerimage: ${{ steps.compute.outputs.codexdockerimage }}
+      archivistdockerimage: ${{ steps.compute.outputs.archivistdockerimage }}
     steps:
       - name: Compute Tests inputs
         id: compute
         run: |
           echo "source=${{ format('{0}/{1}', github.server_url, env.TESTS_SOURCE) }}" >> "$GITHUB_OUTPUT"
-          echo "codexdockerimage=${{ inputs.docker_repo }}:${{ needs.publish.outputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "archivistdockerimage=${{ inputs.docker_repo }}:${{ needs.publish.outputs.version }}" >> "$GITHUB_OUTPUT"
 
 
   # Compute Continuous Tests inputs
@@ -309,10 +317,11 @@ jobs:
       matrix:
         tests: ${{ fromJSON(needs.compute-continuous-tests-inputs.outputs.continuous_tests_list) }}
     uses: codex-storage/cs-codex-dist-tests/.github/workflows/run-continuous-tests.yaml@master
+
     with:
       source: ${{ needs.compute-tests-inputs.outputs.source }}
       branch: ${{ needs.compute-tests-inputs.outputs.branch }}
-      codexdockerimage: ${{ needs.compute-tests-inputs.outputs.codexdockerimage }}
+      codexdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
       nameprefix: ${{ needs.compute-continuous-tests-inputs.outputs.nameprefix }}-${{ matrix.tests }}-${{ needs.compute-continuous-tests-inputs.outputs.continuous_tests_duration }}
       tests_filter: ${{ matrix.tests }}
       tests_target_duration: ${{ needs.compute-tests-inputs.outputs.continuous_tests_duration }}
@@ -329,6 +338,6 @@ jobs:
     with:
       source: ${{ needs.compute-tests-inputs.outputs.source }}
       branch: ${{ needs.compute-tests-inputs.outputs.branch }}
-      codexdockerimage: ${{ needs.compute-tests-inputs.outputs.codexdockerimage }}
+      codexdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
       workflow_source: ${{ needs.compute-tests-inputs.outputs.workflow_source }}
     secrets: inherit
