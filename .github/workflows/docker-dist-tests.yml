@@ -4,7 +4,7 @@ name: Docker - Dist-Tests
 on:
   push:
     branches:
-      - master
+      - main
     tags:
       - 'v*.*.*'
     paths-ignore:
@@ -40,6 +40,7 @@ jobs:
         run: |
           hash=$(git rev-parse --short HEAD:vendor/archivist-contracts)
           echo "hash=$hash" >> $GITHUB_OUTPUT
+
   build-and-push:
     name: Build and Push
     uses: ./.github/workflows/docker-reusable.yml
