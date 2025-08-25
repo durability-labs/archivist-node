@@ -205,7 +205,7 @@
 	path = vendor/archivist-storage-proofs-circuits
 	url = https://github.com/durability-labs/archivist-storage-proofs-circuits.git
 	ignore = untracked
-	branch = master
+	branch = main
 [submodule "vendor/nim-serde"]
 	path = vendor/nim-serde
 	url = https://github.com/durability-labs/nim-serde.git
