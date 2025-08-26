@@ -14,3 +14,8 @@ import ./testbed/builders/node
 
 export node.node
 export node.start
+
+import ./testbed/node
+
+export node.Node
+export node.apiUrl
