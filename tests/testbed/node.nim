@@ -6,10 +6,11 @@ type Node* = ref object
   process: Process
 
 const projectRoot = currentSourcePath().parentDir().parentDir().parentDir()
-const workingDir = projectRoot / "build"
+const buildDir = projectRoot / "build"
 
 proc start*(_: type Node, arguments: seq[string]): Future[Node] {.async.} =
-  let process = await Process.start("archivist", workingDir, arguments)
+  let command = "./archivist"
+  let process = await Process.start(command, arguments, buildDir)
   Node(process: process)
 
 proc stop*(node: Node) {.async.} =
