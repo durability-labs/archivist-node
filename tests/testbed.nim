@@ -15,7 +15,17 @@ import ./testbed/builders/node
 export node.node
 export node.start
 
+import ./testbed/builders/dataset
+
+export dataset.dataset
+export dataset.upload
+
 import ./testbed/node
 
 export node.Node
 export node.apiUrl
+
+import ./testbed/dataset
+
+export dataset.Dataset
+export dataset.cid
