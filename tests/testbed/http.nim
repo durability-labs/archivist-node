@@ -12,6 +12,9 @@ type
 
 type HttpResponse* = distinct HttpClientResponseRef
 
+func status*(response: HttpResponse): int =
+  HttpClientResponseRef(response).status
+
 proc post*(
   _: type Http,
   url: string,
@@ -28,14 +31,14 @@ proc post*(
 
   var response: HttpResponse
   try:
-    let response = HttpResponse(await request.send())
+    response = HttpResponse(await request.send())
   except HttpError as error:
     await noCancel session.closeWait()
     raise error
 
   if HttpRequestOption.checkStatusCode in options:
     if response.status < 200 or response.status >= 300:
-      raise newException(HttpError, "HTTP status code: " & response.status)
+      raise newException(HttpError, "HTTP status code: " & $response.status)
 
   response
 
