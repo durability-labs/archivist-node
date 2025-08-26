@@ -45,10 +45,18 @@ proc post*(
 proc close*(response: HttpResponse) {.async.} =
   await noCancel HttpClientResponseRef(response).session.closeWait()
 
-proc readBody*(response: HttpResponse): Future[seq[byte]] {.async.} =
+proc read*(response: HttpResponse): Future[seq[byte]] {.async.} =
   let body  = await HttpClientResponseRef(response).getBodyBytes()
   await response.close()
   body
 
-proc readBodyString*(response: HttpResponse): Future[string] {.async.} =
-  string.fromBytes(await response.readBody())
+proc read*(response: Future[HttpResponse]): Future[seq[byte]] {.async.} =
+  let response = await response
+  await response.read()
+
+proc readString*(response: HttpResponse): Future[string] {.async.} =
+  string.fromBytes(await response.read())
+
+proc readString*(response: Future[HttpResponse]): Future[string] {.async.} =
+  let response = await response
+  await response.readString()
