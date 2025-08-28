@@ -1,15 +1,20 @@
 import std/os
 import pkg/chronos
 import ./process
+import ./hardhat/account
+import ./hardhat/npm
+import ./hardhat/root
 
-type Hardhat* = ref object
-  process: Process
+export account.HardhatAccount
+export account.privateKeyFile
 
-const projectRoot = currentSourcePath().parentDir().parentDir().parentDir()
-const hardhatRoot = projectRoot / "vendor" / "archivist-contracts"
+type
+  Hardhat* = ref object
+    process: Process
+    accounts: seq[HardhatAccount] = defaultHardhatAccounts
 
-proc npm(arguments: seq[string]) {.async.} =
-  await Process.execute("npm", arguments, hardhatRoot)
+func accounts*(hardhat: Hardhat): var seq[HardhatAccount] =
+  hardhat.accounts
 
 proc install*(_: type Hardhat) {.async.} =
   await npm(@["install"])
