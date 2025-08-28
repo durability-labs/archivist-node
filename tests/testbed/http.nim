@@ -1,3 +1,4 @@
+import std/json
 import pkg/chronos/apps/http/httpclient
 import pkg/stew/byteutils
 
@@ -71,3 +72,13 @@ proc post*(
 
   response
 
+proc post*(
+  _: type Http,
+  url: string,
+  body: JsonNode,
+  headers: HttpHeaders = @{:},
+  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+): Future[HttpResponse] {.async.} =
+  let headers = @{"Content-Type": "application/json"} & headers
+  let body = ($body).toBytes
+  await Http.post(url, body, headers, options)
