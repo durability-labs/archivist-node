@@ -3,8 +3,6 @@ import pkg/questionable
 import ./hardhat
 import ./node
 
-type TestbedError* = object of CatchableError
-
 type Testbed* = ref object
   hardhatInstance: ?Hardhat
   nodeInstances: seq[Node]
