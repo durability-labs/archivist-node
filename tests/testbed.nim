@@ -13,6 +13,9 @@ export hardhat.start
 import ./testbed/builders/node
 
 export node.node
+export node.persistence
+export node.ethPrivateKey
+export node.noEthPrivateKey
 export node.start
 
 import ./testbed/builders/dataset
