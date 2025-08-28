@@ -42,6 +42,6 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("persistence")
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
-  let node = await Node.start(arguments)
+  let node = await Node.start(arguments).waitForRestApi()
   builder.testbed.nodeInstances.add(node)
   node
