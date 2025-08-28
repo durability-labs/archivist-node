@@ -26,6 +26,17 @@ import ./testbed/builders/dataset
 export dataset.dataset
 export dataset.upload
 
+import ./testbed/builders/request
+
+export request.request
+export request.dataset
+export request.duration
+export request.proofProbability
+export request.pricePerBytePerSecond
+export request.expiry
+export request.nodes
+export request.collateralPerByte
+export request.submit
 import ./testbed/node
 
 export node.Node
@@ -35,3 +46,4 @@ import ./testbed/dataset
 
 export dataset.Dataset
 export dataset.cid
+export dataset.requestIds
