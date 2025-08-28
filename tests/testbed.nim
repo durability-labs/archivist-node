@@ -37,6 +37,8 @@ export request.expiry
 export request.nodes
 export request.collateralPerByte
 export request.submit
+export request.start
+
 import ./testbed/node
 
 export node.Node
