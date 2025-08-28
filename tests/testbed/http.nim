@@ -15,6 +15,36 @@ type HttpResponse* = distinct HttpClientResponseRef
 func status*(response: HttpResponse): int =
   HttpClientResponseRef(response).status
 
+proc close*(response: HttpResponse) {.async.} =
+  await noCancel HttpClientResponseRef(response).session.closeWait()
+
+proc read*(response: HttpResponse): Future[seq[byte]] {.async.} =
+  let body  = await HttpClientResponseRef(response).getBodyBytes()
+  await response.close()
+  body
+
+proc read*(response: Future[HttpResponse]): Future[seq[byte]] {.async.} =
+  let response = await response
+  await response.read()
+
+proc readString*(response: HttpResponse): Future[string] {.async.} =
+  string.fromBytes(await response.read())
+
+proc readString*(response: Future[HttpResponse]): Future[string] {.async.} =
+  let response = await response
+  await response.readString()
+
+proc checkStatusCode*(response: HttpResponse) {.async.} =
+  let status = response.status
+  if status >= 200 and status < 300:
+    return
+  var message = "HTTP status code " & $status
+  try:
+    message &= ": " & await response.readString()
+  except HttpError:
+    discard
+  raise newException(HttpError, message)
+
 proc post*(
   _: type Http,
   url: string,
@@ -37,26 +67,7 @@ proc post*(
     raise error
 
   if HttpRequestOption.checkStatusCode in options:
-    if response.status < 200 or response.status >= 300:
-      raise newException(HttpError, "HTTP status code: " & $response.status)
+    await response.checkStatusCode()
 
   response
 
-proc close*(response: HttpResponse) {.async.} =
-  await noCancel HttpClientResponseRef(response).session.closeWait()
-
-proc read*(response: HttpResponse): Future[seq[byte]] {.async.} =
-  let body  = await HttpClientResponseRef(response).getBodyBytes()
-  await response.close()
-  body
-
-proc read*(response: Future[HttpResponse]): Future[seq[byte]] {.async.} =
-  let response = await response
-  await response.read()
-
-proc readString*(response: HttpResponse): Future[string] {.async.} =
-  string.fromBytes(await response.read())
-
-proc readString*(response: Future[HttpResponse]): Future[string] {.async.} =
-  let response = await response
-  await response.readString()
