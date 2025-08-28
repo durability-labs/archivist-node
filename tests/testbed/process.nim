@@ -3,6 +3,9 @@ import pkg/chronos/asyncproc
 
 type Process* = distinct AsyncProcessRef
 
+func stdout*(process: Process): AsyncStreamReader =
+  AsyncProcessRef(process).stdoutStream
+
 proc start*(
   _: type Process,
   command: string,
