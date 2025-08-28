@@ -1,6 +1,7 @@
 import pkg/chronos
 import pkg/ethers
 import pkg/questionable
+import pkg/stew/byteutils
 import ../testbed
 import ../hardhat
 import ../contract
@@ -25,3 +26,17 @@ proc contract(builder: MarketplaceBuilder): MarketplaceContract =
     contract = MarketplaceContract.new(address, provider)
     builder.contractInstance = some contract
   contract
+
+proc waitForRequestStarted*(
+  builder: MarketplaceBuilder,
+  requestId: string
+) {.async.} =
+  let requestId = hexToByteArray(requestId, 32)
+  let done = newAsyncEvent()
+  proc onEvent(event: ?!RequestFulfilled) =
+    if event =? event and event.requestId == requestId:
+      done.fire()
+  let contract = builder.contract
+  let subscription = await contract.subscribe(RequestFulfilled, onEvent)
+  await done.wait()
+  await subscription.unsubscribe()

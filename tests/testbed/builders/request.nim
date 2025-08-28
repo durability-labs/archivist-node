@@ -7,6 +7,7 @@ import ../node
 import ../http
 import ../error
 import ./dataset
+import ./marketplace
 
 type RequestBuilder = ref object
   testbed: Testbed
@@ -80,4 +81,10 @@ proc submit*(builder: RequestBuilder, requester: Node): Future[Dataset] {.async.
   }
   let requestId = await Http.post(url, body).readString()
   dataset.addRequestId(requestId)
+  dataset
+
+proc start*(builder: RequestBuilder, requester: Node): Future[Dataset] {.async.} =
+  let dataset = await builder.submit(requester)
+  let requestId = dataset.requestIds[^1]
+  await builder.testbed.marketplace.waitForRequestStarted(requestId)
   dataset
