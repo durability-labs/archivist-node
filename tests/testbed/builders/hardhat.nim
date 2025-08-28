@@ -2,6 +2,7 @@ import pkg/chronos
 import pkg/questionable
 import ../testbed
 import ../hardhat
+import ../error
 
 type HardhatBuilder = ref object
   testbed: Testbed

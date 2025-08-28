@@ -3,6 +3,7 @@ import std/net
 import pkg/chronos
 import pkg/questionable
 import ./process
+import ./error
 
 type Node* = ref object
   process: Process

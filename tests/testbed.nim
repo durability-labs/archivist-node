@@ -1,9 +1,12 @@
 import ./testbed/testbed
 
 export testbed.Testbed
-export testbed.TestbedError
 export testbed.start
 export testbed.stop
+
+import ./testbed/error
+
+export error.TestbedError
 
 import ./testbed/builders/hardhat
 
