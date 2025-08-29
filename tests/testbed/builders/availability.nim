@@ -48,7 +48,7 @@ proc create*(builder: AvailabilityBuilder, node: Node) {.async.} =
   let url = node.apiUrl & "/sales/availability"
   let body = %*{
     "totalSize": totalSize,
-    "totalCollateral": builder.totalCollateral |? 100 * totalSize,
+    "totalCollateral": builder.totalCollateral |? 5000 * totalSize,
     "duration": builder.duration |? 30*24*60*60,
     "minPricePerBytePerSecond": builder.minPricePerBytePerSecond |? 1
   }
