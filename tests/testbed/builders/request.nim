@@ -72,7 +72,7 @@ proc submit*(builder: RequestBuilder, requester: Node): Future[Dataset] {.async.
   let body = %*{
     "cid": cid,
     "duration": builder.duration |? 60 * 60,
-    "proofProbability": builder.proofProbability |? 2,
+    "proofProbability": builder.proofProbability |? 1,
     "collateralPerByte": builder.collateralPerByte |? 1000,
     "pricePerBytePerSecond": builder.pricePerBytePerSecond |? 10,
     "expiry": builder.expiry |? 10 * 60,
