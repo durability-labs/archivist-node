@@ -40,3 +40,27 @@ proc waitForRequestStarted*(
   let subscription = await contract.subscribe(RequestFulfilled, onEvent)
   await done.wait()
   await subscription.unsubscribe()
+
+proc waitForProofSubmitted*(builder: MarketplaceBuilder) {.async.} =
+  let done = newAsyncEvent()
+  proc onEvent(event: ?!ProofSubmitted) =
+    if event =? event:
+      done.fire()
+  let contract = builder.contract
+  let subscription = await contract.subscribe(ProofSubmitted, onEvent)
+  await done.wait()
+  await subscription.unsubscribe()
+
+proc waitForSlotFreed*(
+  builder: MarketplaceBuilder,
+  requestId: string
+) {.async.} =
+  let requestId = hexToByteArray(requestId, 32)
+  let done = newAsyncEvent()
+  proc onEvent(event: ?!SlotFreed) =
+    if event =? event and event.requestId == requestId:
+      done.fire()
+  let contract = builder.contract
+  let subscription = await contract.subscribe(SlotFreed, onEvent)
+  await done.wait()
+  await subscription.unsubscribe()

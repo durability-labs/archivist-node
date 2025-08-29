@@ -52,6 +52,13 @@ export availability.duration
 export availability.minPricePerBytePerSecond
 export availability.create
 
+import ./testbed/builders/marketplace
+
+export marketplace.marketplace
+export marketplace.waitForRequestStarted
+export marketplace.waitForProofSubmitted
+export marketplace.waitForSlotFreed
+
 import ./testbed/network/node
 
 export node.Node
