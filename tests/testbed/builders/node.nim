@@ -3,6 +3,7 @@ import pkg/chronos
 import pkg/questionable
 import ../network/node
 import ../network/hardhat
+import ../network/hardhat/root
 import ../helpers/project
 import ../testbed
 import ./availability
@@ -13,6 +14,10 @@ type
     logToFile: bool
     persistence: bool = true
     ethPrivateKey: ? ? string
+    prover: bool
+    circomR1cs: ?string
+    circomWasm: ?string
+    circomZkey: ?string
     hasAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
@@ -46,6 +51,7 @@ func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
 
 func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
+  builder.prover = true
   builder.hasAvailability = true
   builder
 
@@ -57,6 +63,26 @@ func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
       return some hardhat.accounts.pop().privateKeyFile
   none string
 
+const circuitsDir = hardhatRoot / "verifier" / "networks" / "hardhat"
+
+func circomR1csResolved(builder: NodeBuilder): ?string =
+  if circomR1cs =? builder.circomR1cs:
+    return some circomR1cs
+  if builder.prover:
+    return some circuitsDir / "proof_main.r1cs"
+
+func circomWasmResolved(builder: NodeBuilder): ?string =
+  if circomWasm =? builder.circomWasm:
+    return some circomWasm
+  if builder.prover:
+    return some circuitsDir / "proof_main.wasm"
+
+func circomZkeyResolved(builder: NodeBuilder): ?string =
+  if circomZkey =? builder.circomZkey:
+    return some circomZkey
+  if builder.prover:
+    return some circuitsDir / "proof_main.zkey"
+
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
   if logFile =? builder.logFile:
@@ -65,6 +91,14 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("persistence")
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
+  if builder.prover:
+    arguments.add("prover")
+  if circomR1cs =? builder.circomR1csResolved:
+    arguments.add("--circom-r1cs=" & circomR1cs)
+  if circomWasm =? builder.circomWasmResolved:
+    arguments.add("--circom-wasm=" & circomWasm)
+  if circomZkey =? builder.circomZkeyResolved:
+    arguments.add("--circom-zkey=" & circomZkey)
   let node = await Node.start(arguments).waitForRestApi()
   builder.testbed.nodeInstances.add(node)
   if builder.hasAvailability:
