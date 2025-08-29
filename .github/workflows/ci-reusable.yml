@@ -87,7 +87,7 @@ jobs:
         if: (success() || failure()) && matrix.tests == 'integration'
         with:
           name: ${{ matrix.builder }}-${{ matrix.job_number }}-integration-tests-logs
-          path: tests/integration/logs/
+          path: logs/testbed
           retention-days: 1
 
   status:

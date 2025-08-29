@@ -1,19 +1,36 @@
+import std/os
 import pkg/chronos
 import pkg/questionable
 import ../network/node
 import ../network/hardhat
+import ../helpers/project
 import ../testbed
 import ./availability
 
 type
   NodeBuilder = ref object
     testbed: Testbed
+    logToFile: bool
     persistence: bool = true
     ethPrivateKey: ? ? string
     hasAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
   NodeBuilder(testbed: testbed)
+
+func log*(builder: NodeBuilder): NodeBuilder =
+  builder.logToFile = true
+  builder
+
+proc logFile(builder: NodeBuilder): ?string =
+  if builder.logToFile:
+    let logDir = builder.testbed.logDir
+    createDir(logDir)
+    let nodeNumber = builder.testbed.nodeInstances.len
+    let logFile = logDir / "node-" & $nodeNumber & ".log"
+    some logFile
+  else:
+    none string
 
 func persistence*(builder: NodeBuilder, enabled: bool = true): NodeBuilder =
   builder.persistence = enabled
@@ -32,7 +49,6 @@ func provider*(builder: NodeBuilder): NodeBuilder =
   builder.hasAvailability = true
   builder
 
-
 func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
   if ethPrivateKey =? builder.ethPrivateKey:
     return ethPrivateKey
@@ -43,6 +59,8 @@ func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
 
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
+  if logFile =? builder.logFile:
+    arguments.add("--log-file=" & logFile)
   if builder.persistence:
     arguments.add("persistence")
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
