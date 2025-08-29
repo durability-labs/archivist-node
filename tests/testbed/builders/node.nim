@@ -8,7 +8,7 @@ import ./availability
 type
   NodeBuilder = ref object
     testbed: Testbed
-    persistence: ? bool
+    persistence: bool = true
     ethPrivateKey: ? ? string
     hasAvailability: bool
 
@@ -16,7 +16,7 @@ func node*(testbed: Testbed): NodeBuilder =
   NodeBuilder(testbed: testbed)
 
 func persistence*(builder: NodeBuilder, enabled: bool = true): NodeBuilder =
-  builder.persistence = some enabled
+  builder.persistence = enabled
   builder
 
 func ethPrivateKey*(builder: NodeBuilder, filename: string): NodeBuilder =
@@ -28,24 +28,22 @@ func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
   builder
 
 func provider*(builder: NodeBuilder): NodeBuilder =
-  builder.persistence = some true
+  builder.persistence = true
   builder.hasAvailability = true
   builder
 
-func persistenceResolved(builder: NodeBuilder): bool =
-  builder.persistence |? true
 
 func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
   if ethPrivateKey =? builder.ethPrivateKey:
     return ethPrivateKey
-  if builder.persistenceResolved:
+  if builder.persistence:
     if hardhat =? builder.testbed.hardhatInstance:
       return some hardhat.accounts.pop().privateKeyFile
   none string
 
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
-  if builder.persistenceResolved:
+  if builder.persistence:
     arguments.add("persistence")
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
