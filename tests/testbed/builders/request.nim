@@ -1,10 +1,10 @@
 import std/json
 import pkg/chronos
 import pkg/questionable
+import ../network/node
+import ../helpers/http
 import ../testbed
 import ../dataset
-import ../node
-import ../http
 import ../error
 import ./dataset
 import ./marketplace

@@ -2,9 +2,9 @@ import pkg/chronos
 import pkg/ethers
 import pkg/questionable
 import pkg/stew/byteutils
+import ../network/hardhat
+import ../network/contract
 import ../testbed
-import ../hardhat
-import ../contract
 import ../error
 
 type MarketplaceBuilder = ref object

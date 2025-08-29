@@ -1,5 +1,5 @@
 import pkg/chronos
-import ../process
+import ../../helpers/process
 import ./root
 
 proc npm*(arguments: seq[string]) {.async.} =
