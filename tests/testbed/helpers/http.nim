@@ -19,6 +19,10 @@ func status*(response: HttpResponse): int =
 proc close*(response: HttpResponse) {.async.} =
   await noCancel HttpClientResponseRef(response).session.closeWait()
 
+proc close*(response: Future[HttpResponse]) {.async.} =
+  let response = await response
+  await response.close()
+
 proc read*(response: HttpResponse): Future[seq[byte]] {.async.} =
   let body  = await HttpClientResponseRef(response).getBodyBytes()
   await response.close()
