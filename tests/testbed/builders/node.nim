@@ -18,6 +18,7 @@ type
     circomR1cs: ?string
     circomWasm: ?string
     circomZkey: ?string
+    failProofs: ?int
     hasAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
@@ -53,6 +54,10 @@ func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
   builder.prover = true
   builder.hasAvailability = true
+  builder
+
+func failProofs*(builder: NodeBuilder, every: int): NodeBuilder =
+  builder.failProofs = some every
   builder
 
 func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
@@ -99,6 +104,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--circom-wasm=" & circomWasm)
   if circomZkey =? builder.circomZkeyResolved:
     arguments.add("--circom-zkey=" & circomZkey)
+  if failProofs =? builder.failProofs:
+    arguments.add("--simulate-proof-failures=" & $failProofs)
   let node = await Node.start(arguments).waitForRestApi()
   builder.testbed.nodeInstances.add(node)
   if builder.hasAvailability:
