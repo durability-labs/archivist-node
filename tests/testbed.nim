@@ -71,4 +71,9 @@ import ./testbed/dataset
 
 export dataset.Dataset
 export dataset.cid
-export dataset.requestIds
+
+import ./testbed/request
+
+export request.Request
+export request.dataset
+export request.id

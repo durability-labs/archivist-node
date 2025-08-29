@@ -5,6 +5,7 @@ import ../network/node
 import ../helpers/http
 import ../testbed
 import ../dataset
+import ../request
 import ../error
 import ./dataset
 import ./marketplace
@@ -64,7 +65,7 @@ func collateralPerByte*(
   builder.collateralPerByte = some collateralPerByte
   builder
 
-proc submit*(builder: RequestBuilder, requester: Node): Future[Dataset] {.async.} =
+proc submit*(builder: RequestBuilder, requester: Node): Future[Request] {.async.} =
   let dataset = builder.dataset |? await builder.testbed.dataset.upload(requester)
   without cid =? dataset.cid:
     raise newException(TestbedError, "missing cid, did you upload the dataset?")
@@ -80,11 +81,10 @@ proc submit*(builder: RequestBuilder, requester: Node): Future[Dataset] {.async.
     "tolerance": builder.tolerance |? 1,
   }
   let requestId = await Http.post(url, body).readString()
-  dataset.addRequestId(requestId)
-  dataset
+  Request.init(dataset, requestId)
 
-proc start*(builder: RequestBuilder, requester: Node): Future[Dataset] {.async.} =
-  let dataset = await builder.submit(requester)
-  let requestId = dataset.requestIds[^1]
+proc start*(builder: RequestBuilder, requester: Node): Future[Request] {.async.} =
+  let request = await builder.submit(requester)
+  let requestId = request.id
   await builder.testbed.marketplace.waitForRequestStarted(requestId)
-  dataset
+  request
