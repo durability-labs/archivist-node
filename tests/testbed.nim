@@ -24,6 +24,7 @@ export node.start
 import ./testbed/builders/dataset
 
 export dataset.dataset
+export dataset.data
 export dataset.upload
 
 import ./testbed/builders/request
