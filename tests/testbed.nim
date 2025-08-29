@@ -19,6 +19,7 @@ export node.node
 export node.persistence
 export node.ethPrivateKey
 export node.noEthPrivateKey
+export node.provider
 export node.start
 
 import ./testbed/builders/dataset
@@ -39,6 +40,15 @@ export request.nodes
 export request.collateralPerByte
 export request.submit
 export request.start
+
+import ./testbed/builders/availability
+
+export availability.availability
+export availability.totalSize
+export availability.totalCollateral
+export availability.duration
+export availability.minPricePerBytePerSecond
+export availability.create
 
 import ./testbed/network/node
 

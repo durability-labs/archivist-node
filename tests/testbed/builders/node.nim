@@ -3,12 +3,14 @@ import pkg/questionable
 import ../network/node
 import ../network/hardhat
 import ../testbed
+import ./availability
 
 type
   NodeBuilder = ref object
     testbed: Testbed
     persistence: ? bool
     ethPrivateKey: ? ? string
+    hasAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
   NodeBuilder(testbed: testbed)
@@ -23,6 +25,11 @@ func ethPrivateKey*(builder: NodeBuilder, filename: string): NodeBuilder =
 
 func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
   builder.ethPrivateKey = some none string
+  builder
+
+func provider*(builder: NodeBuilder): NodeBuilder =
+  builder.persistence = some true
+  builder.hasAvailability = true
   builder
 
 func persistenceResolved(builder: NodeBuilder): bool =
@@ -44,4 +51,6 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--eth-private-key=" & ethPrivateKey)
   let node = await Node.start(arguments).waitForRestApi()
   builder.testbed.nodeInstances.add(node)
+  if builder.hasAvailability:
+    await builder.testbed.availability.create(node)
   node
