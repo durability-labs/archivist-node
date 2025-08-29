@@ -40,7 +40,7 @@ nimbus-build-system.paths
 docker/hostdatadir
 docker/prometheus-data
 .DS_Store
-tests/integration/logs
 
 data/
 nimbledeps
+logs/

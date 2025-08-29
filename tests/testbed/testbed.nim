@@ -1,10 +1,14 @@
+import std/os
+import std/times
 import pkg/chronos
 import pkg/ethers
 import pkg/questionable
 import ./network/hardhat
 import ./network/node
+import ./helpers/project
 
 type Testbed* = ref object
+  startedAt: DateTime
   hardhatInstance: ?Hardhat
   nodeInstances: seq[Node]
   providerInstance: ?Provider
@@ -18,8 +22,12 @@ func providerInstance*(testbed: Testbed): var Option[Provider] =
 func nodeInstances*(testbed: Testbed): var seq[Node] =
   testbed.nodeInstances
 
+func logDir*(testbed: Testbed): string =
+  let timestamp = testbed.startedAt.format("yyyy-MM-dd-HH-mm-ss")
+  projectRoot / "logs" / "testbed" / timestamp
+
 proc start*(_: type Testbed): Future[Testbed] {.async.} =
-  Testbed()
+  Testbed(startedAt: now())
 
 proc stop*(testbed: Testbed) {.async.} =
   if provider =? testbed.providerInstance:

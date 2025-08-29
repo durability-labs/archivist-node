@@ -20,6 +20,7 @@ export node.persistence
 export node.ethPrivateKey
 export node.noEthPrivateKey
 export node.provider
+export node.log
 export node.start
 
 import ./testbed/builders/dataset
