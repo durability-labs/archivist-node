@@ -1,7 +1,7 @@
 import pkg/chronos
 import pkg/questionable
+import ../network/hardhat
 import ../testbed
-import ../hardhat
 import ../error
 
 type HardhatBuilder = ref object

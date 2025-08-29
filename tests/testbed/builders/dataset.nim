@@ -2,10 +2,10 @@ import std/sequtils
 import std/random
 import pkg/chronos
 import pkg/questionable
+import ../network/node
+import ../helpers/http
 import ../testbed
 import ../dataset
-import ../node
-import ../http
 
 type DatasetBuilder = ref object
   testbed: Testbed

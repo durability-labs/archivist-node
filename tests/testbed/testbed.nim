@@ -1,8 +1,8 @@
 import pkg/chronos
 import pkg/ethers
 import pkg/questionable
-import ./hardhat
-import ./node
+import ./network/hardhat
+import ./network/node
 
 type Testbed* = ref object
   hardhatInstance: ?Hardhat

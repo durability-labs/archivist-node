@@ -1,8 +1,8 @@
 import pkg/chronos
 import pkg/questionable
+import ../network/node
+import ../network/hardhat
 import ../testbed
-import ../node
-import ../hardhat
 
 type
   NodeBuilder = ref object

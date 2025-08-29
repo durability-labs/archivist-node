@@ -40,10 +40,13 @@ export request.collateralPerByte
 export request.submit
 export request.start
 
-import ./testbed/node
+import ./testbed/network/node
 
 export node.Node
-export node.apiUrl
+
+import ./testbed/network/hardhat
+
+export hardhat.Hardhat
 
 import ./testbed/dataset
 

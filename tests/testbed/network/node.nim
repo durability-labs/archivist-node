@@ -3,8 +3,9 @@ import std/net
 import std/strutils
 import pkg/chronos
 import pkg/questionable
-import ./process
-import ./error
+import ../helpers/process
+import ../helpers/project
+import ../error
 
 type Node* = ref object
   process: Process
@@ -16,12 +17,9 @@ func apiUrl*(node: Node): string =
   let port = node.apiPort |? Port(8080)
   "http://" & $address & ":" & $port & "/api/archivist/v1"
 
-const projectRoot = currentSourcePath().parentDir().parentDir().parentDir()
-const buildDir = projectRoot / "build"
-
 proc start*(_: type Node, arguments: seq[string]): Future[Node] {.async.} =
   let command = "./archivist"
-  let process = await Process.start(command, arguments, buildDir)
+  let process = await Process.start(command, arguments, projectRoot / "build")
   Node(process: process)
 
 proc waitForRestApi*(node: Node): Future[Node] {.async.} =
