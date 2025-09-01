@@ -22,6 +22,7 @@ type
     logToFile: bool
     persistence: bool = true
     ethPrivateKey: ? ? string
+    validator: bool
     prover: bool
     circomR1cs: ?string
     circomWasm: ?string
@@ -76,6 +77,10 @@ func ethPrivateKey*(builder: NodeBuilder, filename: string): NodeBuilder =
 
 func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
   builder.ethPrivateKey = some none string
+  builder
+
+func validator*(builder: NodeBuilder): NodeBuilder =
+  builder.validator = true
   builder
 
 func prover*(builder: NodeBuilder): NodeBuilder =
@@ -152,6 +157,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("persistence")
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
+  if builder.validator:
+    arguments.add("--validator")
   if builder.prover:
     arguments.add("prover")
   if circomR1cs =? builder.circomR1csResolved:

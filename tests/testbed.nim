@@ -25,6 +25,7 @@ export node.log
 export node.persistence
 export node.ethPrivateKey
 export node.noEthPrivateKey
+export node.validator
 export node.prover
 export node.provider
 export node.failProofs
