@@ -1,10 +1,12 @@
 import std/os
 import std/net
 import std/strutils
+import std/json
 import pkg/chronos
 import pkg/questionable
 import ../helpers/process
 import ../helpers/project
+import ../helpers/http
 import ../error
 
 type Node* = ref object
@@ -47,6 +49,13 @@ proc waitForRestApi*(node: Node): Future[Node] {.async.} =
 proc waitForRestApi*(node: Future[Node]): Future[Node] {.async.} =
   let node = await node
   await node.waitForRestApi()
+
+proc spr*(node: Node): Future[?string] {.async.} =
+  let info = await Http.get(node.apiUrl & "/debug/info").readJson()
+  if spr =? info["spr"]:
+    some spr.getStr()
+  else:
+    none string
 
 proc stop*(node: Node) {.async.} =
   await node.process.stop()
