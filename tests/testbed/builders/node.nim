@@ -17,6 +17,7 @@ type
     dataDir: ?string
     apiBindAddress: ?IpAddress
     apiPort: ?Port
+    discoveryPort: ?Port
     bootstrapNodes: ?seq[string]
     logToFile: bool
     persistence: bool = true
@@ -41,6 +42,10 @@ func apiBindAddress*(builder: NodeBuilder, address: IpAddress): NodeBuilder =
 
 func apiPort*(builder: NodeBuilder, port: Port): NodeBuilder =
   builder.apiPort = some port
+  builder
+
+func discoveryPort*(builder: NodeBuilder, port: Port): NodeBuilder =
+  builder.discoveryPort = some port
   builder
 
 func bootstrapNodes*(builder: NodeBuilder, sprs: seq[string]): NodeBuilder =
@@ -91,7 +96,11 @@ func apiBindAddressResolved(builder: NodeBuilder): IpAddress =
 
 proc apiPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
   let address = builder.apiBindAddressResolved()
-  builder.apiPort |? await findFreePort(address, Port(8080))
+  builder.apiPort |? await findFreePort(address, Port(8080), Tcp)
+
+proc discoveryPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
+  const address = parseIpAddress("127.0.0.1")
+  builder.discoveryPort |? await findFreePort(address, Port(8090), Udp)
 
 proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.} =
   if nodes =? builder.bootstrapNodes:
@@ -130,6 +139,7 @@ func circomZkeyResolved(builder: NodeBuilder): ?string =
 
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
+  arguments.add("--disc-port=" & $(await builder.discoveryPortResolved))
   for bootstrapNode in await builder.bootstrapNodesResolved:
     arguments.add("--bootstrap-node=" & bootstrapNode)
   if logFile =? builder.logFile:
