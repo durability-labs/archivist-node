@@ -9,18 +9,32 @@ import ../error
 
 type Node* = ref object
   process: Process
-  apiAddress: ?IpAddress
-  apiPort: ?Port
+  dataDir: string
+  apiAddress: IpAddress
+  apiPort: Port
 
 func apiUrl*(node: Node): string =
-  let address = node.apiAddress |? static parseIpAddress("127.0.0.1")
-  let port = node.apiPort |? Port(8080)
-  "http://" & $address & ":" & $port & "/api/archivist/v1"
+  "http://" & $node.apiAddress & ":" & $node.apiPort & "/api/archivist/v1"
 
-proc start*(_: type Node, arguments: seq[string]): Future[Node] {.async.} =
+proc start*(
+  _: type Node,
+  arguments: seq[string],
+  dataDir: string,
+  apiAddress: IpAddress,
+  apiPort: Port
+): Future[Node] {.async.} =
   let command = "./archivist"
+  var arguments = arguments
+  arguments &= "--data-dir=" & $dataDir
+  arguments &= "--api-bindaddr=" & $apiAddress
+  arguments &= "--api-port=" & $apiPort
   let process = await Process.start(command, arguments, projectRoot / "build")
-  Node(process: process)
+  Node(
+    process: process,
+    dataDir: dataDir,
+    apiAddress: apiAddress,
+    apiPort: apiPort
+  )
 
 proc waitForRestApi*(node: Node): Future[Node] {.async.} =
   let stdout = node.process.stdout
@@ -36,3 +50,6 @@ proc waitForRestApi*(node: Future[Node]): Future[Node] {.async.} =
 
 proc stop*(node: Node) {.async.} =
   await node.process.stop()
+
+proc deleteDataDir*(node: Node) =
+  removeDir(node.dataDir)
