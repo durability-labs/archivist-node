@@ -17,6 +17,7 @@ type
     dataDir: ?string
     apiBindAddress: ?IpAddress
     apiPort: ?Port
+    bootstrapNodes: ?seq[string]
     logToFile: bool
     persistence: bool = true
     ethPrivateKey: ? ? string
@@ -40,6 +41,10 @@ func apiBindAddress*(builder: NodeBuilder, address: IpAddress): NodeBuilder =
 
 func apiPort*(builder: NodeBuilder, port: Port): NodeBuilder =
   builder.apiPort = some port
+  builder
+
+func bootstrapNodes*(builder: NodeBuilder, sprs: seq[string]): NodeBuilder =
+  builder.bootstrapNodes = some sprs
   builder
 
 func log*(builder: NodeBuilder): NodeBuilder =
@@ -88,6 +93,13 @@ proc apiPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
   let address = builder.apiBindAddressResolved()
   builder.apiPort |? await findFreePort(address, Port(8080))
 
+proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.} =
+  if nodes =? builder.bootstrapNodes:
+    return nodes
+  if firstNode =? builder.testbed.nodeInstances.?[0]:
+    if spr =? await firstNode.spr():
+      return @[spr]
+
 func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
   if ethPrivateKey =? builder.ethPrivateKey:
     return ethPrivateKey
@@ -118,6 +130,8 @@ func circomZkeyResolved(builder: NodeBuilder): ?string =
 
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
+  for bootstrapNode in await builder.bootstrapNodesResolved:
+    arguments.add("--bootstrap-node=" & bootstrapNode)
   if logFile =? builder.logFile:
     arguments.add("--log-file=" & logFile)
   if builder.persistence:
