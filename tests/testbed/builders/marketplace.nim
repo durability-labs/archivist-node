@@ -34,7 +34,7 @@ proc waitForRequestStarted*(
   let requestId = hexToByteArray(requestId, 32)
   let done = newAsyncEvent()
   proc onEvent(event: ?!RequestFulfilled) =
-    if event =? event and event.requestId == requestId:
+    if (!event).requestId == requestId:
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(RequestFulfilled, onEvent)
@@ -44,8 +44,8 @@ proc waitForRequestStarted*(
 proc waitForProofSubmitted*(builder: MarketplaceBuilder) {.async.} =
   let done = newAsyncEvent()
   proc onEvent(event: ?!ProofSubmitted) =
-    if event =? event:
-      done.fire()
+    discard !event
+    done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(ProofSubmitted, onEvent)
   await done.wait()
@@ -58,7 +58,7 @@ proc waitForSlotFreed*(
   let requestId = hexToByteArray(requestId, 32)
   let done = newAsyncEvent()
   proc onEvent(event: ?!SlotFreed) =
-    if event =? event and event.requestId == requestId:
+    if (!event).requestId == requestId:
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(SlotFreed, onEvent)
