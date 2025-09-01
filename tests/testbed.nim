@@ -16,12 +16,18 @@ export hardhat.start
 import ./testbed/builders/node
 
 export node.node
+export node.dataDir
+export node.apiBindAddress
+export node.apiPort
+export node.discoveryPort
+export node.bootstrapNodes
+export node.log
 export node.persistence
 export node.ethPrivateKey
 export node.noEthPrivateKey
+export node.prover
 export node.provider
 export node.failProofs
-export node.log
 export node.start
 
 import ./testbed/builders/dataset

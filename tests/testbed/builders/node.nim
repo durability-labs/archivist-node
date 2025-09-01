@@ -78,6 +78,10 @@ func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
   builder.ethPrivateKey = some none string
   builder
 
+func prover*(builder: NodeBuilder): NodeBuilder =
+  builder.prover = true
+  builder
+
 func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
   builder.prover = true
