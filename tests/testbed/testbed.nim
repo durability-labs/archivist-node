@@ -36,6 +36,7 @@ proc stop*(testbed: Testbed) {.async.} =
   while testbed.nodeInstances.len > 0:
     let node = testbed.nodeInstances.pop()
     await node.stop()
+    node.deleteDataDir()
   if hardhat =? testbed.hardhatInstance:
     await hardhat.stop()
     testbed.hardhatInstance = none Hardhat

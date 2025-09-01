@@ -1,16 +1,22 @@
 import std/os
+import std/net
+import std/tempfiles
 import pkg/chronos
 import pkg/questionable
 import ../network/node
 import ../network/hardhat
 import ../network/hardhat/root
 import ../helpers/project
+import ../helpers/ports
 import ../testbed
 import ./availability
 
 type
   NodeBuilder = ref object
     testbed: Testbed
+    dataDir: ?string
+    apiBindAddress: ?IpAddress
+    apiPort: ?Port
     logToFile: bool
     persistence: bool = true
     ethPrivateKey: ? ? string
@@ -23,6 +29,18 @@ type
 
 func node*(testbed: Testbed): NodeBuilder =
   NodeBuilder(testbed: testbed)
+
+func dataDir*(builder: NodeBuilder, dir: string): NodeBuilder =
+  builder.dataDir = some dir
+  builder
+
+func apiBindAddress*(builder: NodeBuilder, address: IpAddress): NodeBuilder =
+  builder.apiBindAddress = some address
+  builder
+
+func apiPort*(builder: NodeBuilder, port: Port): NodeBuilder =
+  builder.apiPort = some port
+  builder
 
 func log*(builder: NodeBuilder): NodeBuilder =
   builder.logToFile = true
@@ -59,6 +77,16 @@ func provider*(builder: NodeBuilder): NodeBuilder =
 func failProofs*(builder: NodeBuilder, every: int): NodeBuilder =
   builder.failProofs = some every
   builder
+
+proc dataDirResolved(builder: NodeBuilder): string =
+  builder.dataDir |? createTempDir("archivist-", "-testbed")
+
+func apiBindAddressResolved(builder: NodeBuilder): IpAddress =
+  builder.apiBindAddress |? static parseIpAddress("127.0.0.1")
+
+proc apiPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
+  let address = builder.apiBindAddressResolved()
+  builder.apiPort |? await findFreePort(address, Port(8080))
 
 func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
   if ethPrivateKey =? builder.ethPrivateKey:
@@ -106,7 +134,10 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--circom-zkey=" & circomZkey)
   if failProofs =? builder.failProofs:
     arguments.add("--simulate-proof-failures=" & $failProofs)
-  let node = await Node.start(arguments).waitForRestApi()
+  let dataDir = builder.dataDirResolved
+  let address = builder.apiBindAddressResolved
+  let port = await builder.apiPortResolved
+  let node = await Node.start(arguments, dataDir, address, port).waitForRestApi()
   builder.testbed.nodeInstances.add(node)
   if builder.hasAvailability:
     await builder.testbed.availability.create(node)
