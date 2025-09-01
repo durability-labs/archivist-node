@@ -39,6 +39,13 @@ proc readString*(response: Future[HttpResponse]): Future[string] {.async.} =
   let response = await response
   await response.readString()
 
+proc readJson*(response: HttpResponse): Future[JsonNode] {.async.} =
+  parseJson(await response.readString)
+
+proc readJson*(response: Future[HttpResponse]): Future[JsonNode] {.async.} =
+  let response = await response
+  await response.readJson()
+
 proc checkStatusCode*(response: HttpResponse) {.async.} =
   let status = response.status
   if status >= 200 and status < 300:
@@ -49,6 +56,38 @@ proc checkStatusCode*(response: HttpResponse) {.async.} =
   except HttpError:
     discard
   raise newException(HttpError, message)
+
+proc send(
+  session: HttpSessionRef,
+  request: HttpClientRequestRef,
+  options: HttpRequestOptions
+): Future[HttpResponse] {.async.} =
+  var response: HttpResponse
+  try:
+    response = HttpResponse(await request.send())
+  except HttpError as error:
+    await noCancel session.closeWait()
+    raise error
+
+  if HttpRequestOption.checkStatusCode in options:
+    await response.checkStatusCode()
+
+  response
+
+proc get*(
+  _: type Http,
+  url: string,
+  headers: HttpHeaders = @{:},
+  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+): Future[HttpResponse] {.async.} =
+  let session = HttpSessionRef.new()
+
+  let request =
+    HttpClientRequestRef
+      .get(session, url, headers = headers)
+      .tryGet()
+
+  await session.send(request, options)
 
 proc post*(
   _: type Http,
@@ -64,17 +103,7 @@ proc post*(
       .post(session, url, body = body, headers = headers)
       .tryGet()
 
-  var response: HttpResponse
-  try:
-    response = HttpResponse(await request.send())
-  except HttpError as error:
-    await noCancel session.closeWait()
-    raise error
-
-  if HttpRequestOption.checkStatusCode in options:
-    await response.checkStatusCode()
-
-  response
+  await session.send(request, options)
 
 proc post*(
   _: type Http,
