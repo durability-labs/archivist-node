@@ -70,6 +70,7 @@ import ./testbed/builders/api
 
 export api.api
 export api.getSpr
+export api.getEthAddress
 export api.getPurchase
 export api.getAvailability
 
