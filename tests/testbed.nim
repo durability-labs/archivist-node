@@ -66,6 +66,13 @@ export marketplace.waitForRequestStarted
 export marketplace.waitForProofSubmitted
 export marketplace.waitForSlotFreed
 
+import ./testbed/builders/api
+
+export api.api
+export api.getSpr
+export api.getPurchase
+export api.getAvailability
+
 import ./testbed/network/node
 
 export node.Node
