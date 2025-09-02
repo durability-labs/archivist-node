@@ -66,6 +66,8 @@ export marketplace.marketplace
 export marketplace.waitForRequestStarted
 export marketplace.waitForProofSubmitted
 export marketplace.waitForSlotFreed
+export marketplace.waitForTransferTo
+
 import ./testbed/builders/time
 
 export time.time
