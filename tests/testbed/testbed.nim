@@ -6,18 +6,27 @@ import pkg/questionable
 import ./network/hardhat
 import ./network/node
 import ./helpers/project
+import ./error
 
 type Testbed* = ref object
   startedAt: DateTime
   hardhatInstance: ?Hardhat
   nodeInstances: seq[Node]
-  providerInstance: ?Provider
+  providerInstance: ?JsonRpcProvider
 
 func hardhatInstance*(testbed: Testbed): var Option[Hardhat] =
   testbed.hardhatInstance
 
-func providerInstance*(testbed: Testbed): var Option[Provider] =
-  testbed.providerInstance
+func hardhat*(testbed: Testbed): Hardhat =
+  without hardhat =? testbed.hardhatInstance:
+    raise newException(TestbedError, "hardhat is not running")
+  hardhat
+
+proc provider*(testbed: Testbed): JsonRpcProvider =
+  without var provider =? testbed.providerInstance:
+    provider = JsonRpcProvider.new(testbed.hardhat.jsonRpcUrl)
+    testbed.providerInstance = some provider
+  provider
 
 func nodeInstances*(testbed: Testbed): var seq[Node] =
   testbed.nodeInstances
@@ -32,7 +41,7 @@ proc start*(_: type Testbed): Future[Testbed] {.async.} =
 proc stop*(testbed: Testbed) {.async.} =
   if provider =? testbed.providerInstance:
     await provider.close()
-    testbed.providerInstance = none Provider
+    testbed.providerInstance = none JsonRpcProvider
   while testbed.nodeInstances.len > 0:
     let node = testbed.nodeInstances.pop()
     await node.stop()

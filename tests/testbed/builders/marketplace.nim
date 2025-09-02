@@ -16,13 +16,10 @@ func marketplace*(testbed: Testbed): MarketplaceBuilder =
 
 proc contract(builder: MarketplaceBuilder): MarketplaceContract =
   without var contract =? builder.contractInstance:
-    without hardhat =? builder.testbed.hardhatInstance:
-      raise newException(TestbedError, "hardhat is not running")
+    let hardhat = builder.testbed.hardhat
+    let provider = builder.testbed.provider
     without address =? Address.init(hardhat.marketplaceAddress):
       raise newException(TestbedError, "invalid marketplace address")
-    without var provider =? builder.testbed.providerInstance:
-      provider = JsonRpcProvider.new(hardhat.jsonRpcUrl)
-      builder.testbed.providerInstance = some provider
     contract = MarketplaceContract.new(address, provider)
     builder.contractInstance = some contract
   contract
