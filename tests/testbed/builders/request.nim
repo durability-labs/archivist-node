@@ -70,18 +70,20 @@ proc submit*(builder: RequestBuilder, requester: Node): Future[Request] {.async.
   without cid =? dataset.cid:
     raise newException(TestbedError, "missing cid, did you upload the dataset?")
   let url = requester.apiUrl & "/storage/request/" & cid
+  let duration = builder.duration |? 60 * 60
+  let expiry = builder.expiry |? 10 * 60
   let body = %*{
     "cid": cid,
-    "duration": builder.duration |? 60 * 60,
+    "duration": duration,
     "proofProbability": builder.proofProbability |? 1,
     "collateralPerByte": builder.collateralPerByte |? 1000,
     "pricePerBytePerSecond": builder.pricePerBytePerSecond |? 10,
-    "expiry": builder.expiry |? 10 * 60,
+    "expiry": expiry,
     "nodes": builder.nodes |? 3,
     "tolerance": builder.tolerance |? 1,
   }
   let requestId = await Http.post(url, body).readString()
-  Request.init(dataset, requestId)
+  Request.init(dataset, requestId, duration, expiry)
 
 proc start*(builder: RequestBuilder, requester: Node): Future[Request] {.async.} =
   let request = await builder.submit(requester)

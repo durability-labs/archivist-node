@@ -99,3 +99,5 @@ import ./testbed/request
 export request.Request
 export request.dataset
 export request.id
+export request.duration
+export request.expiry
