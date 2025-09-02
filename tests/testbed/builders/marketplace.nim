@@ -35,6 +35,34 @@ proc token(builder: MarketplaceBuilder): Future[Erc20Token] {.async.} =
     token = Erc20Token.new(address, provider)
   token
 
+proc waitForStorageRequested*(
+  builder: MarketplaceBuilder,
+  requestId: string
+) {.async.} =
+  let requestId = hexToByteArray(requestId, 32)
+  let done = newAsyncEvent()
+  proc onEvent(event: ?!StorageRequested) =
+    if (!event).requestId == requestId:
+      done.fire()
+  let contract = builder.contract
+  let subscription = await contract.subscribe(StorageRequested, onEvent)
+  await done.wait()
+  await subscription.unsubscribe()
+
+proc waitForSlotFilled*(
+  builder: MarketplaceBuilder,
+  requestId: string
+) {.async.} =
+  let requestId = hexToByteArray(requestId, 32)
+  let done = newAsyncEvent()
+  proc onEvent(event: ?!SlotFilled) =
+    if (!event).requestId == requestId:
+      done.fire()
+  let contract = builder.contract
+  let subscription = await contract.subscribe(SlotFilled, onEvent)
+  await done.wait()
+  await subscription.unsubscribe()
+
 proc waitForRequestStarted*(
   builder: MarketplaceBuilder,
   requestId: string
