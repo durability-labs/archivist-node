@@ -83,6 +83,7 @@ proc submit*(builder: RequestBuilder, requester: Node): Future[Request] {.async.
     "tolerance": builder.tolerance |? 1,
   }
   let requestId = await Http.post(url, body).readString()
+  await builder.testbed.marketplace.waitForStorageRequested(requestId)
   Request.init(dataset, requestId, duration, expiry)
 
 proc start*(builder: RequestBuilder, requester: Node): Future[Request] {.async.} =

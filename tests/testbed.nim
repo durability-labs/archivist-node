@@ -64,6 +64,8 @@ export availability.create
 import ./testbed/builders/marketplace
 
 export marketplace.marketplace
+export marketplace.waitForStorageRequested
+export marketplace.waitForSlotFilled
 export marketplace.waitForRequestStarted
 export marketplace.waitForProofSubmitted
 export marketplace.waitForSlotFreed
