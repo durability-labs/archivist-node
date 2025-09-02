@@ -18,9 +18,9 @@ const knownAddresses = {
   # Taiko Alpha-3 Testnet
   "167005":
     {"Marketplace": Address.init("0x948CF9291b77Bd7ad84781b9047129Addf1b894F")}.toTable,
-  # Codex Testnet - Jun 19 2025 13:11:56 PM (+00:00 UTC)
-  "789987":
-    {"Marketplace": Address.init("0x5378a4EA5dA2a548ce22630A3AE74b052000C62D")}.toTable,
+  # Testnet - Aug-31-2025 12:59:13 PM +UTC
+  "421614":
+    {"Marketplace": Address.init("0x9fec9f5C5D6232E3cE55B92FC04758a41A528d2b")}.toTable,
   # Linea (Status)
   "1660990954":
     {"Marketplace": Address.init("0x34F606C65869277f236ce07aBe9af0B8c88F486B")}.toTable,
