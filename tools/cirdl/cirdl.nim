@@ -46,7 +46,7 @@ proc getCircuitHash(
   return success config.proofs.zkeyHash
 
 proc formatUrl(hash: string): string =
-  "https://circuit.codex.storage/proving-key/" & hash # TODO: update URL
+  "https://circuit.archivist.storage/proving-key/" & hash
 
 proc retrieveUrl(uri: string): Future[seq[byte]] {.async.} =
   let httpSession = HttpSessionRef.new()
