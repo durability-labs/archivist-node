@@ -28,6 +28,7 @@ export node.noEthPrivateKey
 export node.validator
 export node.prover
 export node.provider
+export node.hasAvailability
 export node.failProofs
 export node.start
 
