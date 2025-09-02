@@ -929,6 +929,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
             else:
               "",
           "announceAddresses": node.discovery.announceAddrs,
+          "ethAddress": await node.ethAddress,
           "table": table,
           "archivist": {
             "version": $nodeVersion,

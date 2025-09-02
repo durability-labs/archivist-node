@@ -20,6 +20,7 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/chronos
 import pkg/poseidon2
+import pkg/ethers
 
 import pkg/libp2p/[switch, multicodec, multihash]
 import pkg/libp2p/stream/bufferstream
@@ -93,6 +94,12 @@ func engine*(self: ArchivistNodeRef): BlockExcEngine =
 
 func discovery*(self: ArchivistNodeRef): Discovery =
   return self.discovery
+
+proc ethAddress*(self: ArchivistNodeRef): Future[?ethers.Address] {.async.} =
+  if clientInteractions =? self.contracts.client:
+    some await clientInteractions.purchasing.market.getSigner()
+  else:
+    none ethers.Address
 
 proc storeManifest*(
     self: ArchivistNodeRef, manifest: Manifest
