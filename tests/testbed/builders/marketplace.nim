@@ -1,15 +1,19 @@
 import pkg/chronos
 import pkg/ethers
+import pkg/ethers/erc20
 import pkg/questionable
 import pkg/stew/byteutils
 import ../network/hardhat
+import ../network/node
 import ../network/contract
 import ../testbed
 import ../error
+import ./api
 
 type MarketplaceBuilder = ref object
   testbed: Testbed
   contractInstance: ?MarketplaceContract
+  tokenInstance: ?Erc20Token
 
 func marketplace*(testbed: Testbed): MarketplaceBuilder =
   MarketplaceBuilder(testbed: testbed)
@@ -23,6 +27,13 @@ proc contract(builder: MarketplaceBuilder): MarketplaceContract =
     contract = MarketplaceContract.new(address, provider)
     builder.contractInstance = some contract
   contract
+
+proc token(builder: MarketplaceBuilder): Future[Erc20Token] {.async.} =
+  without var token =? builder.tokenInstance:
+    let address = await builder.contract.token
+    let provider = builder.testbed.provider
+    token = Erc20Token.new(address, provider)
+  token
 
 proc waitForRequestStarted*(
   builder: MarketplaceBuilder,
@@ -59,5 +70,18 @@ proc waitForSlotFreed*(
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(SlotFreed, onEvent)
+  await done.wait()
+  await subscription.unsubscribe()
+
+proc waitForTransferTo*(builder: MarketplaceBuilder, node: Node) {.async.} =
+  without receiver =? await builder.testbed.api(node).getEthAddress():
+    raise newException(TestbedError, "receiver does not have an eth address")
+  let sender = builder.contract.address
+  let done = newAsyncEvent()
+  proc onEvent(event: ?!Transfer) =
+    if (!event).sender == sender and (!event).receiver == receiver:
+      done.fire()
+  let token = await builder.token
+  let subscription = await token.subscribe(Transfer, onEvent)
   await done.wait()
   await subscription.unsubscribe()

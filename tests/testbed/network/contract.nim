@@ -11,3 +11,5 @@ type ProofSubmitted* = object of Event
 type SlotFreed* = object of Event
   requestId* {.indexed.}: array[32, byte]
   slotIndex*: uint64
+
+proc token*(marketplace: MarketplaceContract): Address {.contract, view.}
