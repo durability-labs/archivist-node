@@ -1,4 +1,5 @@
 import std/os
+import std/syncio
 import pkg/chronos
 import pkg/questionable
 import ../helpers/process
@@ -13,6 +14,7 @@ type
   Hardhat* = ref object
     process: Process
     accounts: seq[HardhatAccount] = defaultHardhatAccounts
+    logger: Future[void].Raising([])
 
 func accounts*(hardhat: Hardhat): var seq[HardhatAccount] =
   hardhat.accounts
@@ -31,5 +33,21 @@ proc start*(_: type Hardhat): Future[Hardhat] {.async.} =
   await npm(@["run", "deploy", "--", "--network", "localhost"])
   Hardhat(process: process)
 
+proc logToFile*(hardhat: Hardhat, file: string) =
+  let input = hardhat.process.stdout
+  let output = open(file, FileMode.fmAppend)
+  proc log {.async:(raises:[]).} =
+    try:
+      while not input.atEof:
+        let line = await input.readLine(sep = "\n")
+        output.writeLine(line)
+    except CancelledError:
+      output.close()
+    except CatchableError as error:
+      raise newException(Defect, "error writing hardhat log: " & error.msg)
+  hardhat.logger = log()
+
 proc stop*(hardhat: Hardhat) {.async.} =
   await hardhat.process.stop()
+  if logger =? hardhat.logger:
+    await logger.cancelAndWait()

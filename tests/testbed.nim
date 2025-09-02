@@ -11,6 +11,7 @@ export error.TestbedError
 import ./testbed/builders/hardhat
 
 export hardhat.hardhat
+export hardhat.log
 export hardhat.start
 
 import ./testbed/builders/node
