@@ -9,6 +9,7 @@ import ../network/hardhat/root
 import ../helpers/project
 import ../helpers/ports
 import ../testbed
+import ./api
 import ./availability
 
 type
@@ -115,7 +116,7 @@ proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.}
   if nodes =? builder.bootstrapNodes:
     return nodes
   if firstNode =? builder.testbed.nodeInstances.?[0]:
-    if spr =? await firstNode.spr():
+    if spr =? await builder.testbed.api(firstNode).getSpr():
       return @[spr]
 
 func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
