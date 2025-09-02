@@ -94,6 +94,10 @@ func provider*(builder: NodeBuilder): NodeBuilder =
   builder.hasAvailability = true
   builder
 
+func hasAvailability*(builder: NodeBuilder, enabled: bool): NodeBuilder =
+  builder.hasAvailability = enabled
+  builder
+
 func failProofs*(builder: NodeBuilder, every: int): NodeBuilder =
   builder.failProofs = some every
   builder
