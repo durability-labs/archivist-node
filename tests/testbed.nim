@@ -87,6 +87,7 @@ export api.getAvailability
 import ./testbed/network/node
 
 export node.Node
+export node.stop
 
 import ./testbed/network/hardhat
 
