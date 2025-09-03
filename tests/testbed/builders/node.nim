@@ -1,6 +1,7 @@
 import std/os
 import std/net
 import std/tempfiles
+import std/strutils
 import pkg/chronos
 import pkg/questionable
 import ../network/node
@@ -21,6 +22,7 @@ type
     discoveryPort: ?Port
     bootstrapNodes: ?seq[string]
     logToFile: bool
+    logTopics: seq[string]
     persistence: bool = true
     ethPrivateKey: ? ? string
     validator: bool
@@ -56,8 +58,9 @@ func bootstrapNodes*(builder: NodeBuilder, sprs: seq[string]): NodeBuilder =
   builder.bootstrapNodes = some sprs
   builder
 
-func log*(builder: NodeBuilder): NodeBuilder =
+func log*(builder: NodeBuilder, topics: varargs[string]): NodeBuilder =
   builder.logToFile = true
+  builder.logTopics &= topics
   builder
 
 proc logFile(builder: NodeBuilder): ?string =
@@ -84,10 +87,12 @@ func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
 
 func validator*(builder: NodeBuilder): NodeBuilder =
   builder.validator = true
+  builder.logTopics &= "validator"
   builder
 
 func validator*(builder: NodeBuilder, groups, index: int): NodeBuilder =
   builder.validator = true
+  builder.logTopics &= "validator"
   builder.validatorGroups = some groups
   builder.validatorGroupIndex = some index
   builder
@@ -169,6 +174,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--bootstrap-node=" & bootstrapNode)
   if logFile =? builder.logFile:
     arguments.add("--log-file=" & logFile)
+  if builder.logTopics.len > 0:
+    arguments.add("--log-level=INFO;TRACE:" & builder.logTopics.join(","))
   if builder.persistence:
     arguments.add("persistence")
     arguments.add("--eth-provider=" & builder.testbed.hardhatInstance.jsonRpcUrl)
