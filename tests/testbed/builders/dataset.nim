@@ -23,6 +23,6 @@ proc upload*(builder: DatasetBuilder, node: Node): Future[Dataset] {.async.} =
   let url = node.apiUrl & "/data"
   let cid = await Http.post(url, data).readString()
   let dataset = Dataset.new()
-  dataset.data = some data
+  dataset.data = data
   dataset.cid = some cid
   dataset
