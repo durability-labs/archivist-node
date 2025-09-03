@@ -95,6 +95,7 @@ export hardhat.Hardhat
 import ./testbed/dataset
 
 export dataset.Dataset
+export dataset.data
 export dataset.cid
 
 import ./testbed/request
