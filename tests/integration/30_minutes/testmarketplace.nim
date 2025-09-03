@@ -29,7 +29,7 @@ suite "Marketplace":
     check after[0]["freeSize"].getInt < before[0]["freeSize"].getInt
 
   test "provider can fill slots that were posted before it had availability":
-    let provider = await testbed.node.provider.hasAvailability(false).start()
+    let provider = await testbed.node.provider.availability(false).start()
     let node = await testbed.node.start()
     let request = await testbed.request.submit(node)
     await testbed.availability.create(provider)

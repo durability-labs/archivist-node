@@ -29,7 +29,7 @@ type
     circomWasm: ?string
     circomZkey: ?string
     failProofs: ?int
-    hasAvailability: bool
+    createInitialAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
   NodeBuilder(testbed: testbed)
@@ -91,11 +91,14 @@ func prover*(builder: NodeBuilder): NodeBuilder =
 func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
   builder.prover = true
-  builder.hasAvailability = true
+  builder.createInitialAvailability = true
   builder
 
-func hasAvailability*(builder: NodeBuilder, enabled: bool): NodeBuilder =
-  builder.hasAvailability = enabled
+func availability*(
+  builder: NodeBuilder,
+  createInitialAvailability: bool
+): NodeBuilder =
+  builder.createInitialAvailability = createInitialAvailability
   builder
 
 func failProofs*(builder: NodeBuilder, every: int): NodeBuilder =
@@ -179,6 +182,6 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   let port = await builder.apiPortResolved
   let node = await Node.start(arguments, dataDir, address, port).waitForRestApi()
   builder.testbed.nodeInstances.add(node)
-  if builder.hasAvailability:
+  if builder.createInitialAvailability:
     await builder.testbed.availability.create(node)
   node
