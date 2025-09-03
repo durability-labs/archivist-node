@@ -163,6 +163,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--log-file=" & logFile)
   if builder.persistence:
     arguments.add("persistence")
+    arguments.add("--eth-provider=" & builder.testbed.hardhatInstance.jsonRpcUrl)
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
   if builder.validator:
