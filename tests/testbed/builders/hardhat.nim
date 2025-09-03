@@ -3,7 +3,6 @@ import pkg/chronos
 import pkg/questionable
 import ../network/hardhat
 import ../testbed
-import ../error
 
 type HardhatBuilder = ref object
   testbed: Testbed
@@ -25,10 +24,8 @@ proc logFile(builder: HardhatBuilder): ?string =
     none string
 
 proc start*(builder: HardhatBuilder): Future[Hardhat] {.async.} =
-  if builder.testbed.hardhatInstance.isSome:
-    raise newException(TestbedError, "hardhat already started")
   let hardhat = await Hardhat.start()
-  builder.testbed.hardhatInstance = some hardhat
+  builder.testbed.hardhatInstance = hardhat
   if logFile =? builder.logFile:
     hardhat.logToFile(logFile)
   hardhat
