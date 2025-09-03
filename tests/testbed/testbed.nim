@@ -14,17 +14,19 @@ type Testbed* = ref object
   nodeInstances: seq[Node]
   providerInstance: ?JsonRpcProvider
 
-func hardhatInstance*(testbed: Testbed): var Option[Hardhat] =
-  testbed.hardhatInstance
+func `hardhatInstance=`*(testbed: Testbed, hardhat: Hardhat) =
+  if testbed.hardhatInstance.isSome:
+    raise newException(TestbedError, "hardhat already started")
+  testbed.hardhatInstance = some hardhat
 
-func hardhat*(testbed: Testbed): Hardhat =
+func hardhatInstance*(testbed: Testbed): Hardhat =
   without hardhat =? testbed.hardhatInstance:
     raise newException(TestbedError, "hardhat is not running")
   hardhat
 
 proc provider*(testbed: Testbed): JsonRpcProvider =
   without var provider =? testbed.providerInstance:
-    provider = JsonRpcProvider.new(testbed.hardhat.jsonRpcUrl)
+    provider = JsonRpcProvider.new(testbed.hardhatInstance().jsonRpcUrl)
     testbed.providerInstance = some provider
   provider
 

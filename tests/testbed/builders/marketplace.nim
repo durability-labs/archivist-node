@@ -20,7 +20,7 @@ func marketplace*(testbed: Testbed): MarketplaceBuilder =
 
 proc contract(builder: MarketplaceBuilder): MarketplaceContract =
   without var contract =? builder.contractInstance:
-    let hardhat = builder.testbed.hardhat
+    let hardhat = builder.testbed.hardhatInstance
     let provider = builder.testbed.provider
     without address =? Address.init(hardhat.marketplaceAddress):
       raise newException(TestbedError, "invalid marketplace address")
