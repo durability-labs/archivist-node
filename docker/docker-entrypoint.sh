@@ -11,7 +11,7 @@ fi
 
 # Network
 if [[ -n "${NETWORK}" ]]; then
-  BOOTSTRAP_SERVICE_URL=https://spr.example.com #TODO
+  BOOTSTRAP_SERVICE_URL="https://spr.archivist.storage"
   export BOOTSTRAP_NODE_FROM_URL="${BOOTSTRAP_NODE_FROM_URL:-${BOOTSTRAP_SERVICE_URL}/${NETWORK}}"
 fi
 
