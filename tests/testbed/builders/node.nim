@@ -24,6 +24,8 @@ type
     persistence: bool = true
     ethPrivateKey: ? ? string
     validator: bool
+    validatorGroups: ?int
+    validatorGroupIndex: ?int
     prover: bool
     circomR1cs: ?string
     circomWasm: ?string
@@ -82,6 +84,12 @@ func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
 
 func validator*(builder: NodeBuilder): NodeBuilder =
   builder.validator = true
+  builder
+
+func validator*(builder: NodeBuilder, groups, index: int): NodeBuilder =
+  builder.validator = true
+  builder.validatorGroups = some groups
+  builder.validatorGroupIndex = some index
   builder
 
 func prover*(builder: NodeBuilder): NodeBuilder =
@@ -168,6 +176,10 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--eth-private-key=" & ethPrivateKey)
   if builder.validator:
     arguments.add("--validator")
+  if groups =? builder.validatorGroups:
+    arguments.add("--validator-groups=" & $groups)
+  if index =? builder.validatorGroupIndex:
+    arguments.add("--validator-group-index=" & $index)
   if builder.prover:
     arguments.add("prover")
   if circomR1cs =? builder.circomR1csResolved:
