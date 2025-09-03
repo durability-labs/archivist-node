@@ -20,6 +20,9 @@ type SlotFilled* = object of Event
 type RequestFulfilled* = object of Event
   requestId* {.indexed.}: array[32, byte]
 
+type RequestFailed* = object of Event
+  requestId* {.indexed.}: array[32, byte]
+
 type ProofSubmitted* = object of Event
   id*: array[32, byte]
 

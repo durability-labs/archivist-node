@@ -77,6 +77,20 @@ proc waitForRequestStarted*(
   await done.wait()
   await subscription.unsubscribe()
 
+proc waitForRequestFailed*(
+  builder: MarketplaceBuilder,
+  requestId: string
+) {.async.} =
+  let requestId = hexToByteArray(requestId, 32)
+  let done = newAsyncEvent()
+  proc onEvent(event: ?!RequestFailed) =
+    if (!event).requestId == requestId:
+      done.fire()
+  let contract = builder.contract
+  let subscription = await contract.subscribe(RequestFailed, onEvent)
+  await done.wait()
+  await subscription.unsubscribe()
+
 proc waitForProofSubmitted*(builder: MarketplaceBuilder) {.async.} =
   let done = newAsyncEvent()
   proc onEvent(event: ?!ProofSubmitted) =

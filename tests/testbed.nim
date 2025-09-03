@@ -67,6 +67,7 @@ export marketplace.marketplace
 export marketplace.waitForStorageRequested
 export marketplace.waitForSlotFilled
 export marketplace.waitForRequestStarted
+export marketplace.waitForRequestFailed
 export marketplace.waitForProofSubmitted
 export marketplace.waitForSlotFreed
 export marketplace.waitForTransferTo
