@@ -24,10 +24,12 @@ func hardhatInstance*(testbed: Testbed): Hardhat =
     raise newException(TestbedError, "hardhat is not running")
   hardhat
 
+func `provider=`*(testbed: Testbed, provider: JsonRpcProvider) =
+  testbed.providerInstance = some provider
+
 proc provider*(testbed: Testbed): JsonRpcProvider =
   without var provider =? testbed.providerInstance:
-    provider = JsonRpcProvider.new(testbed.hardhatInstance().jsonRpcUrl)
-    testbed.providerInstance = some provider
+    raise newException(TestbedError, "provider not set, is hardhat running?")
   provider
 
 func nodeInstances*(testbed: Testbed): var seq[Node] =

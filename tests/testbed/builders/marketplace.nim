@@ -41,8 +41,8 @@ proc waitForStorageRequested*(
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
   let done = newAsyncEvent()
-  proc onEvent(event: ?!StorageRequested) =
-    if (!event).requestId == requestId:
+  proc onEvent(event: StorageRequested) =
+    if event.requestId == requestId:
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(StorageRequested, onEvent)
@@ -55,8 +55,8 @@ proc waitForSlotFilled*(
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
   let done = newAsyncEvent()
-  proc onEvent(event: ?!SlotFilled) =
-    if (!event).requestId == requestId:
+  proc onEvent(event: SlotFilled) =
+    if event.requestId == requestId:
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(SlotFilled, onEvent)
@@ -69,8 +69,8 @@ proc waitForRequestStarted*(
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
   let done = newAsyncEvent()
-  proc onEvent(event: ?!RequestFulfilled) =
-    if (!event).requestId == requestId:
+  proc onEvent(event: RequestFulfilled) =
+    if event.requestId == requestId:
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(RequestFulfilled, onEvent)
@@ -83,8 +83,8 @@ proc waitForRequestFailed*(
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
   let done = newAsyncEvent()
-  proc onEvent(event: ?!RequestFailed) =
-    if (!event).requestId == requestId:
+  proc onEvent(event: RequestFailed) =
+    if event.requestId == requestId:
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(RequestFailed, onEvent)
@@ -93,8 +93,7 @@ proc waitForRequestFailed*(
 
 proc waitForProofSubmitted*(builder: MarketplaceBuilder) {.async.} =
   let done = newAsyncEvent()
-  proc onEvent(event: ?!ProofSubmitted) =
-    discard !event
+  proc onEvent(event: ProofSubmitted) =
     done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(ProofSubmitted, onEvent)
@@ -107,8 +106,8 @@ proc waitForSlotFreed*(
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
   let done = newAsyncEvent()
-  proc onEvent(event: ?!SlotFreed) =
-    if (!event).requestId == requestId:
+  proc onEvent(event: SlotFreed) =
+    if event.requestId == requestId:
       done.fire()
   let contract = builder.contract
   let subscription = await contract.subscribe(SlotFreed, onEvent)
@@ -120,8 +119,8 @@ proc waitForTransferTo*(builder: MarketplaceBuilder, node: Node) {.async.} =
     raise newException(TestbedError, "receiver does not have an eth address")
   let sender = builder.contract.address
   let done = newAsyncEvent()
-  proc onEvent(event: ?!Transfer) =
-    if (!event).sender == sender and (!event).receiver == receiver:
+  proc onEvent(event: Transfer) =
+    if event.sender == sender and event.receiver == receiver:
       done.fire()
   let token = await builder.token
   let subscription = await token.subscribe(Transfer, onEvent)

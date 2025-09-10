@@ -1,6 +1,7 @@
 import std/os
 import pkg/chronos
 import pkg/questionable
+import pkg/ethers
 import ../network/hardhat
 import ../testbed
 
@@ -26,6 +27,8 @@ proc logFile(builder: HardhatBuilder): ?string =
 proc start*(builder: HardhatBuilder): Future[Hardhat] {.async.} =
   let hardhat = await Hardhat.start()
   builder.testbed.hardhatInstance = hardhat
+  let provider = await JsonRpcProvider.connect(hardhat.jsonRpcUrl)
+  builder.testbed.provider = provider
   if logFile =? builder.logFile:
     hardhat.logToFile(logFile)
   hardhat
