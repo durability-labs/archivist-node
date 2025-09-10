@@ -1,6 +1,5 @@
 import std/os
 import std/sequtils
-import pkg/stew/io2
 
 const keyDir = currentSourcePath().parentDir() / "keys"
 const keyFiles = @[
@@ -29,11 +28,8 @@ const keyFiles = @[
 type HardhatAccount* = object
   privateKeyFile: string
 
-func privateKeyFile*(account: HardhatAccount): string =
+proc privateKeyFile*(account: HardhatAccount): string =
   account.privateKeyFile
 
 const defaultHardhatAccounts* =
   keyFiles.mapIt(HardhatAccount(privateKeyFile: it))
-
-for file in keyFiles:
-  setPermissions(file, 0o600).tryGet()
