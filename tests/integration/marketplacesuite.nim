@@ -23,10 +23,10 @@ template marketplacesuite*(name: string, stopOnRequestFail: bool, body: untyped)
     var requestFailedEvent: AsyncEvent
     var requestFailedSubscription: Subscription
 
-    proc onRequestStarted(eventResult: ?!RequestFulfilled) {.raises: [].} =
+    proc onRequestStarted(eventResult: RequestFulfilled) {.raises: [].} =
       requestStartedEvent.fire()
 
-    proc onRequestFailed(eventResult: ?!RequestFailed) {.raises: [].} =
+    proc onRequestFailed(eventResult: RequestFailed) {.raises: [].} =
       requestFailedEvent.fire()
       if stopOnRequestFail:
         fail()

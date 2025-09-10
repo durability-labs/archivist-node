@@ -257,15 +257,13 @@ marketplacesuite(name = "Marketplace payouts", stopOnRequestFail = true):
     let cid = (await clientApi.upload(data)).get
 
     var slotIdxFilled = none uint64
-    proc onSlotFilled(eventResult: ?!SlotFilled) =
-      assert not eventResult.isErr
-      slotIdxFilled = some (!eventResult).slotIndex
+    proc onSlotFilled(event: SlotFilled) =
+      slotIdxFilled = some event.slotIndex
 
     let slotFilledSubscription = await marketplace.subscribe(SlotFilled, onSlotFilled)
 
     var requestCancelledEvent = newAsyncEvent()
-    proc onRequestCancelled(eventResult: ?!RequestCancelled) =
-      assert not eventResult.isErr
+    proc onRequestCancelled(event: RequestCancelled) =
       requestCancelledEvent.fire()
 
     let requestCancelledSubscription =

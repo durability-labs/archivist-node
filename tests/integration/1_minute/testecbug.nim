@@ -29,9 +29,8 @@ marketplacesuite(
     let cid = (await clientApi.upload(data)).get
 
     var requestId = none RequestId
-    proc onStorageRequested(eventResult: ?!StorageRequested) =
-      assert not eventResult.isErr
-      requestId = some (!eventResult).requestId
+    proc onStorageRequested(eventResult: StorageRequested) =
+      requestId = some eventResult.requestId
 
     let subscription = await marketplace.subscribe(StorageRequested, onStorageRequested)
 

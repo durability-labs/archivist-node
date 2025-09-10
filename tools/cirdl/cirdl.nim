@@ -107,7 +107,7 @@ proc main() {.async.} =
   if (dirExists(unpackFolder)):
     removeDir(unpackFolder)
 
-  let provider = JsonRpcProvider.new(rpcEndpoint)
+  let provider = await JsonRpcProvider.connect(rpcEndpoint)
 
   without marketplaceAddress =?
     (await getMarketplaceAddress(provider, mpAddressOverride)), err:

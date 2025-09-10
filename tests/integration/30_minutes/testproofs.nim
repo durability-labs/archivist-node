@@ -67,8 +67,8 @@ marketplacesuite(name = "Hosts submit regular proofs", stopOnRequestFail = false
     discard await waitForRequestToStart(expiry.int)
 
     var proofWasSubmitted = false
-    proc onProofSubmitted(event: ?!ProofSubmitted) =
-      proofWasSubmitted = event.isOk
+    proc onProofSubmitted(event: ProofSubmitted) =
+      proofWasSubmitted = true
 
     let subscription = await marketplace.subscribe(ProofSubmitted, onProofSubmitted)
 
@@ -147,8 +147,8 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
     discard await waitForRequestToStart(expiry.int)
 
     var slotWasFreed = false
-    proc onSlotFreed(event: ?!SlotFreed) =
-      if event.isOk and event.value.requestId == requestId:
+    proc onSlotFreed(event: SlotFreed) =
+      if event.requestId == requestId:
         slotWasFreed = true
 
     let subscription = await marketplace.subscribe(SlotFreed, onSlotFreed)
@@ -206,10 +206,7 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
     let requestId = (await client0.requestId(purchaseId)).get
 
     var slotWasFilled = false
-    proc onSlotFilled(eventResult: ?!SlotFilled) =
-      assert not eventResult.isErr
-      let event = !eventResult
-
+    proc onSlotFilled(event: SlotFilled) =
       if event.requestId == requestId:
         slotWasFilled = true
 
@@ -219,8 +216,8 @@ marketplacesuite(name = "Simulate invalid proofs", stopOnRequestFail = false):
     check eventually(slotWasFilled, timeout = expiry.int * 1000)
 
     var slotWasFreed = false
-    proc onSlotFreed(event: ?!SlotFreed) =
-      if event.isOk and event.value.requestId == requestId:
+    proc onSlotFreed(event: SlotFreed) =
+      if event.requestId == requestId:
         slotWasFreed = true
 
     let freedSubscription = await marketplace.subscribe(SlotFreed, onSlotFreed)

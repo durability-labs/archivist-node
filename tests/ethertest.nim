@@ -16,7 +16,7 @@ template ethersuite*(name, body) =
     var snapshot: JsonNode
 
     setup:
-      ethProvider = JsonRpcProvider.new("ws://localhost:8545")
+      ethProvider = await JsonRpcProvider.connect("ws://localhost:8545")
       snapshot = await send(ethProvider, "evm_snapshot")
       accounts = await ethProvider.listAccounts()
     teardown:
