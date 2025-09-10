@@ -4,6 +4,7 @@ import std/tempfiles
 import std/strutils
 import pkg/chronos
 import pkg/questionable
+import pkg/stew/io2
 import ../network/node
 import ../network/hardhat
 import ../network/hardhat/root
@@ -139,12 +140,14 @@ proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.}
     if spr =? await builder.testbed.api(firstNode).getSpr():
       return @[spr]
 
-func ethPrivateKeyResolved(builder: NodeBuilder): ?string =
+proc ethPrivateKeyResolved(builder: NodeBuilder): ?string =
   if ethPrivateKey =? builder.ethPrivateKey:
     return ethPrivateKey
   if builder.persistence:
     if hardhat =? builder.testbed.hardhatInstance:
-      return some hardhat.accounts.pop().privateKeyFile
+      let ethPrivateKey = hardhat.accounts.pop().privateKeyFile
+      setPermissions(ethPrivateKey, 0o600).tryGet()
+      return some ethPrivateKey
   none string
 
 const circuitsDir = hardhatRoot / "verifier" / "networks" / "hardhat"
