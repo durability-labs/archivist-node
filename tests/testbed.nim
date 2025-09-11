@@ -79,11 +79,15 @@ export time.advance
 
 import ./testbed/builders/api
 
+export api.HttpError
 export api.api
 export api.getSpr
 export api.getEthAddress
 export api.getPurchase
 export api.getAvailability
+export api.download
+export api.downloadManifest
+export api.downloadInBackground
 
 import ./testbed/network/node
 

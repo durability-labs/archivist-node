@@ -2,6 +2,8 @@ import std/json
 import pkg/chronos/apps/http/httpclient
 import pkg/stew/byteutils
 
+export httpclient.HttpError
+
 type Http* = object
 
 type HttpHeaders* = seq[(string, string)]
@@ -92,7 +94,7 @@ proc get*(
 proc post*(
   _: type Http,
   url: string,
-  body: seq[byte],
+  body: seq[byte] = @[],
   headers: HttpHeaders = @{:},
   options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
 ): Future[HttpResponse] {.async.} =

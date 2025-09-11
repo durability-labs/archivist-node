@@ -3,9 +3,9 @@ import std/random
 import pkg/chronos
 import pkg/questionable
 import ../network/node
-import ../helpers/http
 import ../testbed
 import ../dataset
+import ./api
 
 type DatasetBuilder = ref object
   testbed: Testbed
@@ -18,10 +18,12 @@ func data*(builder: DatasetBuilder, data: seq[byte]): DatasetBuilder =
   builder.data = some data
   builder
 
+func data*(builder: DatasetBuilder, data: string): DatasetBuilder =
+  builder.data(cast[seq[byte]](data))
+
 proc upload*(builder: DatasetBuilder, node: Node): Future[Dataset] {.async.} =
   let data = builder.data |? newSeqWith(4*1024*1024, rand(byte))
-  let url = node.apiUrl & "/data"
-  let cid = await Http.post(url, data).readString()
+  let cid = await builder.testbed.api(node).upload(data)
   let dataset = Dataset.new()
   dataset.data = data
   dataset.cid = some cid
