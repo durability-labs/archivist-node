@@ -24,7 +24,7 @@ type
     bootstrapNodes: ?seq[string]
     logToFile: bool
     logTopics: seq[string]
-    persistence: bool = true
+    persistence: bool
     ethPrivateKey: ? ? string
     validator: bool
     validatorGroups: ?int
