@@ -15,7 +15,7 @@ suite "Repair":
   test "slot can be restored from slots on other providers":
 
     # setup node, validator and 3 providers
-    let node = await testbed.node.start()
+    let node = await testbed.node.persistence.start()
     discard await testbed.node.validator.start()
     let provider1 = await testbed.node.provider.availability(false).start()
     let provider2 = await testbed.node.provider.availability(false).start()
