@@ -14,36 +14,32 @@ suite "Repair":
 
   test "slot can be restored from slots on other providers":
 
-    skip() # TODO: test fails because repair doesn't work yet
+    # setup node, validator and 3 providers
+    let node = await testbed.node.start()
+    discard await testbed.node.validator.start()
+    let provider1 = await testbed.node.provider.availability(false).start()
+    let provider2 = await testbed.node.provider.availability(false).start()
+    let provider3 = await testbed.node.provider.availability(false).start()
 
-    if false:
+    # submit request
+    let request = await testbed.request.nodes(3).submit(node)
+    let size = request.dataset.data.len
 
-      # setup node, validator and 3 providers
-      let node = await testbed.node.start()
-      discard await testbed.node.validator.start()
-      let provider1 = await testbed.node.provider.availability(false).start()
-      let provider2 = await testbed.node.provider.availability(false).start()
-      let provider3 = await testbed.node.provider.availability(false).start()
+    # ensure that each provider can only fill a single slot
+    await testbed.availability.totalSize(size div 2).create(provider1)
+    await testbed.availability.totalSize(size div 2).create(provider2)
+    await testbed.availability.totalSize(size div 2).create(provider3)
 
-      # submit request
-      let request = await testbed.request.nodes(3).submit(node)
-      let size = request.dataset.data.len
+    # wait for request to start
+    await testbed.marketplace.waitForRequestStarted(request.id)
 
-      # ensure that each provider can only fill a single slot
-      await testbed.availability.totalSize(size div 2).create(provider1)
-      await testbed.availability.totalSize(size div 2).create(provider2)
-      await testbed.availability.totalSize(size div 2).create(provider3)
+    # stop node and one provider
+    await node.stop()
+    await provider1.stop()
 
-      # wait for request to start
-      await testbed.marketplace.waitForRequestStarted(request.id)
+    # ensure that remaining providers can fill the missing slot
+    await testbed.availability.totalSize(size div 2).create(provider2)
+    await testbed.availability.totalSize(size div 2).create(provider3)
 
-      # stop node and one provider
-      await node.stop()
-      await provider1.stop()
-
-      # ensure that remaining providers can fill the missing slot
-      await testbed.availability.totalSize(size div 2).create(provider2)
-      await testbed.availability.totalSize(size div 2).create(provider3)
-
-      # wait for slot to be filled
-      await testbed.marketplace.waitForSlotFilled(request.id)
+    # wait for slot to be filled
+    await testbed.marketplace.waitForSlotFilled(request.id)
