@@ -6,6 +6,8 @@ import ../testbed
 import ../network/node
 import ../helpers/http
 
+export http.HttpError
+
 type ApiBuilder = ref object
   testbed: Testbed
   url: string
@@ -35,3 +37,28 @@ proc getPurchase*(builder: ApiBuilder, id: string): Future[JsonNode] {.async.} =
 
 proc getAvailability*(builder: ApiBuilder): Future[JsonNode] {.async.} =
   await Http.get(builder.url & "/sales/availability").readJson()
+
+proc upload*(builder: ApiBuilder, data: seq[byte]): Future[string] {.async.} =
+  await Http.post(builder.url & "/data", data).readString()
+
+proc download*(
+  builder: ApiBuilder,
+  cid: string,
+  network: bool = true
+): Future[seq[byte]] {.async.} =
+  var url = builder.url & "/data/" & cid
+  if network:
+    url &= "/network/stream"
+  await Http.get(url).read()
+
+proc downloadManifest*(
+  builder: ApiBuilder,
+  cid: string
+): Future[JsonNode] {.async.} =
+  await Http.get(builder.url & "/data/" & cid & "/network/manifest").readJson()
+
+proc downloadInBackground*(
+  builder: ApiBuilder,
+  cid: string
+): Future[JsonNode] {.async.} =
+  await Http.post(builder.url & "/data/" & cid & "/network").readJson()
