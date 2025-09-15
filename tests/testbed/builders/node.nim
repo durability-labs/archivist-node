@@ -206,5 +206,5 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   let node = await Node.start(arguments, dataDir, address, port).waitForRestApi()
   builder.testbed.nodeInstances.add(node)
   if builder.createInitialAvailability:
-    await builder.testbed.availability.create(node)
+    discard await builder.testbed.availability.create(node)
   node

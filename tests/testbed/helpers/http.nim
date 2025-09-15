@@ -117,3 +117,30 @@ proc post*(
   let headers = @{"Content-Type": "application/json"} & headers
   let body = ($body).toBytes
   await Http.post(url, body, headers, options)
+
+proc patch*(
+  _: type Http,
+  url: string,
+  body: seq[byte] = @[],
+  headers: HttpHeaders = @{:},
+  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+): Future[HttpResponse] {.async.} =
+  let session = HttpSessionRef.new()
+
+  let request =
+    HttpClientRequestRef
+      .new(session, url, MethodPatch, body = body, headers = headers)
+      .tryGet()
+
+  await session.send(request, options)
+
+proc patch*(
+  _: type Http,
+  url: string,
+  body: JsonNode,
+  headers: HttpHeaders = @{:},
+  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+): Future[HttpResponse] {.async.} =
+  let headers = @{"Content-Type": "application/json"} & headers
+  let body = ($body).toBytes
+  await Http.patch(url, body, headers, options)
