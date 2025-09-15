@@ -175,8 +175,6 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   arguments.add("--disc-port=" & $(await builder.discoveryPortResolved))
   for bootstrapNode in await builder.bootstrapNodesResolved:
     arguments.add("--bootstrap-node=" & bootstrapNode)
-  if logFile =? builder.logFile:
-    arguments.add("--log-file=" & logFile)
   if builder.logTopics.len > 0:
     arguments.add("--log-level=INFO;TRACE:" & builder.logTopics.join(","))
   if builder.persistence:
@@ -203,7 +201,14 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   let dataDir = builder.dataDirResolved
   let address = builder.apiBindAddressResolved
   let port = await builder.apiPortResolved
-  let node = await Node.start(arguments, dataDir, address, port).waitForRestApi()
+  let node = await Node.start(
+    arguments,
+    dataDir,
+    address,
+    port,
+    logFile = builder.logFile
+  )
+  await node.waitForRestApi()
   builder.testbed.nodeInstances.add(node)
   if builder.createInitialAvailability:
     discard await builder.testbed.availability.create(node)
