@@ -59,7 +59,10 @@ export availability.totalSize
 export availability.totalCollateral
 export availability.duration
 export availability.minPricePerBytePerSecond
+export availability.enabled
+export availability.until
 export availability.create
+export availability.update
 
 import ./testbed/builders/marketplace
 

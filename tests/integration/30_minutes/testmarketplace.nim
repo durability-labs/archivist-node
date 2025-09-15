@@ -32,7 +32,7 @@ suite "Marketplace":
     let provider = await testbed.node.provider.availability(false).start()
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.submit(node)
-    await testbed.availability.create(provider)
+    discard await testbed.availability.create(provider)
     await testbed.marketplace.waitForRequestStarted(request.id)
 
   test "provider withdraws its payout when a request ends":
