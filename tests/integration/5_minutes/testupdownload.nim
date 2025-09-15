@@ -2,6 +2,7 @@ import std/strutils
 import std/json
 import pkg/asynctest/chronos/unittest2
 import pkg/questionable
+import pkg/chronos/apps/http/httpclient
 import ../../testbed
 
 suite "Uploads and downloads":
@@ -66,7 +67,7 @@ suite "Uploads and downloads":
     let download = await testbed.api(node2).download(!dataset.cid, network = false)
     check download == dataset.data
 
-  test "nodes reliable transfer datasets between themselves":
+  test "nodes reliably transfer datasets between themselves":
     proc testTransfer(a, b: Node) {.async.} =
       let dataset = await testbed.dataset.upload(a)
       let download = await testbed.api(b).download(!dataset.cid)
@@ -74,3 +75,32 @@ suite "Uploads and downloads":
     for _ in 0..10:
       await testTransfer(node1, node2)
       await testTransfer(node2, node1)
+
+  test "node sets file name and mime type for downloads":
+    let mimetype = "application/octet-stream"
+    let filename = "example.bin"
+    let dataset = await testbed
+      .dataset
+      .mimetype(mimetype)
+      .filename(filename)
+      .upload(node1)
+    let response = await testbed.api(node1).raw.download(!dataset.cid)
+    let disposition = "attachment; filename=\"" & filename & "\""
+    check ("content-type", mimetype) in response.headers
+    check ("content-disposition", disposition) in response.headers
+    await response.close()
+
+  test "node accepts content disposition header without filename":
+    let headers = @{"Content-Disposition": "attachment"}
+    discard await testbed.dataset.upload(node1, headers = headers)
+
+  test "node does not crash when the download stream is closed too soon":
+    let dataset = await testbed.dataset.upload(node1)
+    let response = await testbed.api(node1).raw.download(!dataset.cid)
+    let reader = HttpClientResponseRef(response).getBodyReader()
+    # read a few bytes to ensure that we're receiving data
+    check (await reader.read(4)) == dataset.data[0..<4]
+    # close the stream at a low level, to ensure that it isn't closed nicely
+    HttpClientResponseRef(response).connection.reader.tsource.close()
+    # check that the node hasn't crashed
+    check (await testbed.api(node1).download(!dataset.cid)) == dataset.data

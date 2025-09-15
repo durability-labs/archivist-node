@@ -92,3 +92,13 @@ suite "Sales availability":
     except HttpError as error:
       check "422" in error.msg
       check "greater or equal to the longest currently hosted slot" in error.msg
+
+  test "node returns amount of reserved quota":
+    let before = await testbed.api(provider).getSpace()
+    let availability = await testbed.availability.create(provider)
+    let after = await testbed.api(provider).getSpace()
+    let reservedBefore = before["quotaReservedBytes"].getInt()
+    let reservedAfter = after["quotaReservedBytes"].getInt()
+    let availabilitySize = availability["totalSize"].getInt()
+    check reservedBefore == 0
+    check reservedAfter == availabilitySize

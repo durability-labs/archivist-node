@@ -37,6 +37,8 @@ import ./testbed/builders/dataset
 
 export dataset.dataset
 export dataset.data
+export dataset.mimetype
+export dataset.filename
 export dataset.upload
 
 import ./testbed/builders/request
@@ -84,14 +86,25 @@ export time.advance
 import ./testbed/builders/api
 
 export api.HttpError
+export api.HttpResponse
+export api.HttpHeaders
 export api.api
+export api.raw
+export api.headers
+export api.read
+export api.close
+export api.getDebugInfo
 export api.getSpr
 export api.getEthAddress
+export api.getSpace
+export api.getData
 export api.getPurchase
 export api.getAvailability
 export api.download
 export api.downloadManifest
 export api.downloadInBackground
+export api.delete
+export api.setLogLevel
 
 import ./testbed/network/node
 
