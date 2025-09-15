@@ -7,58 +7,134 @@ import ../network/node
 import ../helpers/http
 
 export http.HttpError
+export http.HttpResponse
+export http.HttpHeaders
+export http.headers
+export http.read
+export http.close
 
 type ApiBuilder = ref object
-  testbed: Testbed
+  url: string
+type RawBuilder = ref object
   url: string
 
 func api*(testbed: Testbed, node: Node): ApiBuilder =
-  ApiBuilder(testbed: testbed, url: node.apiUrl)
+  ApiBuilder(url: node.apiUrl)
 
-proc getInfo(builder: ApiBuilder): Future[JsonNode] {.async.} =
-  await Http.get(builder.url & "/debug/info").readJson()
+func raw*(builder: ApiBuilder): RawBuilder =
+  RawBuilder(url: builder.url)
+
+proc getDebugInfo*(builder: RawBuilder): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/debug/info")
+
+proc getDebugInfo*(builder: ApiBuilder): Future[JsonNode] {.async.} =
+  await builder.raw.getDebugInfo().readJson()
 
 proc getSpr*(builder: ApiBuilder): Future[?string] {.async.} =
-  let info = await builder.getInfo()
+  let info = await builder.getDebugInfo()
   if spr =? info{"spr"}:
     some spr.getStr()
   else:
     none string
 
 proc getEthAddress*(builder: ApiBuilder): Future[?Address] {.async.} =
-  let info = await builder.getInfo()
+  let info = await builder.getDebugInfo()
   if address =? info{"ethAddress"}:
     Address.init(address.getStr())
   else:
     none Address
 
+proc getSpace*(builder: RawBuilder): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/space")
+
+proc getSpace*(builder: ApiBuilder): Future[JsonNode] {.async.} =
+  await builder.raw.getSpace().readJson()
+
+proc getData*(builder: RawBuilder): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/data")
+
+proc getData*(builder: ApiBuilder): Future[JsonNode] {.async.} =
+  await builder.raw.getData().readJson()
+
+proc getPurchase*(builder: RawBuilder, id: string): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/storage/purchases/" & id)
+
 proc getPurchase*(builder: ApiBuilder, id: string): Future[JsonNode] {.async.} =
-  await Http.get(builder.url & "/storage/purchases/" & id).readJson()
+  await builder.raw.getPurchase(id).readJson()
+
+proc getAvailability*(builder: RawBuilder): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/sales/availability")
 
 proc getAvailability*(builder: ApiBuilder): Future[JsonNode] {.async.} =
-  await Http.get(builder.url & "/sales/availability").readJson()
+  await builder.raw.getAvailability().readJson()
 
-proc upload*(builder: ApiBuilder, data: seq[byte]): Future[string] {.async.} =
-  await Http.post(builder.url & "/data", data).readString()
+proc upload*(
+  builder: RawBuilder,
+  data: seq[byte],
+  mimetype = string.none,
+  filename = string.none,
+  headers: HttpHeaders = @{:}
+): Future[HttpResponse] {.async.} =
+  var headers = headers
+  if mimetype =? mimetype:
+    headers.add(("Content-Type", mimetype))
+  if filename =? filename:
+    let disposition = "attachment; filename=\"" & filename & "\""
+    headers.add(("Content-Disposition", disposition))
+  await Http.post(builder.url & "/data", data, headers = headers)
+
+proc upload*(
+  builder: ApiBuilder,
+  data: seq[byte],
+  mimetype = string.none,
+  filename = string.none,
+  headers: HttpHeaders = @{:}
+): Future[string] {.async.} =
+  await builder.raw.upload(data, mimetype, filename, headers).readString()
+
+proc download*(
+  builder: RawBuilder,
+  cid: string,
+  network: bool = true
+): Future[HttpResponse] {.async.} =
+  var url = builder.url & "/data/" & cid
+  if network:
+    url &= "/network/stream"
+  await Http.get(url)
 
 proc download*(
   builder: ApiBuilder,
   cid: string,
   network: bool = true
 ): Future[seq[byte]] {.async.} =
-  var url = builder.url & "/data/" & cid
-  if network:
-    url &= "/network/stream"
-  await Http.get(url).read()
+  await builder.raw.download(cid, network).read()
+
+proc downloadManifest*(
+  builder: RawBuilder,
+  cid: string
+): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/data/" & cid & "/network/manifest")
 
 proc downloadManifest*(
   builder: ApiBuilder,
   cid: string
 ): Future[JsonNode] {.async.} =
-  await Http.get(builder.url & "/data/" & cid & "/network/manifest").readJson()
+  await builder.raw.downloadManifest(cid).readJson()
+
+proc downloadInBackground*(
+  builder: RawBuilder,
+  cid: string
+): Future[HttpResponse] {.async.} =
+  await Http.post(builder.url & "/data/" & cid & "/network")
 
 proc downloadInBackground*(
   builder: ApiBuilder,
   cid: string
 ): Future[JsonNode] {.async.} =
-  await Http.post(builder.url & "/data/" & cid & "/network").readJson()
+  await builder.raw.downloadInBackground(cid).readJson()
+
+proc delete*(builder: ApiBuilder, cid: string) {.async.} =
+  await Http.delete(builder.url & "/data/" & cid).close()
+
+proc setLogLevel*(builder: ApiBuilder, level: string) {.async.} =
+  await Http.post(builder.url & "/debug/chronicles/loglevel?level=" & level).close()

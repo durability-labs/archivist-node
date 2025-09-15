@@ -18,6 +18,9 @@ type HttpResponse* = distinct HttpClientResponseRef
 func status*(response: HttpResponse): int =
   HttpClientResponseRef(response).status
 
+func headers*(response: HttpResponse): HttpHeaders =
+  HttpClientResponseRef(response).headers.toList
+
 proc close*(response: HttpResponse) {.async.} =
   await noCancel HttpClientResponseRef(response).session.closeWait()
 
@@ -144,3 +147,18 @@ proc patch*(
   let headers = @{"Content-Type": "application/json"} & headers
   let body = ($body).toBytes
   await Http.patch(url, body, headers, options)
+
+proc delete*(
+  _: type Http,
+  url: string,
+  headers: HttpHeaders = @{:},
+  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+): Future[HttpResponse] {.async.} =
+  let session = HttpSessionRef.new()
+
+  let request =
+    HttpClientRequestRef
+      .new(session, url, MethodDelete, headers = headers)
+      .tryGet()
+
+  await session.send(request, options)
