@@ -78,6 +78,7 @@ export marketplace.waitForTransferTo
 import ./testbed/builders/time
 
 export time.time
+export time.now
 export time.advance
 
 import ./testbed/builders/api
