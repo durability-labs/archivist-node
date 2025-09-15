@@ -6,6 +6,9 @@ type Process* = distinct AsyncProcessRef
 func stdout*(process: Process): AsyncStreamReader =
   AsyncProcessRef(process).stdoutStream
 
+func stderr*(process: Process): AsyncStreamReader =
+  AsyncProcessRef(process).stderrStream
+
 proc start*(
   _: type Process,
   command: string,
