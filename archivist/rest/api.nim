@@ -577,8 +577,11 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
         return RestApiResponse.error(Http422, "Updating freeSize is not allowed")
 
       if size =? restAv.totalSize:
-        if size == 0:
-          return RestApiResponse.error(Http422, "Total size must be larger then zero")
+        if size <= 0 or size > NBytes.high.uint64:
+          return RestApiResponse.error(
+            Http422,
+            "Total size must be > 0 and <= " & $NBytes.high.uint64
+          )
 
         # we don't allow lowering the totalSize bellow currently utilized size
         if size < (availability.totalSize - availability.freeSize):
