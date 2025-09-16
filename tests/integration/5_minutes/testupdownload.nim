@@ -94,6 +94,30 @@ suite "Uploads and downloads":
     let headers = @{"Content-Disposition": "attachment"}
     discard await testbed.dataset.upload(node1, headers = headers)
 
+  test "node rejects bad filenames":
+    try:
+      discard await testbed
+        .dataset
+        .data("example data")
+        .filename("exam*ple.txt")
+        .upload(node1)
+      fail()
+    except HttpError as error:
+      check "422" in error.msg
+      check "filename is not valid" in error.msg
+
+  test "node rejects invalid content types":
+    try:
+      discard await testbed
+        .dataset
+        .data("example data")
+        .mimetype("hello/world")
+        .upload(node1)
+      fail()
+    except HttpError as error:
+      check "422" in error.msg
+      check "MIME type 'hello/world' is not valid" in error.msg
+
   test "node does not crash when the download stream is closed too soon":
     let dataset = await testbed.dataset.upload(node1)
     let response = await testbed.api(node1).raw.download(!dataset.cid)
