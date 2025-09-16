@@ -2,8 +2,8 @@ import std/json
 import pkg/chronos
 import pkg/questionable
 import ../network/node
-import ../helpers/http
 import ../testbed
+import ./api
 
 type AvailabilityBuilder = ref object
   testbed: Testbed
@@ -55,32 +55,30 @@ func until*(builder: AvailabilityBuilder, timestamp: int): AvailabilityBuilder =
 
 proc create*(builder: AvailabilityBuilder, node: Node): Future[JsonNode] {.async.} =
   let totalSize = builder.totalSize |? 1*1024*1024*1024
-  let url = node.apiUrl & "/sales/availability"
-  let body = %*{
+  let properties = %*{
     "totalSize": totalSize,
     "totalCollateral": builder.totalCollateral |? 5000 * totalSize,
     "duration": builder.duration |? 30*24*60*60,
     "minPricePerBytePerSecond": builder.minPricePerBytePerSecond |? 1
   }
   if enabled =? builder.enabled:
-    body["enabled"] = %enabled
+    properties["enabled"] = %enabled
   if until =? builder.until:
-    body["until"] = %until
-  await Http.post(url, body).readJson()
+    properties["until"] = %until
+  await builder.testbed.api(node).createAvailability(properties)
 
 proc update*(builder: AvailabilityBuilder, node: Node, id: string) {.async.} =
-  let url = node.apiUrl & "/sales/availability/" & id
-  let body = newJObject()
+  let properties = newJObject()
   if totalSize =? builder.totalSize:
-    body["totalSize"] = %totalSize
+    properties["totalSize"] = %totalSize
   if totalCollateral =? builder.totalCollateral:
-    body["totalCollateral"] = %totalCollateral
+    properties["totalCollateral"] = %totalCollateral
   if duration =? builder.duration:
-    body["duration"] = %duration
+    properties["duration"] = %duration
   if minPricePerBytePerSecond =? builder.minPricePerBytePerSecond:
-    body["minPricePerBytePerSecond"] = %minPricePerBytePerSecond
+    properties["minPricePerBytePerSecond"] = %minPricePerBytePerSecond
   if enabled =? builder.enabled:
-    body["enabled"] = %enabled
+    properties["enabled"] = %enabled
   if until =? builder.until:
-    body["until"] = %until
-  discard await Http.patch(url, body)
+    properties["until"] = %until
+  await builder.testbed.api(node).updateAvailability(id, properties)

@@ -62,6 +62,19 @@ proc getPurchase*(builder: RawBuilder, id: string): Future[HttpResponse] {.async
 proc getPurchase*(builder: ApiBuilder, id: string): Future[JsonNode] {.async.} =
   await builder.raw.getPurchase(id).readJson()
 
+proc createAvailability*(
+  builder: ApiBuilder,
+  properties: JsonNode
+): Future[JsonNode] {.async.} =
+  await Http.post(builder.url & "/sales/availability", properties).readJson()
+
+proc updateAvailability*(
+  builder: ApiBuilder,
+  id: string,
+  properties: JsonNode
+) {.async.} =
+  await Http.patch(builder.url & "/sales/availability/" & id, properties).close()
+
 proc getAvailability*(builder: RawBuilder): Future[HttpResponse] {.async.} =
   await Http.get(builder.url & "/sales/availability")
 
