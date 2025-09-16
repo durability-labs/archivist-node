@@ -8,11 +8,13 @@ import ../helpers/project
 
 type Node* = ref object
   process: Process
+  arguments: seq[string]
   dataDir: string
   apiAddress: IpAddress
   apiPort: Port
-  restApiStarted: AsyncEvent
+  logFilename: ?string
   logFile: ?File
+  restApiStarted: AsyncEvent
   stdoutHandler: Future[void].Raising([])
   stderrHandler: Future[void].Raising([])
 
@@ -47,6 +49,19 @@ proc handleStderr(node: Node) {.async:(raises:[]).} =
   except CatchableError as error:
     raise newException(Defect, "error handling node stderr: " & error.msg)
 
+proc start(node: Node) {.async.} =
+  let command = "./archivist"
+  var arguments = node.arguments
+  arguments &= "--data-dir=" & $node.dataDir
+  arguments &= "--api-bindaddr=" & $node.apiAddress
+  arguments &= "--api-port=" & $node.apiPort
+  node.process = await Process.start(command, arguments, projectRoot / "build")
+  node.logFile = node.logFilename.?open(FileMode.fmAppend)
+  node.restApiStarted = newAsyncEvent()
+  node.stdoutHandler = node.handleStdout()
+  node.stderrHandler = node.handleStderr()
+  await node.restApiStarted.wait()
+
 proc start*(
   _: type Node,
   arguments: seq[string],
@@ -55,30 +70,14 @@ proc start*(
   apiPort: Port,
   logFile = string.none
 ): Future[Node] {.async.} =
-  let command = "./archivist"
-  var arguments = arguments
-  arguments &= "--data-dir=" & $dataDir
-  arguments &= "--api-bindaddr=" & $apiAddress
-  arguments &= "--api-port=" & $apiPort
-  let process = await Process.start(command, arguments, projectRoot / "build")
   let node = Node(
-    process: process,
+    arguments: arguments,
     dataDir: dataDir,
     apiAddress: apiAddress,
     apiPort: apiPort,
-    restApiStarted: newAsyncEvent(),
-    logFile: logFile.?open(FileMode.fmAppend)
+    logFilename: logFile,
   )
-  node.stdoutHandler = node.handleStdout()
-  node.stderrHandler = node.handleStderr()
-  node
-
-proc waitForRestApi*(node: Node) {.async.} =
-  await node.restApiStarted.wait()
-
-proc waitForRestApi*(node: Future[Node]): Future[Node] {.async.} =
-  let node = await node
-  await node.waitForRestApi()
+  await node.start()
   node
 
 proc stop*(node: Node) {.async.} =
@@ -92,6 +91,10 @@ proc stop*(node: Node) {.async.} =
   if logFile =? node.logFile:
     node.logFile = none File
     logFile.close()
+
+proc restart*(node: Node) {.async.} =
+  await node.stop()
+  await node.start()
 
 proc deleteDataDir*(node: Node) =
   removeDir(node.dataDir)
