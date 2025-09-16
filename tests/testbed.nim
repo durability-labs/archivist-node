@@ -31,6 +31,8 @@ export node.prover
 export node.provider
 export node.availability
 export node.failProofs
+export node.blockTtl
+export node.blockMaintenanceInterval
 export node.start
 
 import ./testbed/builders/dataset
