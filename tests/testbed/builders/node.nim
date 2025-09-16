@@ -33,6 +33,8 @@ type
     circomWasm: ?string
     circomZkey: ?string
     failProofs: ?int
+    blockTtl: ?int
+    blockMaintenanceInterval: ?int
     createInitialAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
@@ -118,6 +120,14 @@ func failProofs*(builder: NodeBuilder, every: int): NodeBuilder =
   builder.failProofs = some every
   builder
 
+func blockTtl*(builder: NodeBuilder, ttl: int): NodeBuilder =
+  builder.blockTtl = some ttl
+  builder
+
+func blockMaintenanceInterval*(builder: NodeBuilder, interval: int): NodeBuilder =
+  builder.blockMaintenanceInterval = some interval
+  builder
+
 proc dataDirResolved(builder: NodeBuilder): string =
   builder.dataDir |? createTempDir("archivist-", "-testbed")
 
@@ -197,6 +207,10 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--circom-zkey=" & circomZkey)
   if failProofs =? builder.failProofs:
     arguments.add("--simulate-proof-failures=" & $failProofs)
+  if blockTtl =? builder.blockTtl:
+    arguments.add("--block-ttl=" & $blockTtl)
+  if blockMaintenanceInterval =? builder.blockMaintenanceInterval:
+    arguments.add("--block-mi=" & $blockMaintenanceInterval)
   let dataDir = builder.dataDirResolved
   let address = builder.apiBindAddressResolved
   let port = await builder.apiPortResolved
