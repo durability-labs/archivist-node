@@ -100,6 +100,8 @@ export api.getEthAddress
 export api.getSpace
 export api.getData
 export api.getPurchase
+export api.createAvailability
+export api.updateAvailability
 export api.getAvailability
 export api.download
 export api.downloadManifest
