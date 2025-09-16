@@ -50,6 +50,7 @@ export request.proofProbability
 export request.pricePerBytePerSecond
 export request.expiry
 export request.nodes
+export request.tolerance
 export request.collateralPerByte
 export request.submit
 export request.start
