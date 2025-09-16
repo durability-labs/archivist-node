@@ -110,6 +110,7 @@ import ./testbed/network/node
 
 export node.Node
 export node.stop
+export node.restart
 
 import ./testbed/network/hardhat
 

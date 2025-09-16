@@ -8,7 +8,6 @@ import pkg/stew/io2
 import ../network/node
 import ../network/hardhat
 import ../network/hardhat/root
-import ../helpers/project
 import ../helpers/ports
 import ../testbed
 import ./api
@@ -208,7 +207,6 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     port,
     logFile = builder.logFile
   )
-  await node.waitForRestApi()
   builder.testbed.nodeInstances.add(node)
   if builder.createInitialAvailability:
     discard await builder.testbed.availability.create(node)
