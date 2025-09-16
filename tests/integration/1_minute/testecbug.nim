@@ -1,58 +1,21 @@
-from pkg/libp2p import Cid, init
-import ../../examples
-import ../marketplacesuite
-import ../nodeconfigs
-import ../hardhatconfig
+import std/json
+import pkg/asynctest/chronos/unittest2
+import ../../testbed
 
-marketplacesuite(
-  name = "Bug #821 - node crashes during erasure coding", stopOnRequestFail = true
-):
-  test "should be able to create storage request and download dataset",
-    NodeConfigs(
-      clients: ArchivistConfigs
-        .init(nodes = 1)
-        # .debug() # uncomment to enable console log output.debug()
-        .withLogFile()
-        # uncomment to output log file to tests/integration/logs/<start_datetime> <suite_name>/<test_name>/<node_role>_<node_idx>.log
-        .withLogTopics("node", "erasure", "marketplace").some,
-      providers: ArchivistConfigs.init(nodes = 0).some,
-    ):
-    let
-      pricePerBytePerSecond = 1.u256
-      duration = 20.periods
-      collateralPerByte = 1.u256
-      expiry = 10.periods
-      data = await RandomChunker.example(blocks = 8)
-      client = clients()[0]
-      clientApi = client.client
+suite "Bug 821 - node crashes during erasure coding":
+  # https://github.com/codex-storage/nim-codex/issues/821
 
-    let cid = (await clientApi.upload(data)).get
+  var testbed: Testbed
+  var node: Node
 
-    var requestId = none RequestId
-    proc onStorageRequested(eventResult: StorageRequested) =
-      requestId = some eventResult.requestId
+  setup:
+    testbed = await Testbed.start()
+    discard await testbed.hardhat.start()
+    node = await testbed.node.persistence.start()
 
-    let subscription = await marketplace.subscribe(StorageRequested, onStorageRequested)
-
-    # client requests storage but requires multiple slots to host the content
-    let id = await clientApi.requestStorage(
-      cid,
-      duration = duration,
-      pricePerBytePerSecond = pricePerBytePerSecond,
-      expiry = expiry,
-      collateralPerByte = collateralPerByte,
-      nodes = 3,
-      tolerance = 1,
-    )
-
-    check eventually(requestId.isSome, timeout = expiry.int * 1000)
-
-    let
-      request = await marketplace.getRequest(requestId.get)
-      cidFromRequest = request.content.cid
-      downloaded = await clientApi.downloadBytes(cidFromRequest, local = true)
-
-    check downloaded.isOk
-    check downloaded.get.toHex == data.toHex
-
-    await subscription.unsubscribe()
+  test "should be able to create storage request and download dataset":
+    let request = await testbed.request.submit(node)
+    let purchase = await testbed.api(node).getPurchase(request.id)
+    let manifestCid = purchase["request"]["content"]["cid"].getStr()
+    let downloaded = await testbed.api(node).download(manifestCid)
+    check downloaded == request.dataset.data
