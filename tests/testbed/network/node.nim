@@ -3,6 +3,7 @@ import std/net
 import std/strutils
 import pkg/chronos
 import pkg/questionable
+import ../error
 import ../helpers/process
 import ../helpers/project
 
@@ -55,7 +56,10 @@ proc start(node: Node) {.async.} =
   arguments &= "--data-dir=" & $node.dataDir
   arguments &= "--api-bindaddr=" & $node.apiAddress
   arguments &= "--api-port=" & $node.apiPort
-  node.process = await Process.start(command, arguments, projectRoot / "build")
+  try:
+    node.process = await Process.start(command, arguments, projectRoot / "build")
+  except ProcessError as error:
+    raise newException(TestbedError, "unable to start node: " & error.msg, error)
   node.logFile = node.logFilename.?open(FileMode.fmAppend)
   node.restApiStarted = newAsyncEvent()
   node.stdoutHandler = node.handleStdout()
