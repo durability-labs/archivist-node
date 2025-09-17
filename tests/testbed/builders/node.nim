@@ -29,9 +29,9 @@ type
     validatorGroups: ?int
     validatorGroupIndex: ?int
     prover: bool
-    circomR1cs: ?string
-    circomWasm: ?string
-    circomZkey: ?string
+    circomR1cs: ? ? string
+    circomWasm: ? ? string
+    circomZkey: ? ? string
     failProofs: ?int
     blockTtl: ?int
     blockMaintenanceInterval: ?int
@@ -104,6 +104,30 @@ func prover*(builder: NodeBuilder): NodeBuilder =
   builder.prover = true
   builder
 
+func circomR1cs*(builder: NodeBuilder, filename: string): NodeBuilder =
+  builder.circomR1cs = some some filename
+  builder
+
+func noCircomR1cs*(builder: NodeBuilder): NodeBuilder =
+  builder.circomR1cs = some none string
+  builder
+
+func circomWasm*(builder: NodeBuilder, filename: string): NodeBuilder =
+  builder.circomWasm = some some filename
+  builder
+
+func noCircomWasm*(builder: NodeBuilder): NodeBuilder =
+  builder.circomWasm = some none string
+  builder
+
+func circomZkey*(builder: NodeBuilder, filename: string): NodeBuilder =
+  builder.circomZkey = some some filename
+  builder
+
+func noCircomZkey*(builder: NodeBuilder): NodeBuilder =
+  builder.circomZkey = some none string
+  builder
+
 func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
   builder.prover = true
@@ -168,19 +192,19 @@ const circuitsDir = hardhatDir / "verifier" / "networks" / "hardhat"
 
 func circomR1csResolved(builder: NodeBuilder): ?string =
   if circomR1cs =? builder.circomR1cs:
-    return some circomR1cs
+    return circomR1cs
   if builder.prover:
     return some circuitsDir / "proof_main.r1cs"
 
 func circomWasmResolved(builder: NodeBuilder): ?string =
   if circomWasm =? builder.circomWasm:
-    return some circomWasm
+    return circomWasm
   if builder.prover:
     return some circuitsDir / "proof_main.wasm"
 
 func circomZkeyResolved(builder: NodeBuilder): ?string =
   if circomZkey =? builder.circomZkey:
-    return some circomZkey
+    return circomZkey
   if builder.prover:
     return some circuitsDir / "proof_main.zkey"
 
