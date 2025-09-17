@@ -87,11 +87,15 @@ export marketplace.waitForProofSubmitted
 export marketplace.waitForSlotFreed
 export marketplace.waitForTransferTo
 
-import ./testbed/builders/time
+import ./testbed/builders/eth
 
-export time.time
-export time.now
-export time.advance
+export eth.eth
+export eth.provider
+export eth.time
+export eth.blockTime
+export eth.now
+export eth.advance
+export eth.advanceTo
 
 import ./testbed/builders/api
 

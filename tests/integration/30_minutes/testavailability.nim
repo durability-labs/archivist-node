@@ -39,7 +39,7 @@ suite "Availability":
   test "node handles availability updates":
     let original = await testbed.availability.create(provider)
     let id = original["id"].getStr()
-    let until = (await testbed.time.now()) + 100
+    let until = (await testbed.eth.time.now()) + 100
     await testbed
       .availability
       .duration(100)
@@ -88,7 +88,7 @@ suite "Availability":
     await testbed.marketplace.waitForSlotFilled(request.id)
     await sleepAsync(chronos.seconds(1))
     try:
-      let until = (await testbed.time.now()) + 1
+      let until = (await testbed.eth.time.now()) + 1
       await testbed.availability.until(until).update(provider, id)
       fail()
     except HttpError as error:
@@ -219,7 +219,7 @@ suite "Availability validation":
     let original = await testbed.availability.create(provider)
     let id = original["id"].getStr()
     try:
-      await testbed.availability.until(-1).update(provider, id)
+      await testbed.api(provider).updateAvailability(id, %*{"until": -1})
       fail()
     except HttpError as error:
       check "422" in error.msg

@@ -13,10 +13,10 @@ import ./marketplace
 type RequestBuilder = ref object
   testbed: Testbed
   dataset: ?Dataset
-  duration: ?int
+  duration: ?uint64
   proofProbability: ?int
   pricePerBytePerSecond: ?int
-  expiry: ?int
+  expiry: ?uint64
   nodes: ?int
   tolerance: ?int
   collateralPerByte: ?int
@@ -28,7 +28,7 @@ func dataset*(builder: RequestBuilder, dataset: Dataset): RequestBuilder =
   builder.dataset = some dataset
   builder
 
-func duration*(builder: RequestBuilder, duration: int): RequestBuilder =
+func duration*(builder: RequestBuilder, duration: uint64): RequestBuilder =
   builder.duration = some duration
   builder
 
@@ -46,7 +46,7 @@ func pricePerBytePerSecond*(
   builder.pricePerBytePerSecond = some pricePerBytePerSecond
   builder
 
-func expiry*(builder: RequestBuilder, expiry: int): RequestBuilder =
+func expiry*(builder: RequestBuilder, expiry: uint64): RequestBuilder =
   builder.expiry = some expiry
   builder
 
