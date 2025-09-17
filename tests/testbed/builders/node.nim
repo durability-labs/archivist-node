@@ -35,6 +35,7 @@ type
     failProofs: ?int
     blockTtl: ?int
     blockMaintenanceInterval: ?int
+    waitForOutput: ? string
     createInitialAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
@@ -107,6 +108,10 @@ func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
   builder.prover = true
   builder.createInitialAvailability = true
+  builder
+
+func waitForOutput*(builder: NodeBuilder, output: string): NodeBuilder =
+  builder.waitForOutput = some output
   builder
 
 func availability*(
@@ -219,7 +224,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     dataDir,
     address,
     port,
-    logFile = builder.logFile
+    logFile = builder.logFile,
+    waitForOutput = some builder.waitForOutput |? "REST service started"
   )
   builder.testbed.nodeInstances.add(node)
   if builder.createInitialAvailability:
