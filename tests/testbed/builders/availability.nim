@@ -9,10 +9,10 @@ type AvailabilityBuilder = ref object
   testbed: Testbed
   totalSize: ?int
   totalCollateral: ?int
-  duration: ?int
+  duration: ?uint64
   minPricePerBytePerSecond: ?int
   enabled: ?bool
-  until: ?int
+  until: ?uint64
 
 func availability*(testbed: Testbed): AvailabilityBuilder =
   AvailabilityBuilder(testbed: testbed)
@@ -33,7 +33,7 @@ func totalCollateral*(
 
 func duration*(
   builder: AvailabilityBuilder,
-  duration: int
+  duration: uint64
 ): AvailabilityBuilder =
   builder.duration = some duration
   builder
@@ -49,7 +49,7 @@ func enabled*(builder: AvailabilityBuilder, enabled: bool): AvailabilityBuilder 
   builder.enabled = some enabled
   builder
 
-func until*(builder: AvailabilityBuilder, timestamp: int): AvailabilityBuilder =
+func until*(builder: AvailabilityBuilder, timestamp: uint64): AvailabilityBuilder =
   builder.until = some timestamp
   builder
 

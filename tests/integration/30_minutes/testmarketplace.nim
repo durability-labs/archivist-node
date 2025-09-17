@@ -39,14 +39,14 @@ suite "Marketplace":
     let provider = await testbed.node.provider.start()
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.start(node)
-    await testbed.time.advance(request.duration)
+    await testbed.eth.time.advance(request.duration)
     await testbed.marketplace.waitForTransferTo(provider)
 
   test "requester withdraws remaining funds when a request ends":
     discard await testbed.node.provider.start()
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.start(node)
-    await testbed.time.advance(request.duration)
+    await testbed.eth.time.advance(request.duration)
     await testbed.marketplace.waitForTransferTo(node)
 
   test "provider withdraws its payout when a request is cancelled":
@@ -54,11 +54,11 @@ suite "Marketplace":
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.submit(node)
     await testbed.marketplace.waitForSlotFilled(request.id)
-    await testbed.time.advance(request.expiry)
+    await testbed.eth.time.advance(request.expiry)
     await testbed.marketplace.waitForTransferTo(provider)
 
   test "requester withdraws remaining funds when a request is cancelled":
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.submit(node)
-    await testbed.time.advance(request.expiry)
+    await testbed.eth.time.advance(request.expiry)
     await testbed.marketplace.waitForTransferTo(node)
