@@ -89,16 +89,15 @@ func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
   builder
 
 func validator*(builder: NodeBuilder): NodeBuilder =
+  builder.persistence = true
   builder.validator = true
   builder.logTopics &= "validator"
   builder
 
 func validator*(builder: NodeBuilder, groups, index: int): NodeBuilder =
-  builder.validator = true
-  builder.logTopics &= "validator"
   builder.validatorGroups = some groups
   builder.validatorGroupIndex = some index
-  builder
+  builder.validator()
 
 func prover*(builder: NodeBuilder): NodeBuilder =
   builder.prover = true
