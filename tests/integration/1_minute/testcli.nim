@@ -1,60 +1,76 @@
 import std/tempfiles
-import archivist/conf
-import archivist/utils/fileutils
-import ../../asynctest
-import ../../checktest
-import ../archivistprocess
-import ../nodeprocess
-import ../../examples
+import pkg/asynctest/chronos/unittest2
+import pkg/stew/io2
+import ../../testbed
 
-asyncchecksuite "Command line interface":
-  let key = "4242424242424242424242424242424242424242424242424242424242424242"
+suite "Command line interface":
 
-  proc startNode(args: seq[string]): Future[ArchivistProcess] {.async.} =
-    return await ArchivistProcess.startNode(args, false, "cli-test-node")
+  var testbed: Testbed
 
-  test "complains when persistence is enabled without ethereum account":
-    let node = await startNode(@["persistence"])
-    await node.waitUntilOutput("Persistence enabled, but no Ethereum account was set")
-    await node.stop()
+  setup:
+    testbed = await Testbed.start()
+    discard await testbed.hardhat.start()
+
+  teardown:
+    await testbed.stop()
+
+  test "complains when persistence is enabled without ethereum private key":
+    let expectedOutput = "Persistence enabled, but no Ethereum account was set"
+    discard await testbed
+      .node
+      .persistence
+      .noEthPrivateKey()
+      .waitForOutput(expectedOutput)
+      .start()
 
   test "complains when ethereum private key file has wrong permissions":
+    let key = "4242424242424242424242424242424242424242424242424242424242424242"
     let unsafeKeyFile = genTempPath("", "")
-    discard unsafeKeyFile.writeFile(key, 0o666)
-    let node = await startNode(@["persistence", "--eth-private-key=" & unsafeKeyFile])
-    await node.waitUntilOutput(
+    writeFile(unsafeKeyFile, key)
+    setPermissions(unsafeKeyFile, 0o666).tryGet()
+    let expectedOutput =
       "Ethereum private key file does not have safe file permissions"
-    )
-    await node.stop()
-    discard removeFile(unsafeKeyFile)
+    discard await testbed
+      .node
+      .persistence
+      .ethPrivateKey(unsafeKeyFile)
+      .waitForOutput(expectedOutput)
+      .start()
 
-  let
-    marketplaceArg = "--marketplace-address=" & $EthAddress.example
-    expectedDownloadInstruction =
-      "Proving circuit files are not found. Please run the following to download them:"
+  test "suggests downloading of circuit files when there's no r1cs file":
+    let expectedOutput =
+      "Proving circuit files are not found. " &
+      "Please run the following to download them:"
+    discard await testbed
+      .node
+      .provider
+      .noCircomR1cs
+      .noCircomWasm
+      .noCircomZkey
+      .availability(false)
+      .waitForOutput(expectedOutput)
+      .start()
 
-  test "suggests downloading of circuit files when persistence is enabled without accessible r1cs file":
-    let node = await startNode(@["persistence", "prover", marketplaceArg])
-    await node.waitUntilOutput(expectedDownloadInstruction)
-    await node.stop()
+  test "suggests downloading of circuit files when there's no wasm file":
+    let expectedOutput =
+      "Proving circuit files are not found. " &
+      "Please run the following to download them:"
+    discard await testbed
+      .node
+      .provider
+      .noCircomWasm
+      .availability(false)
+      .waitForOutput(expectedOutput)
+      .start()
 
-  test "suggests downloading of circuit files when persistence is enabled without accessible wasm file":
-    let node = await startNode(
-      @[
-        "persistence", "prover", marketplaceArg,
-        "--circom-r1cs=tests/circuits/fixtures/proof_main.r1cs",
-      ]
-    )
-    await node.waitUntilOutput(expectedDownloadInstruction)
-    await node.stop()
-
-  test "suggests downloading of circuit files when persistence is enabled without accessible zkey file":
-    let node = await startNode(
-      @[
-        "persistence", "prover", marketplaceArg,
-        "--circom-r1cs=tests/circuits/fixtures/proof_main.r1cs",
-        "--circom-wasm=tests/circuits/fixtures/proof_main.wasm",
-      ]
-    )
-    await node.waitUntilOutput(expectedDownloadInstruction)
-    await node.stop()
+  test "suggests downloading of circuit files when there's no zkey file":
+    let expectedOutput =
+      "Proving circuit files are not found. " &
+      "Please run the following to download them:"
+    discard await testbed
+      .node
+      .provider
+      .noCircomZkey
+      .availability(false)
+      .waitForOutput(expectedOutput)
+      .start()
