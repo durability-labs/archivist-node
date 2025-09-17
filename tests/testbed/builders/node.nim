@@ -7,7 +7,7 @@ import pkg/questionable
 import pkg/stew/io2
 import ../network/node
 import ../network/hardhat
-import ../network/hardhat/root
+import ../helpers/project
 import ../helpers/ports
 import ../testbed
 import ./api
@@ -159,7 +159,7 @@ proc ethPrivateKeyResolved(builder: NodeBuilder): ?string =
       return some ethPrivateKey
   none string
 
-const circuitsDir = hardhatRoot / "verifier" / "networks" / "hardhat"
+const circuitsDir = hardhatDir / "verifier" / "networks" / "hardhat"
 
 func circomR1csResolved(builder: NodeBuilder): ?string =
   if circomR1cs =? builder.circomR1cs:
