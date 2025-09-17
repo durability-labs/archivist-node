@@ -2,6 +2,7 @@ import std/os
 import std/syncio
 import pkg/chronos
 import pkg/questionable
+import ../error
 import ../helpers/process
 import ./hardhat/account
 import ./hardhat/npm
@@ -9,6 +10,8 @@ import ./hardhat/root
 
 export account.HardhatAccount
 export account.privateKeyFile
+
+const binDir = hardhatRoot / "node_modules" / ".bin"
 
 type
   Hardhat* = ref object
@@ -27,7 +30,26 @@ func jsonRpcUrl*(hardhat: Hardhat): string =
 func marketplaceAddress*(hardhat: Hardhat): string =
   "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"
 
-proc handleStdout*(hardhat: Hardhat) {.async:(raises:[]).} =
+proc installHardhat {.async.} =
+  if not dirExists(binDir):
+    await npm(@["install"])
+
+proc runHardhat: Future[Process] {.async.} =
+  try:
+    await Process.start(
+      "./hardhat",
+      @["node"],
+      workingDir = binDir,
+      environment = @{"HARDHAT_DISABLE_TELEMETRY_PROMPT": "true"}
+    )
+  except ProcessError as error:
+    raise newException(
+      TestbedError,
+      "unable to start hardhat: " & error.msg,
+      error
+    )
+
+proc handleStdout(hardhat: Hardhat) {.async:(raises:[]).} =
   let input = hardhat.process.stdout
   try:
     while not input.atEof:
@@ -40,7 +62,7 @@ proc handleStdout*(hardhat: Hardhat) {.async:(raises:[]).} =
   except CatchableError as error:
     raise newException(Defect, "error handling hardhat stdout: " & error.msg)
 
-proc handleStderr*(hardhat: Hardhat) {.async:(raises:[]).} =
+proc handleStderr(hardhat: Hardhat) {.async:(raises:[]).} =
   let input = hardhat.process.stderr
   try:
     while not input.atEof:
@@ -54,17 +76,15 @@ proc handleStderr*(hardhat: Hardhat) {.async:(raises:[]).} =
     raise newException(Defect, "error handling hardhat stderr: " & error.msg)
 
 proc start*(_: type Hardhat, logFile = string.none): Future[Hardhat] {.async.} =
-  const binDir = hardhatRoot / "node_modules" / ".bin"
-  let process = await Process.start("./hardhat", @["node"], binDir)
+  await installHardhat()
+  let hardhat = Hardhat()
+  hardhat.process = await runHardhat()
+  hardhat.logFile = logFile.?open(FileMode.fmAppend)
+  hardhat.stdoutHandler = hardhat.handleStdout()
+  hardhat.stderrHandler = hardhat.handleStderr()
   await sleepAsync(2.seconds)
   await npm(@["run", "mine"])
   await npm(@["run", "deploy", "--", "--network", "localhost"])
-  let hardhat = Hardhat(
-    process: process,
-    logFile: logFile.?open(FileMode.fmAppend)
-  )
-  hardhat.stdoutHandler = hardhat.handleStdout()
-  hardhat.stderrHandler = hardhat.handleStderr()
   hardhat
 
 proc stop*(hardhat: Hardhat) {.async.} =

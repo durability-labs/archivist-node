@@ -2,6 +2,7 @@ import pkg/chronos
 import pkg/chronos/asyncproc
 
 type Process* = distinct AsyncProcessRef
+type ProcessError* = AsyncProcessError
 
 func stdout*(process: Process): AsyncStreamReader =
   AsyncProcessRef(process).stdoutStream
@@ -13,12 +14,17 @@ proc start*(
   _: type Process,
   command: string,
   arguments: seq[string] = @[],
-  workingDir: string = ""
+  workingDir: string = "",
+  environment: seq[(string, string)] = @{:}
 ): Future[Process] {.async.} =
+  let environmentTable = getProcessEnvironment()
+  for (key, value) in environment:
+    environmentTable[key] = value
   let process = await startProcess(
     command,
     workingDir,
     arguments,
+    environmentTable,
     options = {AsyncProcessOption.UsePath},
     stdinHandle = AsyncProcess.Pipe(),
     stdoutHandle = AsyncProcess.Pipe(),
