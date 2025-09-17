@@ -26,6 +26,12 @@ export node.log
 export node.persistence
 export node.ethPrivateKey
 export node.noEthPrivateKey
+export node.circomR1cs
+export node.noCircomR1cs
+export node.circomWasm
+export node.noCircomWasm
+export node.circomZkey
+export node.noCircomZkey
 export node.validator
 export node.prover
 export node.provider
