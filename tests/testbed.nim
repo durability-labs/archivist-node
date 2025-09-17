@@ -33,6 +33,7 @@ export node.availability
 export node.failProofs
 export node.blockTtl
 export node.blockMaintenanceInterval
+export node.waitForOutput
 export node.start
 
 import ./testbed/builders/dataset

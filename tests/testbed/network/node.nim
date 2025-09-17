@@ -15,20 +15,30 @@ type Node* = ref object
   apiPort: Port
   logFilename: ?string
   logFile: ?File
-  restApiStarted: AsyncEvent
+  waitForOutput: ?string
+  stdout: AsyncQueue[string]
+  stderr: AsyncQueue[string]
   stdoutHandler: Future[void].Raising([])
   stderrHandler: Future[void].Raising([])
 
 func apiUrl*(node: Node): string =
   "http://" & $node.apiAddress & ":" & $node.apiPort & "/api/archivist/v1"
 
+proc waitForOutput(node: Node) {.async.} =
+  without output =? node.waitForOutput:
+    return
+  while not node.process.stdout.atEof:
+    let line = await node.stdout.get()
+    if output in line:
+      return
+  raise newException(TestbedError, "node did not output '" & output & "'")
+
 proc handleStdout(node: Node) {.async:(raises:[]).} =
   let input = node.process.stdout
   try:
     while not input.atEof:
       let line = await input.readLine(sep = "\n")
-      if line.contains("REST service started"):
-        node.restApiStarted.fire()
+      node.stdout.putNoWait(line)
       if output =? node.logFile:
         output.writeLine(line)
         output.flushFile()
@@ -42,6 +52,7 @@ proc handleStderr(node: Node) {.async:(raises:[]).} =
   try:
     while not input.atEof:
       let line = await input.readLine(sep = "\n")
+      node.stderr.putNoWait(line)
       if output =? node.logFile:
         output.writeLine(line)
         output.flushFile()
@@ -61,10 +72,11 @@ proc start(node: Node) {.async.} =
   except ProcessError as error:
     raise newException(TestbedError, "unable to start node: " & error.msg, error)
   node.logFile = node.logFilename.?open(FileMode.fmAppend)
-  node.restApiStarted = newAsyncEvent()
+  node.stdout = newAsyncQueue[string]()
+  node.stderr = newAsyncQueue[string]()
   node.stdoutHandler = node.handleStdout()
   node.stderrHandler = node.handleStderr()
-  await node.restApiStarted.wait()
+  await node.waitForOutput()
 
 proc start*(
   _: type Node,
@@ -72,7 +84,8 @@ proc start*(
   dataDir: string,
   apiAddress: IpAddress,
   apiPort: Port,
-  logFile = string.none
+  logFile = string.none,
+  waitForOutput = string.none
 ): Future[Node] {.async.} =
   let node = Node(
     arguments: arguments,
@@ -80,6 +93,7 @@ proc start*(
     apiAddress: apiAddress,
     apiPort: apiPort,
     logFilename: logFile,
+    waitForOutput: waitForOutput
   )
   await node.start()
   node
