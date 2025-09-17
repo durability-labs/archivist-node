@@ -1,7 +1,9 @@
 import std/os
 import std/syncio
+import std/json
 import pkg/chronos
 import pkg/questionable
+import pkg/ethers
 import ../error
 import ../helpers/process
 import ../helpers/project
@@ -16,6 +18,7 @@ type
     process: Process
     accounts: seq[HardhatAccount] = defaultHardhatAccounts
     logFile: ?File
+    snapshot: JsonNode
     stdoutHandler: Future[void].Raising([])
     stderrHandler: Future[void].Raising([])
 
@@ -73,6 +76,14 @@ proc handleStderr(hardhat: Hardhat) {.async:(raises:[]).} =
   except CatchableError as error:
     raise newException(Defect, "error handling hardhat stderr: " & error.msg)
 
+proc save(hardhat: Hardhat) {.async.} =
+  let provider = await JsonRpcProvider.connect(hardhat.jsonRpcUrl)
+  hardhat.snapshot = await provider.send("evm_snapshot")
+
+proc restore(hardhat: Hardhat) {.async.} =
+  let provider = await JsonRpcProvider.connect(hardhat.jsonRpcUrl)
+  discard await provider.send("evm_revert", @[hardhat.snapshot])
+
 proc start*(_: type Hardhat, logFile = string.none): Future[Hardhat] {.async.} =
   await installHardhat()
   let hardhat = Hardhat()
@@ -83,6 +94,7 @@ proc start*(_: type Hardhat, logFile = string.none): Future[Hardhat] {.async.} =
   await sleepAsync(2.seconds)
   await npm(@["run", "mine"])
   await npm(@["run", "deploy", "--", "--network", "localhost"])
+  await hardhat.save()
   hardhat
 
 proc stop*(hardhat: Hardhat) {.async.} =
@@ -96,3 +108,7 @@ proc stop*(hardhat: Hardhat) {.async.} =
   if logFile =? hardhat.logFile:
     hardhat.logFile = none File
     logFile.close()
+
+proc reset*(hardhat: Hardhat) {.async.} =
+  await hardhat.restore()
+  await hardhat.save()

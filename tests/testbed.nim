@@ -127,6 +127,8 @@ export node.restart
 import ./testbed/network/hardhat
 
 export hardhat.Hardhat
+export hardhat.stop
+export hardhat.reset
 
 import ./testbed/dataset
 
