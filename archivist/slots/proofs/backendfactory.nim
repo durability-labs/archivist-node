@@ -55,17 +55,14 @@ proc initializeFromCircuitDirFiles(
   failure("Circuit files not found")
 
 proc suggestDownloadTool(config: NodeConf) =
-  without address =? config.marketplaceAddress:
-    raise (ref Defect)(
-      msg: "Proving backend initializing while marketplace address not set."
-    )
-
-  let
-    tokens = ["cirdl", "\"" & $config.circuitDir & "\"", config.ethProvider, $address]
-    instructions = "'./" & tokens.join(" ") & "'"
-
-  warn "Proving circuit files are not found. Please run the following to download them:",
-    instructions
+  const message =
+    "Proving circuit files are not found. " &
+    "Please run the following to download them: "
+  var instructions =
+    "'./cirdl \"" & $config.circuitDir & "\" " & config.ethProvider
+  if address =? config.marketplaceAddress:
+    instructions &= " " & $address
+  warn message, instructions
 
 proc initializeBackend*(
     config: NodeConf, utils: BackendUtils = BackendUtils()
