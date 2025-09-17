@@ -37,7 +37,7 @@ func nodeInstances*(testbed: Testbed): var seq[Node] =
 
 func logDir*(testbed: Testbed): string =
   let timestamp = testbed.startedAt.format("yyyy-MM-dd-HH-mm-ss")
-  projectRoot / "logs" / "testbed" / timestamp
+  projectLogDir / "testbed" / timestamp
 
 proc start*(_: type Testbed): Future[Testbed] {.async.} =
   Testbed(startedAt: now())

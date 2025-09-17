@@ -57,7 +57,7 @@ proc start(node: Node) {.async.} =
   arguments &= "--api-bindaddr=" & $node.apiAddress
   arguments &= "--api-port=" & $node.apiPort
   try:
-    node.process = await Process.start(command, arguments, projectRoot / "build")
+    node.process = await Process.start(command, arguments, projectBuildDir)
   except ProcessError as error:
     raise newException(TestbedError, "unable to start node: " & error.msg, error)
   node.logFile = node.logFilename.?open(FileMode.fmAppend)

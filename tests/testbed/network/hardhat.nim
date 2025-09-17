@@ -4,14 +4,12 @@ import pkg/chronos
 import pkg/questionable
 import ../error
 import ../helpers/process
+import ../helpers/project
 import ./hardhat/account
 import ./hardhat/npm
-import ./hardhat/root
 
 export account.HardhatAccount
 export account.privateKeyFile
-
-const binDir = hardhatRoot / "node_modules" / ".bin"
 
 type
   Hardhat* = ref object
@@ -31,7 +29,7 @@ func marketplaceAddress*(hardhat: Hardhat): string =
   "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"
 
 proc installHardhat {.async.} =
-  if not dirExists(binDir):
+  if not dirExists(hardhatBinDir):
     await npm(@["install"])
 
 proc runHardhat: Future[Process] {.async.} =
@@ -39,7 +37,7 @@ proc runHardhat: Future[Process] {.async.} =
     await Process.start(
       "./hardhat",
       @["node"],
-      workingDir = binDir,
+      workingDir = hardhatBinDir,
       environment = @{"HARDHAT_DISABLE_TELEMETRY_PROMPT": "true"}
     )
   except ProcessError as error:
