@@ -17,30 +17,22 @@ type AvailabilityBuilder = ref object
 func availability*(testbed: Testbed): AvailabilityBuilder =
   AvailabilityBuilder(testbed: testbed)
 
-func totalSize*(
-  builder: AvailabilityBuilder,
-  totalSize: int
-): AvailabilityBuilder =
+func totalSize*(builder: AvailabilityBuilder, totalSize: int): AvailabilityBuilder =
   builder.totalSize = some totalSize
   builder
 
 func totalCollateral*(
-  builder: AvailabilityBuilder,
-  totalCollateral: int
+    builder: AvailabilityBuilder, totalCollateral: int
 ): AvailabilityBuilder =
   builder.totalCollateral = some totalCollateral
   builder
 
-func duration*(
-  builder: AvailabilityBuilder,
-  duration: uint64
-): AvailabilityBuilder =
+func duration*(builder: AvailabilityBuilder, duration: uint64): AvailabilityBuilder =
   builder.duration = some duration
   builder
 
 func minPricePerBytePerSecond*(
-  builder: AvailabilityBuilder,
-  minPricePerBytePerSecond: int
+    builder: AvailabilityBuilder, minPricePerBytePerSecond: int
 ): AvailabilityBuilder =
   builder.minPricePerBytePerSecond = some minPricePerBytePerSecond
   builder
@@ -54,13 +46,14 @@ func until*(builder: AvailabilityBuilder, timestamp: uint64): AvailabilityBuilde
   builder
 
 proc create*(builder: AvailabilityBuilder, node: Node): Future[JsonNode] {.async.} =
-  let totalSize = builder.totalSize |? 1*1024*1024*1024
-  let properties = %*{
-    "totalSize": totalSize,
-    "totalCollateral": builder.totalCollateral |? 5000 * totalSize,
-    "duration": builder.duration |? 30*24*60*60,
-    "minPricePerBytePerSecond": builder.minPricePerBytePerSecond |? 1
-  }
+  let totalSize = builder.totalSize |? 1 * 1024 * 1024 * 1024
+  let properties =
+    %*{
+      "totalSize": totalSize,
+      "totalCollateral": builder.totalCollateral |? 5000 * totalSize,
+      "duration": builder.duration |? 30 * 24 * 60 * 60,
+      "minPricePerBytePerSecond": builder.minPricePerBytePerSecond |? 1,
+    }
   if enabled =? builder.enabled:
     properties["enabled"] = %enabled
   if until =? builder.until:

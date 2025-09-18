@@ -579,8 +579,7 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
       if size =? restAv.totalSize:
         if size <= 0 or size > NBytes.high.uint64:
           return RestApiResponse.error(
-            Http422,
-            "Total size must be > 0 and <= " & $NBytes.high.uint64
+            Http422, "Total size must be > 0 and <= " & $NBytes.high.uint64
           )
 
         # we don't allow lowering the totalSize bellow currently utilized size

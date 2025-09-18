@@ -4,7 +4,6 @@ import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
 suite "Availability":
-
   var testbed: Testbed
   var node, provider: Node
 
@@ -40,14 +39,13 @@ suite "Availability":
     let original = await testbed.availability.create(provider)
     let id = original["id"].getStr()
     let until = (await testbed.eth.time.now()) + 100
-    await testbed
-      .availability
-      .duration(100)
-      .minPricePerBytePerSecond(2)
-      .totalCollateral(200)
-      .enabled(false)
-      .until(until)
-      .update(provider, id)
+    await testbed.availability
+    .duration(100)
+    .minPricePerBytePerSecond(2)
+    .totalCollateral(200)
+    .enabled(false)
+    .until(until)
+    .update(provider, id)
     let updated = (await testbed.api(provider).getAvailability())[0]
     check updated{"duration"} == %100
     check updated{"minPricePerBytePerSecond"} == %"2"
@@ -96,11 +94,10 @@ suite "Availability":
       check "greater or equal to the longest currently hosted slot" in error.msg
 
 suite "Availability validation":
-
   var testbed: Testbed
   var provider: Node
 
-  setupAll: # use a single testbed for all tests
+  setupAll:
     testbed = await Testbed.start()
     discard await testbed.hardhat.start()
     provider = await testbed.node.provider.availability(false).start()
@@ -120,8 +117,7 @@ suite "Availability validation":
 
   test "node rejects update to non-existing availability":
     try:
-      let invalidId =
-        "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff"
+      let invalidId = "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff"
       await testbed.availability.totalSize(100).update(provider, invalidId)
       fail()
     except HttpError as error:
@@ -195,10 +191,7 @@ suite "Availability validation":
 
   test "node refuses to create availability with zero price":
     try:
-      discard await testbed
-        .availability
-        .minPricePerBytePerSecond(0)
-        .create(provider)
+      discard await testbed.availability.minPricePerBytePerSecond(0).create(provider)
       fail()
     except HttpError as error:
       check "422" in error.msg
@@ -206,10 +199,7 @@ suite "Availability validation":
 
   test "node refuses to create availability with zero collateral":
     try:
-      discard await testbed
-        .availability
-        .totalCollateral(0)
-        .create(provider)
+      discard await testbed.availability.totalCollateral(0).create(provider)
       fail()
     except HttpError as error:
       check "422" in error.msg

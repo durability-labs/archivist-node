@@ -2,7 +2,6 @@ import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
 suite "Repair":
-
   var testbed: Testbed
 
   setup:
@@ -13,7 +12,6 @@ suite "Repair":
     await testbed.stop()
 
   test "slot can be restored from slots on other providers":
-
     # setup node, validator and 3 providers
     let node = await testbed.node.persistence.start()
     discard await testbed.node.validator.start()

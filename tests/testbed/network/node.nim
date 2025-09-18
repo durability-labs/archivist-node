@@ -33,7 +33,7 @@ proc waitForOutput(node: Node) {.async.} =
       return
   raise newException(TestbedError, "node did not output '" & output & "'")
 
-proc handleStdout(node: Node) {.async:(raises:[]).} =
+proc handleStdout(node: Node) {.async: (raises: []).} =
   let input = node.process.stdout
   try:
     while not input.atEof:
@@ -47,7 +47,7 @@ proc handleStdout(node: Node) {.async:(raises:[]).} =
   except CatchableError as error:
     raise newException(Defect, "error handling node stdout: " & error.msg)
 
-proc handleStderr(node: Node) {.async:(raises:[]).} =
+proc handleStderr(node: Node) {.async: (raises: []).} =
   let input = node.process.stderr
   try:
     while not input.atEof:
@@ -71,7 +71,7 @@ proc start(node: Node) {.async.} =
     node.process = await Process.start(command, arguments, projectBuildDir)
   except ProcessError as error:
     raise newException(TestbedError, "unable to start node: " & error.msg, error)
-  node.logFile = node.logFilename.?open(FileMode.fmAppend)
+  node.logFile = node.logFilename .? open(FileMode.fmAppend)
   node.stdout = newAsyncQueue[string]()
   node.stderr = newAsyncQueue[string]()
   node.stdoutHandler = node.handleStdout()
@@ -79,13 +79,13 @@ proc start(node: Node) {.async.} =
   await node.waitForOutput()
 
 proc start*(
-  _: type Node,
-  arguments: seq[string],
-  dataDir: string,
-  apiAddress: IpAddress,
-  apiPort: Port,
-  logFile = string.none,
-  waitForOutput = string.none
+    _: type Node,
+    arguments: seq[string],
+    dataDir: string,
+    apiAddress: IpAddress,
+    apiPort: Port,
+    logFile = string.none,
+    waitForOutput = string.none,
 ): Future[Node] {.async.} =
   let node = Node(
     arguments: arguments,
@@ -93,7 +93,7 @@ proc start*(
     apiAddress: apiAddress,
     apiPort: apiPort,
     logFilename: logFile,
-    waitForOutput: waitForOutput
+    waitForOutput: waitForOutput,
   )
   await node.start()
   node

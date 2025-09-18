@@ -32,16 +32,11 @@ func filename*(builder: DatasetBuilder, filename: string): DatasetBuilder =
   builder
 
 proc upload*(
-  builder: DatasetBuilder,
-  node: Node,
-  headers: HttpHeaders = @{:}
+    builder: DatasetBuilder, node: Node, headers: HttpHeaders = @{:}
 ): Future[Dataset] {.async.} =
-  let data = builder.data |? newSeqWith(4*1024*1024, rand(byte))
+  let data = builder.data |? newSeqWith(4 * 1024 * 1024, rand(byte))
   let cid = await builder.testbed.api(node).upload(
-    data,
-    mimetype = builder.mimetype,
-    filename = builder.filename,
-    headers = headers
+    data, mimetype = builder.mimetype, filename = builder.filename, headers = headers
   )
   let dataset = Dataset.new()
   dataset.data = data

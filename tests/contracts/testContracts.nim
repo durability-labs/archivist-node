@@ -72,8 +72,7 @@ suite "Marketplace contracts":
     await hardhat.reset()
 
   proc waitUntilProofRequired(slotId: SlotId) {.async.} =
-    let currentPeriod =
-      periodicity.periodOf((await testbed.eth.time.now()).uint64)
+    let currentPeriod = periodicity.periodOf((await testbed.eth.time.now()).uint64)
     await testbed.eth.time.advanceTo(periodicity.periodEnd(currentPeriod))
     while not (
       (await marketplace.isProofRequired(slotId)) and
@@ -98,8 +97,7 @@ suite "Marketplace contracts":
   test "can mark missing proofs":
     switchAccount(host)
     await waitUntilProofRequired(slotId)
-    let missingPeriod =
-      periodicity.periodOf((await testbed.eth.time.now()).uint64)
+    let missingPeriod = periodicity.periodOf((await testbed.eth.time.now()).uint64)
     let endOfPeriod = periodicity.periodEnd(missingPeriod)
     await testbed.eth.time.advanceTo(endOfPeriod + 1)
     switchAccount(client)
@@ -142,8 +140,7 @@ suite "Marketplace contracts":
     let expiry = (await marketplace.requestExpiry(request.id)).uint64
     await testbed.eth.time.advanceTo(expiry + 1)
     switchAccount(client)
-    let missingPeriod =
-      periodicity.periodOf((await testbed.eth.time.now()).uint64)
+    let missingPeriod = periodicity.periodOf((await testbed.eth.time.now()).uint64)
     await testbed.eth.time.advance(periodicity.seconds)
     expect Marketplace_SlotNotAcceptingProofs:
       discard await marketplace.markProofAsMissing(slotId, missingPeriod).confirm(1)

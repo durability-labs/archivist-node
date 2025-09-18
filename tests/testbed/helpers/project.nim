@@ -1,11 +1,6 @@
 import std/os
 
-const projectRoot* =
-  currentSourcePath()
-    .parentDir()
-    .parentDir()
-    .parentDir()
-    .parentDir()
+const projectRoot* = currentSourcePath().parentDir().parentDir().parentDir().parentDir()
 
 const projectLogDir* = projectRoot / "logs"
 const projectBuildDir* = projectRoot / "build"

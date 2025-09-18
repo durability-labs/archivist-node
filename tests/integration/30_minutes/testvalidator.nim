@@ -2,7 +2,6 @@ import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
 suite "Validator":
-
   var testbed: Testbed
 
   setup:

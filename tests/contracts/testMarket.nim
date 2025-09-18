@@ -78,8 +78,7 @@ suite "On-Chain Market":
     await hardhat.reset()
 
   proc advanceToNextPeriod() {.async.} =
-    let currentPeriod =
-      periodicity.periodOf(await testbed.eth.time.now())
+    let currentPeriod = periodicity.periodOf(await testbed.eth.time.now())
     await testbed.eth.time.advanceTo(periodicity.periodEnd(currentPeriod) + 1)
 
   proc advanceToCancelledRequest(request: StorageRequest) {.async.} =
@@ -191,8 +190,7 @@ suite "On-Chain Market":
     await market.reserveSlot(request.id, slotIndex)
     await market.fillSlot(request.id, slotIndex, proof, request.ask.collateralPerSlot)
     await waitUntilProofRequired(slotId)
-    let missingPeriod =
-      periodicity.periodOf(await testbed.eth.time.now())
+    let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     await market.markProofAsMissing(slotId, missingPeriod)
     check (await marketplace.missingProofs(slotId)) == 1
@@ -203,8 +201,7 @@ suite "On-Chain Market":
     await market.reserveSlot(request.id, slotIndex)
     await market.fillSlot(request.id, slotIndex, proof, request.ask.collateralPerSlot)
     await waitUntilProofRequired(slotId)
-    let missingPeriod =
-      periodicity.periodOf(await testbed.eth.time.now())
+    let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == true
 
@@ -217,8 +214,7 @@ suite "On-Chain Market":
 
     await market.freeSlot(slotId(request.id, slotIndex))
 
-    let missingPeriod =
-      periodicity.periodOf(await testbed.eth.time.now())
+    let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == false
 
@@ -228,8 +224,7 @@ suite "On-Chain Market":
     await market.reserveSlot(request.id, slotIndex)
     await market.fillSlot(request.id, slotIndex, proof, request.ask.collateralPerSlot)
 
-    let missingPeriod =
-      periodicity.periodOf(await testbed.eth.time.now())
+    let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == false
 
@@ -242,8 +237,7 @@ suite "On-Chain Market":
 
     await market.submitProof(slotId(request.id, slotIndex), proof)
 
-    let missingPeriod =
-      periodicity.periodOf(await testbed.eth.time.now())
+    let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == false
 
@@ -401,8 +395,7 @@ suite "On-Chain Market":
         if slotState == SlotState.Repair or slotState == SlotState.Failed:
           break
         await waitUntilProofRequired(slotId)
-        let missingPeriod =
-          periodicity.periodOf(await testbed.eth.time.now())
+        let missingPeriod = periodicity.periodOf(await testbed.eth.time.now())
         await advanceToNextPeriod()
         discard await marketplace.markProofAsMissing(slotId, missingPeriod).confirm(1)
     check eventually receivedIds == @[request.id]

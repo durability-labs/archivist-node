@@ -7,11 +7,7 @@ type Request* = ref object
   expiry: uint64
 
 func init*(
-  _: type Request,
-  dataset: Dataset,
-  id: string,
-  duration: uint64,
-  expiry: uint64
+    _: type Request, dataset: Dataset, id: string, duration: uint64, expiry: uint64
 ): Request =
   Request(dataset: dataset, id: id, duration: duration, expiry: expiry)
 

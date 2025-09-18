@@ -26,6 +26,5 @@ func decode*(decoder: var AbiDecoder, T: type StorageAsk): ?!T =
     slots: tupl[3],
     slotSize: tupl[4],
     duration: tupl[5],
-    maxSlotLoss: tupl[6]
+    maxSlotLoss: tupl[6],
   )
-

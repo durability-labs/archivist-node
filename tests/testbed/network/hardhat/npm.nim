@@ -11,5 +11,5 @@ proc npm*(arguments: seq[string]) {.async.} =
     raise newException(
       TestbedError,
       "unable to execute 'npm " & arguments.join(" ") & "': " & error.msg,
-      error
+      error,
     )

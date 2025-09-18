@@ -29,7 +29,7 @@ proc close*(response: Future[HttpResponse]) {.async.} =
   await response.close()
 
 proc read*(response: HttpResponse): Future[seq[byte]] {.async.} =
-  let body  = await HttpClientResponseRef(response).getBodyBytes()
+  let body = await HttpClientResponseRef(response).getBodyBytes()
   await response.close()
   body
 
@@ -63,9 +63,7 @@ proc checkStatusCode*(response: HttpResponse) {.async.} =
   raise newException(HttpError, message)
 
 proc send(
-  session: HttpSessionRef,
-  request: HttpClientRequestRef,
-  options: HttpRequestOptions
+    session: HttpSessionRef, request: HttpClientRequestRef, options: HttpRequestOptions
 ): Future[HttpResponse] {.async.} =
   var response: HttpResponse
   try:
@@ -80,85 +78,77 @@ proc send(
   response
 
 proc get*(
-  _: type Http,
-  url: string,
-  headers: HttpHeaders = @{:},
-  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+    _: type Http,
+    url: string,
+    headers: HttpHeaders = @{:},
+    options: HttpRequestOptions = {HttpRequestOption.checkStatusCode},
 ): Future[HttpResponse] {.async.} =
   let session = HttpSessionRef.new()
 
-  let request =
-    HttpClientRequestRef
-      .get(session, url, headers = headers)
-      .tryGet()
+  let request = HttpClientRequestRef.get(session, url, headers = headers).tryGet()
 
   await session.send(request, options)
 
 proc post*(
-  _: type Http,
-  url: string,
-  body: seq[byte] = @[],
-  headers: HttpHeaders = @{:},
-  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+    _: type Http,
+    url: string,
+    body: seq[byte] = @[],
+    headers: HttpHeaders = @{:},
+    options: HttpRequestOptions = {HttpRequestOption.checkStatusCode},
 ): Future[HttpResponse] {.async.} =
   let session = HttpSessionRef.new()
 
   let request =
-    HttpClientRequestRef
-      .post(session, url, body = body, headers = headers)
-      .tryGet()
+    HttpClientRequestRef.post(session, url, body = body, headers = headers).tryGet()
 
   await session.send(request, options)
 
 proc post*(
-  _: type Http,
-  url: string,
-  body: JsonNode,
-  headers: HttpHeaders = @{:},
-  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+    _: type Http,
+    url: string,
+    body: JsonNode,
+    headers: HttpHeaders = @{:},
+    options: HttpRequestOptions = {HttpRequestOption.checkStatusCode},
 ): Future[HttpResponse] {.async.} =
   let headers = @{"Content-Type": "application/json"} & headers
   let body = ($body).toBytes
   await Http.post(url, body, headers, options)
 
 proc patch*(
-  _: type Http,
-  url: string,
-  body: seq[byte] = @[],
-  headers: HttpHeaders = @{:},
-  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+    _: type Http,
+    url: string,
+    body: seq[byte] = @[],
+    headers: HttpHeaders = @{:},
+    options: HttpRequestOptions = {HttpRequestOption.checkStatusCode},
 ): Future[HttpResponse] {.async.} =
   let session = HttpSessionRef.new()
 
-  let request =
-    HttpClientRequestRef
-      .new(session, url, MethodPatch, body = body, headers = headers)
-      .tryGet()
+  let request = HttpClientRequestRef
+    .new(session, url, MethodPatch, body = body, headers = headers)
+    .tryGet()
 
   await session.send(request, options)
 
 proc patch*(
-  _: type Http,
-  url: string,
-  body: JsonNode,
-  headers: HttpHeaders = @{:},
-  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+    _: type Http,
+    url: string,
+    body: JsonNode,
+    headers: HttpHeaders = @{:},
+    options: HttpRequestOptions = {HttpRequestOption.checkStatusCode},
 ): Future[HttpResponse] {.async.} =
   let headers = @{"Content-Type": "application/json"} & headers
   let body = ($body).toBytes
   await Http.patch(url, body, headers, options)
 
 proc delete*(
-  _: type Http,
-  url: string,
-  headers: HttpHeaders = @{:},
-  options: HttpRequestOptions = {HttpRequestOption.checkStatusCode}
+    _: type Http,
+    url: string,
+    headers: HttpHeaders = @{:},
+    options: HttpRequestOptions = {HttpRequestOption.checkStatusCode},
 ): Future[HttpResponse] {.async.} =
   let session = HttpSessionRef.new()
 
   let request =
-    HttpClientRequestRef
-      .new(session, url, MethodDelete, headers = headers)
-      .tryGet()
+    HttpClientRequestRef.new(session, url, MethodDelete, headers = headers).tryGet()
 
   await session.send(request, options)

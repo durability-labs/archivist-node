@@ -2,7 +2,6 @@ import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
 suite "Storage Proofs":
-
   var testbed: Testbed
 
   setup:
