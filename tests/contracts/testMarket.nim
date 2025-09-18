@@ -5,9 +5,9 @@ import pkg/ethers/erc20
 import archivist/contracts
 import pkg/libp2p/cid
 import pkg/lrucache
-import ../ethertest
+import ../asynctest
+import ../testbed
 import ./examples
-import ./time
 import ./deployment
 
 privateAccess(OnChainMarket) # enable access to private fields
@@ -18,7 +18,21 @@ privateAccess(OnChainMarket) # enable access to private fields
 logScope:
   topics = "testMarket"
 
-ethersuite "On-Chain Market":
+suite "On-Chain Market":
+  var testbed: Testbed
+  var hardhat: Hardhat
+  var provider: JsonRpcProvider
+  var accounts: seq[Address]
+
+  setupAll:
+    testbed = await Testbed.start()
+    hardhat = await testbed.hardhat.start()
+    provider = testbed.eth.provider
+    accounts = await provider.listAccounts()
+
+  teardownAll:
+    await testbed.stop()
+
   let proof = Groth16Proof.example
 
   var market: OnChainMarket
@@ -32,9 +46,9 @@ ethersuite "On-Chain Market":
   var hostRewardRecipient: Address
 
   proc expectedPayout(
-      r: StorageRequest, startTimestamp: UInt256, endTimestamp: UInt256
+      r: StorageRequest, startTimestamp: uint64, endTimestamp: uint64
   ): UInt256 =
-    return (endTimestamp - startTimestamp) * r.ask.pricePerSlotPerSecond
+    return (endTimestamp - startTimestamp).u256 * r.ask.pricePerSlotPerSecond
 
   proc switchAccount(account: Signer) =
     marketplace = marketplace.connect(account)
@@ -43,31 +57,34 @@ ethersuite "On-Chain Market":
 
   setup:
     let address = Marketplace.address(dummyVerifier = true)
-    marketplace = Marketplace.new(address, ethProvider.getSigner())
+    marketplace = Marketplace.new(address, provider.getSigner())
     let config = await marketplace.configuration()
     hostRewardRecipient = accounts[2]
 
     market = OnChainMarket.new(marketplace)
     let tokenAddress = await marketplace.token()
-    token = Erc20Token.new(tokenAddress, ethProvider.getSigner())
+    token = Erc20Token.new(tokenAddress, provider.getSigner())
 
     periodicity = Periodicity(seconds: config.proofs.period)
 
     request = StorageRequest.example
     request.client = accounts[0]
-    host = ethProvider.getSigner(accounts[1])
-    otherHost = ethProvider.getSigner(accounts[3])
+    host = provider.getSigner(accounts[1])
+    otherHost = provider.getSigner(accounts[3])
 
     slotIndex = request.ask.slots div 2
 
+  teardown:
+    await hardhat.reset()
+
   proc advanceToNextPeriod() {.async.} =
     let currentPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
-    await ethProvider.advanceTimeTo((periodicity.periodEnd(currentPeriod) + 1).u256)
+      periodicity.periodOf(await testbed.eth.time.now())
+    await testbed.eth.time.advanceTo(periodicity.periodEnd(currentPeriod) + 1)
 
   proc advanceToCancelledRequest(request: StorageRequest) {.async.} =
-    let expiry = (await market.requestExpiresAt(request.id)) + 1
-    await ethProvider.advanceTimeTo(expiry.u256)
+    let expiry = (await market.requestExpiresAt(request.id)).uint64 + 1
+    await testbed.eth.time.advanceTo(expiry)
 
   proc waitUntilProofRequired(slotId: SlotId) {.async.} =
     await advanceToNextPeriod()
@@ -84,12 +101,12 @@ ethersuite "On-Chain Market":
     check isSome market.configuration
 
   test "fails to instantiate when contract does not have a signer":
-    let storageWithoutSigner = marketplace.connect(ethProvider)
+    let storageWithoutSigner = marketplace.connect(provider)
     expect AssertionDefect:
       discard OnChainMarket.new(storageWithoutSigner)
 
   test "knows signer address":
-    check (await market.getSigner()) == (await ethProvider.getSigner().getAddress())
+    check (await market.getSigner()) == (await provider.getSigner().getAddress())
 
   test "can retrieve proof periodicity":
     let periodicity = await market.periodicity()
@@ -175,7 +192,7 @@ ethersuite "On-Chain Market":
     await market.fillSlot(request.id, slotIndex, proof, request.ask.collateralPerSlot)
     await waitUntilProofRequired(slotId)
     let missingPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
+      periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     await market.markProofAsMissing(slotId, missingPeriod)
     check (await marketplace.missingProofs(slotId)) == 1
@@ -187,7 +204,7 @@ ethersuite "On-Chain Market":
     await market.fillSlot(request.id, slotIndex, proof, request.ask.collateralPerSlot)
     await waitUntilProofRequired(slotId)
     let missingPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
+      periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == true
 
@@ -201,7 +218,7 @@ ethersuite "On-Chain Market":
     await market.freeSlot(slotId(request.id, slotIndex))
 
     let missingPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
+      periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == false
 
@@ -212,7 +229,7 @@ ethersuite "On-Chain Market":
     await market.fillSlot(request.id, slotIndex, proof, request.ask.collateralPerSlot)
 
     let missingPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
+      periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == false
 
@@ -226,7 +243,7 @@ ethersuite "On-Chain Market":
     await market.submitProof(slotId(request.id, slotIndex), proof)
 
     let missingPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
+      periodicity.periodOf(await testbed.eth.time.now())
     await advanceToNextPeriod()
     check (await market.canMarkProofAsMissing(slotId, missingPeriod)) == false
 
@@ -280,8 +297,8 @@ ethersuite "On-Chain Market":
     await subscription.unsubscribe()
 
   test "supports slot reservations full subscriptions":
-    let account2 = ethProvider.getSigner(accounts[2])
-    let account3 = ethProvider.getSigner(accounts[3])
+    let account2 = provider.getSigner(accounts[2])
+    let account3 = provider.getSigner(accounts[3])
 
     await market.requestStorage(request)
 
@@ -385,7 +402,7 @@ ethersuite "On-Chain Market":
           break
         await waitUntilProofRequired(slotId)
         let missingPeriod =
-          periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
+          periodicity.periodOf(await testbed.eth.time.now())
         await advanceToNextPeriod()
         discard await marketplace.markProofAsMissing(slotId, missingPeriod).confirm(1)
     check eventually receivedIds == @[request.id]
@@ -533,11 +550,11 @@ ethersuite "On-Chain Market":
     # for this first slot, we need to jump to the next block and use the
     # timestamp of that block as our "fromTime" parameter to the
     # queryPastSlotFilledEvents function.
-    await ethProvider.advanceTime(10.u256)
+    await testbed.eth.time.advance(10)
 
-    let (_, fromTime) = await ethProvider.blockNumberAndTimestamp(BlockTag.latest)
+    let (_, fromTime) = await provider.blockNumberAndTimestamp(BlockTag.latest)
 
-    await ethProvider.advanceTime(1.u256)
+    await testbed.eth.time.advance(1)
 
     await market.reserveSlot(request.id, 1.uint64)
     await market.reserveSlot(request.id, 2.uint64)
@@ -564,9 +581,9 @@ ethersuite "On-Chain Market":
     await market.fillSlot(request.id, 1.uint64, proof, request.ask.collateralPerSlot)
     await market.fillSlot(request.id, 2.uint64, proof, request.ask.collateralPerSlot)
 
-    await ethProvider.advanceTime(10.u256)
+    await testbed.eth.time.advance(10)
 
-    let (_, fromTime) = await ethProvider.blockNumberAndTimestamp(BlockTag.latest)
+    let (_, fromTime) = await provider.blockNumberAndTimestamp(BlockTag.latest)
 
     let events = await market.queryPastSlotFilledEvents(
       fromTime = fromTime.truncate(SecondsSince1970)
@@ -589,7 +606,7 @@ ethersuite "On-Chain Market":
     switchAccount(host)
     await market.reserveSlot(request.id, 0.uint64)
     await market.fillSlot(request.id, 0.uint64, proof, request.ask.collateralPerSlot)
-    let filledAt = await ethProvider.blockTime(BlockTag.latest)
+    let filledAt = await testbed.eth.time.blockTime(BlockTag.latest)
 
     for slotIndex in 1 ..< request.ask.slots:
       await market.reserveSlot(request.id, slotIndex.uint64)
@@ -597,14 +614,14 @@ ethersuite "On-Chain Market":
         request.id, slotIndex.uint64, proof, request.ask.collateralPerSlot
       )
 
-    let requestEnd = await market.getRequestEnd(request.id)
-    await ethProvider.advanceTimeTo(requestEnd.u256 + 1)
+    let requestEnd = (await market.getRequestEnd(request.id)).uint64
+    await testbed.eth.time.advanceTo(requestEnd + 1)
 
     let startBalance = await token.balanceOf(address)
     await market.freeSlot(request.slotId(0.uint64))
     let endBalance = await token.balanceOf(address)
 
-    let expectedPayout = request.expectedPayout(filledAt, requestEnd.u256)
+    let expectedPayout = request.expectedPayout(filledAt, requestEnd)
     check endBalance == (startBalance + expectedPayout + request.ask.collateralPerSlot)
 
   test "pays rewards to reward recipient, collateral to host":
@@ -616,7 +633,7 @@ ethersuite "On-Chain Market":
     switchAccount(host)
     await market.reserveSlot(request.id, 0.uint64)
     await market.fillSlot(request.id, 0.uint64, proof, request.ask.collateralPerSlot)
-    let filledAt = await ethProvider.blockTime(BlockTag.latest)
+    let filledAt = await testbed.eth.time.blockTime(BlockTag.latest)
 
     for slotIndex in 1 ..< request.ask.slots:
       await market.reserveSlot(request.id, slotIndex.uint64)
@@ -624,8 +641,8 @@ ethersuite "On-Chain Market":
         request.id, slotIndex.uint64, proof, request.ask.collateralPerSlot
       )
 
-    let requestEnd = await market.getRequestEnd(request.id)
-    await ethProvider.advanceTimeTo(requestEnd.u256 + 1)
+    let requestEnd = (await market.getRequestEnd(request.id)).uint64
+    await testbed.eth.time.advanceTo(requestEnd + 1)
 
     let startBalanceHost = await token.balanceOf(hostAddress)
     let startBalanceReward = await token.balanceOf(hostRewardRecipient)
@@ -635,7 +652,7 @@ ethersuite "On-Chain Market":
     let endBalanceHost = await token.balanceOf(hostAddress)
     let endBalanceReward = await token.balanceOf(hostRewardRecipient)
 
-    let expectedPayout = request.expectedPayout(filledAt, requestEnd.u256)
+    let expectedPayout = request.expectedPayout(filledAt, requestEnd)
     check endBalanceHost == (startBalanceHost + request.ask.collateralPerSlot)
     check endBalanceReward == (startBalanceReward + expectedPayout)
 
