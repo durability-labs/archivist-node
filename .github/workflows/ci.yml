@@ -49,4 +49,4 @@ jobs:
           version: 0.6.1
           options: "archivist/ tests/"
           fail: true
-          suggest: true
+          suggest: false
