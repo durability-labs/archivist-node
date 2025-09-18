@@ -45,8 +45,6 @@ suite "Command line interface":
       .node
       .provider
       .noCircomR1cs
-      .noCircomWasm
-      .noCircomZkey
       .availability(false)
       .waitForOutput(expectedOutput)
       .start()
