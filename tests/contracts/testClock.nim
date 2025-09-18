@@ -1,35 +1,44 @@
 import std/times
 import pkg/chronos
+import pkg/ethers
 import archivist/contracts/clock
-import archivist/utils/json
-import ../ethertest
+import ../testbed
+import ../asynctest
 
-ethersuite "On-Chain Clock":
+suite "On-Chain Clock":
+  var testbed: Testbed
+  var hardhat: Hardhat
+
+  setupAll:
+    testbed = await Testbed.start()
+    hardhat = await testbed.hardhat.start()
+
+  teardownAll:
+    await testbed.stop()
+
   var clock: OnChainClock
 
   setup:
-    clock = OnChainClock.new(ethProvider)
+    clock = OnChainClock.new(testbed.eth.provider)
     await clock.start()
 
   teardown:
     await clock.stop()
+    await hardhat.reset()
 
   test "returns the current time of the EVM":
-    let latestBlock = (!await ethProvider.getBlock(BlockTag.latest))
-    let timestamp = latestBlock.timestamp.truncate(int64)
-    check clock.now() == timestamp
+    let blockTime = await testbed.eth.time.blockTime(BlockTag.latest)
+    check clock.now() == blockTime.int64
 
   test "updates time with timestamp of new blocks":
     let future = (getTime() + 42.years).toUnix
-    discard await ethProvider.send("evm_setNextBlockTimestamp", @[%future])
-    discard await ethProvider.send("evm_mine")
+    await testbed.eth.time.advanceTo(future.uint64)
     check eventually clock.now() >= future
 
   test "can wait until a certain time is reached by the chain":
     let future = clock.now() + 42 # seconds
     let waiting = clock.waitUntil(future)
-    discard await ethProvider.send("evm_setNextBlockTimestamp", @[%future])
-    discard await ethProvider.send("evm_mine")
+    await testbed.eth.time.advanceTo(future.uint64)
     check await waiting.withTimeout(chronos.milliseconds(500))
 
   test "can wait until a certain time is reached by the wall-clock":

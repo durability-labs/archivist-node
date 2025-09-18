@@ -1,8 +1,7 @@
 import pkg/chronos
 import archivist/contracts
 import ../asynctest
-import ../ethertest
-import ./time
+import ../testbed
 import ./helpers/mockprovider
 
 # to see supportive information in the test output
@@ -71,20 +70,35 @@ suite "Provider (Mock)":
 
     check actual == latestBlockNumber
 
-ethersuite "Provider":
+suite "Provider":
+  var testbed: Testbed
+  var hardhat: Hardhat
+  var provider: JsonRpcProvider
+
+  setupAll:
+    testbed = await Testbed.start()
+    hardhat = await testbed.hardhat.start()
+    provider = testbed.eth.provider
+
+  teardownAll:
+    await testbed.stop()
+
+  teardown:
+    await hardhat.reset()
+
   proc mineNBlocks(provider: JsonRpcProvider, n: int) {.async.} =
     for _ in 0 ..< n:
       discard await provider.send("evm_mine")
 
   test "blockNumberForEpoch finds closest blockNumber for given epoch time":
     proc createBlockHistory(
-        n: int, blockTime: int
+        n: int, blockTime: uint64
     ): Future[seq[(UInt256, UInt256)]] {.async.} =
       var blocks: seq[(UInt256, UInt256)] = @[]
       for _ in 0 ..< n:
-        await ethProvider.advanceTime(blockTime.u256)
+        await testbed.eth.time.advance(blockTime)
         let (blockNumber, blockTimestamp) =
-          await ethProvider.blockNumberAndTimestamp(BlockTag.latest)
+          await provider.blockNumberAndTimestamp(BlockTag.latest)
         # collect blocknumbers and timestamps
         blocks.add((blockNumber, blockTimestamp))
       blocks
@@ -136,11 +150,11 @@ ethersuite "Provider":
           epochTime = epochTime, expectedBlockNumber = expectedBlockNumber
 
     # mark the beginning of the history for our test
-    await ethProvider.mineNBlocks(1)
+    await provider.mineNBlocks(1)
 
     # set average block time - 10s - we use larger block time
     # then expected in Linea for more precise testing of the binary search
-    let averageBlockTime = 10
+    let averageBlockTime = 10'u64
 
     # create a history of N blocks
     let N = 10
@@ -157,5 +171,5 @@ ethersuite "Provider":
       debug "Validating",
         epochTime = epochTime, expectedBlockNumber = expectedBlockNumber
       let actualBlockNumber =
-        await ethProvider.blockNumberForEpoch(epochTime.truncate(SecondsSince1970))
+        await provider.blockNumberForEpoch(epochTime.truncate(SecondsSince1970))
       check actualBlockNumber == expectedBlockNumber

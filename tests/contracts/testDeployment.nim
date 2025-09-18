@@ -2,9 +2,7 @@ import pkg/ethers
 import pkg/questionable
 import archivist/contracts/deployment
 import archivist/contracts
-
 import ../asynctest
-import ../checktest
 
 type MockProvider = ref object of Provider
   chainId*: UInt256
@@ -14,7 +12,7 @@ method getChainId*(
 ): Future[UInt256] {.async: (raises: [ProviderError, CancelledError]).} =
   return provider.chainId
 
-asyncchecksuite "Deployment":
+suite "Deployment":
   let provider = MockProvider()
 
   test "uses conf value as priority":
