@@ -32,16 +32,12 @@ func duration*(builder: RequestBuilder, duration: uint64): RequestBuilder =
   builder.duration = some duration
   builder
 
-func proofProbability*(
-  builder: RequestBuilder,
-  proofProbability: int
-): RequestBuilder =
+func proofProbability*(builder: RequestBuilder, proofProbability: int): RequestBuilder =
   builder.proofProbability = some proofProbability
   builder
 
 func pricePerBytePerSecond*(
-  builder: RequestBuilder,
-  pricePerBytePerSecond: int
+    builder: RequestBuilder, pricePerBytePerSecond: int
 ): RequestBuilder =
   builder.pricePerBytePerSecond = some pricePerBytePerSecond
   builder
@@ -59,8 +55,7 @@ func tolerance*(builder: RequestBuilder, tolerance: int): RequestBuilder =
   builder
 
 func collateralPerByte*(
-  builder: RequestBuilder,
-  collateralPerByte: int
+    builder: RequestBuilder, collateralPerByte: int
 ): RequestBuilder =
   builder.collateralPerByte = some collateralPerByte
   builder
@@ -72,16 +67,17 @@ proc submit*(builder: RequestBuilder, requester: Node): Future[Request] {.async.
   let url = requester.apiUrl & "/storage/request/" & cid
   let duration = builder.duration |? 60 * 60
   let expiry = builder.expiry |? 10 * 60
-  let body = %*{
-    "cid": cid,
-    "duration": duration,
-    "proofProbability": builder.proofProbability |? 1,
-    "collateralPerByte": builder.collateralPerByte |? 1000,
-    "pricePerBytePerSecond": builder.pricePerBytePerSecond |? 10,
-    "expiry": expiry,
-    "nodes": builder.nodes |? 3,
-    "tolerance": builder.tolerance |? 1,
-  }
+  let body =
+    %*{
+      "cid": cid,
+      "duration": duration,
+      "proofProbability": builder.proofProbability |? 1,
+      "collateralPerByte": builder.collateralPerByte |? 1000,
+      "pricePerBytePerSecond": builder.pricePerBytePerSecond |? 10,
+      "expiry": expiry,
+      "nodes": builder.nodes |? 3,
+      "tolerance": builder.tolerance |? 1,
+    }
   let requestId = await Http.post(url, body).readString()
   await builder.testbed.marketplace.waitForStorageRequested(requestId)
   Request.init(dataset, requestId, duration, expiry)

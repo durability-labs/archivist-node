@@ -13,30 +13,29 @@ import ../testbed
 import ./api
 import ./availability
 
-type
-  NodeBuilder = ref object
-    testbed: Testbed
-    dataDir: ?string
-    apiBindAddress: ?IpAddress
-    apiPort: ?Port
-    discoveryPort: ?Port
-    bootstrapNodes: ?seq[string]
-    logToFile: bool
-    logTopics: seq[string]
-    persistence: bool
-    ethPrivateKey: ? ? string
-    validator: bool
-    validatorGroups: ?int
-    validatorGroupIndex: ?int
-    prover: bool
-    circomR1cs: ? ? string
-    circomWasm: ? ? string
-    circomZkey: ? ? string
-    failProofs: ?int
-    blockTtl: ?int
-    blockMaintenanceInterval: ?int
-    waitForOutput: ? string
-    createInitialAvailability: bool
+type NodeBuilder = ref object
+  testbed: Testbed
+  dataDir: ?string
+  apiBindAddress: ?IpAddress
+  apiPort: ?Port
+  discoveryPort: ?Port
+  bootstrapNodes: ?seq[string]
+  logToFile: bool
+  logTopics: seq[string]
+  persistence: bool
+  ethPrivateKey: ? ?string
+  validator: bool
+  validatorGroups: ?int
+  validatorGroupIndex: ?int
+  prover: bool
+  circomR1cs: ? ?string
+  circomWasm: ? ?string
+  circomZkey: ? ?string
+  failProofs: ?int
+  blockTtl: ?int
+  blockMaintenanceInterval: ?int
+  waitForOutput: ?string
+  createInitialAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
   NodeBuilder(testbed: testbed)
@@ -137,10 +136,7 @@ func waitForOutput*(builder: NodeBuilder, output: string): NodeBuilder =
   builder.waitForOutput = some output
   builder
 
-func availability*(
-  builder: NodeBuilder,
-  createInitialAvailability: bool
-): NodeBuilder =
+func availability*(builder: NodeBuilder, createInitialAvailability: bool): NodeBuilder =
   builder.createInitialAvailability = createInitialAvailability
   builder
 
@@ -173,7 +169,7 @@ proc discoveryPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
 proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.} =
   if nodes =? builder.bootstrapNodes:
     return nodes
-  if firstNode =? builder.testbed.nodeInstances.?[0]:
+  if firstNode =? builder.testbed.nodeInstances .? [0]:
     if spr =? await builder.testbed.api(firstNode).getSpr():
       return @[spr]
 
@@ -248,7 +244,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     address,
     port,
     logFile = builder.logFile,
-    waitForOutput = some builder.waitForOutput |? "REST service started"
+    waitForOutput = some builder.waitForOutput |? "REST service started",
   )
   builder.testbed.nodeInstances.add(node)
   if builder.createInitialAvailability:

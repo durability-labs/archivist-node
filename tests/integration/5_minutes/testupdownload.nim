@@ -6,7 +6,6 @@ import pkg/chronos/apps/http/httpclient
 import ../../testbed
 
 suite "Uploads and downloads":
-
   var testbed: Testbed
   var node1, node2: Node
 
@@ -43,14 +42,15 @@ suite "Uploads and downloads":
       check "404" in error.msg
 
   let exampleData = "some file contents"
-  let exampleDataManifest = %*{
-    "treeCid": "zDzSvJTezk7bJNQqFq8k1iHXY84psNuUfZVusA5bBQQUSuyzDSVL",
-    "datasetSize": 18,
-    "blockSize": 65536,
-    "protected": false,
-    "filename": nil,
-    "mimetype": nil
-  }
+  let exampleDataManifest =
+    %*{
+      "treeCid": "zDzSvJTezk7bJNQqFq8k1iHXY84psNuUfZVusA5bBQQUSuyzDSVL",
+      "datasetSize": 18,
+      "blockSize": 65536,
+      "protected": false,
+      "filename": nil,
+      "mimetype": nil,
+    }
 
   test "node allows downloading only manifest":
     let dataset = await testbed.dataset.data(exampleData).upload(node1)
@@ -72,18 +72,16 @@ suite "Uploads and downloads":
       let dataset = await testbed.dataset.upload(a)
       let download = await testbed.api(b).download(!dataset.cid)
       check download == dataset.data
-    for _ in 0..10:
+
+    for _ in 0 .. 10:
       await testTransfer(node1, node2)
       await testTransfer(node2, node1)
 
   test "node sets file name and mime type for downloads":
     let mimetype = "application/octet-stream"
     let filename = "example.bin"
-    let dataset = await testbed
-      .dataset
-      .mimetype(mimetype)
-      .filename(filename)
-      .upload(node1)
+    let dataset =
+      await testbed.dataset.mimetype(mimetype).filename(filename).upload(node1)
     let response = await testbed.api(node1).raw.download(!dataset.cid)
     let disposition = "attachment; filename=\"" & filename & "\""
     check ("content-type", mimetype) in response.headers
@@ -96,11 +94,9 @@ suite "Uploads and downloads":
 
   test "node rejects bad filenames":
     try:
-      discard await testbed
-        .dataset
-        .data("example data")
-        .filename("exam*ple.txt")
-        .upload(node1)
+      discard await testbed.dataset.data("example data").filename("exam*ple.txt").upload(
+        node1
+      )
       fail()
     except HttpError as error:
       check "422" in error.msg
@@ -108,11 +104,8 @@ suite "Uploads and downloads":
 
   test "node rejects invalid content types":
     try:
-      discard await testbed
-        .dataset
-        .data("example data")
-        .mimetype("hello/world")
-        .upload(node1)
+      discard
+        await testbed.dataset.data("example data").mimetype("hello/world").upload(node1)
       fail()
     except HttpError as error:
       check "422" in error.msg
@@ -123,7 +116,7 @@ suite "Uploads and downloads":
     let response = await testbed.api(node1).raw.download(!dataset.cid)
     let reader = HttpClientResponseRef(response).getBodyReader()
     # read a few bytes to ensure that we're receiving data
-    check (await reader.read(4)) == dataset.data[0..<4]
+    check (await reader.read(4)) == dataset.data[0 ..< 4]
     # close the stream at a low level, to ensure that it isn't closed nicely
     HttpClientResponseRef(response).connection.reader.tsource.close()
     # check that the node hasn't crashed

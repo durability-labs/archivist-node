@@ -11,11 +11,11 @@ func stderr*(process: Process): AsyncStreamReader =
   AsyncProcessRef(process).stderrStream
 
 proc start*(
-  _: type Process,
-  command: string,
-  arguments: seq[string] = @[],
-  workingDir: string = "",
-  environment: seq[(string, string)] = @{:}
+    _: type Process,
+    command: string,
+    arguments: seq[string] = @[],
+    workingDir: string = "",
+    environment: seq[(string, string)] = @{:},
 ): Future[Process] {.async.} =
   let environmentTable = getProcessEnvironment()
   for (key, value) in environment:
@@ -28,7 +28,7 @@ proc start*(
     options = {AsyncProcessOption.UsePath},
     stdinHandle = AsyncProcess.Pipe(),
     stdoutHandle = AsyncProcess.Pipe(),
-    stderrHandle = AsyncProcess.Pipe()
+    stderrHandle = AsyncProcess.Pipe(),
   )
   Process(process)
 
@@ -43,10 +43,10 @@ proc wait*(process: Process) {.async.} =
     raise newException(AsyncProcessError, "Process exit code: " & $status)
 
 proc execute*(
-  _: type Process,
-  command: string,
-  arguments: seq[string] = @[],
-  workingDir: string = ""
+    _: type Process,
+    command: string,
+    arguments: seq[string] = @[],
+    workingDir: string = "",
 ) {.async.} =
   let process = await Process.start(command, arguments, workingDir)
   await process.wait()

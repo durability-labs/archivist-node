@@ -58,8 +58,7 @@ proc suggestDownloadTool(config: NodeConf) =
   const message =
     "Proving circuit files are not found. " &
     "Please run the following to download them: "
-  var instructions =
-    "'./cirdl \"" & $config.circuitDir & "\" " & config.ethProvider
+  var instructions = "'./cirdl \"" & $config.circuitDir & "\" " & config.ethProvider
   if address =? config.marketplaceAddress:
     instructions &= " " & $address
   warn message, instructions

@@ -3,7 +3,6 @@ import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
 suite "Marketplace":
-
   var testbed: Testbed
 
   setup:

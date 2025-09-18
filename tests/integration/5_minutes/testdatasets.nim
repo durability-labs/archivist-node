@@ -6,7 +6,6 @@ import pkg/questionable
 import ../../testbed
 
 suite "Node datasets":
-
   var testbed: Testbed
   var node: Node
 

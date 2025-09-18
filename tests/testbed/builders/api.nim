@@ -15,6 +15,7 @@ export http.close
 
 type ApiBuilder = ref object
   url: string
+
 type RawBuilder = ref object
   url: string
 
@@ -63,15 +64,12 @@ proc getPurchase*(builder: ApiBuilder, id: string): Future[JsonNode] {.async.} =
   await builder.raw.getPurchase(id).readJson()
 
 proc createAvailability*(
-  builder: ApiBuilder,
-  properties: JsonNode
+    builder: ApiBuilder, properties: JsonNode
 ): Future[JsonNode] {.async.} =
   await Http.post(builder.url & "/sales/availability", properties).readJson()
 
 proc updateAvailability*(
-  builder: ApiBuilder,
-  id: string,
-  properties: JsonNode
+    builder: ApiBuilder, id: string, properties: JsonNode
 ) {.async.} =
   await Http.patch(builder.url & "/sales/availability/" & id, properties).close()
 
@@ -82,11 +80,11 @@ proc getAvailability*(builder: ApiBuilder): Future[JsonNode] {.async.} =
   await builder.raw.getAvailability().readJson()
 
 proc upload*(
-  builder: RawBuilder,
-  data: seq[byte],
-  mimetype = string.none,
-  filename = string.none,
-  headers: HttpHeaders = @{:}
+    builder: RawBuilder,
+    data: seq[byte],
+    mimetype = string.none,
+    filename = string.none,
+    headers: HttpHeaders = @{:},
 ): Future[HttpResponse] {.async.} =
   var headers = headers
   if mimetype =? mimetype:
@@ -97,18 +95,16 @@ proc upload*(
   await Http.post(builder.url & "/data", data, headers = headers)
 
 proc upload*(
-  builder: ApiBuilder,
-  data: seq[byte],
-  mimetype = string.none,
-  filename = string.none,
-  headers: HttpHeaders = @{:}
+    builder: ApiBuilder,
+    data: seq[byte],
+    mimetype = string.none,
+    filename = string.none,
+    headers: HttpHeaders = @{:},
 ): Future[string] {.async.} =
   await builder.raw.upload(data, mimetype, filename, headers).readString()
 
 proc download*(
-  builder: RawBuilder,
-  cid: string,
-  network: bool = true
+    builder: RawBuilder, cid: string, network: bool = true
 ): Future[HttpResponse] {.async.} =
   var url = builder.url & "/data/" & cid
   if network:
@@ -116,33 +112,25 @@ proc download*(
   await Http.get(url)
 
 proc download*(
-  builder: ApiBuilder,
-  cid: string,
-  network: bool = true
+    builder: ApiBuilder, cid: string, network: bool = true
 ): Future[seq[byte]] {.async.} =
   await builder.raw.download(cid, network).read()
 
 proc downloadManifest*(
-  builder: RawBuilder,
-  cid: string
+    builder: RawBuilder, cid: string
 ): Future[HttpResponse] {.async.} =
   await Http.get(builder.url & "/data/" & cid & "/network/manifest")
 
-proc downloadManifest*(
-  builder: ApiBuilder,
-  cid: string
-): Future[JsonNode] {.async.} =
+proc downloadManifest*(builder: ApiBuilder, cid: string): Future[JsonNode] {.async.} =
   await builder.raw.downloadManifest(cid).readJson()
 
 proc downloadInBackground*(
-  builder: RawBuilder,
-  cid: string
+    builder: RawBuilder, cid: string
 ): Future[HttpResponse] {.async.} =
   await Http.post(builder.url & "/data/" & cid & "/network")
 
 proc downloadInBackground*(
-  builder: ApiBuilder,
-  cid: string
+    builder: ApiBuilder, cid: string
 ): Future[JsonNode] {.async.} =
   await builder.raw.downloadInBackground(cid).readJson()
 

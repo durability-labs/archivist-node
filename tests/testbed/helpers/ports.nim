@@ -6,9 +6,7 @@ type Protocol* = enum
   Udp
 
 proc isPortFree*(
-  address: IpAddress,
-  port: Port,
-  protocol: Protocol
+    address: IpAddress, port: Port, protocol: Protocol
 ): Future[bool] {.async.} =
   try:
     let address = initTAddress(address, port)
@@ -17,8 +15,9 @@ proc isPortFree*(
       let server = createStreamServer(address, {ReuseAddr})
       await server.closeWait()
     of Udp:
-      proc callback(_: DatagramTransport, _: TransportAddress) {.async:(raises:[]).} =
+      proc callback(_: DatagramTransport, _: TransportAddress) {.async: (raises: []).} =
         discard
+
       let server = newDatagramTransport(callback, local = address, flags = {ReuseAddr})
       await server.closeWait()
     true
@@ -26,9 +25,7 @@ proc isPortFree*(
     false
 
 proc findFreePort*(
-  address: IpAddress,
-  start: Port,
-  protocol = Tcp
+    address: IpAddress, start: Port, protocol = Tcp
 ): Future[Port] {.async.} =
   result = start
   while not await isPortFree(address, result, protocol):

@@ -4,7 +4,6 @@ import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
 suite "Purchasing":
-
   var testbed: Testbed
   var node: Node
 
@@ -22,16 +21,15 @@ suite "Purchasing":
     check request1.id != request2.id
 
   test "node returns purchase status":
-    let request = await testbed
-      .request
-      .duration(100)
-      .pricePerBytePerSecond(4)
-      .proofProbability(6)
-      .expiry(30)
-      .collateralPerByte(2)
-      .nodes(3)
-      .tolerance(1)
-      .submit(node)
+    let request = await testbed.request
+    .duration(100)
+    .pricePerBytePerSecond(4)
+    .proofProbability(6)
+    .expiry(30)
+    .collateralPerByte(2)
+    .nodes(3)
+    .tolerance(1)
+    .submit(node)
     let purchase = await testbed.api(node).getPurchase(request.id)
     check purchase["request"]["content"]["cid"].getStr().len > 0
     check purchase["request"]["expiry"] == %30
@@ -45,18 +43,18 @@ suite "Purchasing":
   test "node remembers purchase status after restart":
     let request = await testbed.request.submit(node)
     await node.restart()
-    check: eventually:
-      let purchase = await testbed.api(node).getPurchase(request.id)
-      purchase["state"] == %"submitted" and
-      purchase["request"]["expiry"] == %request.expiry and
-      purchase["request"]["ask"]["duration"] == %request.duration
+    check:
+      eventually:
+        let purchase = await testbed.api(node).getPurchase(request.id)
+        purchase["state"] == %"submitted" and
+          purchase["request"]["expiry"] == %request.expiry and
+          purchase["request"]["ask"]["duration"] == %request.duration
 
 suite "Purchasing storage request validation":
-
   var testbed: Testbed
   var node: Node
 
-  setupAll: # use a single testbed for all tests
+  setupAll:
     testbed = await Testbed.start()
     discard await testbed.hardhat.start()
     node = await testbed.node.persistence.start()
@@ -100,11 +98,7 @@ suite "Purchasing storage request validation":
   test "rejects invalid erasure coding parameters":
     for (nodes, tolerance) in [(1, 1), (2, 1), (3, 2), (3, 3)]:
       try:
-        discard await testbed
-          .request
-          .nodes(nodes)
-          .tolerance(tolerance)
-          .submit(node)
+        discard await testbed.request.nodes(nodes).tolerance(tolerance).submit(node)
         fail()
       except HttpError as error:
         check "422" in error.msg

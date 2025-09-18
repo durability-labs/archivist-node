@@ -13,14 +13,13 @@ import ./hardhat/npm
 export account.HardhatAccount
 export account.privateKeyFile
 
-type
-  Hardhat* = ref object
-    process: Process
-    accounts: seq[HardhatAccount] = defaultHardhatAccounts
-    logFile: ?File
-    snapshot: JsonNode
-    stdoutHandler: Future[void].Raising([])
-    stderrHandler: Future[void].Raising([])
+type Hardhat* = ref object
+  process: Process
+  accounts: seq[HardhatAccount] = defaultHardhatAccounts
+  logFile: ?File
+  snapshot: JsonNode
+  stdoutHandler: Future[void].Raising([])
+  stderrHandler: Future[void].Raising([])
 
 func accounts*(hardhat: Hardhat): var seq[HardhatAccount] =
   hardhat.accounts
@@ -31,26 +30,22 @@ func jsonRpcUrl*(hardhat: Hardhat): string =
 func marketplaceAddress*(hardhat: Hardhat): string =
   "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"
 
-proc installHardhat {.async.} =
+proc installHardhat() {.async.} =
   if not dirExists(hardhatBinDir):
     await npm(@["install"])
 
-proc runHardhat: Future[Process] {.async.} =
+proc runHardhat(): Future[Process] {.async.} =
   try:
     await Process.start(
       "./hardhat",
       @["node"],
       workingDir = hardhatBinDir,
-      environment = @{"HARDHAT_DISABLE_TELEMETRY_PROMPT": "true"}
+      environment = @{"HARDHAT_DISABLE_TELEMETRY_PROMPT": "true"},
     )
   except ProcessError as error:
-    raise newException(
-      TestbedError,
-      "unable to start hardhat: " & error.msg,
-      error
-    )
+    raise newException(TestbedError, "unable to start hardhat: " & error.msg, error)
 
-proc handleStdout(hardhat: Hardhat) {.async:(raises:[]).} =
+proc handleStdout(hardhat: Hardhat) {.async: (raises: []).} =
   let input = hardhat.process.stdout
   try:
     while not input.atEof:
@@ -63,7 +58,7 @@ proc handleStdout(hardhat: Hardhat) {.async:(raises:[]).} =
   except CatchableError as error:
     raise newException(Defect, "error handling hardhat stdout: " & error.msg)
 
-proc handleStderr(hardhat: Hardhat) {.async:(raises:[]).} =
+proc handleStderr(hardhat: Hardhat) {.async: (raises: []).} =
   let input = hardhat.process.stderr
   try:
     while not input.atEof:
@@ -88,7 +83,7 @@ proc start*(_: type Hardhat, logFile = string.none): Future[Hardhat] {.async.} =
   await installHardhat()
   let hardhat = Hardhat()
   hardhat.process = await runHardhat()
-  hardhat.logFile = logFile.?open(FileMode.fmAppend)
+  hardhat.logFile = logFile .? open(FileMode.fmAppend)
   hardhat.stdoutHandler = hardhat.handleStdout()
   hardhat.stderrHandler = hardhat.handleStderr()
   await sleepAsync(2.seconds)
