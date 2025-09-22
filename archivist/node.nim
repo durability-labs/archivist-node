@@ -136,6 +136,19 @@ proc fetchManifest*(
 
   return manifest.success
 
+proc fetchManifest*(
+    self: ArchivistNodeRef, cid: Cid, expiry: SecondsSince1970
+): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
+  without manifest =? await self.fetchManifest(cid), error:
+    trace "Unable to fetch manifest for cid", cid
+    return failure(error)
+
+  if err =? (await self.networkStore.ensureExpiry(cid, expiry)).errorOption:
+    error "Failed to update manifest block expiry", cid, expiry
+    return failure(err)
+
+  return success(manifest)
+
 proc findPeer*(self: ArchivistNodeRef, peerId: PeerId): Future[?PeerRecord] {.async.} =
   ## Find peer using the discovery service from the given ArchivistNode
   ##
@@ -149,13 +162,9 @@ proc connect*(
 proc updateExpiry*(
     self: ArchivistNodeRef, manifestCid: Cid, expiry: SecondsSince1970
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without manifest =? await self.fetchManifest(manifestCid), error:
+  without manifest =? await self.fetchManifest(manifestCid, expiry), error:
     trace "Unable to fetch manifest for cid", manifestCid
     return failure(error)
-
-  if err =? (await self.networkStore.ensureExpiry(manifestCid, expiry)).errorOption:
-    error "Failed to update manifest block expiry", manifestCid, expiry
-    return failure(err)
 
   try:
     let ensuringFutures = Iter[int].new(0 ..< manifest.blocksCount).mapIt(
@@ -643,7 +652,7 @@ proc onStore(
 
   trace "Received a request to store a slot"
 
-  without manifest =? (await self.fetchManifest(cid)), err:
+  without manifest =? (await self.fetchManifest(cid, expiry)), err:
     trace "Unable to fetch manifest for cid", cid, err = err.msg
     return failure(err)
 
