@@ -180,8 +180,9 @@ proc markProofAsMissing*(
 
 proc canMarkProofAsMissing*(
   marketplace: Marketplace, id: SlotId, period: uint64
-): Confirmable {.
+) {.
   contract,
+  view,
   errors: [
     Marketplace_SlotNotAcceptingProofs, Proofs_PeriodNotEnded,
     Proofs_ValidationTimedOut, Proofs_ProofNotMissing, Proofs_ProofNotRequired,
