@@ -400,7 +400,7 @@ method canMarkProofAsMissing*(
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   try:
     let overrides = CallOverrides(blockTag: some BlockTag.pending)
-    discard await market.contract.canMarkProofAsMissing(id, period, overrides)
+    await market.contract.canMarkProofAsMissing(id, period, overrides)
     return true
   except EthersError as e:
     trace "Proof cannot be marked as missing", msg = e.msg
