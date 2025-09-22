@@ -21,4 +21,4 @@ method start*(self: HostInteractions) {.async.} =
 
 method stop*(self: HostInteractions) {.async.} =
   await self.sales.stop()
-  await procCall ContractInteractions(self).start()
+  await procCall ContractInteractions(self).stop()
