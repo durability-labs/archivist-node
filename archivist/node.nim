@@ -153,9 +153,13 @@ proc updateExpiry*(
     trace "Unable to fetch manifest for cid", manifestCid
     return failure(error)
 
+  if err =? (await self.networkStore.ensureExpiry(manifestCid, expiry)).errorOption:
+    error "Failed to update manifest block expiry", manifestCid, expiry
+    return failure(err)
+
   try:
     let ensuringFutures = Iter[int].new(0 ..< manifest.blocksCount).mapIt(
-        self.networkStore.localStore.ensureExpiry(manifest.treeCid, it, expiry)
+        self.networkStore.ensureExpiry(manifest.treeCid, it, expiry)
       )
 
     let res = await allFinishedFailed[?!void](ensuringFutures)

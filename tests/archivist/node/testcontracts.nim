@@ -109,6 +109,20 @@ asyncchecksuite "Test Node - Host contracts":
 
       check blkMd.expiry == expectedExpiry
 
+  test "onExpiryUpdate callback updates manifest block expiry":
+    let
+      expectedExpiry: SecondsSince1970 = clock.now + DefaultBlockTtl.seconds + 11123
+      expiryUpdateCallback = !sales.onExpiryUpdate
+
+    (await expiryUpdateCallback(manifestCid, expectedExpiry)).tryGet()
+
+    let
+      key = (createBlockExpirationMetadataKey(manifestCid)).tryGet
+      bytes = (await localStoreMetaDs.get(key)).tryGet
+      manifestMd = BlockMetadata.decode(bytes).tryGet
+
+    check manifestMd.expiry == expectedExpiry
+
   test "onStore callback is set":
     check sales.onStore.isSome
 
