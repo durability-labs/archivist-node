@@ -109,10 +109,24 @@ asyncchecksuite "Test Node - Host contracts":
 
       check blkMd.expiry == expectedExpiry
 
+  test "onExpiryUpdate callback updates manifest block expiry":
+    let
+      expectedExpiry: SecondsSince1970 = clock.now + DefaultBlockTtl.seconds + 11123
+      expiryUpdateCallback = !sales.onExpiryUpdate
+
+    (await expiryUpdateCallback(manifestCid, expectedExpiry)).tryGet()
+
+    let
+      key = (createBlockExpirationMetadataKey(manifestCid)).tryGet
+      bytes = (await localStoreMetaDs.get(key)).tryGet
+      manifestMd = BlockMetadata.decode(bytes).tryGet
+
+    check manifestMd.expiry == expectedExpiry
+
   test "onStore callback is set":
     check sales.onStore.isSome
 
-  test "onStore callback":
+  test "onStore callback should invoke onBlocks callback":
     let onStore = !sales.onStore
     var request = StorageRequest.example
     request.content.cid = verifiableBlock.cid
@@ -129,6 +143,19 @@ asyncchecksuite "Test Node - Host contracts":
     (await onStore(request, expiry, 1.uint64, onBlocks, isRepairing = false)).tryGet()
     check fetchedBytes == 12 * DefaultBlockSize.uint
 
+  test "onStore callback should update expiry for blocks":
+    let onStore = !sales.onStore
+    var request = StorageRequest.example
+    request.content.cid = verifiableBlock.cid
+    let expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+
+    let onBlocks = proc(
+        blocks: seq[bt.Block]
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
+      return success()
+
+    (await onStore(request, expiry, 1.uint64, onBlocks, isRepairing = false)).tryGet()
+
     let indexer = verifiable.verifiableStrategy.init(
       0, verifiable.blocksCount - 1, verifiable.numSlots
     )
@@ -141,3 +168,23 @@ asyncchecksuite "Test Node - Host contracts":
         blkMd = BlockMetadata.decode(bytes).tryGet
 
       check blkMd.expiry == expiry
+
+  test "onStore callback should update expiry for manifest":
+    let onStore = !sales.onStore
+    var request = StorageRequest.example
+    request.content.cid = verifiableBlock.cid
+    let expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+
+    let onBlocks = proc(
+        blocks: seq[bt.Block]
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
+      return success()
+
+    (await onStore(request, expiry, 1.uint64, onBlocks, isRepairing = false)).tryGet()
+
+    let
+      key = (createBlockExpirationMetadataKey(verifiableBlock.cid)).tryGet
+      bytes = (await localStoreMetaDs.get(key)).tryGet
+      manifestMd = BlockMetadata.decode(bytes).tryGet
+
+    check manifestMd.expiry == expiry
