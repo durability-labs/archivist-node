@@ -504,7 +504,7 @@ const
 
 proc parseCmdArg*(
     T: typedesc[MultiAddress], input: string
-): MultiAddress {.upraises: [ValueError].} =
+): MultiAddress {.raises: [ValueError].} =
   var ma: MultiAddress
   try:
     let res = MultiAddress.init(input)
@@ -518,7 +518,7 @@ proc parseCmdArg*(
     quit QuitFailure
   ma
 
-proc parseCmdArg*(T: type ThreadCount, input: string): T {.upraises: [ValueError].} =
+proc parseCmdArg*(T: type ThreadCount, input: string): T {.raises: [ValueError].} =
   let count = parseInt(input)
   if count != 0 and count < 2:
     warn "Invalid number of threads", input = input
@@ -585,7 +585,7 @@ proc parseCmdArg*(T: type Duration, val: string): T =
 
 proc readValue*(
     r: var TomlReader, val: var EthAddress
-) {.upraises: [SerializationError, IOError].} =
+) {.raises: [SerializationError, IOError].} =
   val = EthAddress.init(r.readValue(string)).get()
 
 proc readValue*(r: var TomlReader, val: var SignedPeerRecord) =
@@ -613,7 +613,7 @@ proc readValue*(r: var TomlReader, val: var MultiAddress) =
 
 proc readValue*(
     r: var TomlReader, val: var NBytes
-) {.upraises: [SerializationError, IOError].} =
+) {.raises: [SerializationError, IOError].} =
   var value = 0'i64
   var str = r.readValue(string)
   let count = parseSize(str, value, alwaysBin = true)
@@ -624,7 +624,7 @@ proc readValue*(
 
 proc readValue*(
     r: var TomlReader, val: var ThreadCount
-) {.upraises: [SerializationError, IOError].} =
+) {.raises: [SerializationError, IOError].} =
   var str = r.readValue(string)
   try:
     val = parseCmdArg(ThreadCount, str)
@@ -633,7 +633,7 @@ proc readValue*(
 
 proc readValue*(
     r: var TomlReader, val: var Duration
-) {.upraises: [SerializationError, IOError].} =
+) {.raises: [SerializationError, IOError].} =
   var str = r.readValue(string)
   var dur: Duration
   let count = parseDuration(str, dur)
@@ -700,7 +700,7 @@ proc stripAnsi*(v: string): string =
 
   res
 
-proc updateLogLevel*(logLevel: string) {.upraises: [ValueError].} =
+proc updateLogLevel*(logLevel: string) {.raises: [ValueError].} =
   # Updates log levels (without clearing old ones)
   let directives = logLevel.split(";")
   try:

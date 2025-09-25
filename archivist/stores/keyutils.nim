@@ -7,16 +7,14 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import pkg/upraises
-push:
-  {.upraises: [].}
-
 import std/sugar
 import pkg/questionable/results
 import pkg/datastore
 import pkg/libp2p
 import ../namespaces
 import ../manifest
+
+{.push raises: [].}
 
 const
   ArchivistMetaKey* = Key.init(ArchivistMetaNamespace).tryGet

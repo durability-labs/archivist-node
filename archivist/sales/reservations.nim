@@ -27,9 +27,7 @@
 ## | UInt256          | totalRemainingCollateral |     |
 ## +---------------------------------------------------+
 
-import pkg/upraises
-push:
-  {.upraises: [].}
+{.push raises: [].}
 
 import std/sequtils
 import std/sugar
@@ -93,12 +91,12 @@ type
     OnAvailabilitySaved: ?OnAvailabilitySaved
 
   GetNext* = proc(): Future[?seq[byte]] {.
-    upraises: [], gcsafe, async: (raises: [CancelledError]), closure
+    raises: [], gcsafe, async: (raises: [CancelledError]), closure
   .}
   IterDispose* =
     proc(): Future[?!void] {.gcsafe, async: (raises: [CancelledError]), closure.}
   OnAvailabilitySaved* = proc(availability: Availability): Future[void] {.
-    upraises: [], gcsafe, async: (raises: [])
+    raises: [], gcsafe, async: (raises: [])
   .}
   StorableIter* = ref object
     finished*: bool
