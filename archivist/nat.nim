@@ -11,7 +11,6 @@
 
 import
   std/[options, os, strutils, times, net, atomics],
-  stew/shims/net as stewNet,
   stew/[objects, results],
   nat_traversal/[miniupnpc, natpmp],
   json_serialization/std/net

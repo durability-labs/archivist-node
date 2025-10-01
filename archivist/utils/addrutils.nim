@@ -11,9 +11,9 @@
 
 import std/strutils
 import std/options
+import std/net
 
 import pkg/libp2p
-import pkg/stew/shims/net
 import pkg/stew/endians2
 
 func remapAddr*(

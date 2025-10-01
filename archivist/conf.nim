@@ -27,7 +27,6 @@ import pkg/confutils/std/net
 import pkg/toml_serialization
 import pkg/metrics
 import pkg/metrics/chronos_httpserver
-import pkg/stew/shims/net as stewnet
 import pkg/stew/shims/parseutils
 import pkg/stew/byteutils
 import pkg/libp2p
