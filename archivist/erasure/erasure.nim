@@ -181,7 +181,7 @@ proc prepareEncodingData(
       return failure(err)
 
     let pos = indexToPos(params.steps, idx, step)
-    shallowCopy(data[pos], if blk.isEmpty: emptyBlock else: blk.data)
+    data[pos] = if blk.isEmpty: emptyBlock else: blk.data
     cids[idx] = blk.cid
 
     resolved.inc()
@@ -189,7 +189,7 @@ proc prepareEncodingData(
   for idx in indices.filterIt(it >= manifest.blocksCount):
     let pos = indexToPos(params.steps, idx, step)
     trace "Padding with empty block", idx
-    shallowCopy(data[pos], emptyBlock)
+    data[pos] = emptyBlock
     without emptyBlockCid =? emptyCid(manifest.version, manifest.hcodec, manifest.codec),
       err:
       return failure(err)
@@ -249,13 +249,11 @@ proc prepareDecodingData(
     cids[idx] = blk.cid
     if idx >= encoded.rounded:
       trace "Retrieved parity block"
-      shallowCopy(
-        parityData[pos - encoded.ecK], if blk.isEmpty: emptyBlock else: blk.data
-      )
+      parityData[pos - encoded.ecK] = if blk.isEmpty: emptyBlock else: blk.data
       parityPieces.inc
     else:
       trace "Retrieved data block"
-      shallowCopy(data[pos], if blk.isEmpty: emptyBlock else: blk.data)
+      data[pos] = if blk.isEmpty: emptyBlock else: blk.data
       dataPieces.inc
 
     resolved.inc

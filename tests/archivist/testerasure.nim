@@ -253,7 +253,7 @@ suite "Erasure encode/decode":
     for i in 0 ..< encodeResults.len:
       decodeTasks.add(erasure.decode(encodeResults[i].read().tryGet()))
     # wait for all decoding tasks to finish
-    let decodeResults = await allFinished(decodeTasks) # TODO: use allFutures 
+    let decodeResults = await allFinished(decodeTasks) # TODO: use allFutures
 
     for j in 0 ..< decodeTasks.len:
       let
@@ -316,7 +316,7 @@ suite "Erasure encode/decode":
 
     for i in 0 ..< blocksLen:
       let chunk = await chunker.getBytes()
-      shallowCopy(data[i], @(chunk))
+      data[i] = @(chunk)
 
     let
       parity = createDoubleArray(parityLen, BlockSize.int)
