@@ -45,11 +45,11 @@ type
   SafeFunction[T, U] =
     proc(fut: T): Future[U] {.async: (raises: [CancelledError]), gcsafe, closure.}
   SafeIsFinished = proc(): bool {.raises: [], gcsafe, closure.}
-  SafeGenNext[T] = proc(): Future[T] {.async: (raises: [CancelledError]), gcsafe.}
+  SafeGenNext[T] = proc(): Future[T] {.async: (raises: [CancelledError]).}
 
   SafeAsyncIter*[T] = ref object
     finished: bool
-    next*: SafeGenNext[?!T]
+    nextImpl: proc(iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).}
 
 proc flatMap[T, U](
     fut: auto, fn: SafeFunction[?!T, ?!U]
@@ -70,16 +70,14 @@ proc flatMap[T, U](
 proc new*[T](
     _: type SafeAsyncIter[T],
     genNext: SafeGenNext[?!T],
-    isFinished: IsFinished,
+    isFinished: SafeIsFinished,
     finishOnErr: bool = true,
 ): SafeAsyncIter[T] =
   ## Creates a new Iter using elements returned by supplier function `genNext`.
   ## Iter is finished whenever `isFinished` returns true.
   ##
 
-  var iter = SafeAsyncIter[T]()
-
-  proc next(): Future[?!T] {.async: (raises: [CancelledError]).} =
+  proc next(iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).} =
     try:
       if not iter.finished:
         let item = await genNext()
@@ -95,11 +93,10 @@ proc new*[T](
       iter.finished = true
       raise err
 
-  if isFinished():
-    iter.finished = true
+  return SafeAsyncIter[T](nextImpl: next, finished: isFinished())
 
-  iter.next = next
-  return iter
+proc next*[T](iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).} =
+  await iter.nextImpl(iter)
 
 # forward declaration
 proc mapAsync*[T, U](

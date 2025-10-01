@@ -48,6 +48,7 @@ import ../stores
 import ../market
 import ../contracts/requests
 import ../utils/json
+import ../utils/safeasynciter
 import ../units
 
 export requests
@@ -90,18 +91,11 @@ type
     repo: RepoStore
     OnAvailabilitySaved: ?OnAvailabilitySaved
 
-  GetNext* = proc(): Future[?seq[byte]] {.
-    raises: [], gcsafe, async: (raises: [CancelledError]), closure
-  .}
-  IterDispose* =
-    proc(): Future[?!void] {.gcsafe, async: (raises: [CancelledError]), closure.}
   OnAvailabilitySaved* = proc(availability: Availability): Future[void] {.
     raises: [], gcsafe, async: (raises: [])
   .}
-  StorableIter* = ref object
-    finished*: bool
-    next*: GetNext
-    dispose*: IterDispose
+
+  StorableIter* = SafeAsyncIter[?seq[byte]]
 
   ReservationsError* = object of ArchivistError
   ReserveFailedError* = object of ReservationsError
@@ -250,10 +244,6 @@ proc exists*(
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   let exists = await self.repo.metaDs.ds.contains(key)
   return exists
-
-iterator items(self: StorableIter): auto =
-  while not self.finished:
-    yield self.next()
 
 proc getImpl(
     self: Reservations, key: Key
@@ -637,7 +627,6 @@ proc release*(
 proc storables(
     self: Reservations, T: type SomeStorableObject, queryKey: Key = ReservationsKey
 ): Future[?!StorableIter] {.async: (raises: [CancelledError]).} =
-  var iter = StorableIter()
   let query = Query.init(queryKey)
   when T is Availability:
     # should indicate key length of 4, but let the .key logic determine it
@@ -654,21 +643,22 @@ proc storables(
     return failure(error)
 
   # /sales/reservations
-  proc next(): Future[?seq[byte]] {.async: (raises: [CancelledError]).} =
-    await idleAsync()
-    iter.finished = results.finished
-    if not results.finished and res =? (await results.next()) and res.data.len > 0 and
-        key =? res.key and key.namespaces.len == defaultKey.namespaces.len:
-      return some res.data
+  proc next(): Future[?!(?seq[byte])] {.async: (raises: [CancelledError]).} =
+    try:
+      await idleAsync()
+      let res = ? await results.next()
+      if res.data.len > 0 and key =? res.key and key.namespaces.len == defaultKey.namespaces.len:
+        return success some res.data
+      else:
+        return success none seq[byte]
+    except CancelledError as error:
+      discard await noCancel results.dispose()
+      raise error
 
-    return none seq[byte]
+  proc isFinished(): bool =
+    results.finished
 
-  proc dispose(): Future[?!void] {.async: (raises: [CancelledError]).} =
-    return await results.dispose()
-
-  iter.next = next
-  iter.dispose = dispose
-  return success iter
+  return success StorableIter.new(next, isFinished)
 
 proc allImpl(
     self: Reservations, T: type SomeStorableObject, queryKey: Key = ReservationsKey
@@ -680,7 +670,7 @@ proc allImpl(
 
   for storable in storables.items:
     try:
-      without bytes =? (await storable):
+      without bytes =? (? await storable):
         continue
 
       without obj =? T.fromJson(bytes), error:
@@ -721,7 +711,7 @@ proc findAvailability*(
     return none Availability
 
   for item in storables.items:
-    if bytes =? (await item) and availability =? Availability.fromJson(bytes):
+    if bytesResult =? (await item) and bytes =? bytesResult and availability =? Availability.fromJson(bytes):
       if availability.enabled and size <= availability.freeSize and
           duration <= availability.duration and
           collateralPerByte <= availability.maxCollateralPerByte and
@@ -740,12 +730,6 @@ proc findAvailability*(
           availMaxCollateralPerByte = availability.maxCollateralPerByte,
           until = availability.until
 
-        # TODO: As soon as we're on ARC-ORC, we can use destructors
-        # to automatically dispose our iterators when they fall out of scope.
-        # For now:
-        if err =? (await storables.dispose()).errorOption:
-          error "failed to dispose storables iter", error = err.msg
-          return none Availability
         return some availability
 
       trace "availability did not match",
@@ -760,3 +744,4 @@ proc findAvailability*(
         collateralPerByte,
         availMaxCollateralPerByte = availability.maxCollateralPerByte,
         until = availability.until
+

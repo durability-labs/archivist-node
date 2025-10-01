@@ -300,8 +300,6 @@ method listBlocks*(
   ## This is an intensive operation
   ##
 
-  var iter = SafeAsyncIter[Cid]()
-
   let key =
     case blockType
     of BlockType.Manifest: ArchivistManifestKey
@@ -314,19 +312,22 @@ method listBlocks*(
     return failure(err)
 
   proc next(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
-    await idleAsync()
-    if queryIter.finished:
-      iter.finish
-    else:
+    try:
+      await idleAsync()
       if pair =? (await queryIter.next()) and cid =? pair.key:
         doAssert pair.data.len == 0
         trace "Retrieved record from repo", cid
         return Cid.init(cid.value).mapFailure
       else:
         return Cid.failure("No or invalid Cid")
+    except CancelledError as error:
+      discard await noCancel queryIter.dispose()
+      raise error
 
-  iter.next = next
-  return success iter
+  proc isFinished(): bool =
+    queryIter.finished
+
+  return success SafeAsyncIter[Cid].new(next, isFinished)
 
 proc createBlockExpirationQuery(maxNumber: int, offset: int): ?!Query =
   let queryKey = ?createBlockExpirationMetadataQueryKey()
