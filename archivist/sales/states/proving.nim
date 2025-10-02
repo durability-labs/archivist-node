@@ -18,7 +18,6 @@ type
   SlotFreedError* = object of CatchableError
   SlotNotFilledError* = object of CatchableError
   SaleProving* = ref object of SaleState
-    loop: Future[void]
 
 method prove*(
     state: SaleProving,
@@ -103,13 +102,9 @@ method `$`*(state: SaleProving): string =
   "SaleProving"
 
 method onCancelled*(state: SaleProving, request: StorageRequest): ?State =
-  # state.loop cancellation happens automatically when run is cancelled due to
-  # state change
   return some State(SaleCancelled())
 
 method onFailed*(state: SaleProving, request: StorageRequest): ?State =
-  # state.loop cancellation happens automatically when run is cancelled due to
-  # state change
   return some State(SaleFailed())
 
 method run*(
@@ -131,36 +126,12 @@ method run*(
     raiseAssert("clock not set")
 
   try:
-    debug "Start proving", requestId = data.requestId, slotIndex = data.slotIndex
-    try:
-      let loop = state.proveLoop(market, clock, request, data.slotIndex, onProve)
-      state.loop = loop
-      await loop
-    except CancelledError as e:
-      trace "proving loop cancelled"
-      discard
-    except CatchableError as e:
-      error "Proving failed",
-        msg = e.msg, typ = $(type e), stack = e.getStackTrace(), error = e.msgDetail
-      return some State(SaleErrored(error: e))
-    finally:
-      # Cleanup of the proving loop
-      debug "Stopping proving.", requestId = data.requestId, slotIndex = data.slotIndex
-
-      if not state.loop.isNil:
-        if not state.loop.finished:
-          try:
-            await state.loop.cancelAndWait()
-          except CancelledError:
-            discard
-          except CatchableError as e:
-            error "Error during cancellation of proving loop", msg = e.msg
-
-        state.loop = nil
-
+    await state.proveLoop(market, clock, request, data.slotIndex, onProve)
+    debug "Stopping proving.", requestId = data.requestId, slotIndex = data.slotIndex
     return some State(SalePayout())
   except CancelledError as e:
-    trace "SaleProving.run onCleanUp was cancelled", error = e.msgDetail
+    trace "proving loop cancelled"
   except CatchableError as e:
-    error "Error during SaleProving.run", error = e.msgDetail
+    error "Proving failed",
+      msg = e.msg, typ = $(type e), stack = e.getStackTrace(), error = e.msgDetail
     return some State(SaleErrored(error: e))
