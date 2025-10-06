@@ -1,6 +1,5 @@
 import std/sequtils
 import std/sugar
-import std/times
 
 import pkg/chronos
 import pkg/questionable/results
@@ -13,7 +12,6 @@ import pkg/archivist/rng
 import pkg/archivist/utils
 import pkg/archivist/indexingstrategy
 import pkg/taskpools
-import pkg/archivist/utils/arrayutils
 
 import ../asynctest
 import ./helpers
@@ -306,69 +304,53 @@ suite "Erasure encode/decode":
   test "Should complete encode/decode task when cancelled":
     let
       blocksLen = 10000
-      parityLen = 10
-      data = seq[seq[byte]].new()
       chunker = RandomChunker.new(
         rng, size = (blocksLen * BlockSize.int), chunkSize = BlockSize
       )
 
-    data[].setLen(blocksLen)
-
-    for i in 0 ..< blocksLen:
-      let chunk = await chunker.getBytes()
-      data[i] = @(chunk)
-
-    let
-      parity = createDoubleArray(parityLen, BlockSize.int)
-      paritySeq = seq[seq[byte]].new()
-      recovered = createDoubleArray(blocksLen, BlockSize.int)
-      cancelledTaskParity = createDoubleArray(parityLen, BlockSize.int)
-      cancelledTaskRecovered = createDoubleArray(blocksLen, BlockSize.int)
-
-    paritySeq[].setLen(parityLen)
-    defer:
-      freeDoubleArray(parity, parityLen)
-      freeDoubleArray(cancelledTaskParity, parityLen)
-      freeDoubleArray(recovered, blocksLen)
-      freeDoubleArray(cancelledTaskRecovered, blocksLen)
-
-    for i in 0 ..< parityLen:
-      paritySeq[i] = cast[seq[byte]](parity[i])
+    let data = new seq[seq[byte]]
+    let parity = new seq[seq[byte]]
+    let recovered = new seq[seq[byte]]
+    let cancelledTaskParity = new seq[seq[byte]]
+    let cancelledTaskRecovered = new seq[seq[byte]]
+    data[] = newSeqWith(blocksLen, await chunker.getBytes())
+    parity[] = newSeqWith(10, newSeqWith(BlockSize.int, 0'u8))
+    cancelledTaskParity[] = newSeqWith(10, newSeqWith(BlockSize.int, 0'u8))
+    recovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
+    cancelledTaskRecovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
 
     # call asyncEncode to get the parity
     let encFut =
-      await erasure.asyncEncode(BlockSize.int, blocksLen, parityLen, data, parity)
+      await erasure.asyncEncode(BlockSize.int, data, parity)
     check encFut.isOk
 
     let decFut = await erasure.asyncDecode(
-      BlockSize.int, blocksLen, parityLen, data, paritySeq, recovered
+      BlockSize.int, data, parity, recovered
     )
     check decFut.isOk
 
     # call asyncEncode and cancel the task
     let encodeFut = erasure.asyncEncode(
-      BlockSize.int, blocksLen, parityLen, data, cancelledTaskParity
+      BlockSize.int, data, cancelledTaskParity
     )
-    encodeFut.cancel()
+    await encodeFut.cancelAndWait()
 
     try:
       discard await encodeFut
     except CatchableError as exc:
       check exc of CancelledError
     finally:
-      for i in 0 ..< parityLen:
-        check equalMem(parity[i], cancelledTaskParity[i], BlockSize.int)
+      check parity[] == cancelledTaskParity[]
 
     # call asyncDecode and cancel the task
     let decodeFut = erasure.asyncDecode(
-      BlockSize.int, blocksLen, parityLen, data, paritySeq, cancelledTaskRecovered
+      BlockSize.int, data, parity, cancelledTaskRecovered
     )
-    decodeFut.cancel()
+    await decodeFut.cancelAndWait()
 
     try:
       discard await decodeFut
     except CatchableError as exc:
       check exc of CancelledError
     finally:
-      for i in 0 ..< blocksLen:
-        check equalMem(recovered[i], cancelledTaskRecovered[i], BlockSize.int)
+      check recovered[] == cancelledTaskRecovered[]

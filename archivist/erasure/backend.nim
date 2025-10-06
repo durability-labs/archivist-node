@@ -27,8 +27,7 @@ method release*(self: ErasureBackend) {.base, gcsafe.} =
 
 method encode*(
     self: EncoderBackend,
-    buffers, parity: ptr UncheckedArray[ptr UncheckedArray[byte]],
-    dataLen, parityLen: int,
+    buffers, parity: var seq[seq[byte]]
 ): Result[void, cstring] {.base, gcsafe.} =
   ## encode buffers using a backend
   ##
@@ -36,8 +35,7 @@ method encode*(
 
 method decode*(
     self: DecoderBackend,
-    buffers, parity, recovered: ptr UncheckedArray[ptr UncheckedArray[byte]],
-    dataLen, parityLen, recoveredLen: int,
+    buffers, parity, recovered: var seq[seq[byte]]
 ): Result[void, cstring] {.base, gcsafe.} =
   ## decode buffers using a backend
   ##
