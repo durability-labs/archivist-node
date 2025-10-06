@@ -11,73 +11,19 @@ import ../utils/safeasynciter
 
 type KeyVal*[T] = tuple[key: Key, value: T]
 
-proc toAsyncIter*[T](
-    queryIter: QueryIter[T], finishOnErr: bool = true
-): Future[?!AsyncIter[?!QueryResponse[T]]] {.async: (raises: [CancelledError]).} =
-  ## Converts `QueryIter[T]` to `AsyncIter[?!QueryResponse[T]]` and automatically
-  ## runs dispose whenever `QueryIter` finishes or whenever an error occurs (only
-  ## if the flag finishOnErr is set to true)
-  ##
+proc toSafeAsyncIter*[T](queryIter: QueryIter[T]): SafeAsyncIter[QueryResponse[T]] =
+  ## Converts `QueryIter[T]` to `SafeAsyncIter[QueryResponse[T]]`
 
   if queryIter.finished:
-    trace "Disposing iterator"
-    if error =? (await queryIter.dispose()).errorOption:
-      return failure(error)
-    return success(AsyncIter[?!QueryResponse[T]].empty())
-
-  var errOccurred = false
-
-  proc genNext(): Future[?!QueryResponse[T]] {.async.} =
-    let queryResOrErr = await queryIter.next()
-
-    if queryResOrErr.isErr:
-      errOccurred = true
-
-    if queryIter.finished or (errOccurred and finishOnErr):
-      trace "Disposing iterator"
-      if error =? (await queryIter.dispose()).errorOption:
-        return failure(error)
-
-    return queryResOrErr
-
-  proc isFinished(): bool =
-    queryIter.finished or (errOccurred and finishOnErr)
-
-  AsyncIter[?!QueryResponse[T]].new(genNext, isFinished).success
-
-proc toSafeAsyncIter*[T](
-    queryIter: QueryIter[T], finishOnErr: bool = true
-): Future[?!SafeAsyncIter[QueryResponse[T]]] {.async: (raises: [CancelledError]).} =
-  ## Converts `QueryIter[T]` to `SafeAsyncIter[QueryResponse[T]]` and automatically
-  ## runs dispose whenever `QueryIter` finishes or whenever an error occurs (only
-  ## if the flag finishOnErr is set to true)
-  ##
-
-  if queryIter.finished:
-    trace "Disposing iterator"
-    if error =? (await queryIter.dispose()).errorOption:
-      return failure(error)
-    return success(SafeAsyncIter[QueryResponse[T]].empty())
-
-  var errOccurred = false
+    return SafeAsyncIter[QueryResponse[T]].empty()
 
   proc genNext(): Future[?!QueryResponse[T]] {.async: (raises: [CancelledError]).} =
-    let queryResOrErr = await queryIter.next()
-
-    if queryResOrErr.isErr:
-      errOccurred = true
-
-    if queryIter.finished or (errOccurred and finishOnErr):
-      trace "Disposing iterator"
-      if error =? (await queryIter.dispose()).errorOption:
-        return failure(error)
-
-    return queryResOrErr
+    await queryIter.next()
 
   proc isFinished(): bool =
     queryIter.finished
 
-  SafeAsyncIter[QueryResponse[T]].new(genNext, isFinished).success
+  SafeAsyncIter[QueryResponse[T]].new(genNext, isFinished)
 
 proc filterSuccess*[T](
     iter: AsyncIter[?!QueryResponse[T]]

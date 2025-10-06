@@ -312,17 +312,13 @@ method listBlocks*(
     return failure(err)
 
   proc next(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
-    try:
-      await idleAsync()
-      if pair =? (await queryIter.next()) and cid =? pair.key:
-        doAssert pair.data.len == 0
-        trace "Retrieved record from repo", cid
-        return Cid.init(cid.value).mapFailure
-      else:
-        return Cid.failure("No or invalid Cid")
-    except CancelledError as error:
-      discard await noCancel queryIter.dispose()
-      raise error
+    await idleAsync()
+    if pair =? (await queryIter.next()) and cid =? pair.key:
+      doAssert pair.data.len == 0
+      trace "Retrieved record from repo", cid
+      return Cid.init(cid.value).mapFailure
+    else:
+      return Cid.failure("No or invalid Cid")
 
   proc isFinished(): bool =
     queryIter.finished
@@ -361,12 +357,8 @@ method getBlockExpirations*(
     error "Unable to execute block expirations query", err = err.msg
     return failure(err)
 
-  without asyncQueryIter =? (await queryIter.toSafeAsyncIter()), err:
-    error "Unable to convert QueryIter to AsyncIter", err = err.msg
-    return failure(err)
-
   let filteredIter: SafeAsyncIter[KeyVal[BlockMetadata]] =
-    await asyncQueryIter.filterSuccess()
+    await queryIter.toSafeAsyncIter().filterSuccess()
 
   proc mapping(
       kvRes: ?!KeyVal[BlockMetadata]

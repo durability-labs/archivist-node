@@ -644,16 +644,12 @@ proc storables(
 
   # /sales/reservations
   proc next(): Future[?!(?seq[byte])] {.async: (raises: [CancelledError]).} =
-    try:
-      await idleAsync()
-      let res = ? await results.next()
-      if res.data.len > 0 and key =? res.key and key.namespaces.len == defaultKey.namespaces.len:
-        return success some res.data
-      else:
-        return success none seq[byte]
-    except CancelledError as error:
-      discard await noCancel results.dispose()
-      raise error
+    await idleAsync()
+    let res = ? await results.next()
+    if res.data.len > 0 and key =? res.key and key.namespaces.len == defaultKey.namespaces.len:
+      return success some res.data
+    else:
+      return success none seq[byte]
 
   proc isFinished(): bool =
     results.finished
