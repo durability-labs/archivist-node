@@ -16,7 +16,7 @@ logScope:
 
 type
   OnProcessSlot* =
-    proc(item: SlotQueueItem): Future[void] {.gcsafe, async: (raises: []).}
+    proc(item: SlotQueueItem): Future[void] {.gcsafe, async: (raises: [CancelledError]).}
 
   # Non-ref obj copies value when assigned, preventing accidental modification
   # of values which could cause an incorrect order (eg

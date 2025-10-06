@@ -243,7 +243,7 @@ asyncchecksuite "Sales":
     return true
 
   proc addRequestToSaturatedQueue(): Future[StorageRequest] {.async.} =
-    queue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: []).} =
+    queue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: [CancelledError]).} =
       try:
         await sleepAsync(10.millis)
         itemsProcessed.add item
@@ -270,7 +270,7 @@ asyncchecksuite "Sales":
     waitFor run()
 
   test "processes all request's slots once StorageRequested emitted":
-    queue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: []).} =
+    queue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: [CancelledError]).} =
       itemsProcessed.add item
     createAvailability()
     await market.requestStorage(request)
@@ -307,7 +307,7 @@ asyncchecksuite "Sales":
     check always (not itemsProcessed.contains(expected))
 
   test "adds slot index to slot queue once SlotFreed emitted":
-    queue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: []).} =
+    queue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: [CancelledError]).} =
       itemsProcessed.add item
 
     createAvailability()
