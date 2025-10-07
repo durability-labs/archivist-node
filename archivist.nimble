@@ -18,6 +18,7 @@ requires "https://github.com/durability-labs/nim-serde >= 2.1.0"
 requires "https://github.com/durability-labs/nim-leopard >= 0.2.0"
 requires "https://github.com/durability-labs/nim-chronicles#version-0-12-3-pre" # TODO: update to version 0.12.3 once its released
 requires "https://github.com/guzba/zippy >= 0.10.16"
+requires "https://github.com/arnetheduck/nph#c6e03162dc2820d3088660f644818d7040e95791" # TODO: update once released
 
 import std/os
 
@@ -46,3 +47,9 @@ task testAll, "Run all tests":
   testContractsTask()
   testIntegrationTask()
   testToolsTask()
+
+task format, "Format code using NPH":
+  exec "nph *.nim"
+  exec "nph archivist/"
+  exec "nph tests/"
+  exec "nph tools/"
