@@ -645,8 +645,9 @@ proc storables(
   # /sales/reservations
   proc next(): Future[?!(?seq[byte])] {.async: (raises: [CancelledError]).} =
     await idleAsync()
-    let res = ? await results.next()
-    if res.data.len > 0 and key =? res.key and key.namespaces.len == defaultKey.namespaces.len:
+    let res = ?await results.next()
+    if res.data.len > 0 and key =? res.key and
+        key.namespaces.len == defaultKey.namespaces.len:
       return success some res.data
     else:
       return success none seq[byte]
@@ -666,7 +667,7 @@ proc allImpl(
 
   for storable in storables.items:
     try:
-      without bytes =? (? await storable):
+      without bytes =? (?await storable):
         continue
 
       without obj =? T.fromJson(bytes), error:
@@ -707,7 +708,8 @@ proc findAvailability*(
     return none Availability
 
   for item in storables.items:
-    if bytesResult =? (await item) and bytes =? bytesResult and availability =? Availability.fromJson(bytes):
+    if bytesResult =? (await item) and bytes =? bytesResult and
+        availability =? Availability.fromJson(bytes):
       if availability.enabled and size <= availability.freeSize and
           duration <= availability.duration and
           collateralPerByte <= availability.maxCollateralPerByte and
@@ -740,4 +742,3 @@ proc findAvailability*(
         collateralPerByte,
         availMaxCollateralPerByte = availability.maxCollateralPerByte,
         until = availability.until
-

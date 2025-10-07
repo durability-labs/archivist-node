@@ -289,17 +289,14 @@ proc init*(
 
 proc leopardEncodeTask(tp: Taskpool, task: ptr EncodeTask) {.gcsafe.} =
   # Task suitable for running in taskpools - look, no GC!
-  let encoder =
-    task[].erasure.encoderProvider(task[].blockSize, task[].blocks[].len, task[].parity[].len)
+  let encoder = task[].erasure.encoderProvider(
+    task[].blockSize, task[].blocks[].len, task[].parity[].len
+  )
   defer:
     encoder.release()
     discard task[].signal.fireSync()
 
-  if (
-    let res =
-      encoder.encode(task[].blocks[], task[].parity[])
-    res.isErr
-  ):
+  if (let res = encoder.encode(task[].blocks[], task[].parity[]); res.isErr):
     warn "Error from leopard encoder backend!", error = $res.error
 
     task[].success.store(false)
@@ -389,19 +386,15 @@ proc encodeData(
       trace "Erasure coding data", data = data[].len
 
       try:
-        if err =? (
-          await self.asyncEncode(
-            manifest.blockSize.int, data, parity
-          )
-        ).errorOption:
+        if err =?
+            (await self.asyncEncode(manifest.blockSize.int, data, parity)).errorOption:
           return failure(err)
       except CancelledError as exc:
         raise exc
 
       var idx = params.rounded + step
       for j in 0 ..< params.ecM:
-        without blk =? bt.Block.new(parity[j]),
-          error:
+        without blk =? bt.Block.new(parity[j]), error:
           trace "Unable to create parity block", err = error.msg
           return failure(error)
 
@@ -463,18 +456,15 @@ proc encode*(
 
 proc leopardDecodeTask(tp: Taskpool, task: ptr DecodeTask) {.gcsafe.} =
   # Task suitable for running in taskpools - look, no GC!
-  let decoder =
-    task[].erasure.decoderProvider(task[].blockSize, task[].blocks[].len, task[].parity[].len)
+  let decoder = task[].erasure.decoderProvider(
+    task[].blockSize, task[].blocks[].len, task[].parity[].len
+  )
   defer:
     decoder.release()
     discard task[].signal.fireSync()
 
   if (
-    let res = decoder.decode(
-      task[].blocks[],
-      task[].parity[],
-      task[].recovered[]
-    )
+    let res = decoder.decode(task[].blocks[], task[].parity[], task[].recovered[])
     res.isErr
   ):
     warn "Error from leopard decoder backend!", error = $res.error
@@ -568,9 +558,7 @@ proc decodeInternal(
       trace "Erasure decoding data"
       try:
         if err =? (
-          await self.asyncDecode(
-            encoded.blockSize.int, data, parityData, recovered
-          )
+          await self.asyncDecode(encoded.blockSize.int, data, parityData, recovered)
         ).errorOption:
           return failure(err)
       except CancelledError as exc:

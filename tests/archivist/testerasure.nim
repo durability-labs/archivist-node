@@ -320,19 +320,14 @@ suite "Erasure encode/decode":
     cancelledTaskRecovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
 
     # call asyncEncode to get the parity
-    let encFut =
-      await erasure.asyncEncode(BlockSize.int, data, parity)
+    let encFut = await erasure.asyncEncode(BlockSize.int, data, parity)
     check encFut.isOk
 
-    let decFut = await erasure.asyncDecode(
-      BlockSize.int, data, parity, recovered
-    )
+    let decFut = await erasure.asyncDecode(BlockSize.int, data, parity, recovered)
     check decFut.isOk
 
     # call asyncEncode and cancel the task
-    let encodeFut = erasure.asyncEncode(
-      BlockSize.int, data, cancelledTaskParity
-    )
+    let encodeFut = erasure.asyncEncode(BlockSize.int, data, cancelledTaskParity)
     await encodeFut.cancelAndWait()
 
     try:
@@ -343,9 +338,8 @@ suite "Erasure encode/decode":
       check parity[] == cancelledTaskParity[]
 
     # call asyncDecode and cancel the task
-    let decodeFut = erasure.asyncDecode(
-      BlockSize.int, data, parity, cancelledTaskRecovered
-    )
+    let decodeFut =
+      erasure.asyncDecode(BlockSize.int, data, parity, cancelledTaskRecovered)
     await decodeFut.cancelAndWait()
 
     try:

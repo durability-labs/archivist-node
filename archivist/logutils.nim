@@ -184,16 +184,12 @@ template formatIt*(format: LogFormat, T: typedesc, body: untyped) =
       let v = opts.map(opt => opt.formatJsonOption)
       writeValue(writer, json.`%`(v))
 
-    proc writeValue*(
-        writer: var JsonWriter, val: seq[T]
-    ) {.raises: [IOError].} =
+    proc writeValue*(writer: var JsonWriter, val: seq[T]) {.raises: [IOError].} =
       var it {.inject, used.}: T
       let v = val.map(it => body)
       writeValue(writer, json.`%`(v))
 
-    proc writeValue*(
-        writer: var JsonWriter, val: T
-    ) {.raises: [IOError].} =
+    proc writeValue*(writer: var JsonWriter, val: T) {.raises: [IOError].} =
       var it {.inject, used.}: T = val
       let v = body
       writeValue(writer, json.`%`(v))
@@ -231,9 +227,7 @@ template formatIt*(format: LogFormat, T: typedesc, body: untyped) =
       let v = val.map(it => body)
       setProperty(r, key, v.formatTextLineSeq)
 
-    proc setProperty*(
-        r: var TextLogRecord, key: string, val: T
-    ) {.raises: [IOError].} =
+    proc setProperty*(r: var TextLogRecord, key: string, val: T) {.raises: [IOError].} =
       var it {.inject, used.}: T = val
       let v = body
       setProperty(r, key, v)

@@ -49,7 +49,8 @@ type
 
   SafeAsyncIter*[T] = ref object
     finished: bool
-    nextImpl: proc(iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).}
+    nextImpl:
+      proc(iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).}
 
 proc flatMap[T, U](
     fut: auto, fn: SafeFunction[?!T, ?!U]
@@ -95,7 +96,9 @@ proc new*[T](
 
   return SafeAsyncIter[T](nextImpl: next, finished: isFinished())
 
-proc next*[T](iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).} =
+proc next*[T](
+    iter: SafeAsyncIter[T]
+): Future[?!T] {.async: (raises: [CancelledError]).} =
   await iter.nextImpl(iter)
 
 # forward declaration

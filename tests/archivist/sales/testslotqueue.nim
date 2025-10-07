@@ -80,7 +80,9 @@ suite "Slot queue":
 
   proc newSlotQueue(maxSize, maxWorkers: int, processSlotDelay = 1.millis) =
     queue = SlotQueue.new(maxWorkers, maxSize.uint16)
-    queue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: [CancelledError]).} =
+    queue.onProcessSlot = proc(
+        item: SlotQueueItem
+    ) {.async: (raises: [CancelledError]).} =
       try:
         await sleepAsync(processSlotDelay)
       except CatchableError as exc:

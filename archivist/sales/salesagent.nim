@@ -117,9 +117,7 @@ method onFulfilled*(
   if agent.data.requestId == requestId and not cancelled.isNil and not cancelled.finished:
     cancelled.cancelSoon()
 
-method onFailed*(
-    agent: SalesAgent, requestId: RequestId
-) {.base, gcsafe, raises: [].} =
+method onFailed*(agent: SalesAgent, requestId: RequestId) {.base, gcsafe, raises: [].} =
   without request =? agent.data.request:
     return
   if agent.data.requestId == requestId:
