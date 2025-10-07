@@ -25,7 +25,7 @@ method workingDir(node: ArchivistProcess): string =
   return currentSourcePath() / ".." / ".." / ".."
 
 method executable(node: ArchivistProcess): string =
-  return "build" / "archivist"
+  return "build" / "integration-test" / "archivist-with-proof-failures"
 
 method startedOutput(node: ArchivistProcess): string =
   return "REST service started"
