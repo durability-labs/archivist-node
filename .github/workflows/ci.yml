@@ -1,15 +1,11 @@
-name: CI
+name: Continuous Integration
 
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
   workflow_dispatch:
-
-env:
-  cache_nonce: 0 # Allows for easily busting actions/cache caches
-  nim_version: v2.2.4
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -20,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
-      cache_nonce: ${{ env.cache_nonce }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -36,7 +31,6 @@ jobs:
     uses: ./.github/workflows/ci-reusable.yml
     with:
       matrix: ${{ needs.matrix.outputs.matrix }}
-      cache_nonce: ${{ needs.matrix.outputs.cache_nonce }}
 
   linting:
     runs-on: ubuntu-latest
