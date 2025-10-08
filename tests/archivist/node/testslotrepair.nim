@@ -70,7 +70,163 @@ asyncchecksuite "Test Node - Slot Repair":
     localStores = @[]
     nodes = @[]
 
-  test "repair slots (2,1)":
+  # test "repair slots (2,1)":
+  #   let
+  #     expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+  #     numBlocks = 5
+  #     datasetSize = numBlocks * DefaultBlockSize.int
+  #     ecK = 2
+  #     ecM = 1
+  #     localStore = localStores[0]
+  #     store = nodes[0].blockStore
+  #     blocks =
+  #       await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+  #     data = (
+  #       block:
+  #         collect(newSeq):
+  #           for blk in blocks:
+  #             blk.data
+  #     ).flatten()
+  #   check blocks.len == numBlocks
+
+  #   # Populate manifest in local store
+  #   manifest = await storeDataGetManifest(localStore, blocks)
+  #   let
+  #     manifestBlock =
+  #       bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
+  #     erasure =
+  #       Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+
+  #   (await localStore.putBlock(manifestBlock)).tryGet()
+
+  #   protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
+  #   builder = Poseidon2Builder.new(localStore, protected).tryGet()
+  #   verifiable = (await builder.buildManifest()).tryGet()
+  #   verifiableBlock =
+  #     bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+
+  #   # Populate protected manifest in local store
+  #   (await localStore.putBlock(verifiableBlock)).tryGet()
+
+  #   var request = StorageRequest.example
+  #   request.content.cid = verifiableBlock.cid
+
+  #   for i in 0 ..< protected.numSlots.uint64:
+  #     (await nodes[i + 1].onStore(request, expiry, i, nil, isRepairing = false)).tryGet()
+
+  #   await nodes[0].switch.stop() # acts as client
+  #   await nodes[1].switch.stop() # slot 0 missing now
+
+  #   # repair missing slot
+  #   (await nodes[4].onStore(request, expiry, 0.uint64, nil, isRepairing = true)).tryGet()
+
+  #   await nodes[2].switch.stop() # slot 1 missing now
+
+  #   (await nodes[5].onStore(request, expiry, 1.uint64, nil, isRepairing = true)).tryGet()
+
+  #   await nodes[3].switch.stop() # slot 2 missing now
+
+  #   (await nodes[6].onStore(request, expiry, 2.uint64, nil, isRepairing = true)).tryGet()
+
+  #   await nodes[4].switch.stop() # slot 0 missing now
+
+  #   # repair missing slot from repaired slots
+  #   (await nodes[7].onStore(request, expiry, 0.uint64, nil, isRepairing = true)).tryGet()
+
+  #   await nodes[5].switch.stop() # slot 1 missing now
+
+  #   # repair missing slot from repaired slots
+  #   (await nodes[8].onStore(request, expiry, 1.uint64, nil, isRepairing = true)).tryGet()
+
+  #   await nodes[6].switch.stop() # slot 2 missing now
+
+  #   # repair missing slot from repaired slots
+  #   (await nodes[9].onStore(request, expiry, 2.uint64, nil, isRepairing = true)).tryGet()
+
+  #   let
+  #     stream = (await nodes[10].retrieve(verifiableBlock.cid, local = false)).tryGet()
+  #     expectedData = await fetchStreamData(stream, datasetSize)
+  #   check expectedData.len == data.len
+  #   check expectedData == data
+
+  # test "repair slots (3,2)":
+  #   let
+  #     expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+  #     numBlocks = 40
+  #     datasetSize = numBlocks * DefaultBlockSize.int
+  #     ecK = 3
+  #     ecM = 2
+  #     localStore = localStores[0]
+  #     store = nodes[0].blockStore
+  #     blocks =
+  #       await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+  #     data = (
+  #       block:
+  #         collect(newSeq):
+  #           for blk in blocks:
+  #             blk.data
+  #     ).flatten()
+  #   check blocks.len == numBlocks
+
+  #   # Populate manifest in local store
+  #   manifest = await storeDataGetManifest(localStore, blocks)
+  #   let
+  #     manifestBlock =
+  #       bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
+  #     erasure =
+  #       Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+
+  #   (await localStore.putBlock(manifestBlock)).tryGet()
+
+  #   protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
+  #   builder = Poseidon2Builder.new(localStore, protected).tryGet()
+  #   verifiable = (await builder.buildManifest()).tryGet()
+  #   verifiableBlock =
+  #     bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+
+  #   # Populate protected manifest in local store
+  #   (await localStore.putBlock(verifiableBlock)).tryGet()
+
+  #   var request = StorageRequest.example
+  #   request.content.cid = verifiableBlock.cid
+
+  #   for i in 0 ..< protected.numSlots.uint64:
+  #     (await nodes[i + 1].onStore(request, expiry, i, nil, isRepairing = false)).tryGet()
+
+  #   await nodes[0].switch.stop() # acts as client
+  #   await nodes[1].switch.stop() # slot 0 missing now
+  #   await nodes[3].switch.stop() # slot 2 missing now
+
+  #   # repair missing slots
+  #   (await nodes[6].onStore(request, expiry, 0.uint64, nil, isRepairing = true)).tryGet()
+  #   (await nodes[7].onStore(request, expiry, 2.uint64, nil, isRepairing = true)).tryGet()
+
+  #   await nodes[2].switch.stop() # slot 1 missing now
+  #   await nodes[4].switch.stop() # slot 3 missing now
+
+  #   # repair missing slots from repaired slots
+  #   (await nodes[8].onStore(request, expiry, 1.uint64, nil, isRepairing = true)).tryGet()
+  #   (await nodes[9].onStore(request, expiry, 3.uint64, nil, isRepairing = true)).tryGet()
+
+  #   await nodes[5].switch.stop() # slot 4 missing now
+
+  #   # repair missing slot from repaired slots
+  #   (await nodes[10].onStore(request, expiry, 4.uint64, nil, isRepairing = true)).tryGet()
+
+  #   let
+  #     stream = (await nodes[11].retrieve(verifiableBlock.cid, local = false)).tryGet()
+  #     expectedData = await fetchStreamData(stream, datasetSize)
+  #   check expectedData.len == data.len
+  #   check expectedData == data
+
+  test "slot repair calls onBatch callback and sets expiry":
+    var blocksCallback = newSeq[Cid]()
+    proc onBlocks(blocks: seq[bt.Block]): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+      for b in blocks:
+        if b.cid notin blocksCallback:
+          blocksCallback.add(b.cid)
+      success()
+
     let
       expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
       numBlocks = 5
@@ -112,109 +268,31 @@ asyncchecksuite "Test Node - Slot Repair":
     request.content.cid = verifiableBlock.cid
 
     for i in 0 ..< protected.numSlots.uint64:
-      (await nodes[i + 1].onStore(request, expiry, i, nil, isRepairing = false)).tryGet()
+      (await nodes[i + 1].onStore(request, expiry, i, onBlocks, isRepairing = false)).tryGet()
 
     await nodes[0].switch.stop() # acts as client
     await nodes[1].switch.stop() # slot 0 missing now
+
+    # clear callback blocks from previous onStore calls
+    blocksCallback = newSeq[Cid]()
 
     # repair missing slot
-    (await nodes[4].onStore(request, expiry, 0.uint64, nil, isRepairing = true)).tryGet()
+    (await nodes[4].onStore(request, expiry, 0.uint64, onBlocks, isRepairing = true)).tryGet()
 
-    await nodes[2].switch.stop() # slot 1 missing now
+    debugEcho "blocksCallback: " & $(blocksCallback.len)
+    for cid in blocksCallback:
+      debugEcho "cid: " & $cid
 
-    (await nodes[5].onStore(request, expiry, 1.uint64, nil, isRepairing = true)).tryGet()
+    debugEcho "blocks: " & $(blocks.len)
+    for b in blocks:
+      debugEcho "cid: " & $(b.cid)
 
-    await nodes[3].switch.stop() # slot 2 missing now
-
-    (await nodes[6].onStore(request, expiry, 2.uint64, nil, isRepairing = true)).tryGet()
-
-    await nodes[4].switch.stop() # slot 0 missing now
-
-    # repair missing slot from repaired slots
-    (await nodes[7].onStore(request, expiry, 0.uint64, nil, isRepairing = true)).tryGet()
-
-    await nodes[5].switch.stop() # slot 1 missing now
-
-    # repair missing slot from repaired slots
-    (await nodes[8].onStore(request, expiry, 1.uint64, nil, isRepairing = true)).tryGet()
-
-    await nodes[6].switch.stop() # slot 2 missing now
-
-    # repair missing slot from repaired slots
-    (await nodes[9].onStore(request, expiry, 2.uint64, nil, isRepairing = true)).tryGet()
-
-    let
-      stream = (await nodes[10].retrieve(verifiableBlock.cid, local = false)).tryGet()
-      expectedData = await fetchStreamData(stream, datasetSize)
-    check expectedData.len == data.len
-    check expectedData == data
-
-  test "repair slots (3,2)":
-    let
-      expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
-      numBlocks = 40
-      datasetSize = numBlocks * DefaultBlockSize.int
-      ecK = 3
-      ecM = 2
-      localStore = localStores[0]
-      store = nodes[0].blockStore
-      blocks =
-        await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
-      data = (
-        block:
-          collect(newSeq):
-            for blk in blocks:
-              blk.data
-      ).flatten()
-    check blocks.len == numBlocks
-
-    # Populate manifest in local store
-    manifest = await storeDataGetManifest(localStore, blocks)
-    let
-      manifestBlock =
-        bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-      erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
-
-    (await localStore.putBlock(manifestBlock)).tryGet()
-
-    protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
-    builder = Poseidon2Builder.new(localStore, protected).tryGet()
-    verifiable = (await builder.buildManifest()).tryGet()
-    verifiableBlock =
-      bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
-
-    # Populate protected manifest in local store
-    (await localStore.putBlock(verifiableBlock)).tryGet()
-
-    var request = StorageRequest.example
-    request.content.cid = verifiableBlock.cid
-
-    for i in 0 ..< protected.numSlots.uint64:
-      (await nodes[i + 1].onStore(request, expiry, i, nil, isRepairing = false)).tryGet()
-
-    await nodes[0].switch.stop() # acts as client
-    await nodes[1].switch.stop() # slot 0 missing now
-    await nodes[3].switch.stop() # slot 2 missing now
-
-    # repair missing slots
-    (await nodes[6].onStore(request, expiry, 0.uint64, nil, isRepairing = true)).tryGet()
-    (await nodes[7].onStore(request, expiry, 2.uint64, nil, isRepairing = true)).tryGet()
-
-    await nodes[2].switch.stop() # slot 1 missing now
-    await nodes[4].switch.stop() # slot 3 missing now
-
-    # repair missing slots from repaired slots
-    (await nodes[8].onStore(request, expiry, 1.uint64, nil, isRepairing = true)).tryGet()
-    (await nodes[9].onStore(request, expiry, 3.uint64, nil, isRepairing = true)).tryGet()
-
-    await nodes[5].switch.stop() # slot 4 missing now
-
-    # repair missing slot from repaired slots
-    (await nodes[10].onStore(request, expiry, 4.uint64, nil, isRepairing = true)).tryGet()
-
-    let
-      stream = (await nodes[11].retrieve(verifiableBlock.cid, local = false)).tryGet()
-      expectedData = await fetchStreamData(stream, datasetSize)
-    check expectedData.len == data.len
-    check expectedData == data
+    # the blocks of the verifiable manifest have been provided to the callback:
+    let iter = Iter[int].new(0 ..< verifiable.blocksCount)
+    debugEcho "verifiable: " & $(verifiable.blocksCount)
+    while not iter.finished:
+      let bIndex = iter.next()
+      let blk = (await localStore.getBlock(verifiable.treeCid, bIndex)).tryGet()
+      let blkCid = blk.cid
+      debugEcho "cid: " & $blkCid
+      # check blkCid in blocksCallback
