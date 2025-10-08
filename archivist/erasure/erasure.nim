@@ -670,7 +670,7 @@ proc decode*(self: Erasure, encoded: Manifest): Future[?!Manifest] {.async.} =
 
   return decoded.success
 
-proc repair*(self: Erasure, encoded: Manifest): Future[?!void] {.async.} =
+proc repair*(self: Erasure, encoded: Manifest): Future[?!seq[Cid]] {.async.} =
   ## Repair a protected manifest by reconstructing the full dataset
   ##
   ## `encoded` - the encoded (protected) manifest to
@@ -706,7 +706,7 @@ proc repair*(self: Erasure, encoded: Manifest): Future[?!void] {.async.} =
       "Original tree root differs from the repaired tree root encoded out of recovered data"
     )
 
-  return success()
+  return success(cids[])
 
 proc start*(self: Erasure) {.async.} =
   return

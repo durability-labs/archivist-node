@@ -653,16 +653,16 @@ proc onStore(
   trace "Received a request to store a slot"
 
   without manifest =? (await self.fetchManifest(cid, expiry)), err:
-    trace "Unable to fetch manifest for cid", cid, err = err.msg
+    error "Unable to fetch manifest for cid", cid, err = err.msg
     return failure(err)
 
   without builder =?
     Poseidon2Builder.new(self.networkStore, manifest, manifest.verifiableStrategy), err:
-    trace "Unable to create slots builder", err = err.msg
+    error "Unable to create slots builder", err = err.msg
     return failure(err)
 
   if slotIdx > manifest.slotRoots.high.uint64:
-    trace "Slot index not in manifest", slotIdx
+    error "Slot index not in manifest", slotIdx
     return failure(newException(ArchivistError, "Slot index not in manifest"))
 
   proc updateExpiry(
@@ -675,11 +675,11 @@ proc onStore(
 
     let res = await allFinishedFailed[?!void](ensureExpiryFutures)
     if res.failure.len > 0:
-      trace "Some blocks failed to update expiry", len = res.failure.len
+      error "Some blocks failed to update expiry", len = res.failure.len
       return failure("Some blocks failed to update expiry (" & $res.failure.len & " )")
 
     if not blocksCb.isNil and err =? (await blocksCb(blocks)).errorOption:
-      trace "Unable to process blocks", err = err.msg
+      error "Unable to process blocks", err = err.msg
       return failure(err)
 
     return success()
@@ -694,10 +694,26 @@ proc onStore(
       let erasure = Erasure.new(
         self.networkStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
       )
-      if err =? (await erasure.repair(manifest)).errorOption:
+      without cids =? (await erasure.repair(manifest)), err:
         error "Unable to erasure decode repairing manifest",
           cid = manifest.treeCid, exc = err.msg
         return failure(err)
+      
+      # 'cids' could refer to all the CIDs of a slot. This could be large.
+      # we take subsets of default batch size and apply the updateExpiry call.
+      let batches = cids.distribute(DefaultFetchBatch, spread = false)
+      for batch in batches:
+        let blockFutures = batch.mapIt(self.networkStore.getBlock(it))
+        if blockFutures.len == 0:
+          continue
+        without blockResults =? await allFinishedValues[?!bt.Block](blockFutures), err:
+          error "Failed to fetch repaired blocks", err = err.msg
+          return failure(err)
+        let blocks = blockResults.filterIt(it.isSuccess()).mapIt(it.value)
+        if err =? (await updateExpiry(blocks)).errorOption:
+          error "Failed to apply updateExpiry to repaired blocks", err = err.msg
+          return failure(err)
+
     except CatchableError as exc:
       error "Error erasure decoding repairing manifest",
         cid = manifest.treeCid, exc = exc.msg
@@ -706,25 +722,25 @@ proc onStore(
     without indexer =?
       manifest.verifiableStrategy.init(0, manifest.blocksCount - 1, manifest.numSlots).catch,
       err:
-      trace "Unable to create indexing strategy from protected manifest", err = err.msg
+      error "Unable to create indexing strategy from protected manifest", err = err.msg
       return failure(err)
 
     without blksIter =? indexer.getIndices(slotIdx.int).catch, err:
-      trace "Unable to get indices from strategy", err = err.msg
+      error "Unable to get indices from strategy", err = err.msg
       return failure(err)
 
     if err =? (
       await self.fetchBatched(manifest.treeCid, blksIter, onBatch = updateExpiry)
     ).errorOption:
-      trace "Unable to fetch blocks", err = err.msg
+      error "Unable to fetch blocks", err = err.msg
       return failure(err)
 
   without slotRoot =? (await builder.buildSlot(slotIdx.int)), err:
-    trace "Unable to build slot", err = err.msg
+    error "Unable to build slot", err = err.msg
     return failure(err)
 
   if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[slotIdx]:
-    trace "Slot root mismatch",
+    error "Slot root mismatch",
       manifest = manifest.slotRoots[slotIdx.int], recovered = slotRoot.toSlotCid()
     return failure(newException(ArchivistError, "Slot root mismatch"))
 
