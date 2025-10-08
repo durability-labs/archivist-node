@@ -636,8 +636,8 @@
       }
     },
     "nitro": {
-      "version": "0.7.1",
-      "vcsRevision": "3fe100e93d83938bbce001277cce8bbf8676746e",
+      "version": "0.7.2",
+      "vcsRevision": "d5dff096a3ab422b4d4c0ce898b115b6de78b8bd",
       "url": "https://github.com/durability-labs/nim-nitro",
       "downloadMethod": "git",
       "dependencies": [
@@ -649,7 +649,7 @@
         "stew"
       ],
       "checksums": {
-        "sha1": "74141681bb8d3a1825b9b42d543c71b475ded40d"
+        "sha1": "db90d7c8f9da9ed9bdcb2ad0b12238562d960df1"
       }
     },
     "nph": {
