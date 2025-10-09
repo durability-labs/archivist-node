@@ -62,7 +62,7 @@ proc handleStderr(node: Node) {.async: (raises: []).} =
     raise newException(Defect, "error handling node stderr: " & error.msg)
 
 proc start(node: Node) {.async.} =
-  let command = "./archivist"
+  let command = "./integration-test/archivist-with-proof-failures"
   var arguments = node.arguments
   arguments &= "--data-dir=" & $node.dataDir
   arguments &= "--api-bindaddr=" & $node.apiAddress
