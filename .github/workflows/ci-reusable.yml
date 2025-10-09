@@ -34,6 +34,15 @@ jobs:
         with:
           cmake-version: '3.x'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.79.0
+
+      - name: Setup Rust for Windows
+        if: runner.os == 'Windows'
+        run: |
+          rustup toolchain install 1.79.0-x86_64-pc-windows-gnu
+          rustup default 1.79.0-x86_64-pc-windows-gnu
+
       - name: Setup Node.js
         if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools' || matrix.tests == 'all'
         uses: actions/setup-node@v4
