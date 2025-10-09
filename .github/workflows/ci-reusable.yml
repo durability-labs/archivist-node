@@ -44,13 +44,13 @@ jobs:
           rustup default 1.79.0-x86_64-pc-windows-gnu
 
       - name: Setup Node.js
-        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools' || matrix.tests == 'all'
+        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools'
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Start Ethereum node with smart contracts
-        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools' || matrix.tests == 'all'
+        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools'
         working-directory: vendor/archivist-contracts
         shell: bash
         run: |
@@ -65,22 +65,22 @@ jobs:
           TMP: ${{ runner.temp }}
 
       - name: Contract tests
-        if: matrix.tests == 'contract' || matrix.tests == 'all'
+        if: matrix.tests == 'contract'
         run: nimble testContracts
 
       - name: Integration tests
-        if: matrix.tests == 'integration' || matrix.tests == 'all'
+        if: matrix.tests == 'integration'
         env:
           ARCHIVIST_INTEGRATION_TEST_INCLUDES: ${{ matrix.includes }}
         run: nimble testIntegration
 
       - name: Tools tests
-        if: matrix.tests == 'tools' || matrix.tests == 'all'
+        if: matrix.tests == 'tools'
         run: nimble testTools
 
       - name: Upload integration tests log files
         uses: actions/upload-artifact@v4
-        if: (matrix.tests == 'integration' || matrix.tests == 'all') && always()
+        if: matrix.tests == 'integration'
         with:
           name: ${{ matrix.builder }}-${{ matrix.nim_version }}-${{ matrix.job_number }}-integration-tests-logs
           path: tests/integration/logs/
