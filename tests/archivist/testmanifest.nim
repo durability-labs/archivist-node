@@ -74,12 +74,12 @@ suite "Manifest - Attribute Inheritance":
       manifest = Manifest.new(
         treeCid = Cid.example,
         blockSize = 1.MiBs,
-        datasetSize = 100.MiBs,
+        datasetSize = 5.MiBs,
         filename = "example.png".some,
         mimetype = "image/png".some,
       ),
       treeCid = Cid.example,
-      datasetSize = 200.MiBs,
+      datasetSize = 10.MiBs,
       ecK = 1,
       ecM = 1,
       strategy = strategy,
@@ -119,3 +119,29 @@ suite "Manifest - Attribute Inheritance":
     check verifiable.filename.get() == "example.png"
     check verifiable.mimetype.isSome == true
     check verifiable.mimetype.get() == "image/png"
+
+  test "Can provide slot block iterator for verifiable manifest":
+    var verifiable = Manifest
+      .new(
+        manifest = makeProtectedManifest(SteppedStrategy),
+        verifyRoot = Cid.example,
+        slotRoots = @[Cid.example, Cid.example],
+      )
+      .tryGet()
+
+    let iter0 = verifiable.getSlotBlockIterator(0).tryGet()
+    let iter1 = verifiable.getSlotBlockIterator(1).tryGet()
+    check:
+      iter0.next() == 0
+      iter0.next() == 1
+      iter0.next() == 2
+      iter0.next() == 3
+      iter0.next() == 4
+      iter0.finished
+
+      iter1.next() == 5
+      iter1.next() == 6
+      iter1.next() == 7
+      iter1.next() == 8
+      iter1.next() == 9
+      iter1.finished
