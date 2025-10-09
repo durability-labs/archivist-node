@@ -11,10 +11,11 @@
 
 import
   std/[options, os, strutils, times, net, atomics],
-  stew/[objects, results],
+  stew/objects,
   nat_traversal/[miniupnpc, natpmp],
   json_serialization/std/net
 
+import pkg/results
 import pkg/chronos
 import pkg/chronicles
 import pkg/libp2p

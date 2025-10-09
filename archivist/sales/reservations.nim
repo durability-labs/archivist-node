@@ -194,7 +194,7 @@ proc `==`*(x, y: Availability): bool =
   x.id == y.id
 
 proc `$`*(id: SomeStorableId): string =
-  id.toArray.toHex
+  byteutils.toHex(id.toArray)
 
 proc toErr[E1: ref CatchableError, E2: ReservationsError](
     e1: E1, _: type E2, msg: string = e1.msg
