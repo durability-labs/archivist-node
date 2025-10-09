@@ -642,13 +642,13 @@
       }
     },
     "nph": {
-      "version": "0.6.1",
-      "vcsRevision": "c6e03162dc2820d3088660f644818d7040e95791",
-      "url": "https://github.com/arnetheduck/nph",
+      "version": "0.6.2",
+      "vcsRevision": "1106c1ba1bd40fda8c76b6fb0f24111921db8b2b",
+      "url": "https://github.com/durability-labs/nph",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "fc1d5e82a879b8c7e96c4e3379156fa7006cdce7"
+        "sha1": "8c6add8f507b4f953aa49dcd2c22be82c2e616fb"
       }
     },
     "presto": {
