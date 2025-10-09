@@ -641,16 +641,6 @@
         "sha1": "db90d7c8f9da9ed9bdcb2ad0b12238562d960df1"
       }
     },
-    "nph": {
-      "version": "0.6.2",
-      "vcsRevision": "1106c1ba1bd40fda8c76b6fb0f24111921db8b2b",
-      "url": "https://github.com/durability-labs/nph",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "8c6add8f507b4f953aa49dcd2c22be82c2e616fb"
-      }
-    },
     "presto": {
       "version": "0.1.0",
       "vcsRevision": "92b1c7ff141e6920e1f8a98a14c35c1fa098e3be",
