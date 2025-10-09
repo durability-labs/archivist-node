@@ -19,7 +19,6 @@ job () {
     \"builder\": \"${job_builder}\", \
     \"tests\": \"${job_tests}\", \
     \"includes\": \"${job_includes}\", \
-    \"nim_version\": \"${nim_version}\", \
     \"job_number\": \"${jobs_generated}\" \
   }"
 }

@@ -12,7 +12,7 @@ jobs:
       matrix:
         include: ${{ fromJson(inputs.matrix) }}
 
-    name: ${{ matrix.builder }}-${{ matrix.tests }}-${{ matrix.nim_version }}-${{ matrix.job_number }}
+    name: ${{ matrix.builder }}-${{ matrix.tests }}-${{ matrix.job_number }}
     runs-on: ${{ matrix.builder }}
     timeout-minutes: 90
     steps:
@@ -25,7 +25,7 @@ jobs:
       - name: Install Nim
         uses: iffy/install-nim@v5
         with:
-          version: binary:${{ matrix.nim_version }}
+          version: binary:2.2.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -86,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: matrix.tests == 'integration'
         with:
-          name: ${{ matrix.builder }}-${{ matrix.nim_version }}-${{ matrix.job_number }}-integration-tests-logs
+          name: ${{ matrix.builder }}-${{ matrix.job_number }}-integration-tests-logs
           path: tests/integration/logs/
           retention-days: 1
 
