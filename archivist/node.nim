@@ -94,9 +94,6 @@ func engine*(self: ArchivistNodeRef): BlockExcEngine =
 func discovery*(self: ArchivistNodeRef): Discovery =
   return self.discovery
 
-proc doNothing(blk: bt.Block): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
-  success()
-
 proc storeManifest*(
     self: ArchivistNodeRef, manifest: Manifest
 ): Future[?!bt.Block] {.async.} =
@@ -312,7 +309,7 @@ proc streamEntireDataset(
         let erasure = Erasure.new(
           self.networkStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
         )
-        without _ =? (await erasure.decode(manifest, doNothing)), error:
+        without _ =? (await erasure.decode(manifest)), error:
           error "Unable to erasure decode manifest", manifestCid, exc = error.msg
       except CatchableError as exc:
         trace "Error erasure decoding manifest", manifestCid, exc = exc.msg
@@ -552,7 +549,7 @@ proc setupRequest(
     self.networkStore.localStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
   )
 
-  without encoded =? (await erasure.encode(manifest, ecK, ecM, doNothing)), error:
+  without encoded =? (await erasure.encode(manifest, ecK, ecM)), error:
     trace "Unable to erasure code dataset"
     return failure(error)
 
@@ -691,50 +688,36 @@ proc onStore(
     error "Cannot cast slot index to int", slotIndex = slotIdx
     return failure(newException(ArchivistError, "Cannot cast slot index to int"))
 
+  without blksIter =? manifest.getSlotBlockIterator(slotIdx.int), err:
+    error "Unable to get indices from strategy", err = err.msg
+    return failure(err)
+
   if isRepairing:
     trace "start repairing slot", slotIdx
     try:
       let erasure = Erasure.new(
         self.networkStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
       )
-      proc updateBlockExpiry(blk: bt.Block): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
-        await updateExpiry(@[blk])
-
-      without cids =? (await erasure.repair(manifest, updateBlockExpiry)), err:
+      if err =? (await erasure.repair(manifest)).errorOption:
         error "Unable to erasure decode repairing manifest",
           cid = manifest.treeCid, exc = err.msg
         return failure(err)
-      
-      # 'cids' could refer to all the CIDs of a slot. This could be large.
-      # we take subsets of default batch size and apply the updateExpiry call.
-      # let batches = cids.distribute(DefaultFetchBatch, spread = false)
-      # for batch in batches:
-      #   let blockFutures = batch.mapIt(self.networkStore.getBlock(it))
-      #   if blockFutures.len == 0:
-      #     continue
-      #   without blockResults =? await allFinishedValues[?!bt.Block](blockFutures), err:
-      #     error "Failed to fetch repaired blocks", err = err.msg
-      #     return failure(err)
-      #   let blocks = blockResults.filterIt(it.isSuccess()).mapIt(it.value)
-      #   if err =? (await updateExpiry(blocks)).errorOption:
-      #     error "Failed to apply updateExpiry to repaired blocks", err = err.msg
-      #     return failure(err)
+
+      # Iterate the slot blocks. Provide them to the updateExpiry callback.
+      while not blksIter.finished:
+        without blk =? await self.networkStore.getBlock(manifest.treeCid, blksIter.next()), err:
+          error "Unable to get slot block after repair"
+          return failure(err)
+        
+        if err =? (await updateExpiry(@[blk])).errorOption:
+          error "Unable to update expiry for slot block after repair"
+          return failure(err)
 
     except CatchableError as exc:
       error "Error erasure decoding repairing manifest",
         cid = manifest.treeCid, exc = exc.msg
       return failure(exc.msg)
   else:
-    without indexer =?
-      manifest.verifiableStrategy.init(0, manifest.blocksCount - 1, manifest.numSlots).catch,
-      err:
-      error "Unable to create indexing strategy from protected manifest", err = err.msg
-      return failure(err)
-
-    without blksIter =? indexer.getIndices(slotIdx.int).catch, err:
-      error "Unable to get indices from strategy", err = err.msg
-      return failure(err)
-
     if err =? (
       await self.fetchBatched(manifest.treeCid, blksIter, onBatch = updateExpiry)
     ).errorOption:

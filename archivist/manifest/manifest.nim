@@ -140,6 +140,23 @@ func isManifest*(cid: Cid): ?!bool =
 func isManifest*(mc: MultiCodec): ?!bool =
   success mc == ManifestCodec
 
+proc getSlotBlockIterator*(self: Manifest, slotIdx: int): ?!Iter[int] =
+  if not self.protected:
+    return failure("Manifest is not protected")
+  if not self.verifiable:
+    return failure("Manifest is not verifiable")
+
+  without indexer =?
+    self.verifiableStrategy.init(0, self.blocksCount - 1, self.numSlots).catch, err:
+    error "Unable to create indexing strategy from protected manifest", err = err.msg
+    return failure(err)
+
+  without blksIter =? indexer.getIndices(slotIdx).catch, err:
+    error "Unable to get indices from strategy", err = err.msg
+    return failure(err)
+  
+  return success(blksIter)
+
 ############################################################
 # Various sizes and verification
 ############################################################

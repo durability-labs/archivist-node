@@ -71,8 +71,6 @@ type
   DecoderProvider* =
     proc(size, blocks, parity: int): DecoderBackend {.raises: [Defect], noSideEffect.}
 
-  OnBlockStored* = proc(blk: bt.Block): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).}
-
   Erasure* = ref object
     taskPool: Taskpool
     encoderProvider*: EncoderProvider
@@ -363,7 +361,7 @@ proc asyncEncode*(
   success()
 
 proc encodeData(
-    self: Erasure, manifest: Manifest, params: EncodingParams, onBlockStored: OnBlockStored
+    self: Erasure, manifest: Manifest, params: EncodingParams
 ): Future[?!Manifest] {.async.} =
   ## Encode blocks pointed to by the protected manifest
   ##
@@ -428,11 +426,6 @@ proc encodeData(
         if error =? (await self.store.putBlock(blk)).errorOption:
           warn "Unable to store block!", cid = blk.cid, msg = error.msg
           return failure("Unable to store block!")
-        
-        if err =? (await onBlockStored(blk)).errorOption:
-          error "Failure during onBlockStored callback"
-          return failure(err)
-        
         idx.inc(params.steps)
 
     without tree =? ArchivistTree.init(cids[]), err:
@@ -467,7 +460,6 @@ proc encode*(
     manifest: Manifest,
     blocks: Natural,
     parity: Natural,
-    onBlockStored: OnBlockStored,
     strategy = SteppedStrategy,
 ): Future[?!Manifest] {.async.} =
   ## Encode a manifest into one that is erasure protected.
@@ -480,7 +472,7 @@ proc encode*(
   without params =? EncodingParams.init(manifest, blocks.int, parity.int, strategy), err:
     return failure(err)
 
-  without encodedManifest =? await self.encodeData(manifest, params, onBlockStored), err:
+  without encodedManifest =? await self.encodeData(manifest, params), err:
     return failure(err)
 
   return success encodedManifest
@@ -561,8 +553,8 @@ proc asyncDecode*(
   success()
 
 proc decodeInternal(
-    self: Erasure, encoded: Manifest, onBlockStored: OnBlockStored
-): Future[?!(seq[Cid], seq[Natural])] {.async.} =
+    self: Erasure, encoded: Manifest
+): Future[?!(ref seq[Cid], seq[Natural])] {.async.} =
   logScope:
     steps = encoded.steps
     rounded_blocks = encoded.rounded
@@ -631,10 +623,6 @@ proc decodeInternal(
             warn "Unable to store block!", cid = blk.cid, msg = error.msg
             return failure("Unable to store block!")
 
-          if err =? (await onBlockStored(blk)).errorOption:
-            error "Failure during onBlockStored callback"
-            return failure(err)
-
           self.store.completeBlock(BlockAddress.init(encoded.treeCid, idx), blk)
 
           cids[idx] = blk.cid
@@ -648,9 +636,9 @@ proc decodeInternal(
   finally:
     decoder.release()
 
-  return (cids[0 ..< encoded.originalBlocksCount], recoveredIndices).success
+  return (cids, recoveredIndices).success
 
-proc decode*(self: Erasure, encoded: Manifest, onBlockStored: OnBlockStored): Future[?!Manifest] {.async.} =
+proc decode*(self: Erasure, encoded: Manifest): Future[?!Manifest] {.async.} =
   ## Decode a protected manifest into it's original
   ## manifest
   ##
@@ -658,10 +646,10 @@ proc decode*(self: Erasure, encoded: Manifest, onBlockStored: OnBlockStored): Fu
   ##             be recovered
   ##
 
-  without (cids, recoveredIndices) =? (await self.decodeInternal(encoded, onBlockStored)), err:
+  without (cids, recoveredIndices) =? (await self.decodeInternal(encoded)), err:
     return failure(err)
 
-  without tree =? ArchivistTree.init(cids), err:
+  without tree =? ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
     return failure(err)
 
   without treeCid =? tree.rootCid, err:
@@ -682,17 +670,17 @@ proc decode*(self: Erasure, encoded: Manifest, onBlockStored: OnBlockStored): Fu
 
   return decoded.success
 
-proc repair*(self: Erasure, encoded: Manifest, onBlockStored: OnBlockStored): Future[?!void] {.async.} =
+proc repair*(self: Erasure, encoded: Manifest): Future[?!void] {.async.} =
   ## Repair a protected manifest by reconstructing the full dataset
   ##
   ## `encoded` - the encoded (protected) manifest to
   ##             be repaired
   ##
 
-  without (cids, _) =? (await self.decodeInternal(encoded, onBlockStored)), err:
+  without (cids, _) =? (await self.decodeInternal(encoded)), err:
     return failure(err)
 
-  without tree =? ArchivistTree.init(cids), err:
+  without tree =? ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
     return failure(err)
 
   without treeCid =? tree.rootCid, err:
@@ -708,7 +696,7 @@ proc repair*(self: Erasure, encoded: Manifest, onBlockStored: OnBlockStored): Fu
 
   without repaired =? (
     await self.encode(
-      Manifest.new(encoded), encoded.ecK, encoded.ecM, onBlockStored, encoded.protectedStrategy
+      Manifest.new(encoded), encoded.ecK, encoded.ecM, encoded.protectedStrategy
     )
   ), err:
     return failure(err)
