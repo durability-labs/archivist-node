@@ -705,14 +705,13 @@ proc onStore(
 
       # Iterate the slot blocks. Provide them to the updateExpiry callback.
       while not blksIter.finished:
-        without blk =? await self.networkStore.getBlock(manifest.treeCid, blksIter.next()), err:
+        without blk =?
+          await self.networkStore.getBlock(manifest.treeCid, blksIter.next()), err:
           error "Unable to get slot block after repair"
           return failure(err)
-        
         if err =? (await updateExpiry(@[blk])).errorOption:
           error "Unable to update expiry for slot block after repair"
           return failure(err)
-
     except CatchableError as exc:
       error "Error erasure decoding repairing manifest",
         cid = manifest.treeCid, exc = exc.msg

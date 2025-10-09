@@ -154,7 +154,6 @@ proc getSlotBlockIterator*(self: Manifest, slotIdx: int): ?!Iter[int] =
   without blksIter =? indexer.getIndices(slotIdx).catch, err:
     error "Unable to get indices from strategy", err = err.msg
     return failure(err)
-  
   return success(blksIter)
 
 ############################################################

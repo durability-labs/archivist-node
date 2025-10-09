@@ -221,7 +221,9 @@ asyncchecksuite "Test Node - Slot Repair":
 
   test "slot repair calls onBatch callback and sets expiry":
     var blocksCallback = newSeq[Cid]()
-    proc onBlocks(blocks: seq[bt.Block]): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+    proc onBlocks(
+      blocks: seq[bt.Block]
+    ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
       for b in blocks:
         if b.cid notin blocksCallback:
           blocksCallback.add(b.cid)
@@ -278,10 +280,15 @@ asyncchecksuite "Test Node - Slot Repair":
 
     # repair missing slot
     let slotIndex = 0
-    (await nodes[4].onStore(request, expiry, slotIndex.uint64, onBlocks, isRepairing = true)).tryGet()
+    (
+      await nodes[4].onStore(
+        request, expiry, slotIndex.uint64, onBlocks, isRepairing = true
+      )
+    ).tryGet()
 
     # the blocks in the repaired slot of the verifiable manifest have been provided to the callback:
     let blksIter = verifiable.getSlotBlockIterator(slotIndex).tryGet()
     while not blksIter.finished:
-      let blk = (await localStore.getBlock(verifiable.treeCid, blksIter.next())).tryGet()
+      let blk =
+        (await localStore.getBlock(verifiable.treeCid, blksIter.next())).tryGet()
       check blk.cid in blocksCallback
