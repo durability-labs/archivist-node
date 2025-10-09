@@ -222,7 +222,7 @@ asyncchecksuite "Test Node - Slot Repair":
   test "slot repair calls onBatch callback and sets expiry":
     var blocksCallback = newSeq[Cid]()
     proc onBlocks(
-      blocks: seq[bt.Block]
+        blocks: seq[bt.Block]
     ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
       for b in blocks:
         if b.cid notin blocksCallback:
