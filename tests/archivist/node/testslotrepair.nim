@@ -280,6 +280,7 @@ asyncchecksuite "Test Node - Slot Repair":
 
     # repair missing slot
     let slotIndex = 0
+
     (
       await nodes[4].onStore(
         request, expiry, slotIndex.uint64, onBlocks, isRepairing = true
