@@ -38,6 +38,7 @@ task testIntegration, "Run integration tests":
   exec "tests" / "testIntegration".toExe
 
 task testTools, "Run circuit downloader tests":
+  exec "nimble build"
   exec "nimble c tests" / "testTools"
   exec "tests" / "testTools".toExe
 
