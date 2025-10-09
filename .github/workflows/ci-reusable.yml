@@ -64,6 +64,10 @@ jobs:
         env:
           TMP: ${{ runner.temp }}
 
+      - name: Unit tests
+        if: matrix.tests == 'unittest'
+        run: nimble test
+
       - name: Contract tests
         if: matrix.tests == 'contract'
         run: nimble testContracts
