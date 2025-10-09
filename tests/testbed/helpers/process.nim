@@ -25,7 +25,6 @@ proc start*(
     workingDir,
     arguments,
     environmentTable,
-    options = {AsyncProcessOption.UsePath},
     stdinHandle = AsyncProcess.Pipe(),
     stdoutHandle = AsyncProcess.Pipe(),
     stderrHandle = AsyncProcess.Pipe(),
