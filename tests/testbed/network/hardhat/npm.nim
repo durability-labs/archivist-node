@@ -1,3 +1,4 @@
+import std/os
 import std/strutils
 import pkg/chronos
 import ../../helpers/process
@@ -6,7 +7,7 @@ import ../../error
 
 proc npm*(arguments: seq[string]) {.async.} =
   try:
-    await Process.execute("npm", arguments, hardhatDir)
+    await Process.execute(findExe("npm"), arguments, hardhatDir)
   except ProcessError as error:
     raise newException(
       TestbedError,
