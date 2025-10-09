@@ -601,28 +601,17 @@
         "sha1": "f45784038e9d095a4469a65f1978a95683040429"
       }
     },
-    "upraises": {
-      "version": "0.1.0",
-      "vcsRevision": "d9f268db1021959fe0f2c7a5e49fba741f9932a0",
-      "url": "https://github.com/markspanbroek/upraises",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "176234f808b44a0be763df706ed634d6e8df17bb"
-      }
-    },
     "leopard": {
-      "version": "0.2.0",
-      "vcsRevision": "2ee1f8b4ddbeaf307243cdf5ddc60196a209f997",
+      "version": "0.2.1",
+      "vcsRevision": "dbf40c18976dc0959327efc8487ee3d1d7014dc4",
       "url": "https://github.com/durability-labs/nim-leopard",
       "downloadMethod": "git",
       "dependencies": [
-        "stew",
-        "unittest2",
-        "upraises"
+        "results",
+        "unittest2"
       ],
       "checksums": {
-        "sha1": "49e2c4c503e86650d3b2b34810e4ad86743cdac2"
+        "sha1": "09bab820cc24a0f70e565c7cbc63736bd3d6efa2"
       }
     },
     "lrucache": {
