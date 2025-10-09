@@ -16,39 +16,27 @@ job () {
 
   # output github actions job as JSON
   echo "{\
-    \"os\": \"${job_os}\", \
-    \"cpu\": \"${job_cpu}\", \
     \"builder\": \"${job_builder}\", \
     \"tests\": \"${job_tests}\", \
     \"includes\": \"${job_includes}\", \
     \"nim_version\": \"${nim_version}\", \
-    \"shell\": \"${job_shell}\", \
     \"job_number\": \"${jobs_generated}\" \
   }"
 }
 
 # sets parameters for a linux job
 linux () {
-  job_os="linux"
-  job_cpu="amd64"
   job_builder="ubuntu-latest"
-  job_shell="bash --noprofile --norc -e -o pipefail"
 }
 
 # sets parameters for a macos job
 macos () {
-  job_os="macos"
-  job_cpu="arm64"
   job_builder="macos-14"
-  job_shell="bash --noprofile --norc -e -o pipefail"
 }
 
 # sets parameters for a windows job
 windows () {
-  job_os="windows"
-  job_cpu="amd64"
   job_builder="windows-latest"
-  job_shell="msys2"
 }
 
 # outputs a unit test job

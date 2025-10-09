@@ -12,7 +12,7 @@ jobs:
       matrix:
         include: ${{ fromJson(inputs.matrix) }}
 
-    name: ${{ matrix.os }}-${{ matrix.tests }}-${{ matrix.cpu }}-${{ matrix.nim_version }}-${{ matrix.job_number }}
+    name: ${{ matrix.builder }}-${{ matrix.tests }}-${{ matrix.nim_version }}-${{ matrix.job_number }}
     runs-on: ${{ matrix.builder }}
     timeout-minutes: 90
     steps:
@@ -82,7 +82,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: (matrix.tests == 'integration' || matrix.tests == 'all') && always()
         with:
-          name: ${{ matrix.os }}-${{ matrix.cpu }}-${{ matrix.nim_version }}-${{ matrix.job_number }}-integration-tests-logs
+          name: ${{ matrix.builder }}-${{ matrix.nim_version }}-${{ matrix.job_number }}-integration-tests-logs
           path: tests/integration/logs/
           retention-days: 1
 
