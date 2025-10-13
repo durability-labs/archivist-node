@@ -62,13 +62,13 @@ proc handleStderr(node: Node) {.async: (raises: []).} =
     raise newException(Defect, "error handling node stderr: " & error.msg)
 
 proc start(node: Node) {.async.} =
-  let command = "./integration-test/archivist-with-proof-failures"
+  let command = projectBuildDir / "integration-test" / "archivist-with-proof-failures"
   var arguments = node.arguments
   arguments &= "--data-dir=" & $node.dataDir
   arguments &= "--api-bindaddr=" & $node.apiAddress
   arguments &= "--api-port=" & $node.apiPort
   try:
-    node.process = await Process.start(command, arguments, projectBuildDir)
+    node.process = await Process.start(command, arguments)
   except ProcessError as error:
     raise newException(TestbedError, "unable to start node: " & error.msg, error)
   node.logFile = node.logFilename .? open(FileMode.fmAppend)
