@@ -20,7 +20,7 @@ export io2
 export logutils
 
 when defined(windows):
-  import stew/[windows/acl]
+  import stew/windows/acl
 
 proc secureCreatePath*(path: string): IoResult[void] =
   when defined(windows):
@@ -99,8 +99,14 @@ proc checkAndCreateDataDir*(dataDir: string): bool =
         return false
       else:
         if cres.get() == false:
-          fatal "Data folder has insecure ACL", data_dir = dataDir
-          return false
+          warn "Data folder has insecure ACL. Correcting it.", data_dir = dataDir
+          let newPermsRes = setCurrentUserOnlyAccess(dataDir)
+          if newPermsRes.isErr():
+            fatal "Could not set data directory ACL",
+              data_dir = dataDir,
+              errorCode = $newPermsRes.error,
+              errorMsg = ioErrorMsg(newPermsRes.error)
+            return false
     else:
       let res = secureCreatePath(dataDir)
       if res.isErr():
