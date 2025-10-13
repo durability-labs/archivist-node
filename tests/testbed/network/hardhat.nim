@@ -35,9 +35,13 @@ proc installHardhat() {.async.} =
     await npm(@["install"])
 
 proc runHardhat(): Future[Process] {.async.} =
+  when defined(windows):
+    let executable = hardhatBinDir / "hardhat.cmd"
+  else:
+    let executable = hardhatBinDir / "hardhat"
   try:
     await Process.start(
-      "./hardhat",
+      executable,
       @["node"],
       workingDir = hardhatBinDir,
       environment = @{"HARDHAT_DISABLE_TELEMETRY_PROMPT": "true"},
