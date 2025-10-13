@@ -218,3 +218,78 @@ asyncchecksuite "Test Node - Slot Repair":
       expectedData = await fetchStreamData(stream, datasetSize)
     check expectedData.len == data.len
     check expectedData == data
+
+  test "slot repair calls onBatch callback and sets expiry":
+    var blocksCallback = newSeq[Cid]()
+    proc onBlocks(
+        blocks: seq[bt.Block]
+    ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+      for b in blocks:
+        if b.cid notin blocksCallback:
+          blocksCallback.add(b.cid)
+      success()
+
+    let
+      expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+      numBlocks = 5
+      datasetSize = numBlocks * DefaultBlockSize.int
+      ecK = 2
+      ecM = 1
+      localStore = localStores[0]
+      store = nodes[0].blockStore
+      blocks =
+        await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+      data = (
+        block:
+          collect(newSeq):
+            for blk in blocks:
+              blk.data
+      ).flatten()
+    check blocks.len == numBlocks
+
+    # Populate manifest in local store
+    manifest = await storeDataGetManifest(localStore, blocks)
+    let
+      manifestBlock =
+        bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
+      erasure =
+        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+
+    (await localStore.putBlock(manifestBlock)).tryGet()
+
+    protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
+    builder = Poseidon2Builder.new(localStore, protected).tryGet()
+    verifiable = (await builder.buildManifest()).tryGet()
+    verifiableBlock =
+      bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+
+    # Populate protected manifest in local store
+    (await localStore.putBlock(verifiableBlock)).tryGet()
+
+    var request = StorageRequest.example
+    request.content.cid = verifiableBlock.cid
+
+    for i in 0 ..< protected.numSlots.uint64:
+      (await nodes[i + 1].onStore(request, expiry, i, onBlocks, isRepairing = false)).tryGet()
+
+    await nodes[0].switch.stop() # acts as client
+    await nodes[1].switch.stop() # slot 0 missing now
+
+    # clear callback blocks from previous onStore calls
+    blocksCallback = newSeq[Cid]()
+
+    # repair missing slot
+    let slotIndex = 0
+
+    (
+      await nodes[4].onStore(
+        request, expiry, slotIndex.uint64, onBlocks, isRepairing = true
+      )
+    ).tryGet()
+
+    # the blocks in the repaired slot of the verifiable manifest have been provided to the callback:
+    let blksIter = verifiable.getSlotBlockIterator(slotIndex).tryGet()
+    while not blksIter.finished:
+      let blk =
+        (await localStore.getBlock(verifiable.treeCid, blksIter.next())).tryGet()
+      check blk.cid in blocksCallback
