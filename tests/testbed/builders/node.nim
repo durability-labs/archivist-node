@@ -13,6 +13,9 @@ import ../testbed
 import ./api
 import ./availability
 
+when defined(windows):
+  import pkg/stew/windows/acl
+
 type NodeBuilder = ref object
   testbed: Testbed
   dataDir: ?string
@@ -179,7 +182,10 @@ proc ethPrivateKeyResolved(builder: NodeBuilder): ?string =
   if builder.persistence:
     if hardhat =? builder.testbed.hardhatInstance:
       let ethPrivateKey = hardhat.accounts.pop().privateKeyFile
-      setPermissions(ethPrivateKey, 0o600).tryGet()
+      when defined(windows):
+        setCurrentUserOnlyAccess(ethPrivateKey).tryGet()
+      else:
+        setPermissions(ethPrivateKey, 0o600).tryGet()
       return some ethPrivateKey
   none string
 
