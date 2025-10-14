@@ -12,13 +12,13 @@ proc isPortFree*(
     let address = initTAddress(address, port)
     case protocol
     of Tcp:
-      let server = createStreamServer(address, {ReuseAddr})
+      let server = createStreamServer(address)
       await server.closeWait()
     of Udp:
       proc callback(_: DatagramTransport, _: TransportAddress) {.async: (raises: []).} =
         discard
 
-      let server = newDatagramTransport(callback, local = address, flags = {ReuseAddr})
+      let server = newDatagramTransport(callback, local = address)
       await server.closeWait()
     true
   except TransportOsError:
