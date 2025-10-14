@@ -28,7 +28,9 @@ suite "On-Chain Clock":
 
   test "returns the current time of the EVM":
     let blockTime = await testbed.eth.time.blockTime(BlockTag.latest)
-    check clock.now() == blockTime.int64
+    check clock.now() == blockTime.int64 or
+      # if the seconds just ticked over:
+      clock.now() == blockTime.int64 + 1
 
   test "updates time with timestamp of new blocks":
     let future = (getTime() + 42.years).toUnix
