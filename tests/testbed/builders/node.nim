@@ -159,14 +159,14 @@ proc dataDirResolved(builder: NodeBuilder): string =
   builder.dataDir |? createTempDir("archivist-", "-testbed")
 
 func apiBindAddressResolved(builder: NodeBuilder): IpAddress =
-  builder.apiBindAddress |? static parseIpAddress("127.0.0.1")
+  builder.apiBindAddress |? static parseIpAddress("0.0.0.0")
 
 proc apiPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
   let address = builder.apiBindAddressResolved()
   builder.apiPort |? await findFreePort(address, Port(8080), Tcp)
 
 proc discoveryPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
-  const address = parseIpAddress("127.0.0.1")
+  const address = parseIpAddress("0.0.0.0")
   builder.discoveryPort |? await findFreePort(address, Port(8090), Udp)
 
 proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.} =
