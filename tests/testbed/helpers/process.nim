@@ -35,9 +35,11 @@ proc stop*(process: Process) {.async.} =
   if AsyncProcessRef(process).running.tryGet():
     if AsyncProcessRef(process).terminate().isOk:
       discard await AsyncProcessRef(process).waitForExit()
+  await AsyncProcessRef(process).closeWait()
 
 proc wait*(process: Process) {.async.} =
   let status = await AsyncProcessRef(process).waitForExit()
+  await AsyncProcessRef(process).closeWait()
   if status != 0:
     raise newException(AsyncProcessError, "Process exit code: " & $status)
 
