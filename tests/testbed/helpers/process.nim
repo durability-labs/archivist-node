@@ -37,8 +37,8 @@ proc start*(
 
 proc terminate*(process: Process) {.async.} =
   if AsyncProcessRef(process).running.tryGet():
-    AsyncProcessRef(process).terminate().tryGet()
-    discard await AsyncProcessRef(process).waitForExit()
+    if AsyncProcessRef(process).terminate().isOk:
+      discard await AsyncProcessRef(process).waitForExit()
 
 proc wait*(process: Process) {.async.} =
   let status = await AsyncProcessRef(process).waitForExit()
