@@ -974,7 +974,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
       trace "Excepting processing request", exc = exc.msg
       return RestApiResponse.error(Http500, headers = headers)
 
-  when archivist_enable_api_debug_peers:
+  when defined(archivist_system_testing_options):
     router.api(MethodGet, "/api/archivist/v1/debug/peer/{peerId}") do(
       peerId: PeerId
     ) -> RestApiResponse:
