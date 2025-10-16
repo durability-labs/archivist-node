@@ -82,12 +82,7 @@ proc onProve*(sales: Sales): ?OnProve =
 proc onExpiryUpdate*(sales: Sales): ?OnExpiryUpdate =
   sales.context.onExpiryUpdate
 
-proc new*(
-    _: type Sales,
-    market: Market,
-    clock: Clock,
-    repo: RepoStore,
-): Sales =
+proc new*(_: type Sales, market: Market, clock: Clock, repo: RepoStore): Sales =
   let reservations = Reservations.new(repo)
   Sales(
     context: SalesContext(

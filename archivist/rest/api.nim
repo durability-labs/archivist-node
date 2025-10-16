@@ -995,8 +995,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
         return RestApiResponse.error(Http500, headers = headers)
 
     router.api(MethodPost, "/api/archivist/v1/debug/sto/{key}/{value}") do(
-      key: string,
-      value: string
+      key: string, value: string
     ) -> RestApiResponse:
       var headers = buildCorsHeaders("GET", allowedOrigin)
       try:
@@ -1020,7 +1019,8 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
         # the results of tests that rely on this functionality can't be trusted.
         # So we need to know about this error immediately.
         # Therefore we crash the node.
-        let msg = "Failed to set system testing option. key: " & $key & " value: " & $value
+        let msg =
+          "Failed to set system testing option. key: " & $key & " value: " &$value
         error "Failure in system testing options", err = msg
         raiseAssert(msg)
 

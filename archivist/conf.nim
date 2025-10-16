@@ -68,8 +68,7 @@ proc defaultDataDir*(): string =
 
   getHomeDir() / dataDir
 
-const
-  DefaultThreadCount* = ThreadCount(0)
+const DefaultThreadCount* = ThreadCount(0)
 
 type
   StartUpCmd* {.pure.} = enum
