@@ -22,7 +22,7 @@ func time*(eth: EthBuilder): TimeBuilder =
 
 proc blockTime*(builder: TimeBuilder, tag: BlockTag): Future[uint64] {.async.} =
   let provider = builder.testbed.provider
-  let blck = !await provider.getBlock(BlockTag.pending)
+  let blck = !await provider.getBlock(tag)
   blck.timestamp.truncate(uint64)
 
 proc now*(builder: TimeBuilder): Future[uint64] {.async.} =
