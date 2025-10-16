@@ -82,15 +82,11 @@ proc onProve*(sales: Sales): ?OnProve =
 proc onExpiryUpdate*(sales: Sales): ?OnExpiryUpdate =
   sales.context.onExpiryUpdate
 
-proc new*(_: type Sales, market: Market, clock: Clock, repo: RepoStore): Sales =
-  Sales.new(market, clock, repo, 0)
-
 proc new*(
     _: type Sales,
     market: Market,
     clock: Clock,
     repo: RepoStore,
-    simulateProofFailures: int,
 ): Sales =
   let reservations = Reservations.new(repo)
   Sales(
@@ -99,7 +95,6 @@ proc new*(
       clock: clock,
       reservations: reservations,
       slotQueue: SlotQueue.new(),
-      simulateProofFailures: simulateProofFailures,
     ),
     trackedFutures: TrackedFutures.new(),
     subscriptions: @[],

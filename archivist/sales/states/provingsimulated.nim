@@ -1,5 +1,5 @@
 import ../../conf
-when archivist_enable_proof_failures:
+when defined(archivist_system_testing_options):
   import std/strutils
   import pkg/stint
   import pkg/ethers

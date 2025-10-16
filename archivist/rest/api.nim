@@ -994,6 +994,36 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
         trace "Excepting processing request", exc = exc.msg
         return RestApiResponse.error(Http500, headers = headers)
 
+    router.api(MethodPost, "/api/archivist/v1/debug/systemtestingoptions/{key}/{value}") do(
+      key: string,
+      value: string
+    ) -> RestApiResponse:
+      var headers = buildCorsHeaders("GET", allowedOrigin)
+      try:
+        let
+          keyStr = key.get()
+          valueInt = parseInt(value.get())
+
+        if keyStr == "simulate_proof_failures":
+          node.contracts.host.get().sales.context.simulateProofFailures = valueInt
+        elif keyStr == "dht_send_fail_probability":
+          # TODO: when DHT PRs are merged:
+          # node.discovery.transport.sendFailProb = valueInt
+          warn "todo"
+        else:
+          raise newException(Defect, "Unknown system testing option key: " & keyStr)
+
+        trace "set system testing option", key = keyStr, value = valueInt
+        return RestApiResponse.response(Http200, headers = headers)
+      except CatchableError as exc:
+        # This call is used for system level testing. Should anything here fail,
+        # the results of tests that rely on this functionality can't be trusted.
+        # So we need to know about this error immediately.
+        # Therefore we crash the node.
+        let msg = "Failed to set system testing option. key: " & $key & " value: " & $value
+        error "Failure in system testing options", err = msg
+        raiseAssert(msg)
+
 proc initRestApi*(
     node: ArchivistNodeRef,
     conf: NodeConf,

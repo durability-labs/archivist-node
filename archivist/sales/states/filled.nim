@@ -11,7 +11,7 @@ import ./cancelled
 import ./failed
 import ./proving
 
-when archivist_enable_proof_failures:
+when defined(archivist_system_testing_options):
   import ./provingsimulated
 
 logScope:
@@ -59,7 +59,7 @@ method run*(
       if err =? (await onExpiryUpdate(request.content.cid, requestEnd)).errorOption:
         return some State(SaleErrored(error: err))
 
-      when archivist_enable_proof_failures:
+      when defined(archivist_system_testing_options):
         if context.simulateProofFailures > 0:
           info "Proving with failure rate", rate = context.simulateProofFailures
           return some State(

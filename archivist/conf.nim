@@ -69,8 +69,6 @@ proc defaultDataDir*(): string =
   getHomeDir() / dataDir
 
 const
-  archivist_enable_proof_failures* {.booldefine.} = false
-
   DefaultThreadCount* = ThreadCount(0)
 
 type
@@ -300,14 +298,6 @@ type
         defaultValueDesc: "",
         name: "marketplace-address"
       .}: Option[EthAddress]
-
-      # TODO: should go behind a feature flag
-      simulateProofFailures* {.
-        desc: "Simulates proof failures once every N proofs. 0 = disabled.",
-        defaultValue: 0,
-        name: "simulate-proof-failures",
-        hidden
-      .}: int
 
       validator* {.
         desc: "Enables validator, requires an Ethereum node",
