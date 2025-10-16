@@ -97,13 +97,15 @@ proc start*(_: type Hardhat, logFile = string.none): Future[Hardhat] {.async.} =
   hardhat
 
 proc stop*(hardhat: Hardhat) {.async.} =
+  await hardhat.process.killChildren()
+  await hardhat.process.terminate()
   if stdoutHandler =? hardhat.stdoutHandler:
     hardhat.stdoutHandler = nil
     await stdoutHandler.cancelAndWait()
   if stderrHandler =? hardhat.stderrHandler:
     hardhat.stderrHandler = nil
     await stderrHandler.cancelAndWait()
-  await hardhat.process.stop()
+  await hardhat.process.close()
   if logFile =? hardhat.logFile:
     hardhat.logFile = none File
     logFile.close()

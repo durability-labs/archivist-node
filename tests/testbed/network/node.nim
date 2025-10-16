@@ -99,13 +99,14 @@ proc start*(
   node
 
 proc stop*(node: Node) {.async.} =
+  await node.process.terminate()
   if stdoutHandler =? node.stdoutHandler:
     node.stdoutHandler = nil
     await stdoutHandler.cancelAndWait()
   if stderrHandler =? node.stderrHandler:
     node.stderrHandler = nil
     await stderrHandler.cancelAndWait()
-  await node.process.stop()
+  await node.process.close()
   if logFile =? node.logFile:
     node.logFile = none File
     logFile.close()

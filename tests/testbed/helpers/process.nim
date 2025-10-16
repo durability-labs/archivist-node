@@ -1,8 +1,12 @@
+import std/os
 import pkg/chronos
 import pkg/chronos/asyncproc
 
 type Process* = distinct AsyncProcessRef
 type ProcessError* = AsyncProcessError
+
+func id*(process: Process): int =
+  AsyncProcessRef(process).processId
 
 func stdout*(process: Process): AsyncStreamReader =
   AsyncProcessRef(process).stdoutStream
@@ -31,17 +35,19 @@ proc start*(
   )
   Process(process)
 
-proc stop*(process: Process) {.async.} =
+proc terminate*(process: Process) {.async.} =
   if AsyncProcessRef(process).running.tryGet():
-    if AsyncProcessRef(process).terminate().isOk:
-      discard await AsyncProcessRef(process).waitForExit()
-  await AsyncProcessRef(process).closeWait()
+    AsyncProcessRef(process).terminate().tryGet()
+    discard await AsyncProcessRef(process).waitForExit()
 
 proc wait*(process: Process) {.async.} =
   let status = await AsyncProcessRef(process).waitForExit()
   await AsyncProcessRef(process).closeWait()
   if status != 0:
     raise newException(AsyncProcessError, "Process exit code: " & $status)
+
+proc close*(process: Process) {.async.} =
+  await AsyncProcessRef(process).closeWait()
 
 proc execute*(
     _: type Process,
@@ -51,3 +57,11 @@ proc execute*(
 ) {.async.} =
   let process = await Process.start(command, arguments, workingDir)
   await process.wait()
+  await process.close()
+
+proc killChildren*(process: Process) {.async.} =
+  let id = process.id
+  when defined(windows):
+    await Process.execute(findExe("taskkill"), @["/pid", $id, "/T", "/F"])
+  else:
+    await Process.execute(findExe("kill"), @["-INT", $(-id)])
