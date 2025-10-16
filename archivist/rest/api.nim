@@ -1020,7 +1020,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
         # So we need to know about this error immediately.
         # Therefore we crash the node.
         let msg =
-          "Failed to set system testing option. key: " & $key & " value: " &$value
+          "Failed to set system testing option. key: " & $key & " value: " & $value
         error "Failure in system testing options", err = msg
         raiseAssert(msg)
 
