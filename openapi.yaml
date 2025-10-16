@@ -176,6 +176,24 @@ components:
         archivist:
           $ref: "#/components/schemas/ArchivistVersion"
 
+    DebugPeerRecord:
+      type: object
+      required:
+        - peerId
+        - seqNo
+        - addresses
+      properties:
+        peerId:
+          type: string
+        seqNo:
+          type: integer
+        addresses:
+          type: array
+          items:
+            type: string
+
+
+
     SalesAvailability:
       type: object
       required:
@@ -1045,3 +1063,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DebugInfo"
+
+  "/debug/peer":
+    get:
+      summary: "Only available when built with 'system testing' compile flag. Performs DHT lookup for peerId."
+      tags: [Debug]
+      operationId: getDebugPeer
+
+      parameters:
+        - in: query
+          name: peerId
+          required: true
+          schema:
+            type: string
+
+      responses:
+        "200":
+          description: Successfully looked up peer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebugPeerRecord"
+        "500":
+          description: Well it was bad-bad
+
+  "/debug/sto":
+    post:
+      summary: "Only available when built with 'system testing' compile flag. Sets a system testing option."
+      tags: [Debug]
+      operationId: setSTO
+
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: value
+          required: true
+          schema:
+            type: string
+
+      responses:
+        "200":
+          description: Successfully set system testing option value
