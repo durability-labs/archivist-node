@@ -64,4 +64,4 @@ proc killChildren*(process: Process) {.async.} =
   when defined(windows):
     await Process.execute(findExe("taskkill"), @["/pid", $id, "/T", "/F"])
   else:
-    await Process.execute(findExe("kill"), @["-INT", $(-id)])
+    await Process.execute(findExe("pkill"), @["-P", $id])
