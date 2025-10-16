@@ -58,10 +58,3 @@ proc execute*(
   let process = await Process.start(command, arguments, workingDir)
   await process.wait()
   await process.close()
-
-proc killChildren*(process: Process) {.async.} =
-  let id = process.id
-  when defined(windows):
-    await Process.execute(findExe("taskkill"), @["/pid", $id, "/T", "/F"])
-  else:
-    await Process.execute(findExe("pkill"), @["-P", $id])
