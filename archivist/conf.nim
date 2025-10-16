@@ -70,7 +70,6 @@ proc defaultDataDir*(): string =
 
 const
   archivist_enable_proof_failures* {.booldefine.} = false
-  archivist_enable_log_counter* {.booldefine.} = false
 
   DefaultThreadCount* = ThreadCount(0)
 
@@ -767,7 +766,7 @@ proc setupLogging*(conf: NodeConf) =
       of LogKind.None:
         noOutput
 
-    when archivist_enable_log_counter:
+    when defined(archivist_system_testing_options):
       var counter = 0.uint64
       proc numberedWriter(logLevel: LogLevel, msg: LogOutputStr) =
         inc(counter)
