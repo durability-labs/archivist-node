@@ -97,7 +97,10 @@ proc start*(_: type Hardhat, logFile = string.none): Future[Hardhat] {.async.} =
   hardhat
 
 proc stop*(hardhat: Hardhat) {.async.} =
-  await hardhat.process.killChildren()
+  when defined(windows):
+    # kill all child processes, otherwise the nodejs process won't stop
+    let id = hardhat.process.id
+    await Process.execute(findExe("taskkill"), @["/pid", $id, "/T", "/F"])
   await hardhat.process.terminate()
   if stdoutHandler =? hardhat.stdoutHandler:
     hardhat.stdoutHandler = nil
