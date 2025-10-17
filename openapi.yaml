@@ -192,8 +192,6 @@ components:
           items:
             type: string
 
-
-
     SalesAvailability:
       type: object
       required:
