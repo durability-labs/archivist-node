@@ -1062,14 +1062,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/DebugInfo"
 
-  "/debug/peer":
+  "/debug/peer/{peerId}":
     get:
       summary: "Only available when built with 'system testing' compile flag. Performs DHT lookup for peerId."
       tags: [Debug]
       operationId: getDebugPeer
 
       parameters:
-        - in: query
+        - in: path
           name: peerId
           required: true
           schema:
@@ -1085,19 +1085,19 @@ paths:
         "500":
           description: Well it was bad-bad
 
-  "/debug/sto":
+  "/debug/sto/{key}/{value}":
     post:
       summary: "Only available when built with 'system testing' compile flag. Sets a system testing option."
       tags: [Debug]
       operationId: setSTO
 
       parameters:
-        - in: query
+        - in: path
           name: key
           required: true
           schema:
             type: string
-        - in: query
+        - in: path
           name: value
           required: true
           schema:
