@@ -149,6 +149,10 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
 proc start*(s: NodeServer) {.async.} =
   trace "Starting node", config = $s.config
 
+  when defined(archivist_system_testing_options):
+    warn "Warning: This application was compiled with system testing options enabled. " &
+      "It is strongly recommended to use it for development purposes only."
+
   await s.repoStore.start()
   s.maintenance.start()
 
