@@ -27,7 +27,7 @@ func apiUrl*(node: Node): string =
 proc waitForOutput(node: Node) {.async.} =
   without output =? node.waitForOutput:
     return
-  while not node.process.stdout.atEof:
+  while not (node.process.stdout.atEof and node.stdout.empty):
     let line = await node.stdout.get()
     if output in line:
       return
