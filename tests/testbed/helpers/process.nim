@@ -1,4 +1,3 @@
-import std/os
 import pkg/chronos
 import pkg/chronos/asyncproc
 
