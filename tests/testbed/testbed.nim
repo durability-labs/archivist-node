@@ -43,9 +43,6 @@ proc start*(_: type Testbed): Future[Testbed] {.async.} =
   Testbed(startedAt: now())
 
 proc stop*(testbed: Testbed) {.async.} =
-  if provider =? testbed.providerInstance:
-    await provider.close()
-    testbed.providerInstance = none JsonRpcProvider
   while testbed.nodeInstances.len > 0:
     let node = testbed.nodeInstances.pop()
     await node.stop()
@@ -53,3 +50,6 @@ proc stop*(testbed: Testbed) {.async.} =
   if hardhat =? testbed.hardhatInstance:
     await hardhat.stop()
     testbed.hardhatInstance = none Hardhat
+  if provider =? testbed.providerInstance:
+    await provider.close()
+    testbed.providerInstance = none JsonRpcProvider
