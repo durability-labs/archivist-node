@@ -35,7 +35,8 @@ ARG APP_HOME
 ARG NAT_IP_AUTO
 
 WORKDIR ${APP_HOME}
-COPY --from=builder ${BUILD_HOME}/build/* /usr/local/bin/
+COPY --from=builder ${BUILD_HOME}/build/archivist /usr/local/bin/
+COPY --from=builder ${BUILD_HOME}/build/tools/cirdl/cirdl /usr/local/bin/
 COPY --from=builder ${BUILD_HOME}/openapi.yaml .
 COPY --from=builder --chmod=0755 ${BUILD_HOME}/docker/docker-entrypoint.sh /
 RUN apt-get update && apt-get install -y libgomp1 curl jq && rm -rf /var/lib/apt/lists/*
