@@ -32,4 +32,5 @@ suite "Validator":
     let request = await testbed.request.start(node)
     discard await testbed.node.validator(groups = 2, index = 0).start()
     discard await testbed.node.validator(groups = 2, index = 1).start()
+    await testbed.eth.time.advance(1) # ensures that validators sync their clock
     await testbed.marketplace.waitForRequestFailed(request.id)
