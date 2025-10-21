@@ -17,7 +17,7 @@ func log*(builder: HardhatBuilder): HardhatBuilder =
   builder
 
 proc logFile(builder: HardhatBuilder): ?string =
-  if builder.logToFile:
+  if builder.logToFile or getEnv("CI") == "true":
     let logDir = builder.testbed.logDir
     createDir(logDir)
     some logDir / "hardhat.log"
