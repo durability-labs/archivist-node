@@ -69,7 +69,7 @@ func log*(builder: NodeBuilder, topics: varargs[string]): NodeBuilder =
   builder
 
 proc logFile(builder: NodeBuilder): ?string =
-  if builder.logToFile:
+  if builder.logToFile or getEnv("CI") == "true":
     let logDir = builder.testbed.logDir
     createDir(logDir)
     let nodeNumber = builder.testbed.nodeInstances.len
