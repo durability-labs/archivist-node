@@ -74,7 +74,7 @@ jobs:
 
       - name: Upload integration tests log files
         uses: actions/upload-artifact@v4
-        if: (success() || failure()) && matrix.tests == 'integration'
+        if: always() && matrix.tests == 'integration'
         with:
           name: ${{ matrix.builder }}-${{ matrix.job_number }}-integration-tests-logs
           path: logs/testbed
