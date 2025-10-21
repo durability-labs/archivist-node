@@ -149,6 +149,7 @@ components:
         - repo
         - spr
         - announceAddresses
+        - ethAddress
         - table
         - archivist
       properties:
@@ -167,6 +168,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MultiAddress"
+        ethAddress:
+            $ref: "#/components/schemas/EthereumAddress"
         table:
           $ref: "#/components/schemas/PeersTable"
         archivist:
