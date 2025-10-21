@@ -150,7 +150,7 @@ if [[ "$@" == *"prover"* ]]; then
   # Download circuit
   mkdir -p "${ARCHIVIST_CIRCUIT_DIR}"
   chmod 700 "${ARCHIVIST_CIRCUIT_DIR}"
-  download="cirdl ${ARCHIVIST_CIRCUIT_DIR} ${ARCHIVIST_ETH_PROVIDER} ${ARCHIVIST_MARKETPLACE_ADDRESS}"
+  download="tools/cirdl/cirdl ${ARCHIVIST_CIRCUIT_DIR} ${ARCHIVIST_ETH_PROVIDER} ${ARCHIVIST_MARKETPLACE_ADDRESS}"
   echo "${download}"
   eval "${download}"
   [[ $? -ne 0 ]] && { echo "Failed to download circuit files"; exit 1; }

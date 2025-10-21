@@ -1,6 +1,6 @@
 # Variables
-ARG BUILDER=ubuntu:24.04
-ARG IMAGE=${BUILDER}
+ARG BUILDER=nimlang/nim:2.2.4-ubuntu-regular
+ARG IMAGE=ubuntu:24.04
 ARG RUST_VERSION=${RUST_VERSION:-1.79.0}
 ARG BUILD_HOME=/src
 ARG MAKE_PARALLEL=${MAKE_PARALLEL:-4}
@@ -26,9 +26,7 @@ RUN echo "export PATH=$PATH:$HOME/.cargo/bin" >> $BASH_ENV
 
 WORKDIR ${BUILD_HOME}
 COPY . .
-RUN make -j ${MAKE_PARALLEL} update
-RUN make -j ${MAKE_PARALLEL}
-RUN make -j ${MAKE_PARALLEL} cirdl
+RUN nimble build
 
 # Create
 FROM ${IMAGE}
