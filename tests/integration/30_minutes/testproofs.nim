@@ -13,7 +13,7 @@ suite "Storage Proofs":
 
   test "hosts submit periodic proofs for slots they fill":
     debugEcho "1"
-    discard await testbed.node.provider.log("contracts", "clock").start()
+    discard await testbed.node.provider.log("clock", "marketplace", "prover").start()
     debugEcho "2"
     let node = await testbed.node.persistence.start()
     debugEcho "3"
