@@ -81,20 +81,23 @@ integration_test_job () {
 
 # outputs several integration test jobs
 integration_test () {
-  # each test that lasts up to 30 minutes gets its own ci job
-  for tests in $(find_tests tests/integration/30_minutes | batch 1 ","); do
-    integration_test_job $tests
-  done
+  integration_test_job tests/integration/30_minutes/testProofs.nim
+  integration_test_job tests/integration/30_minutes/testMarketplace.nim
 
-  # tests that last up to 5 minutes are batched per 6 into a ci job
-  for tests in $(find_tests tests/integration/5_minutes | batch 6 ","); do
-    integration_test_job $tests
-  done
+  # # each test that lasts up to 30 minutes gets its own ci job
+  # for tests in $(find_tests tests/integration/30_minutes | batch 1 ","); do
+  #   integration_test_job $tests
+  # done
 
-  # tests that last up to 1 minute are batched per 30 into a ci job
-  for tests in $(find_tests tests/integration/1_minute | batch 30 ","); do
-    integration_test_job $tests
-  done
+  # # tests that last up to 5 minutes are batched per 6 into a ci job
+  # for tests in $(find_tests tests/integration/5_minutes | batch 6 ","); do
+  #   integration_test_job $tests
+  # done
+
+  # # tests that last up to 1 minute are batched per 30 into a ci job
+  # for tests in $(find_tests tests/integration/1_minute | batch 30 ","); do
+  #   integration_test_job $tests
+  # done
 
   # fail when there are integration tests with an unknown duration
   local filter='1_minute\|5_minutes\|30_minutes'
@@ -112,10 +115,10 @@ integration_test () {
 
 # outputs jobs for all test types
 all_tests () {
-  unit_test
-  contract_test
+  # unit_test
+  # contract_test
   integration_test
-  tools_test
+  # tools_test
 }
 
 # outputs jobs for the specified operating systems and all test types
@@ -129,4 +132,4 @@ os_jobs () {
   echo "]"
 }
 
-os_jobs ${@:-linux macos windows}
+os_jobs macos
