@@ -35,7 +35,7 @@ task testIntegration, "Run integration tests":
     " --out:build" / "integration-test" / "archivist-with-proof-failures".toExe &
     " archivist"
   exec "nimble c tests" / "testIntegration"
-  exec "tests" / "testIntegration".toExe
+  exec "tests" / "testIntegration".toExe & " --verbose"
 
 task testTools, "Run circuit downloader tests":
   exec "nimble build"
