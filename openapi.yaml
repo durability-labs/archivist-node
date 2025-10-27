@@ -44,7 +44,6 @@ components:
 
     EthereumAddress:
       type: string
-      nullable: true
       description: Address of Ethereum address
 
     PricePerBytePerSecond:
@@ -171,6 +170,7 @@ components:
             $ref: "#/components/schemas/MultiAddress"
         ethAddress:
             $ref: "#/components/schemas/EthereumAddress"
+            nullable: true
         table:
           $ref: "#/components/schemas/PeersTable"
         archivist:
