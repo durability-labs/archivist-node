@@ -14,11 +14,6 @@ on:
         description: DockerHub repository
         required: false
         type: string
-      make_parallel:
-        default: 4
-        description: Make parallel
-        required: false
-        type: number
       nimflags:
         default: '-d:disableMarchNative'
         description: Nim flags for builds
@@ -78,7 +73,6 @@ env:
   # Build
   DOCKER_FILE: ${{ inputs.docker_file }}
   DOCKER_REPO: ${{ inputs.docker_repo }}
-  MAKE_PARALLEL: ${{ inputs.make_parallel }}
   NIMFLAGS: ${{ inputs.nimflags }}
   NAT_IP_AUTO: ${{ inputs.nat_ip_auto }}
   TAG_LATEST: ${{ inputs.tag_latest }}
@@ -167,7 +161,6 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           build-args: |
-            MAKE_PARALLEL=${{ env.MAKE_PARALLEL }}
             NIMFLAGS=${{ env.NIMFLAGS }}
             NAT_IP_AUTO=${{ env.NAT_IP_AUTO }}
           labels: ${{ steps.meta.outputs.labels }}

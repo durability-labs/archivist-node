@@ -3,9 +3,7 @@ ARG BUILDER=nimlang/nim:2.2.4-ubuntu-regular
 ARG IMAGE=ubuntu:24.04
 ARG RUST_VERSION=${RUST_VERSION:-1.79.0}
 ARG BUILD_HOME=/src
-ARG MAKE_PARALLEL=${MAKE_PARALLEL:-4}
 ARG NIMFLAGS="${NIMFLAGS:-"-d:disableMarchNative"}"
-ARG USE_LIBBACKTRACE=${USE_LIBBACKTRACE:-1}
 ARG APP_HOME=/archivist
 ARG NAT_IP_AUTO=${NAT_IP_AUTO:-false}
 
@@ -13,11 +11,9 @@ ARG NAT_IP_AUTO=${NAT_IP_AUTO:-false}
 FROM ${BUILDER} AS builder
 ARG RUST_VERSION
 ARG BUILD_HOME
-ARG MAKE_PARALLEL
 ARG NIMFLAGS
-ARG USE_LIBBACKTRACE
 
-RUN apt-get update && apt-get install -y git cmake curl make bash lcov build-essential
+RUN apt-get update && apt-get install -y git cmake curl make bash build-essential
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs/ | sh -s -- --default-toolchain=${RUST_VERSION} -y
 
 SHELL ["/bin/bash", "-c"]
