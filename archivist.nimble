@@ -31,8 +31,8 @@ task testContracts, "Run contract tests":
 
 task testIntegration, "Run integration tests":
   exec "nimble c" &
-    " --define:archivist_enable_proof_failures" &
-    " --out:build" / "integration-test" / "archivist-with-proof-failures".toExe &
+    " --define:archivist_system_testing_options" &
+    " --out:build" / "integration-test" / "archivist-for-testing".toExe &
     " archivist"
   exec "nimble c tests" / "testIntegration"
   exec "tests" / "testIntegration".toExe
