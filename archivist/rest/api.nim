@@ -1006,9 +1006,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
         if keyStr == "simulate_proof_failures":
           node.contracts.host.get().sales.context.simulateProofFailures = valueInt
         elif keyStr == "dht_send_fail_probability":
-          # TODO: when DHT PRs are merged:
-          # node.discovery.transport.sendFailProb = valueInt
-          warn "todo"
+          node.discovery.protocol.transport.sendFailProb = valueInt
         else:
           raise newException(Defect, "Unknown system testing option key: " & keyStr)
 

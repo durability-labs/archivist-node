@@ -419,8 +419,8 @@
       }
     },
     "archivistdht": {
-      "version": "0.7.0",
-      "vcsRevision": "25d57963cf7caf178978f20dc63ed49e850760b6",
+      "version": "0.7.1",
+      "vcsRevision": "a2669b0351613da6c55684f897c119db7cbd30ad",
       "url": "https://github.com/durability-labs/archivist-dht",
       "downloadMethod": "git",
       "dependencies": [
@@ -438,7 +438,7 @@
         "questionable"
       ],
       "checksums": {
-        "sha1": "009d5e53755ca99e1828c1be1f72701723234f6c"
+        "sha1": "87f688ecbb700c29f4775b356d2f9a9b983d2236"
       }
     },
     "circomcompat": {
