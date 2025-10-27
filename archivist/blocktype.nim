@@ -12,10 +12,7 @@ import std/sugar
 
 export tables
 
-import pkg/upraises
-
-push:
-  {.upraises: [].}
+{.push raises: [].}
 
 import pkg/libp2p/[cid, multicodec, multihash]
 import pkg/stew/byteutils

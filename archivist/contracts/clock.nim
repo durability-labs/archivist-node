@@ -5,7 +5,6 @@ import pkg/chronos
 import pkg/stint
 import ../clock
 import ../conf
-import ../utils/trackedfutures
 
 export clock
 
@@ -19,12 +18,9 @@ type OnChainClock* = ref object of Clock
   blockNumber: UInt256
   started: bool
   newBlock: AsyncEvent
-  trackedFutures: TrackedFutures
 
 proc new*(_: type OnChainClock, provider: Provider): OnChainClock =
-  OnChainClock(
-    provider: provider, newBlock: newAsyncEvent(), trackedFutures: TrackedFutures()
-  )
+  OnChainClock(provider: provider, newBlock: newAsyncEvent())
 
 proc update(clock: OnChainClock, blck: Block) =
   if number =? blck.number and number > clock.blockNumber:
@@ -36,26 +32,15 @@ proc update(clock: OnChainClock, blck: Block) =
       blockTime = blck.timestamp, blockNumber = number, offset = clock.offset
     clock.newBlock.fire()
 
-proc update(clock: OnChainClock) {.async: (raises: []).} =
-  try:
-    if latest =? (await clock.provider.getBlock(BlockTag.latest)):
-      clock.update(latest)
-  except CatchableError as error:
-    debug "error updating clock: ", error = error.msg
-
 method start*(clock: OnChainClock) {.async.} =
   if clock.started:
     return
 
-  proc onBlock(blckResult: ?!Block) =
-    if eventError =? blckResult.errorOption:
-      error "There was an error in block subscription", msg = eventError.msg
-      return
+  if blck =? await clock.provider.getBlock(BlockTag.latest):
+    clock.update(blck)
 
-    # ignore block parameter; hardhat may call this with pending blocks
-    clock.trackedFutures.track(clock.update())
-
-  await clock.update()
+  proc onBlock(blck: Block) =
+    clock.update(blck)
 
   clock.subscription = await clock.provider.subscribe(onBlock)
   clock.started = true
@@ -65,7 +50,6 @@ method stop*(clock: OnChainClock) {.async.} =
     return
 
   await clock.subscription.unsubscribe()
-  await clock.trackedFutures.cancelTracked()
   clock.started = false
 
 method now*(clock: OnChainClock): SecondsSince1970 =

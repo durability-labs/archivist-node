@@ -68,7 +68,7 @@ func toArray*(id: RequestId | SlotId | Nonce): array[32, byte] =
   array[32, byte](id)
 
 proc `$`*(id: RequestId | SlotId | Nonce): string =
-  id.toArray.toHex
+  byteutils.toHex(id.toArray)
 
 proc fromHex*(T: type RequestId, hex: string): T =
   T array[32, byte].fromHex(hex)
@@ -85,7 +85,7 @@ proc fromHex*[T: distinct](_: type T, hex: string): T =
 
 proc toHex*[T: distinct](id: T): string =
   type baseType = T.distinctBase
-  baseType(id).toHex
+  byteutils.toHex(baseType(id))
 
 logutils.formatIt(LogFormat.textLines, Nonce):
   it.short0xHexLog

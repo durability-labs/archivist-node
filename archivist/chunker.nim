@@ -9,10 +9,7 @@
 
 # TODO: This is super inneficient and needs a rewrite, but it'll do for now
 
-import pkg/upraises
-
-push:
-  {.upraises: [].}
+{.push raises: [].}
 
 import pkg/questionable
 import pkg/questionable/results

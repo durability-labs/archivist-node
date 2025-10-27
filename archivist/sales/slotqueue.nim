@@ -9,14 +9,14 @@ import ../rng
 import ../utils
 import ../contracts/requests
 import ../utils/asyncheapqueue
-import ../utils/trackedfutures
 
 logScope:
   topics = "marketplace slotqueue"
 
 type
-  OnProcessSlot* =
-    proc(item: SlotQueueItem): Future[void] {.gcsafe, async: (raises: []).}
+  OnProcessSlot* = proc(item: SlotQueueItem): Future[void] {.
+    gcsafe, async: (raises: [CancelledError])
+  .}
 
   # Non-ref obj copies value when assigned, preventing accidental modification
   # of values which could cause an incorrect order (eg
@@ -42,7 +42,7 @@ type
     onProcessSlot: ?OnProcessSlot
     queue: AsyncHeapQueue[SlotQueueItem]
     running: bool
-    trackedFutures: TrackedFutures
+    workers: seq[Future[void].Raising([])]
     unpaused: AsyncEvent
 
   SlotQueueError = object of ArchivistError
@@ -114,7 +114,6 @@ proc new*(
     # temporarily. After push (and sort), the bottom-most item will be deleted
     queue: newAsyncHeapQueue[SlotQueueItem](maxSize.int + 1),
     running: false,
-    trackedFutures: TrackedFutures.new(),
     unpaused: newAsyncEvent(),
   )
   # avoid instantiating `workers` in constructor to avoid side effects in
@@ -396,7 +395,7 @@ proc start*(self: SlotQueue) =
   # task, a new worker will be pushed to the queue
   for i in 0 ..< self.maxWorkers:
     let worker = self.runWorker()
-    self.trackedFutures.track(worker)
+    self.workers.add(worker)
 
 proc stop*(self: SlotQueue) {.async.} =
   if not self.running:
@@ -406,4 +405,5 @@ proc stop*(self: SlotQueue) {.async.} =
 
   self.running = false
 
-  await self.trackedFutures.cancelTracked()
+  for worker in self.workers:
+    await noCancel worker.cancelAndWait()

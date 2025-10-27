@@ -9,12 +9,9 @@
 
 # This module implements serialization and deserialization of Manifest
 
-import pkg/upraises
+{.push raises: [].}
+
 import times
-
-push:
-  {.upraises: [].}
-
 import std/tables
 import std/sequtils
 

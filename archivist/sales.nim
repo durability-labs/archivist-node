@@ -503,12 +503,11 @@ proc startSlotQueue(sales: Sales) =
   let slotQueue = sales.context.slotQueue
   let reservations = sales.context.reservations
 
-  slotQueue.onProcessSlot = proc(item: SlotQueueItem) {.async: (raises: []).} =
+  slotQueue.onProcessSlot = proc(
+      item: SlotQueueItem
+  ) {.async: (raises: [CancelledError]).} =
     trace "processing slot queue item", reqId = item.requestId, slotIdx = item.slotIndex
-    try:
-      await sales.processSlot(item)
-    except CancelledError:
-      discard
+    await sales.processSlot(item)
 
   slotQueue.start()
 

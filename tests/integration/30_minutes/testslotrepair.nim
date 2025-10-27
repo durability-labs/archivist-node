@@ -25,10 +25,7 @@ marketplacesuite(name = "SP Slot Repair", stopOnRequestFail = true):
   var requestId: RequestId
 
   # Here we are keeping track of the slot filled using their ids.
-  proc onSlotFilled(eventResult: ?!SlotFilled) =
-    assert not eventResult.isErr
-    let event = !eventResult
-
+  proc onSlotFilled(event: SlotFilled) =
     if event.requestId == requestId:
       let slotId = slotId(event.requestId, event.slotIndex)
       filledSlotIds.add slotId
@@ -36,9 +33,7 @@ marketplacesuite(name = "SP Slot Repair", stopOnRequestFail = true):
   # Here we are retrieving the slot id freed.
   # When the event is triggered, the slot id is removed
   # from the filled slot id list.
-  proc onSlotFreed(eventResult: ?!SlotFreed) =
-    assert not eventResult.isErr
-    let event = !eventResult
+  proc onSlotFreed(event: SlotFreed) =
     let slotId = slotId(event.requestId, event.slotIndex)
 
     if event.requestId == requestId:

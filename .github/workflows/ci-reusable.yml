@@ -5,14 +5,6 @@ on:
     inputs:
       matrix:
         type: string
-      cache_nonce:
-        default: '0'
-        description: Allows for easily busting actions/cache caches
-        required: false
-        type: string
-
-env:
-  cache_nonce: ${{ inputs.cache_nonce }}
 
 jobs:
   build:
@@ -20,75 +12,83 @@ jobs:
       matrix:
         include: ${{ fromJson(inputs.matrix) }}
 
-    defaults:
-      run:
-        shell: ${{ matrix.shell }} {0}
-
-    name: ${{ matrix.os }}-${{ matrix.tests }}-${{ matrix.cpu }}-${{ matrix.nim_version }}-${{ matrix.job_number }}
+    name: ${{ matrix.builder }}-${{ matrix.tests }}-${{ matrix.job_number }}
     runs-on: ${{ matrix.builder }}
     timeout-minutes: 90
     steps:
-      - name: Checkout sources
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Setup Nimbus Build System
-        uses: ./.github/actions/nimbus-build-system
+      - name: Install Nim
+        uses: iffy/install-nim@v5
         with:
-          os: ${{ matrix.os }}
-          cpu: ${{ matrix.cpu }}
-          shell: ${{ matrix.shell }}
-          nim_version: ${{ matrix.nim_version }}
-          coverage: false
+          version: binary:2.2.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      ## Part 1 Tests ##
-      - name: Unit tests
-        if: matrix.tests == 'unittest' || matrix.tests == 'all'
-        run: make -j${ncpu} test
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.x'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.79.0
+
+      - name: Setup Rust for Windows
+        if: runner.os == 'Windows'
+        run: |
+          rustup toolchain install 1.79.0-x86_64-pc-windows-gnu
+          rustup default 1.79.0-x86_64-pc-windows-gnu
 
       - name: Setup Node.js
-        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools' || matrix.tests == 'all'
+        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools'
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Start Ethereum node with smart contracts
-        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools' || matrix.tests == 'all'
+        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools'
         working-directory: vendor/archivist-contracts
-        env:
-          MSYS2_PATH_TYPE: inherit
+        shell: bash
         run: |
           npm ci
           npm start &
           # Wait for the contracts to be deployed
           sleep 5
 
-      ## Part 2 Tests ##
-      - name: Contract tests
-        if: matrix.tests == 'contract' || matrix.tests == 'all'
-        run: make -j${ncpu} testContracts
+      - name: Build
+        run: nimble install -y
+        env:
+          TMP: ${{ runner.temp }}
 
-      ## Part 3 Tests ##
+      - name: Unit tests
+        if: matrix.tests == 'unittest'
+        run: nimble test
+
+      - name: Contract tests
+        if: matrix.tests == 'contract'
+        run: nimble testContracts
+
       - name: Integration tests
-        if: matrix.tests == 'integration' || matrix.tests == 'all'
+        if: matrix.tests == 'integration'
         env:
           ARCHIVIST_INTEGRATION_TEST_INCLUDES: ${{ matrix.includes }}
-        run: make -j${ncpu} testIntegration
+        run: nimble testIntegration
+
+      - name: Tools tests
+        if: matrix.tests == 'tools'
+        run: nimble testTools
 
       - name: Upload integration tests log files
         uses: actions/upload-artifact@v4
-        if: (matrix.tests == 'integration' || matrix.tests == 'all') && always()
+        if: (success() || failure()) && matrix.tests == 'integration'
         with:
-          name: ${{ matrix.os }}-${{ matrix.cpu }}-${{ matrix.nim_version }}-${{ matrix.job_number }}-integration-tests-logs
+          name: ${{ matrix.builder }}-${{ matrix.job_number }}-integration-tests-logs
           path: tests/integration/logs/
           retention-days: 1
-
-      ## Part 4 Tools ##
-      - name: Tools tests
-        if: matrix.tests == 'tools' || matrix.tests == 'all'
-        run: make -j${ncpu} testTools
 
   status:
     if: always()

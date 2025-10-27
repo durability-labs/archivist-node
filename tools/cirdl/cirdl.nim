@@ -10,20 +10,6 @@ import pkg/chronos/apps/http/httpclient
 import ../../archivist/contracts/marketplace
 import ../../archivist/contracts/deployment
 
-proc consoleLog(logLevel: LogLevel, msg: LogOutputStr) {.gcsafe.} =
-  try:
-    stdout.write(msg)
-    stdout.flushFile()
-  except IOError as err:
-    logLoggingFailure(cstring(msg), err)
-
-proc noOutput(logLevel: LogLevel, msg: LogOutputStr) =
-  discard
-
-defaultChroniclesStream.outputs[0].writer = consoleLog
-defaultChroniclesStream.outputs[1].writer = noOutput
-defaultChroniclesStream.outputs[2].writer = noOutput
-
 proc printHelp() =
   info "Usage: ./cirdl [circuitPath] [rpcEndpoint] ([marketplaceAddress])"
   info "  circuitPath: path where circuit files will be placed."
@@ -107,7 +93,7 @@ proc main() {.async.} =
   if (dirExists(unpackFolder)):
     removeDir(unpackFolder)
 
-  let provider = JsonRpcProvider.new(rpcEndpoint)
+  let provider = await JsonRpcProvider.connect(rpcEndpoint)
 
   without marketplaceAddress =?
     (await getMarketplaceAddress(provider, mpAddressOverride)), err:

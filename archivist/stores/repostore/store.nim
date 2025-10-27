@@ -300,8 +300,6 @@ method listBlocks*(
   ## This is an intensive operation
   ##
 
-  var iter = SafeAsyncIter[Cid]()
-
   let key =
     case blockType
     of BlockType.Manifest: ArchivistManifestKey
@@ -315,18 +313,17 @@ method listBlocks*(
 
   proc next(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
     await idleAsync()
-    if queryIter.finished:
-      iter.finish
+    if pair =? (await queryIter.next()) and cid =? pair.key:
+      doAssert pair.data.len == 0
+      trace "Retrieved record from repo", cid
+      return Cid.init(cid.value).mapFailure
     else:
-      if pair =? (await queryIter.next()) and cid =? pair.key:
-        doAssert pair.data.len == 0
-        trace "Retrieved record from repo", cid
-        return Cid.init(cid.value).mapFailure
-      else:
-        return Cid.failure("No or invalid Cid")
+      return Cid.failure("No or invalid Cid")
 
-  iter.next = next
-  return success iter
+  proc isFinished(): bool =
+    queryIter.finished
+
+  return success SafeAsyncIter[Cid].new(next, isFinished)
 
 proc createBlockExpirationQuery(maxNumber: int, offset: int): ?!Query =
   let queryKey = ?createBlockExpirationMetadataQueryKey()
@@ -360,12 +357,8 @@ method getBlockExpirations*(
     error "Unable to execute block expirations query", err = err.msg
     return failure(err)
 
-  without asyncQueryIter =? (await queryIter.toSafeAsyncIter()), err:
-    error "Unable to convert QueryIter to AsyncIter", err = err.msg
-    return failure(err)
-
   let filteredIter: SafeAsyncIter[KeyVal[BlockMetadata]] =
-    await asyncQueryIter.filterSuccess()
+    await queryIter.toSafeAsyncIter().filterSuccess()
 
   proc mapping(
       kvRes: ?!KeyVal[BlockMetadata]

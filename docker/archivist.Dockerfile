@@ -1,6 +1,6 @@
 # Variables
-ARG BUILDER=ubuntu:24.04
-ARG IMAGE=${BUILDER}
+ARG BUILDER=nimlang/nim:2.2.4-ubuntu-regular
+ARG IMAGE=ubuntu:24.04
 ARG RUST_VERSION=${RUST_VERSION:-1.79.0}
 ARG BUILD_HOME=/src
 ARG MAKE_PARALLEL=${MAKE_PARALLEL:-4}
@@ -26,9 +26,7 @@ RUN echo "export PATH=$PATH:$HOME/.cargo/bin" >> $BASH_ENV
 
 WORKDIR ${BUILD_HOME}
 COPY . .
-RUN make -j ${MAKE_PARALLEL} update
-RUN make -j ${MAKE_PARALLEL}
-RUN make -j ${MAKE_PARALLEL} cirdl
+RUN nimble build
 
 # Create
 FROM ${IMAGE}
@@ -37,7 +35,8 @@ ARG APP_HOME
 ARG NAT_IP_AUTO
 
 WORKDIR ${APP_HOME}
-COPY --from=builder ${BUILD_HOME}/build/* /usr/local/bin/
+COPY --from=builder ${BUILD_HOME}/build/archivist /usr/local/bin/
+COPY --from=builder ${BUILD_HOME}/build/tools/cirdl/cirdl /usr/local/bin/
 COPY --from=builder ${BUILD_HOME}/openapi.yaml .
 COPY --from=builder --chmod=0755 ${BUILD_HOME}/docker/docker-entrypoint.sh /
 RUN apt-get update && apt-get install -y libgomp1 curl jq && rm -rf /var/lib/apt/lists/*

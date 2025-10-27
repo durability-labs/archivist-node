@@ -21,7 +21,6 @@ import pkg/confutils
 import pkg/confutils/defs
 import pkg/nitro
 import pkg/stew/io2
-import pkg/stew/shims/net as stewnet
 import pkg/datastore
 import pkg/ethers except Rng
 import pkg/stew/io2
@@ -84,7 +83,7 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
       error "Persistence enabled, but no Ethereum account was set"
       quit QuitFailure
 
-    let provider = JsonRpcProvider.new(
+    let provider = await JsonRpcProvider.connect(
       config.ethProvider, maxPriorityFeePerGas = config.maxPriorityFeePerGas.u256
     )
     await waitForSync(provider)

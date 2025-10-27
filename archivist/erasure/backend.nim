@@ -7,10 +7,7 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import pkg/upraises
-
-push:
-  {.upraises: [].}
+{.push raises: [].}
 
 import ../stores
 
@@ -29,18 +26,14 @@ method release*(self: ErasureBackend) {.base, gcsafe.} =
   raiseAssert("not implemented!")
 
 method encode*(
-    self: EncoderBackend,
-    buffers, parity: ptr UncheckedArray[ptr UncheckedArray[byte]],
-    dataLen, parityLen: int,
+    self: EncoderBackend, buffers, parity: var seq[seq[byte]]
 ): Result[void, cstring] {.base, gcsafe.} =
   ## encode buffers using a backend
   ##
   raiseAssert("not implemented!")
 
 method decode*(
-    self: DecoderBackend,
-    buffers, parity, recovered: ptr UncheckedArray[ptr UncheckedArray[byte]],
-    dataLen, parityLen, recoveredLen: int,
+    self: DecoderBackend, buffers, parity, recovered: var seq[seq[byte]]
 ): Result[void, cstring] {.base, gcsafe.} =
   ## decode buffers using a backend
   ##

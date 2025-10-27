@@ -11,12 +11,12 @@
 
 import std/algorithm
 import std/sequtils
+import std/net
 
 import pkg/chronos
 import pkg/libp2p/[cid, multicodec, routing_record, signed_envelope]
 import pkg/questionable
 import pkg/questionable/results
-import pkg/stew/shims/net
 import pkg/contractabi/address as ca
 import pkg/archivistdht/discv5/[routing_table, protocol as discv5]
 from pkg/nimcrypto import keccak256

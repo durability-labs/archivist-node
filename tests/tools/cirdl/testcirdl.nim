@@ -8,7 +8,7 @@ import ../../contracts/deployment
 
 suite "tools/cirdl":
   const
-    cirdl = "build" / "cirdl"
+    cirdl = "build" / "tools" / "cirdl" / "cirdl"
     workdir = "."
 
   test "circuit download tool":

@@ -7,15 +7,13 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import pkg/upraises
-push:
-  {.upraises: [].}
+{.push raises: [].}
 
 import std/strutils
 import std/options
+import std/net
 
 import pkg/libp2p
-import pkg/stew/shims/net
 import pkg/stew/endians2
 
 func remapAddr*(
@@ -44,7 +42,7 @@ func remapAddr*(
 
 proc getMultiAddrWithIPAndUDPPort*(ip: IpAddress, port: Port): MultiAddress =
   ## Creates a MultiAddress with the specified IP address and UDP port
-  ## 
+  ##
   ## Parameters:
   ##   - ip: A valid IP address (IPv4 or IPv6)
   ##   - port: The UDP port number
