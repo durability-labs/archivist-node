@@ -170,6 +170,7 @@ components:
             $ref: "#/components/schemas/MultiAddress"
         ethAddress:
             $ref: "#/components/schemas/EthereumAddress"
+            nullable: true
         table:
           $ref: "#/components/schemas/PeersTable"
         archivist:
