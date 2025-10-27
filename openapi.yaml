@@ -1085,7 +1085,7 @@ paths:
         "500":
           description: Well it was bad-bad
 
-  "/debug/sto/{key}/{value}":
+  "/debug/testing/option/{key}/{value}":
     post:
       summary: "Only available when built with 'system testing' compile flag. Sets a system testing option."
       tags: [Debug]

@@ -994,7 +994,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
         trace "Excepting processing request", exc = exc.msg
         return RestApiResponse.error(Http500, headers = headers)
 
-    router.api(MethodPost, "/api/archivist/v1/debug/sto/{key}/{value}") do(
+    router.api(MethodPost, "/api/archivist/v1/debug/testing/option/{key}/{value}") do(
       key: string, value: string
     ) -> RestApiResponse:
       var headers = buildCorsHeaders("GET", allowedOrigin)
