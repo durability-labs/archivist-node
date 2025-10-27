@@ -50,7 +50,7 @@ task testAll, "Run all tests":
 
 task format, "Format code using NPH":
   exec "nimble install https://github.com/durability-labs/nph@#version-0-6-2-prerelease" # TODO: update to version 0.6.2 once it is released
-  exec "nph *.nim"
-  exec "nph archivist/"
-  exec "nph tests/"
-  exec "nph tools/"
+  exec findExe("nph") & " archivist.nim"
+  exec findExe("nph") & " archivist/"
+  exec findExe("nph") & " tests/"
+  exec findExe("nph") & " tools/"
