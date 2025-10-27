@@ -29,8 +29,9 @@ proc waitUntilNextPeriod(clock: Clock, periodicity: Periodicity) {.async.} =
   let periodEnd = periodicity.periodEnd(period)
   await clock.waitUntil((periodEnd + 1).toSecondsSince1970)
 
-proc waitForStableChallenge(market: Market, clock: Clock, slotId: SlotId) {.async.} =
-  let periodicity = await market.periodicity()
+proc waitForStableChallenge(
+    market: Market, clock: Clock, periodicity: Periodicity, slotId: SlotId
+) {.async.} =
   let downtime = await market.proofDowntime()
   await clock.waitUntilNextPeriod(periodicity)
   while (await market.getPointer(slotId)) > (256 - downtime):
@@ -51,17 +52,31 @@ method run*(
     raiseAssert "onProve callback not set"
 
   try:
+    let periodicity = await market.periodicity()
+
     debug "Waiting for a proof challenge that is valid for the entire period"
     let slot = Slot(request: request, slotIndex: data.slotIndex)
-    await waitForStableChallenge(market, clock, slot.id)
+    await waitForStableChallenge(market, clock, periodicity, slot.id)
+    let provingPeriod = periodicity.periodOf(clock.now().Timestamp)
 
-    debug "Generating initial proof", requestId = data.requestId
+    debug "Generating initial proof",
+      provingPeriod = provingPeriod,
+      requestId = data.requestId,
+      slotIndex = data.slotIndex
     let challenge = await context.market.getChallenge(slot.id)
     without proof =? (await onProve(slot, challenge)), err:
       error "Failed to generate initial proof", error = err.msg
       return some State(SaleErrored(error: err))
 
-    debug "Finished proof calculation", requestId = data.requestId
+    let periodAtFinish = periodicity.periodOf(clock.now().Timestamp)
+    if periodAtFinish != provingPeriod:
+      warn "Failed to generate initial proof in time",
+        provingPeriod = provingPeriod, periodAtFinish = periodAtFinish
+
+    debug "Finished initial proof calculation",
+      provingPeriod = periodAtFinish,
+      requestId = data.requestId,
+      slotIndex = data.slotIndex
 
     return some State(SaleFilling(proof: proof))
   except CancelledError as e:

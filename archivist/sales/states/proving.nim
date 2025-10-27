@@ -25,20 +25,21 @@ method prove*(
     challenge: ProofChallenge,
     onProve: OnProve,
     market: Market,
-    currentPeriod: Period,
+    provingPeriod: Period,
 ) {.base, async.} =
   try:
     without proof =? (await onProve(slot, challenge)), err:
       error "Failed to generate proof", error = err.msg
       # In this state, there's nothing we can do except try again next time.
       return
-    debug "Submitting proof", currentPeriod = currentPeriod, slotId = slot.id
+    debug "Submitting proof", provingPeriod = provingPeriod, slotId = slot.id
     await market.submitProof(slot.id, proof)
   except CancelledError as error:
     trace "Submitting proof cancelled"
     raise error
   except CatchableError as e:
-    error "Submitting proof failed", msg = e.msgDetail
+    error "Submitting proof failed",
+      provingPeriod = provingPeriod, slotId = slot.id, msg = e.msgDetail
 
 proc proveLoop(
     state: SaleProving,
@@ -52,7 +53,7 @@ proc proveLoop(
   let slotId = slot.id
 
   logScope:
-    period = currentPeriod
+    provingPeriod = provingPeriod
     requestId = request.id
     slotIndex
     slotId = slot.id
@@ -67,17 +68,19 @@ proc proveLoop(
     await clock.waitUntil((periodicity.periodStart(period) + 1).toSecondsSince1970)
 
   while true:
-    let currentPeriod = await getCurrentPeriod()
+    let provingPeriod = await getCurrentPeriod()
     let slotState = await market.slotState(slot.id)
 
     case slotState
     of SlotState.Filled:
-      debug "Proving for new period", period = currentPeriod
+      debug "Proving for new period"
       if (await market.isProofRequired(slotId)) or
           (await market.willProofBeRequired(slotId)):
         let challenge = await market.getChallenge(slotId)
-        debug "Proof is required", period = currentPeriod, challenge = challenge
-        await state.prove(slot, challenge, onProve, market, currentPeriod)
+        debug "Proof is required", challenge = challenge
+        await state.prove(slot, challenge, onProve, market, provingPeriod)
+        let periodAtFinish = await getCurrentPeriod()
+        debug "Finished required proof submission", periodAtFinish = periodAtFinish
     of SlotState.Cancelled:
       debug "Slot reached cancelled state"
       # do nothing, let onCancelled callback take care of it
@@ -89,14 +92,14 @@ proc proveLoop(
       debug "Slot reached failed state"
       # do nothing, let onFailed callback take care of it
     of SlotState.Finished:
-      debug "Slot reached finished state", period = currentPeriod
+      debug "Slot reached finished state"
       return # exit the loop
     else:
       let message = "Slot is not in Filled state, but in state: " & $slotState
       raise newException(SlotNotFilledError, message)
 
     debug "waiting until next period"
-    await waitUntilPeriod(currentPeriod + 1)
+    await waitUntilPeriod(provingPeriod + 1)
 
 method `$`*(state: SaleProving): string =
   "SaleProving"

@@ -49,16 +49,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: Start Ethereum node with smart contracts
-        if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools'
-        working-directory: vendor/archivist-contracts
-        shell: bash
-        run: |
-          npm ci
-          npm start &
-          # Wait for the contracts to be deployed
-          sleep 5
-
       - name: Build
         run: nimble install -y
         env:
@@ -84,10 +74,10 @@ jobs:
 
       - name: Upload integration tests log files
         uses: actions/upload-artifact@v4
-        if: (success() || failure()) && matrix.tests == 'integration'
+        if: always() && matrix.tests == 'integration'
         with:
           name: ${{ matrix.builder }}-${{ matrix.job_number }}-integration-tests-logs
-          path: tests/integration/logs/
+          path: logs/testbed
           retention-days: 1
 
   status:

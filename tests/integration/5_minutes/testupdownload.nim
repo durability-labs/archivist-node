@@ -1,98 +1,123 @@
-import pkg/archivist/rest/json
-import ../twonodes
-import ../../archivist/examples
-import json
-from pkg/libp2p import Cid, `$`
+import std/strutils
+import std/json
+import pkg/asynctest/chronos/unittest2
+import pkg/questionable
+import pkg/chronos/apps/http/httpclient
+import ../../testbed
 
-twonodessuite "Uploads and downloads":
-  test "node allows local file downloads", twoNodesConfig:
-    let content1 = "some file contents"
-    let content2 = "some other contents"
+suite "Uploads and downloads":
+  var testbed: Testbed
+  var node1, node2: Node
 
-    let cid1 = (await client1.upload(content1)).get
-    let cid2 = (await client2.upload(content2)).get
+  setup:
+    testbed = await Testbed.start()
+    node1 = await testbed.node.start()
+    node2 = await testbed.node.start()
 
-    let resp1 = (await client1.download(cid1, local = true)).get
-    let resp2 = (await client2.download(cid2, local = true)).get
+  teardown:
+    await testbed.stop()
 
-    check:
-      content1 == resp1
-      content2 == resp2
+  test "node allows local file downloads":
+    let dataset1 = await testbed.dataset.upload(node1)
+    let dataset2 = await testbed.dataset.upload(node2)
+    let download1 = await testbed.api(node1).download(!dataset1.cid, network = false)
+    let download2 = await testbed.api(node2).download(!dataset2.cid, network = false)
+    check download1 == dataset1.data
+    check download2 == dataset2.data
 
-  test "node allows remote file downloads", twoNodesConfig:
-    let content1 = "some file contents"
-    let content2 = "some other contents"
+  test "node allows remote file downloads":
+    let dataset1 = await testbed.dataset.upload(node1)
+    let dataset2 = await testbed.dataset.upload(node2)
+    let download1 = await testbed.api(node2).download(!dataset1.cid)
+    let download2 = await testbed.api(node1).download(!dataset2.cid)
+    check download1 == dataset1.data
+    check download2 == dataset2.data
 
-    let cid1 = (await client1.upload(content1)).get
-    let cid2 = (await client2.upload(content2)).get
+  test "node fails to retrieve non-existing local file":
+    let dataset = await testbed.dataset.upload(node1)
+    try:
+      discard await testbed.api(node2).download(!dataset.cid, network = false)
+      fail()
+    except HttpError as error:
+      check "404" in error.msg
 
-    let resp2 = (await client1.download(cid2, local = false)).get
-    let resp1 = (await client2.download(cid1, local = false)).get
+  let exampleData = "some file contents"
+  let exampleDataManifest =
+    %*{
+      "treeCid": "zDzSvJTezk7bJNQqFq8k1iHXY84psNuUfZVusA5bBQQUSuyzDSVL",
+      "datasetSize": 18,
+      "blockSize": 65536,
+      "protected": false,
+      "filename": nil,
+      "mimetype": nil,
+    }
 
-    check:
-      content1 == resp1
-      content2 == resp2
+  test "node allows downloading only manifest":
+    let dataset = await testbed.dataset.data(exampleData).upload(node1)
+    let manifest = await testbed.api(node1).downloadManifest(!dataset.cid)
+    check manifest{"cid"} == %(!dataset.cid)
+    check manifest{"manifest"} == exampleDataManifest
 
-  test "node fails retrieving non-existing local file", twoNodesConfig:
-    let content1 = "some file contents"
-    let cid1 = (await client1.upload(content1)).get # upload to first node
-    let resp2 =
-      await client2.download(cid1, local = true) # try retrieving from second node
+  test "node allows downloading content without streaming":
+    let dataset = await testbed.dataset.data(exampleData).upload(node1)
+    let manifest = await testbed.api(node2).downloadInBackground(!dataset.cid)
+    check manifest{"cid"} == %(!dataset.cid)
+    check manifest{"manifest"} == exampleDataManifest
+    await sleepAsync(1.seconds) # allow for the data to be transfered
+    let download = await testbed.api(node2).download(!dataset.cid, network = false)
+    check download == dataset.data
 
-    check:
-      resp2.error.msg == "404"
+  test "nodes reliably transfer datasets between themselves":
+    proc testTransfer(a, b: Node) {.async.} =
+      let dataset = await testbed.dataset.upload(a)
+      let download = await testbed.api(b).download(!dataset.cid)
+      check download == dataset.data
 
-  proc checkRestContent(cid: Cid, content: ?!string) =
-    let c = content.tryGet()
+    for _ in 0 .. 10:
+      await testTransfer(node1, node2)
+      await testTransfer(node2, node1)
 
-    # tried to JSON (very easy) and checking the resulting object (would be much nicer)
-    # spent an hour to try and make it work.
-    let jsonData = parseJson(c)
+  test "node sets file name and mime type for downloads":
+    let mimetype = "application/octet-stream"
+    let filename = "example.bin"
+    let dataset =
+      await testbed.dataset.mimetype(mimetype).filename(filename).upload(node1)
+    let response = await testbed.api(node1).raw.download(!dataset.cid)
+    let disposition = "attachment; filename=\"" & filename & "\""
+    check ("content-type", mimetype) in response.headers
+    check ("content-disposition", disposition) in response.headers
+    await response.close()
 
-    check jsonData.hasKey("cid") == true
+  test "node accepts content disposition header without filename":
+    let headers = @{"Content-Disposition": "attachment"}
+    discard await testbed.dataset.upload(node1, headers = headers)
 
-    check jsonData["cid"].getStr() == $cid
-    check jsonData.hasKey("manifest") == true
+  test "node rejects bad filenames":
+    try:
+      discard await testbed.dataset.data("example data").filename("exam*ple.txt").upload(
+        node1
+      )
+      fail()
+    except HttpError as error:
+      check "422" in error.msg
+      check "filename is not valid" in error.msg
 
-    let manifest = jsonData["manifest"]
+  test "node rejects invalid content types":
+    try:
+      discard
+        await testbed.dataset.data("example data").mimetype("hello/world").upload(node1)
+      fail()
+    except HttpError as error:
+      check "422" in error.msg
+      check "MIME type 'hello/world' is not valid" in error.msg
 
-    check manifest.hasKey("treeCid") == true
-    check manifest["treeCid"].getStr() ==
-      "zDzSvJTezk7bJNQqFq8k1iHXY84psNuUfZVusA5bBQQUSuyzDSVL"
-    check manifest.hasKey("datasetSize") == true
-    check manifest["datasetSize"].getInt() == 18
-    check manifest.hasKey("blockSize") == true
-    check manifest["blockSize"].getInt() == 65536
-    check manifest.hasKey("protected") == true
-    check manifest["protected"].getBool() == false
-
-  test "node allows downloading only manifest", twoNodesConfig:
-    let content1 = "some file contents"
-    let cid1 = (await client1.upload(content1)).get
-
-    let resp2 = await client1.downloadManifestOnly(cid1)
-    checkRestContent(cid1, resp2)
-
-  test "node allows downloading content without stream", twoNodesConfig:
-    let
-      content1 = "some file contents"
-      cid1 = (await client1.upload(content1)).get
-      resp1 = await client2.downloadNoStream(cid1)
-
-    checkRestContent(cid1, resp1)
-
-    let resp2 = (await client2.download(cid1, local = true)).get
-    check:
-      content1 == resp2
-
-  test "reliable transfer test", twoNodesConfig:
-    proc transferTest(a: ArchivistClient, b: ArchivistClient) {.async.} =
-      let data = await RandomChunker.example(blocks = 8)
-      let cid = (await a.upload(data)).get
-      let response = (await b.download(cid)).get
-      check:
-        @response.mapIt(it.byte) == data
-
-    for run in 0 .. 10:
-      await transferTest(client1, client2)
-      await transferTest(client2, client1)
+  test "node does not crash when the download stream is closed too soon":
+    let dataset = await testbed.dataset.upload(node1)
+    let response = await testbed.api(node1).raw.download(!dataset.cid)
+    let reader = HttpClientResponseRef(response).getBodyReader()
+    # read a few bytes to ensure that we're receiving data
+    check (await reader.read(4)) == dataset.data[0 ..< 4]
+    # close the stream at a low level, to ensure that it isn't closed nicely
+    HttpClientResponseRef(response).connection.reader.tsource.close()
+    # check that the node hasn't crashed
+    check (await testbed.api(node1).download(!dataset.cid)) == dataset.data

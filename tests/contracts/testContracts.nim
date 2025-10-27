@@ -1,12 +1,26 @@
 import pkg/chronos
 import pkg/ethers/erc20
 import archivist/contracts
-import ../ethertest
+import ../asynctest
+import ../testbed
 import ./examples
-import ./time
 import ./deployment
 
-ethersuite "Marketplace contracts":
+suite "Marketplace contracts":
+  var testbed: Testbed
+  var hardhat: Hardhat
+  var provider: JsonRpcProvider
+  var accounts: seq[Address]
+
+  setupAll:
+    testbed = await Testbed.start()
+    hardhat = await testbed.hardhat.start()
+    provider = testbed.eth.provider
+    accounts = await provider.listAccounts()
+
+  teardownAll:
+    await testbed.stop()
+
   let proof = Groth16Proof.example
 
   var client, host: Signer
@@ -16,26 +30,26 @@ ethersuite "Marketplace contracts":
   var periodicity: Periodicity
   var request: StorageRequest
   var slotId: SlotId
-  var filledAt: UInt256
+  var filledAt: uint64
 
-  proc expectedPayout(endTimestamp: UInt256): UInt256 =
-    return (endTimestamp - filledAt) * request.ask.pricePerSlotPerSecond()
+  proc expectedPayout(endTimestamp: uint64): UInt256 =
+    return (endTimestamp - filledAt).u256 * request.ask.pricePerSlotPerSecond()
 
   proc switchAccount(account: Signer) =
     marketplace = marketplace.connect(account)
     token = token.connect(account)
 
   setup:
-    client = ethProvider.getSigner(accounts[0])
-    host = ethProvider.getSigner(accounts[1])
+    client = provider.getSigner(accounts[0])
+    host = provider.getSigner(accounts[1])
     rewardRecipient = accounts[2]
     collateralRecipient = accounts[3]
 
     let address = Marketplace.address(dummyVerifier = true)
-    marketplace = Marketplace.new(address, ethProvider.getSigner())
+    marketplace = Marketplace.new(address, provider.getSigner())
 
     let tokenAddress = await marketplace.token()
-    token = Erc20Token.new(tokenAddress, ethProvider.getSigner())
+    token = Erc20Token.new(tokenAddress, provider.getSigner())
 
     let config = await marketplace.configuration()
     periodicity = Periodicity(seconds: config.proofs.period)
@@ -51,19 +65,21 @@ ethersuite "Marketplace contracts":
       await token.approve(marketplace.address, request.ask.collateralPerSlot).confirm(1)
     discard await marketplace.reserveSlot(request.id, 0.uint64).confirm(1)
     let receipt = await marketplace.fillSlot(request.id, 0.uint64, proof).confirm(1)
-    filledAt = await ethProvider.blockTime(BlockTag.init(!receipt.blockNumber))
+    filledAt = await testbed.eth.time.blockTime(BlockTag.init(!receipt.blockNumber))
     slotId = request.slotId(0.uint64)
 
+  teardown:
+    await hardhat.reset()
+
   proc waitUntilProofRequired(slotId: SlotId) {.async.} =
-    let currentPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
-    await ethProvider.advanceTimeTo(periodicity.periodEnd(currentPeriod).u256)
+    let currentPeriod = periodicity.periodOf((await testbed.eth.time.now()).uint64)
+    await testbed.eth.time.advanceTo(periodicity.periodEnd(currentPeriod))
     while not (
       (await marketplace.isProofRequired(slotId)) and
       (await marketplace.getPointer(slotId)) < 250
     )
     :
-      await ethProvider.advanceTime(periodicity.seconds.u256)
+      await testbed.eth.time.advance(periodicity.seconds)
 
   proc startContract() {.async.} =
     for slotIndex in 1 ..< request.ask.slots:
@@ -81,10 +97,9 @@ ethersuite "Marketplace contracts":
   test "can mark missing proofs":
     switchAccount(host)
     await waitUntilProofRequired(slotId)
-    let missingPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
+    let missingPeriod = periodicity.periodOf((await testbed.eth.time.now()).uint64)
     let endOfPeriod = periodicity.periodEnd(missingPeriod)
-    await ethProvider.advanceTimeTo(endOfPeriod.u256 + 1)
+    await testbed.eth.time.advanceTo(endOfPeriod + 1)
     switchAccount(client)
     discard await marketplace.markProofAsMissing(slotId, missingPeriod).confirm(1)
 
@@ -92,20 +107,20 @@ ethersuite "Marketplace contracts":
     switchAccount(host)
     let address = await host.getAddress()
     await startContract()
-    let requestEnd = await marketplace.requestEnd(request.id)
-    await ethProvider.advanceTimeTo(requestEnd.u256 + 1)
+    let requestEnd = (await marketplace.requestEnd(request.id)).uint64
+    await testbed.eth.time.advanceTo(requestEnd + 1)
     let startBalance = await token.balanceOf(address)
     discard await marketplace.freeSlot(slotId).confirm(1)
     let endBalance = await token.balanceOf(address)
     check endBalance ==
-      (startBalance + expectedPayout(requestEnd.u256) + request.ask.collateralPerSlot)
+      (startBalance + expectedPayout(requestEnd) + request.ask.collateralPerSlot)
 
   test "can be paid out at the end, specifying reward and collateral recipient":
     switchAccount(host)
     let hostAddress = await host.getAddress()
     await startContract()
-    let requestEnd = await marketplace.requestEnd(request.id)
-    await ethProvider.advanceTimeTo(requestEnd.u256 + 1)
+    let requestEnd = (await marketplace.requestEnd(request.id)).uint64
+    await testbed.eth.time.advanceTo(requestEnd + 1)
     let startBalanceHost = await token.balanceOf(hostAddress)
     let startBalanceReward = await token.balanceOf(rewardRecipient)
     let startBalanceCollateral = await token.balanceOf(collateralRecipient)
@@ -117,16 +132,15 @@ ethersuite "Marketplace contracts":
     let endBalanceCollateral = await token.balanceOf(collateralRecipient)
 
     check endBalanceHost == startBalanceHost
-    check endBalanceReward == (startBalanceReward + expectedPayout(requestEnd.u256))
+    check endBalanceReward == (startBalanceReward + expectedPayout(requestEnd))
     check endBalanceCollateral ==
       (startBalanceCollateral + request.ask.collateralPerSlot)
 
   test "cannot mark proofs missing for cancelled request":
-    let expiry = await marketplace.requestExpiry(request.id)
-    await ethProvider.advanceTimeTo((expiry + 1).u256)
+    let expiry = (await marketplace.requestExpiry(request.id)).uint64
+    await testbed.eth.time.advanceTo(expiry + 1)
     switchAccount(client)
-    let missingPeriod =
-      periodicity.periodOf((await ethProvider.currentTime()).truncate(uint64))
-    await ethProvider.advanceTime(periodicity.seconds.u256)
+    let missingPeriod = periodicity.periodOf((await testbed.eth.time.now()).uint64)
+    await testbed.eth.time.advance(periodicity.seconds)
     expect Marketplace_SlotNotAcceptingProofs:
       discard await marketplace.markProofAsMissing(slotId, missingPeriod).confirm(1)

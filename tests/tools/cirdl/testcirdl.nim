@@ -1,25 +1,31 @@
 import std/os
 import std/osproc
-import std/options
 import pkg/chronos
 import pkg/archivist/contracts
 import ../../asynctest
-import ../../contracts/deployment
+import ../../testbed
 
 suite "tools/cirdl":
+  var testbed: Testbed
+  var hardhat: Hardhat
+
+  setup:
+    testbed = await Testbed.start()
+    hardhat = await testbed.hardhat.start()
+
+  teardown:
+    await testbed.stop()
+
   const
     cirdl = "build" / "tools" / "cirdl" / "cirdl"
     workdir = "."
 
   test "circuit download tool":
-    let
-      circuitPath = "testcircuitpath"
-      rpcEndpoint = "ws://localhost:8545"
-      marketplaceAddress = Marketplace.address
+    let circuitPath = "testcircuitpath"
 
     discard existsOrCreateDir(circuitPath)
 
-    let args = [circuitPath, rpcEndpoint, $marketplaceAddress]
+    let args = [circuitPath, hardhat.jsonRpcUrl]
 
     let process = osproc.startProcess(cirdl, workdir, args, options = {poParentStreams})
 
