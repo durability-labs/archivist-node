@@ -44,6 +44,7 @@ components:
 
     EthereumAddress:
       type: string
+      nullable: true
       description: Address of Ethereum address
 
     PricePerBytePerSecond:
