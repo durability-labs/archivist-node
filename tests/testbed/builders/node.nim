@@ -235,8 +235,6 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--circom-wasm=" & circomWasm)
   if circomZkey =? builder.circomZkeyResolved:
     arguments.add("--circom-zkey=" & circomZkey)
-  if failProofs =? builder.failProofs:
-    arguments.add("--simulate-proof-failures=" & $failProofs)
   if blockTtl =? builder.blockTtl:
     arguments.add("--block-ttl=" & $blockTtl)
   if blockMaintenanceInterval =? builder.blockMaintenanceInterval:
@@ -255,4 +253,6 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   builder.testbed.nodeInstances.add(node)
   if builder.createInitialAvailability:
     discard await builder.testbed.availability.create(node)
+  if failProofs =? builder.failProofs:
+    await builder.testbed.api(node).setSimulateProofFailures(failProofs)
   node

@@ -125,23 +125,12 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
     else:
       s.archivistNode.clock = SystemClock()
 
-    # This is used for simulation purposes. Normal nodes won't be compiled with this flag
-    # and hence the proof failure will always be 0.
-    when archivist_enable_proof_failures:
-      let proofFailures = config.simulateProofFailures
-      if proofFailures > 0:
-        warn "Enabling proof failure simulation!"
-    else:
-      let proofFailures = 0
-      if config.simulateProofFailures > 0:
-        warn "Proof failure simulation is not enabled for this build! Configuration ignored"
-
     if error =? (await market.loadConfig()).errorOption:
       fatal "Cannot load market configuration", error = error.msg
       quit QuitFailure
 
     let purchasing = Purchasing.new(market, clock)
-    let sales = Sales.new(market, clock, repo, proofFailures)
+    let sales = Sales.new(market, clock, repo)
     client = some ClientInteractions.new(clock, purchasing)
     host = some HostInteractions.new(clock, sales)
 
@@ -159,6 +148,10 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
 
 proc start*(s: NodeServer) {.async.} =
   trace "Starting node", config = $s.config
+
+  when defined(archivist_system_testing_options):
+    warn "Warning: This application was compiled with system testing options enabled. " &
+      "It is strongly recommended to use it for development purposes only."
 
   await s.repoStore.start()
   s.maintenance.start()

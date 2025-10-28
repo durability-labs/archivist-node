@@ -6,7 +6,7 @@ bin = @["archivist", "tools/cirdl/cirdl"]
 binDir = "build"
 
 requires "https://github.com/durability-labs/nim-libp2p#multihash-poseidon2"
-requires "https://github.com/durability-labs/archivist-dht >= 0.7.0"
+requires "https://github.com/durability-labs/archivist-dht >= 0.7.1"
 requires "https://github.com/durability-labs/nim-ethers >= 3.1.0"
 requires "https://github.com/status-im/nim-toml-serialization >= 0.2.14"
 requires "https://github.com/status-im/lrucache.nim >= 1.2.2"
@@ -31,8 +31,8 @@ task testContracts, "Run contract tests":
 
 task testIntegration, "Run integration tests":
   exec "nimble c" &
-    " --define:archivist_enable_proof_failures" &
-    " --out:build" / "integration-test" / "archivist-with-proof-failures".toExe &
+    " --define:archivist_system_testing_options" &
+    " --out:build" / "integration-test" / "archivist-for-testing".toExe &
     " archivist"
   exec "nimble c tests" / "testIntegration"
   exec "tests" / "testIntegration".toExe
@@ -50,7 +50,7 @@ task testAll, "Run all tests":
 
 task format, "Format code using NPH":
   exec "nimble install https://github.com/durability-labs/nph@#version-0-6-2-prerelease" # TODO: update to version 0.6.2 once it is released
-  exec "nph *.nim"
-  exec "nph archivist/"
-  exec "nph tests/"
-  exec "nph tools/"
+  exec findExe("nph") & " archivist.nim"
+  exec findExe("nph") & " archivist/"
+  exec findExe("nph") & " tests/"
+  exec findExe("nph") & " tools/"

@@ -31,6 +31,16 @@ proc getDebugInfo*(builder: RawBuilder): Future[HttpResponse] {.async.} =
 proc getDebugInfo*(builder: ApiBuilder): Future[JsonNode] {.async.} =
   await builder.raw.getDebugInfo().readJson()
 
+proc setSystemTestingOption*(
+    builder: ApiBuilder, key: string, value: string
+): Future[void] {.async.} =
+  discard await Http.post(builder.url & "/debug/testing/option/" & key & "/" & value)
+
+proc setSimulateProofFailures*(
+    builder: ApiBuilder, proofFailures: int
+): Future[void] {.async.} =
+  await builder.setSystemTestingOption("simulate_proof_failures", $proofFailures)
+
 proc getSpr*(builder: ApiBuilder): Future[?string] {.async.} =
   let info = await builder.getDebugInfo()
   if spr =? info{"spr"}:

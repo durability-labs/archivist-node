@@ -68,12 +68,7 @@ proc defaultDataDir*(): string =
 
   getHomeDir() / dataDir
 
-const
-  archivist_enable_api_debug_peers* {.booldefine.} = false
-  archivist_enable_proof_failures* {.booldefine.} = false
-  archivist_enable_log_counter* {.booldefine.} = false
-
-  DefaultThreadCount* = ThreadCount(0)
+const DefaultThreadCount* = ThreadCount(0)
 
 type
   StartUpCmd* {.pure.} = enum
@@ -302,14 +297,6 @@ type
         defaultValueDesc: "",
         name: "marketplace-address"
       .}: Option[EthAddress]
-
-      # TODO: should go behind a feature flag
-      simulateProofFailures* {.
-        desc: "Simulates proof failures once every N proofs. 0 = disabled.",
-        defaultValue: 0,
-        name: "simulate-proof-failures",
-        hidden
-      .}: int
 
       validator* {.
         desc: "Enables validator, requires an Ethereum node",
@@ -768,7 +755,7 @@ proc setupLogging*(conf: NodeConf) =
       of LogKind.None:
         noOutput
 
-    when archivist_enable_log_counter:
+    when defined(archivist_system_testing_options):
       var counter = 0.uint64
       proc numberedWriter(logLevel: LogLevel, msg: LogOutputStr) =
         inc(counter)

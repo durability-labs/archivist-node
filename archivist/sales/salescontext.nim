@@ -21,7 +21,8 @@ type
     onExpiryUpdate*: ?OnExpiryUpdate
     reservations*: Reservations
     slotQueue*: SlotQueue
-    simulateProofFailures*: int
+    when defined(archivist_system_testing_options):
+      simulateProofFailures*: int
 
   BlocksCb* = proc(blocks: seq[bt.Block]): Future[?!void] {.
     gcsafe, async: (raises: [CancelledError])
