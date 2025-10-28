@@ -759,7 +759,8 @@ proc setupLogging*(conf: NodeConf) =
       var counter = 0.uint64
       proc numberedWriter(logLevel: LogLevel, msg: LogOutputStr) =
         inc(counter)
-        let withoutNewLine = msg[0 ..^ 2]
+        var withoutNewLine = $msg
+        withoutNewLine.removeSuffix
         writer(logLevel, withoutNewLine & " count=" & $counter & "\n")
 
       defaultChroniclesStream.outputs[0].writer = numberedWriter
