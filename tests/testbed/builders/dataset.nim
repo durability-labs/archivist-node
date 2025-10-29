@@ -23,6 +23,9 @@ func data*(builder: DatasetBuilder, data: seq[byte]): DatasetBuilder =
 func data*(builder: DatasetBuilder, data: string): DatasetBuilder =
   builder.data(cast[seq[byte]](data))
 
+proc data*(builder: DatasetBuilder, size: int): DatasetBuilder =
+  builder.data(newSeqWith(size, rand(byte)))
+
 func mimetype*(builder: DatasetBuilder, mimetype: string): DatasetBuilder =
   builder.mimetype = some mimetype
   builder
