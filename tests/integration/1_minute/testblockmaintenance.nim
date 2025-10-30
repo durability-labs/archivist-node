@@ -15,12 +15,12 @@ suite "Block maintenance":
     await testbed.stop()
 
   test "node retains file that hasn't expired yet":
-    let dataset = await testbed.dataset.upload(node)
+    let dataset = await testbed.dataset.data(size = 1024).upload(node)
     await sleepAsync(2.seconds)
     discard await testbed.api(node).download(!dataset.cid, network = false)
 
   test "node deletes expired file":
-    let dataset = await testbed.dataset.upload(node)
+    let dataset = await testbed.dataset.data(size = 1024).upload(node)
     await sleepAsync(10.seconds)
     try:
       discard await testbed.api(node).download(!dataset.cid, network = false)
