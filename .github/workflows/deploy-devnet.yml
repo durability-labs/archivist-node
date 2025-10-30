@@ -1,0 +1,321 @@
+name: Deploy - Devnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      archivist_image:
+        description: durabilitylabs/archivist-node:latest-dist-tests
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      archivist_image:
+        description: durabilitylabs/archivist-node:latest-dist-tests
+        required: true
+        type: string
+
+env:
+  NETWORK: devnet
+  ARCHIVIST_NAMESPACE: devnet
+  TOOLS_NAMESPACE: devnet
+  KUBE_CONFIG: ${{ secrets.DEVNET_KUBE_CONFIG }}
+  KUBE_VERSION: v1.33.1
+  ARCHIVIST_IMAGE: ${{ inputs.archivist_image }}
+  SSH_HOSTS_1: ${{ secrets.DEVNET_SSH_BOOTSTRAP_1 }}
+  SSH_HOSTS_2: ${{ secrets.DEVNET_SSH_BOOTSTRAP_2 }}
+  SSH_HOSTS_3: ${{ secrets.DEVNET_SSH_BOOTSTRAP_3 }}
+  SSH_PORT: ${{ secrets.DEVNET_SSH_PORT }}
+  SSH_USERNAME: ${{ secrets.DEVNET_SSH_USERNAME }}
+  SSH_PRIVATE_KEY: ${{ secrets.DEVNET_SSH_KEY }}
+  CONTRACTS_REPOSITORY: archivist-contracts
+  CONTRACTS_DEPLOYMENT_WORKFLOW: devnet-contracts.yml
+  CONFIG_REPOSITORY: archivist-config
+  CONFIG_REPOSITORY_BRANCH: main
+  CONFIG_ENDPOINT: https://config.archivist.storage
+
+jobs:
+  compute-variables:
+    name: Compute variables
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.variables.outputs.app_version }}
+      app_revision: ${{ steps.variables.outputs.app_revision }}
+      contracts_revision: ${{ steps.variables.outputs.contracts_revision }}
+      contracts_ref: ${{ steps.variables.outputs.contracts_ref }}
+      contracts_deploy: ${{ steps.variables.outputs.contracts_deploy }}
+    steps:
+      - name: Set commit ref
+        id: ref
+        run: |
+          if [[ ${{ github.event_name }} == 'workflow_dispatch' ]]; then
+            docker pull ${{ env.ARCHIVIST_IMAGE }}
+            echo "sha=$(docker inspect ${{ env.ARCHIVIST_IMAGE }} --format='{{index .Config.Labels "org.opencontainers.image.revision"}}')" >> $GITHUB_OUTPUT
+          else
+            echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ steps.ref.outputs.sha }}
+
+      - name: Set outputs
+        id: variables
+        run: |
+          # Versions
+          app_revision="$(git rev-parse --short HEAD)"
+          echo "app_revision=${app_revision}" >> $GITHUB_OUTPUT
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "app_version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "app_version=${app_revision}" >> $GITHUB_OUTPUT
+          fi
+          contracts_deployed=$(curl -s ${{ env.CONFIG_ENDPOINT }}/${{ env.NETWORK }}.json | jq -r '.archivist[].contracts')
+          contracts_submodule="$(git rev-parse --short HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})"
+          echo "contracts_revision=${contracts_submodule}" >> $GITHUB_OUTPUT
+          echo "contracts_ref=$(git rev-parse HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})" >> $GITHUB_OUTPUT
+
+          # Check if contracts deployment is needed
+          if [[ "${contracts_deployed}" != "${contracts_submodule}" ]]; then
+            echo "Contracts revision mismatch: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
+            echo "contracts_deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "Contracts revision is the same: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
+          fi
+
+  deploy-contracts:
+    name: Deploy contracts
+    runs-on: ubuntu-latest
+    needs: compute-variables
+    if: needs.compute-variables.outputs.contracts_deploy == 'true'
+    steps:
+      - name: Create access token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.DEPLOYER_APP_ID }}
+          private-key: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          repositories: ${{ env.CONTRACTS_REPOSITORY }}
+
+      - name: Deploy smart contracts
+        uses: the-actions-org/workflow-dispatch@v4
+        with:
+          repo: ${{ github.repository_owner }}/${{ env.CONTRACTS_REPOSITORY }}
+          workflow: ${{ env.CONTRACTS_DEPLOYMENT_WORKFLOW }}
+          token: ${{ steps.app-token.outputs.token }}
+          wait-for-completion-timeout: 30m
+          wait-for-completion-interval: 10s
+          inputs: '{ "network": "${{ env.NETWORK }}", "contracts_ref": "${{ needs.compute-variables.outputs.contracts_ref }}" }'
+
+  update-config:
+    name: Update config
+    runs-on: ubuntu-latest
+    needs: [compute-variables, deploy-contracts]
+    if: ${{ !(failure() || cancelled()) }}
+    steps:
+      - name: Create access token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.DEPLOYER_APP_ID }}
+          private-key: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ env.CONFIG_REPOSITORY }}
+
+      - name: Checkout config repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ env.CONFIG_REPOSITORY }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout config repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ env.CONFIG_REPOSITORY }}
+          ref: ${{ env.CONFIG_REPOSITORY_BRANCH }}
+
+      - name: Update config
+        run: |
+          # Variables
+          config="${{ env.NETWORK }}.json"
+          config_updated="${{ env.NETWORK }}-updated.json"
+
+          # Functions
+          rename_config() {
+            mv "${config_updated}" "${config}"
+          }
+
+          # .latest
+          jq -r '.latest |= "${{ needs.compute-variables.outputs.app_version }}"' "${config}" > "${config_updated}" && rename_config
+
+          # .archivist.version
+          jq -r '.archivist[].version |= "${{ needs.compute-variables.outputs.app_version }}"' "${config}" > "${config_updated}" && rename_config
+
+          # .archivist.revision
+          jq -r '.archivist[].revision |= "${{ needs.compute-variables.outputs.app_revision }}"' "${config}" > "${config_updated}" && rename_config
+
+          # .archivist.contracts
+          jq -r '.archivist[].contracts |= "${{ needs.compute-variables.outputs.contracts_revision }}"' "${config}" > "${config_updated}" && rename_config
+
+      - name: Commit updated config
+        uses: planetscale/ghcommit-action@v0.2.18
+        with:
+          commit_message: "chore(${{ env.NETWORK }}): archivist updated\n${{ github.actor }}\n${{ github.ref_type }}: ${{ github.ref_name }}\n${{ github.event.head_commit.message || 'triggered manually' }}\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          repo: ${{ github.repository_owner }}/${{ env.CONFIG_REPOSITORY }}
+          branch: ${{ env.CONFIG_REPOSITORY_BRANCH }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  bootstrap-nodes:
+    name: Bootstrap nodes
+    runs-on: ubuntu-latest
+    needs: update-config
+    if: ${{ !(failure() || cancelled()) }}
+    steps:
+      - name: Bootstrap - Update
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEVNET_SSH_HOST_1 }},${{ secrets.DEVNET_SSH_HOST_2 }},${{ secrets.DEVNET_SSH_HOST_3 }},${{ secrets.DEVNET_SSH_HOST_4 }}
+          username: ${{ secrets.DEVNET_SSH_USERNAME }}
+          key: ${{ secrets.DEVNET_SSH_KEY }}
+          port: ${{ secrets.DEVNET_SSH_PORT }}
+          script: ${{ env.ARCHIVIST_IMAGE }}
+
+  cluster-nodes:
+    name: Cluster nodes
+    runs-on: ubuntu-latest
+    needs: bootstrap-nodes
+    if: ${{ !(failure() || cancelled()) }}
+    steps:
+      - name: Kubectl - Install ${{ env.KUBE_VERSION }}
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBE_VERSION }}
+
+      - name: Kubectl - Kubeconfig
+        run: |
+          mkdir -p "${HOME}"/.kube
+          echo "${{ env.KUBE_CONFIG }}" | base64 -d > "${HOME}"/.kube/config
+
+      - name: Storage nodes - Update
+        run: |
+          for node in {1..5}; do
+            kubectl -n "${{ env.ARCHIVIST_NAMESPACE }}" patch statefulset archivist-storage-${node} \
+              --patch '{"spec": {"template": {"spec":{"containers":[{"name": "archivist", "image":"${{ env.ARCHIVIST_IMAGE }}"}]}}}}'
+            sleep 10
+          done
+
+      - name: Validators nodes - Update
+        run: |
+          for node in {1..1}; do
+            kubectl -n "${{ env.ARCHIVIST_NAMESPACE }}" patch statefulset archivist-validator-${node} \
+              --patch '{"spec": {"template": {"spec":{"containers":[{"name": "archivist", "image":"${{ env.ARCHIVIST_IMAGE }}"}]}}}}'
+            sleep 10
+          done
+
+      - name: Storage nodes - Status
+        run: |
+          WAIT=900
+          SECONDS=0
+          sleep=1
+          for instance in {1..5}; do
+            while (( SECONDS < WAIT )); do
+              pod=archivist-storage-${instance}-1
+              phase=$(kubectl get pod "${pod}" -n "${{ env.ARCHIVIST_NAMESPACE }}" -o jsonpath='{.status.phase}')
+              if [[ "${phase}" == "Running" ]]; then
+                echo "Pod ${pod} is in the ${phase} state"
+                break
+              else
+                echo "Pod ${pod} is in the ${phase} state - Check in ${sleep} second(s) / $((WAIT - SECONDS))"
+              fi
+              sleep "${sleep}"
+            done
+          done
+
+      - name: Validators nodes - Status
+        run: |
+          WAIT=900
+          SECONDS=0
+          sleep=1
+          for instance in {1..1}; do
+            while (( SECONDS < WAIT )); do
+              pod=archivist-validator-${instance}-1
+              phase=$(kubectl get pod "${pod}" -n "${{ env.ARCHIVIST_NAMESPACE }}" -o jsonpath='{.status.phase}')
+              if [[ "${phase}" == "Running" ]]; then
+                echo "Pod ${pod} is in the ${phase} state"
+                break
+              else
+                echo "Pod ${pod} is in the ${phase} state - Check in ${sleep} second(s) / $((WAIT - SECONDS))"
+              fi
+              sleep "${sleep}"
+            done
+          done
+
+  cluster-tools:
+    name: Cluster tools
+    runs-on: ubuntu-latest
+    needs: [compute-variables, cluster-nodes]
+    if: needs.compute-variables.outputs.contracts_deploy == 'true'
+    steps:
+      - name: Kubectl - Install ${{ env.KUBE_VERSION }}
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBE_VERSION }}
+
+      - name: Kubectl - Kubeconfig
+        run: |
+          mkdir -p "${HOME}"/.kube
+          echo "${{ env.KUBE_CONFIG }}" | base64 -d > "${HOME}"/.kube/config
+
+      - name: Tools - Update
+        run: |
+          crawler_pod=$(kubectl get pod -n "${{ env.TOOLS_NAMESPACE }}" -l 'app.kubernetes.io/name=crawler' -ojsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          discordbot_pod=$(kubectl get pod -n "${{ env.TOOLS_NAMESPACE }}" -l 'app=discordbot' -ojsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+
+          for pod in "${crawler_pod}" "${discordbot_pod}"; do
+            if [[ -n "${pod}" ]]; then
+              kubectl delete pod -n "${{ env.TOOLS_NAMESPACE }}" "${pod}" --grace-period=30
+            fi
+          done
+
+      - name: Tools - Status
+        run: |
+          WAIT=300
+          SECONDS=0
+          sleep=1
+          crawler_pod=$(kubectl get pod -n "${{ env.TOOLS_NAMESPACE }}" -l 'app.kubernetes.io/name=crawler' -ojsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          discordbot_pod=$(kubectl get pod -n "${{ env.TOOLS_NAMESPACE }}" -l 'app=discordbot' -ojsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          for pod in "${crawler_pod}" "${discordbot_pod}"; do
+            if [[ -n "${pod}" ]]; then
+              while (( SECONDS < WAIT )); do
+                phase=$(kubectl get pod "${pod}" -n "${{ env.TOOLS_NAMESPACE }}" -o jsonpath='{.status.phase}')
+                if [[ "${phase}" == "Running" ]]; then
+                  echo "Pod ${pod} is in the ${phase} state"
+                  break
+                else
+                  echo "Pod ${pod} is in the ${phase} state - Check in ${sleep} second(s) / $((WAIT - SECONDS))"
+                fi
+                sleep "${sleep}"
+              done
+            fi
+          done
+
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [compute-variables, cluster-tools]
+    if: always()
+    steps:
+      - name: Discord
+        uses: sarisia/actions-status-discord@v1
+        with:
+          title: "**${{ env.NETWORK }}** - Auto deploy :bulb:"
+          description: |
+            ```yaml
+            - app_version: ${{ needs.compute-variables.outputs.app_version }}
+            - app_revision: ${{ needs.compute-variables.outputs.app_revision }}
+            - contracts_revision: ${{ needs.compute-variables.outputs.contracts_revision }}
+            - ${{ env.ARCHIVIST_IMAGE }}
+            ```
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
