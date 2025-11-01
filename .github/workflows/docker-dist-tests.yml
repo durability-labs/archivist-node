@@ -61,9 +61,10 @@ jobs:
 
   deploy-devnet:
     name: Deploy Devnet
-    uses: ./.github/workflows/deploy-devnet.yml
+    uses: ./.github/workflows/deploy-on-network.yml
     needs: build-and-push
     if: ${{ inputs.deploy_devnet || github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
     with:
+      network: devnet
       archivist_image: ${{ needs.build-and-push.outputs.archivist_image }}
     secrets: inherit

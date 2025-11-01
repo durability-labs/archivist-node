@@ -1,32 +1,35 @@
-name: Deploy - Devnet
+name: Deploy on network
 
 on:
   workflow_dispatch:
     inputs:
+      network:
+        description: Network deploy on
+        required: true
+        default: devnet
+        options:
+          - devnet
+          - testnet
+        type: choice
       archivist_image:
         description: durabilitylabs/archivist-node:latest-dist-tests
         required: true
         type: string
   workflow_call:
     inputs:
+      network:
+        description: Network deploy on
+        required: true
+        type: string
       archivist_image:
         description: durabilitylabs/archivist-node:latest-dist-tests
         required: true
         type: string
 
 env:
-  NETWORK: devnet
-  ARCHIVIST_NAMESPACE: devnet
-  TOOLS_NAMESPACE: devnet
-  KUBE_CONFIG: ${{ secrets.DEVNET_KUBE_CONFIG }}
+  NETWORK: ${{ inputs.network }}
   KUBE_VERSION: v1.33.1
   ARCHIVIST_IMAGE: ${{ inputs.archivist_image }}
-  SSH_HOSTS_1: ${{ secrets.DEVNET_SSH_BOOTSTRAP_1 }}
-  SSH_HOSTS_2: ${{ secrets.DEVNET_SSH_BOOTSTRAP_2 }}
-  SSH_HOSTS_3: ${{ secrets.DEVNET_SSH_BOOTSTRAP_3 }}
-  SSH_PORT: ${{ secrets.DEVNET_SSH_PORT }}
-  SSH_USERNAME: ${{ secrets.DEVNET_SSH_USERNAME }}
-  SSH_PRIVATE_KEY: ${{ secrets.DEVNET_SSH_KEY }}
   CONTRACTS_REPOSITORY: archivist-contracts
   CONTRACTS_DEPLOYMENT_WORKFLOW: devnet-contracts.yml
   CONFIG_REPOSITORY: archivist-config
@@ -43,6 +46,7 @@ jobs:
       contracts_revision: ${{ steps.variables.outputs.contracts_revision }}
       contracts_ref: ${{ steps.variables.outputs.contracts_ref }}
       contracts_deploy: ${{ steps.variables.outputs.contracts_deploy }}
+      cloud_tools_update: ${{ steps.variables.outputs.cloud_tools_update }}
     steps:
       - name: Set commit ref
         id: ref
@@ -71,20 +75,31 @@ jobs:
           else
             echo "app_version=${app_revision}" >> $GITHUB_OUTPUT
           fi
+
+          # Contracts
           contracts_deployed=$(curl -s ${{ env.CONFIG_ENDPOINT }}/${{ env.NETWORK }}.json | jq -r '.archivist[].contracts')
           contracts_submodule="$(git rev-parse --short HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})"
           echo "contracts_revision=${contracts_submodule}" >> $GITHUB_OUTPUT
           echo "contracts_ref=$(git rev-parse HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})" >> $GITHUB_OUTPUT
 
-          # Check if contracts deployment is needed
+          # Check if contracts-deploy is needed
           if [[ "${contracts_deployed}" != "${contracts_submodule}" ]]; then
             echo "Contracts revision mismatch: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
-            echo "contracts_deploy=true" >> $GITHUB_OUTPUT
+            contracts_deploy="true"
+            echo "contracts_deploy=${contracts_deploy}" >> $GITHUB_OUTPUT
           else
             echo "Contracts revision is the same: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
           fi
 
-  deploy-contracts:
+          # Check if cloud-tools update is needed
+          echo "cloud_tools_update=true" >> $GITHUB_OUTPUT
+          if [[ "${{ env.NETWORK }}" == "devnet" ]]; then
+            if [[ "${contracts_deploy}" != "true" ]]; then
+              echo "cloud_tools_update=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  contracts-deploy:
     name: Deploy contracts
     runs-on: ubuntu-latest
     needs: compute-variables
@@ -111,23 +126,29 @@ jobs:
   bootstrap-nodes:
     name: Bootstrap nodes
     runs-on: ubuntu-latest
-    needs: deploy-contracts
+    needs: [compute-variables, contracts-deploy]
     if: ${{ !(failure() || cancelled()) }}
     steps:
       - name: Bootstrap - Update
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.DEVNET_SSH_HOST_1 }},${{ secrets.DEVNET_SSH_HOST_2 }},${{ secrets.DEVNET_SSH_HOST_3 }},${{ secrets.DEVNET_SSH_HOST_4 }}
-          username: ${{ secrets.DEVNET_SSH_USERNAME }}
-          key: ${{ secrets.DEVNET_SSH_KEY }}
-          port: ${{ secrets.DEVNET_SSH_PORT }}
+          host: ${{ env.SSH_HOST_BOOTSTRAP_1 }},${{ env.SSH_HOST_BOOTSTRAP_2 }},${{ env.SSH_HOST_BOOTSTRAP_3 }}
+          username: ${{ secrets[format('{0}_SSH_USERNAME', inputs.network)] }}
+          key: ${{ secrets[format('{0}_SSH_KEY', inputs.network)] }}
+          port: ${{ secrets[format('{0}_SSH_PORT', inputs.network)] }}
           script: ${{ env.ARCHIVIST_IMAGE }}
+        env:
+          SSH_HOST_BOOTSTRAP_1: ${{ secrets[format('{0}_SSH_HOST_BOOTSTRAP_1', inputs.network)] }}
+          SSH_HOST_BOOTSTRAP_2: ${{ secrets[format('{0}_SSH_HOST_BOOTSTRAP_2', inputs.network)] }}
+          SSH_HOST_BOOTSTRAP_3: ${{ secrets[format('{0}_SSH_HOST_BOOTSTRAP_3', inputs.network)] }}
 
   cluster-nodes:
     name: Cluster nodes
     runs-on: ubuntu-latest
     needs: bootstrap-nodes
     if: ${{ !(failure() || cancelled()) }}
+    env:
+      ARCHIVIST_NAMESPACE: ${{ secrets[format('{0}_KUBE_NAMESPACE_ARCHIVIST', inputs.network)] }}
     steps:
       - name: Kubectl - Install ${{ env.KUBE_VERSION }}
         uses: azure/setup-kubectl@v4
@@ -138,6 +159,9 @@ jobs:
         run: |
           mkdir -p "${HOME}"/.kube
           echo "${{ env.KUBE_CONFIG }}" | base64 -d > "${HOME}"/.kube/config
+        env:
+          KUBE_CONFIG: ${{ secrets[format('{0}_KUBE_CONFIG', inputs.network)] }}
+
 
       - name: Storage nodes - Update
         run: |
@@ -197,7 +221,9 @@ jobs:
     name: Cluster tools
     runs-on: ubuntu-latest
     needs: [compute-variables, cluster-nodes]
-    if: needs.compute-variables.outputs.contracts_deploy == 'true'
+    if: needs.compute-variables.outputs.cloud_tools_update == 'true'
+    env:
+      TOOLS_NAMESPACE: ${{ secrets[format('{0}_KUBE_NAMESPACE_TOOLS', inputs.network)] }}
     steps:
       - name: Kubectl - Install ${{ env.KUBE_VERSION }}
         uses: azure/setup-kubectl@v4
@@ -208,6 +234,8 @@ jobs:
         run: |
           mkdir -p "${HOME}"/.kube
           echo "${{ env.KUBE_CONFIG }}" | base64 -d > "${HOME}"/.kube/config
+        env:
+          KUBE_CONFIG: ${{ secrets[format('{0}_KUBE_CONFIG', inputs.network)] }}
 
       - name: Tools - Update
         run: |
@@ -307,7 +335,7 @@ jobs:
   notify:
     name: Notify
     runs-on: ubuntu-latest
-    needs: [compute-variables, deploy-contracts, bootstrap-nodes, cluster-nodes, cluster-tools, update-config]
+    needs: [compute-variables, contracts-deploy, bootstrap-nodes, cluster-nodes, cluster-tools, update-config]
     if: always()
     steps:
       - name: Emojify jobs status
@@ -340,17 +368,18 @@ jobs:
         id: jobs
         run: |
           if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}"  == "true" ]]; then
-            echo "status=:x:" >> $GITHUB_OUTPUT
+            echo "status=:x:" >> $GITHUB_ENV
             exit 1
           else
-            echo "status=:white_check_mark:" >> $GITHUB_OUTPUT
+            echo "status=:white_check_mark:" >> $GITHUB_ENV
           fi
+          if [[ "${{ env.NETWORK}}" != "devnet" ]]; then echo "network_mark=:bulb:" >> $GITHUB_ENV; fi
 
       - name: Discord
         if: always()
         uses: sarisia/actions-status-discord@v1
         with:
-          title: "${{ steps.jobs.outputs.status }} **${{ env.NETWORK }}** - auto deploy"
+          title: "${{ env.status }} **${{ env.NETWORK }}** - auto deploy ${{ env.network_mark }}"
           description: |
             ```yaml
             - app version:        ${{ needs.compute-variables.outputs.app_version }}
