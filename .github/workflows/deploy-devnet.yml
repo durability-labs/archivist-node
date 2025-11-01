@@ -292,6 +292,9 @@ jobs:
           # .archivist.contracts
           jq -r '.archivist[].contracts |= "${{ needs.compute-variables.outputs.contracts_revision }}"' "${config}" > "${config_updated}" && rename_config
 
+          # .team.nodes.category.versions.version
+          jq -r '.team.nodes[].versions[].version |= "${{ needs.compute-variables.outputs.app_version }}"' "${config}" > "${config_updated}" && rename_config
+
       - name: Commit updated config
         uses: planetscale/ghcommit-action@v0.2.18
         with:
