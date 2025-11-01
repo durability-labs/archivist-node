@@ -304,18 +304,57 @@ jobs:
   notify:
     name: Notify
     runs-on: ubuntu-latest
-    needs: [compute-variables, update-config]
+    needs: [compute-variables, deploy-contracts, bootstrap-nodes, cluster-nodes, cluster-tools, update-config]
     if: always()
     steps:
+      - name: Emojify jobs status
+        id: emojify
+        uses: actions/github-script@v8
+        with:
+          result-encoding: string
+          script: |
+            let status = '';
+            Object.entries(${{ toJSON(needs) }}).forEach(([key, value]) => {
+              switch(value.result) {
+                case "success":
+                  Object.assign(value, {"emoji": ":green_circle:"});
+                  break
+                case "skipped":
+                  Object.assign(value, {"emoji": ":white_circle:"});
+                  break
+                case "cancelled":
+                  Object.assign(value, {"emoji": ":grey_exclamation:"});
+                  break
+                case "failure":
+                  Object.assign(value, {"emoji": ":red_circle:"});
+              }
+              status += `- ${value.emoji}  ${key}\n`;
+              core.setOutput("status", status);
+            });
+
+      - name: Deployment jobs status
+        if: always()
+        id: jobs
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}"  == "true" ]]; then
+            echo "status=:x:" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "status=:white_check_mark:" >> $GITHUB_OUTPUT
+          fi
+
       - name: Discord
+        if: always()
         uses: sarisia/actions-status-discord@v1
         with:
-          title: "**${{ env.NETWORK }}** - Auto deploy :bulb:"
+          title: "${{ steps.jobs.outputs.status }} **${{ env.NETWORK }}** - auto deploy"
           description: |
             ```yaml
-            - app_version: ${{ needs.compute-variables.outputs.app_version }}
-            - app_revision: ${{ needs.compute-variables.outputs.app_revision }}
-            - contracts_revision: ${{ needs.compute-variables.outputs.contracts_revision }}
-            - ${{ env.ARCHIVIST_IMAGE }}
+            - app version:        ${{ needs.compute-variables.outputs.app_version }}
+            - app revision:       ${{ needs.compute-variables.outputs.app_revision }}
+            - contracts revision: ${{ needs.compute-variables.outputs.contracts_revision }}
+            ${{ env.ARCHIVIST_IMAGE }}
             ```
+            ${{ steps.emojify.outputs.status }}
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          noprefix: true
