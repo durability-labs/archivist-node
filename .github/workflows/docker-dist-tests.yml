@@ -12,7 +12,7 @@ on:
       - '.github/**'
       - '!.github/workflows/docker-dist-tests.yml'
       - '!.github/workflows/docker-reusable.yml'
-      - '!.github/workflows/deploy-devnet.yml'
+      - '!.github/workflows/deploy-on-network.yml'
       - 'docker/**'
       - '!docker/archivist.Dockerfile'
       - '!docker/docker-entrypoint.sh'

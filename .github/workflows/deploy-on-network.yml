@@ -30,6 +30,8 @@ env:
   NETWORK: ${{ inputs.network }}
   KUBE_VERSION: v1.33.1
   ARCHIVIST_IMAGE: ${{ inputs.archivist_image }}
+  ARCHIVIST_STORAGE_LABEL: archivist-storage
+  ARCHIVIST_VALIDATOR_LABEL: archivist-validator
   CONTRACTS_REPOSITORY: archivist-contracts
   CONTRACTS_DEPLOYMENT_WORKFLOW: devnet-contracts.yml
   CONFIG_REPOSITORY: archivist-config
@@ -81,7 +83,7 @@ jobs:
         id: variables
         run: |
           # Versions
-          app_revision="$(git rev-parse --short HEAD)"
+          app_revision=$(git rev-parse --short HEAD)
           echo "app_revision=${app_revision}" >> $GITHUB_OUTPUT
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "app_version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
@@ -91,7 +93,7 @@ jobs:
 
           # Contracts
           contracts_deployed=$(curl -s ${{ env.CONFIG_ENDPOINT }}/${{ env.NETWORK }}.json | jq -r '.archivist[].contracts')
-          contracts_submodule="$(git rev-parse --short HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})"
+          contracts_submodule=$(git rev-parse --short HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})
           echo "contracts_revision=${contracts_submodule}" >> $GITHUB_OUTPUT
           echo "contracts_ref=$(git rev-parse HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})" >> $GITHUB_OUTPUT
 
@@ -195,16 +197,22 @@ jobs:
 
       - name: Storage nodes - Update
         run: |
-          for node in {1..5}; do
-            kubectl -n "${{ env.ARCHIVIST_NAMESPACE }}" patch statefulset archivist-storage-${node} \
+          label="app.kubernetes.io/instance=${{ env.ARCHIVIST_STORAGE_LABEL }}"
+          statefulsets=$(kubectl get statefulset -n "${{ env.ARCHIVIST_NAMESPACE }}" -l "${label}" --ignore-not-found --no-headers -o custom-columns=":metadata.name")
+          echo "storage_nodes=$(wc -w <<< ${statefulsets})" >> $GITHUB_ENV
+          for statefulset in ${statefulsets}; do
+            kubectl -n "${{ env.ARCHIVIST_NAMESPACE }}" patch statefulset "${statefulset}" \
               --patch '{"spec": {"template": {"spec":{"containers":[{"name": "archivist", "image":"${{ env.ARCHIVIST_IMAGE }}"}]}}}}'
             sleep 10
           done
 
-      - name: Validators nodes - Update
+      - name: Validator nodes - Update
         run: |
-          for node in {1..1}; do
-            kubectl -n "${{ env.ARCHIVIST_NAMESPACE }}" patch statefulset archivist-validator-${node} \
+          label="app.kubernetes.io/instance=${{ env.ARCHIVIST_VALIDATOR_LABEL }}"
+          statefulsets=$(kubectl get statefulset -n "${{ env.ARCHIVIST_NAMESPACE }}" -l "${label}" --ignore-not-found --no-headers -o custom-columns=":metadata.name")
+          echo "validator_nodes=$(wc -w <<< ${statefulsets})" >> $GITHUB_ENV
+          for statefulset in ${statefulsets}; do
+            kubectl -n "${{ env.ARCHIVIST_NAMESPACE }}" patch statefulset "${statefulset}" \
               --patch '{"spec": {"template": {"spec":{"containers":[{"name": "archivist", "image":"${{ env.ARCHIVIST_IMAGE }}"}]}}}}'
             sleep 10
           done
@@ -214,38 +222,52 @@ jobs:
           WAIT=900
           SECONDS=0
           sleep=1
-          for instance in {1..5}; do
-            while (( SECONDS < WAIT )); do
-              pod=archivist-storage-${instance}-1
-              phase=$(kubectl get pod "${pod}" -n "${{ env.ARCHIVIST_NAMESPACE }}" -o jsonpath='{.status.phase}')
-              if [[ "${phase}" == "Running" ]]; then
-                echo "Pod ${pod} is in the ${phase} state"
-                break
-              else
-                echo "Pod ${pod} is in the ${phase} state - Check in ${sleep} second(s) / $((WAIT - SECONDS))"
-              fi
-              sleep "${sleep}"
+          pod_prefix="${{ env.ARCHIVIST_STORAGE_LABEL }}"
+          if [[ ${{ env.storage_nodes }} -ge 0 ]]; then
+            for instance in {1..${{ env.storage_nodes }}}; do
+              while (( SECONDS < WAIT )); do
+                pod=${pod_prefix}-${instance}-1
+                phase=$(kubectl get pod "${pod}" -n "${{ env.ARCHIVIST_NAMESPACE }}" -o jsonpath='{.status.phase}')
+                if [[ "${phase}" == "Running" ]]; then
+                  echo "Pod ${pod} is in the ${phase} state"
+                  break
+                else
+                  echo "Pod ${pod} is in the ${phase} state - Check in ${sleep} second(s) / $((WAIT - SECONDS))"
+                fi
+                sleep "${sleep}"
+              done
             done
-          done
+          fi
+          if [[ "${phase}" != "Running" ]]; then
+            echo "Pod ${pod} is in the ${phase} state"
+            exit 1
+          fi
 
-      - name: Validators nodes - Status
+      - name: Validator nodes - Status
         run: |
           WAIT=900
           SECONDS=0
           sleep=1
-          for instance in {1..1}; do
-            while (( SECONDS < WAIT )); do
-              pod=archivist-validator-${instance}-1
-              phase=$(kubectl get pod "${pod}" -n "${{ env.ARCHIVIST_NAMESPACE }}" -o jsonpath='{.status.phase}')
-              if [[ "${phase}" == "Running" ]]; then
-                echo "Pod ${pod} is in the ${phase} state"
-                break
-              else
-                echo "Pod ${pod} is in the ${phase} state - Check in ${sleep} second(s) / $((WAIT - SECONDS))"
-              fi
-              sleep "${sleep}"
+          pod_prefix="${{ env.ARCHIVIST_VALIDATOR_LABEL }}"
+          if [[ ${{ env.validator_nodes }} -ge 0 ]]; then
+            for instance in {1..${{ env.validator_nodes }}}; do
+              while (( SECONDS < WAIT )); do
+                pod=${pod_prefix}-${instance}-1
+                phase=$(kubectl get pod "${pod}" -n "${{ env.ARCHIVIST_NAMESPACE }}" -o jsonpath='{.status.phase}')
+                if [[ "${phase}" == "Running" ]]; then
+                  echo "Pod ${pod} is in the ${phase} state"
+                  break
+                else
+                  echo "Pod ${pod} is in the ${phase} state - Check in ${sleep} second(s) / $((WAIT - SECONDS))"
+                fi
+                sleep "${sleep}"
+              done
             done
-          done
+          fi
+          if [[ "${phase}" != "Running" ]]; then
+            echo "Pod ${pod} is in the ${phase} state"
+            exit 1
+          fi
 
   cluster-tools:
     name: Cluster tools
@@ -299,6 +321,10 @@ jobs:
               done
             fi
           done
+          if [[ "${phase}" != "Running" ]]; then
+            echo "Pod ${pod} is in the ${phase} state"
+            exit 1
+          fi
 
   config-update:
     name: Config update
