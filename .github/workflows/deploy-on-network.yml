@@ -46,7 +46,10 @@ jobs:
       contracts_revision: ${{ steps.variables.outputs.contracts_revision }}
       contracts_ref: ${{ steps.variables.outputs.contracts_ref }}
       contracts_deploy: ${{ steps.variables.outputs.contracts_deploy }}
+      bootstrap_nodes_update: ${{ steps.variables.outputs.bootstrap_nodes_update }}
+      autoclient_nodes_update: ${{ steps.variables.outputs.autoclient_nodes_update }}
       cloud_tools_update: ${{ steps.variables.outputs.cloud_tools_update }}
+      secrets_prefix: ${{ steps.case.outputs.secrets_prefix }}
     steps:
       - name: Set commit ref
         id: ref
@@ -63,6 +66,16 @@ jobs:
         with:
           submodules: recursive
           ref: ${{ steps.ref.outputs.sha }}
+
+      - name: Secrets prefix
+        id: case
+        run: echo "secrets_prefix=${NETWORK^^}" >> $GITHUB_OUTPUT
+
+      - name: Secrets to env
+        uses: oNaiPs/secrets-to-env-action@v1.5
+        with:
+          secrets: ${{ toJSON(secrets) }}
+          include: ${{ steps.case.outputs.secrets_prefix }}_SSH_HOST_BOOTSTRAP_*, ${{ steps.case.outputs.secrets_prefix }}_SSH_HOST_AUTOCLIENT_*
 
       - name: Set outputs
         id: variables
@@ -90,6 +103,10 @@ jobs:
           else
             echo "Contracts revision is the same: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
           fi
+
+          # Check if we have bootstrap and autoclient nodes defined for a network
+          if [[ $(env | grep -c ${{ steps.case.outputs.secrets_prefix }}_SSH_HOST_BOOTSTRAP_ || true) -gt 0 ]]; then echo "bootstrap_nodes_update=true" >> $GITHUB_OUTPUT; fi
+          if [[ $(env | grep -c ${{ steps.case.outputs.secrets_prefix }}_SSH_HOST_AUTOCLIENT_ || true) -gt 0 ]]; then echo "autoclient_nodes_update=true" >> $GITHUB_OUTPUT; fi
 
           # Check if cloud-tools update is needed
           echo "cloud_tools_update=true" >> $GITHUB_OUTPUT
@@ -127,20 +144,34 @@ jobs:
     name: Bootstrap nodes
     runs-on: ubuntu-latest
     needs: [compute-variables, contracts-deploy]
-    if: ${{ !(failure() || cancelled()) }}
+    if: ${{ !(failure() || cancelled()) && needs.compute-variables.outputs.bootstrap_nodes_update == 'true' }}
     steps:
-      - name: Bootstrap - Update
+      - name: Secrets to env
+        uses: oNaiPs/secrets-to-env-action@v1.5
+        with:
+          secrets: ${{ toJSON(secrets) }}
+          include: ${{ needs.compute-variables.outputs.secrets_prefix }}_SSH_HOST_BOOTSTRAP_*
+
+      - name: Compute hosts
+        run: |
+          for host in ${!${{ needs.compute-variables.outputs.secrets_prefix }}_SSH_HOST_BOOTSTRAP_*}; do
+            current_hosts="${!host}"
+            if [[ -z "${SSH_HOST}" ]]; then
+              SSH_HOST="${current_hosts}"
+            else
+              SSH_HOST="${SSH_HOST},${current_hosts}"
+            fi
+          done
+          echo "SSH_HOST=${SSH_HOST}" >> $GITHUB_ENV
+
+      - name: Nodes update
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ env.SSH_HOST_BOOTSTRAP_1 }},${{ env.SSH_HOST_BOOTSTRAP_2 }},${{ env.SSH_HOST_BOOTSTRAP_3 }}
+          host: ${{ env.SSH_HOST }}
           username: ${{ secrets[format('{0}_SSH_USERNAME', inputs.network)] }}
           key: ${{ secrets[format('{0}_SSH_KEY', inputs.network)] }}
           port: ${{ secrets[format('{0}_SSH_PORT', inputs.network)] }}
           script: ${{ env.ARCHIVIST_IMAGE }}
-        env:
-          SSH_HOST_BOOTSTRAP_1: ${{ secrets[format('{0}_SSH_HOST_BOOTSTRAP_1', inputs.network)] }}
-          SSH_HOST_BOOTSTRAP_2: ${{ secrets[format('{0}_SSH_HOST_BOOTSTRAP_2', inputs.network)] }}
-          SSH_HOST_BOOTSTRAP_3: ${{ secrets[format('{0}_SSH_HOST_BOOTSTRAP_3', inputs.network)] }}
 
   cluster-nodes:
     name: Cluster nodes
@@ -161,7 +192,6 @@ jobs:
           echo "${{ env.KUBE_CONFIG }}" | base64 -d > "${HOME}"/.kube/config
         env:
           KUBE_CONFIG: ${{ secrets[format('{0}_KUBE_CONFIG', inputs.network)] }}
-
 
       - name: Storage nodes - Update
         run: |
@@ -270,8 +300,8 @@ jobs:
             fi
           done
 
-  update-config:
-    name: Update config
+  config-update:
+    name: Config update
     runs-on: ubuntu-latest
     needs: [compute-variables, cluster-tools]
     if: ${{ !(failure() || cancelled()) }}
@@ -297,7 +327,7 @@ jobs:
           repository: ${{ github.repository_owner }}/${{ env.CONFIG_REPOSITORY }}
           ref: ${{ env.CONFIG_REPOSITORY_BRANCH }}
 
-      - name: Update config
+      - name: Config update
         run: |
           # Variables
           config="${{ env.NETWORK }}.json"
@@ -332,10 +362,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
+  autoclient-nodes:
+    name: Autoclient nodes
+    runs-on: ubuntu-latest
+    needs: [compute-variables, config-update]
+    if: ${{ !(failure() || cancelled()) && needs.compute-variables.outputs.autoclient_nodes_update == 'true' }}
+    steps:
+      - name: Secrets to env
+        uses: oNaiPs/secrets-to-env-action@v1.5
+        with:
+          secrets: ${{ toJSON(secrets) }}
+          include: ${{ needs.compute-variables.outputs.secrets_prefix }}_SSH_HOST_AUTOCLIENT_*
+
+      - name: Compute hosts
+        run: |
+          for host in ${!${{ needs.compute-variables.outputs.secrets_prefix }}_SSH_HOST_AUTOCLIENT_*}; do
+            current_hosts="${!host}"
+            if [[ -z "${SSH_HOST}" ]]; then
+              SSH_HOST="${current_hosts}"
+            else
+              SSH_HOST="${SSH_HOST},${current_hosts}"
+            fi
+          done
+          echo "SSH_HOST=${SSH_HOST}" >> $GITHUB_ENV
+
+      - name: Nodes update
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ env.SSH_HOST }}
+          username: ${{ secrets[format('{0}_SSH_USERNAME', inputs.network)] }}
+          key: ${{ secrets[format('{0}_SSH_KEY', inputs.network)] }}
+          port: ${{ secrets[format('{0}_SSH_PORT', inputs.network)] }}
+          script: ${{ env.ARCHIVIST_IMAGE }}
+
   notify:
     name: Notify
     runs-on: ubuntu-latest
-    needs: [compute-variables, contracts-deploy, bootstrap-nodes, cluster-nodes, cluster-tools, update-config]
+    needs: [compute-variables, contracts-deploy, bootstrap-nodes, cluster-nodes, cluster-tools, config-update, autoclient-nodes]
     if: always()
     steps:
       - name: Emojify jobs status
