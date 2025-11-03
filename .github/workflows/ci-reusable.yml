@@ -1,9 +1,17 @@
-name: Reusable -  CI
+name: Reusable - CI
 
 on:
   workflow_call:
     inputs:
       matrix:
+        type: string
+      nim_version:
+        type: string
+      rust_version:
+        type: string
+      cmake_version:
+        type: string
+      node_version:
         type: string
 
 jobs:
@@ -22,32 +30,20 @@ jobs:
           submodules: recursive
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Install Nim
-        uses: iffy/install-nim@v5
+      - name: CI setup
+        uses: ./.github/actions/ci-setup
         with:
-          version: binary:2.2.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.x'
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.79.0
-
-      - name: Setup Rust for Windows
-        if: runner.os == 'Windows'
-        run: |
-          rustup toolchain install 1.79.0-x86_64-pc-windows-gnu
-          rustup default 1.79.0-x86_64-pc-windows-gnu
+          os: ${{ matrix.os }}
+          nim_version: ${{ inputs.nim_version }}
+          rust_version: ${{ inputs.rust_version }}
+          cmake_version: ${{ inputs.cmake_version }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         if: matrix.tests == 'contract' || matrix.tests == 'integration' || matrix.tests == 'tools'
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ inputs.node_version }}
 
       - name: Build
         run: nimble install -y

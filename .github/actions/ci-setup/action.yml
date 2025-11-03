@@ -1,0 +1,40 @@
+name: CI setup
+
+inputs:
+  os:
+    description: Runner OS
+  nim_version:
+    description: Nim version
+  rust_version:
+    description: Rust version
+  cmake_version:
+    description: CMake version
+  github_token:
+    description: GitHub token
+
+runs:
+  using: "composite"
+  steps:
+      - name: Install Nim
+        uses: iffy/install-nim@v5
+        with:
+          version: binary:${{ inputs.nim_version }}
+        env:
+          GITHUB_TOKEN: ${{ inputs.github_token }}
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: ${{ inputs.cmake_version }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.rust_version }}
+
+      - name: Setup Rust for Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          rustup toolchain install ${{ inputs.rust_version }}-x86_64-pc-windows-gnu
+          rustup default ${{ inputs.rust_version }}-x86_64-pc-windows-gnu
