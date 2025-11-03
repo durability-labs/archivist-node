@@ -376,6 +376,12 @@ jobs:
           # .archivist.contracts
           jq -r '.archivist[].contracts |= "${{ needs.compute-variables.outputs.contracts_revision }}"' "${config}" > "${config_updated}" && rename_config
 
+          # .sprs
+          jq -r '.sprs[].supportedVersions[] |= "${{ needs.compute-variables.outputs.app_version }}"' "${config}" > "${config_updated}" && rename_config
+
+          # .marketplace
+          jq -r '.marketplace[].supportedVersions[] |= "${{ needs.compute-variables.outputs.app_version }}"' "${config}" > "${config_updated}" && rename_config
+
           # .team.nodes.category.versions.version
           jq -r '.team.nodes[].versions[].version |= "${{ needs.compute-variables.outputs.app_version }}"' "${config}" > "${config_updated}" && rename_config
 
