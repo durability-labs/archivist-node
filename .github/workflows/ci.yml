@@ -4,7 +4,16 @@ on:
   push:
     branches:
       - main
+    paths-ignore: &paths-ignore
+      - '**/*.md'
+      - '.gitignore'
+      - '.github/**'
+      - '!.github/workflows/ci.yml'
+      - '!.github/workflows/ci-reusable.yml'
+      - '!.github/workflows/actions/ci-setup/action.yml'
+      - 'docker/**'
   pull_request:
+    paths-ignore: *paths-ignore
   workflow_dispatch:
 
 concurrency:
