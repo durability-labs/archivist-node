@@ -23,9 +23,9 @@ runs:
           GITHUB_TOKEN: ${{ inputs.github_token }}
 
       - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
+        uses: lukka/get-cmake@latest
         with:
-          cmake-version: ${{ inputs.cmake_version }}
+          cmakeVersion: ${{ inputs.cmake_version }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
