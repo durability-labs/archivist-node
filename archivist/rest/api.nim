@@ -36,6 +36,8 @@ import ../manifest
 import ../streams/asyncstreamwrapper
 import ../stores
 import ../utils/options
+when defined(archivist_system_testing_options):
+  import ../manifest/systemtesting
 
 import ./coders
 import ./json
@@ -1001,16 +1003,19 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
       try:
         let
           keyStr = key.get()
-          valueInt = parseInt(value.get())
+          valueStr = value.get()
 
         if keyStr == "simulate_proof_failures":
-          node.contracts.host.get().sales.context.simulateProofFailures = valueInt
+          node.contracts.host.get().sales.context.simulateProofFailures = parseInt(valueStr)
         elif keyStr == "dht_send_fail_probability":
-          node.discovery.protocol.transport.sendFailProb = valueInt
+          node.discovery.protocol.transport.sendFailProb = parseInt(valueStr)
+        elif keyStr == "manifest_modify":
+          let cid = await node.modifyManifest(valueStr)
+          return RestApiResponse.response(cid, headers = headers)
         else:
           raise newException(Defect, "Unknown system testing option key: " & keyStr)
 
-        trace "set system testing option", key = keyStr, value = valueInt
+        trace "set system testing option", key = keyStr, value = valueStr
         return RestApiResponse.response(Http200, headers = headers)
       except CatchableError as exc:
         # This call is used for system level testing. Should anything here fail,
