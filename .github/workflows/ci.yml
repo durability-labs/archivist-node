@@ -4,18 +4,38 @@ on:
   push:
     branches:
       - main
+    paths-ignore: &paths-ignore
+      - '**/*.md'
+      - '.gitignore'
+      - '.github/**'
+      - '!.github/workflows/ci.yml'
+      - '!.github/workflows/ci-reusable.yml'
+      - '!.github/workflows/actions/ci-setup/action.yml'
+      - 'docker/**'
   pull_request:
+    paths-ignore: *paths-ignore
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
+env:
+  nim_version:   2.2.4
+  rust_version:  1.79.0
+  cmake_version: 3.x
+  node_version:  22
+
 jobs:
-  matrix:
+  variables:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      nim_version: ${{ env.nim_version }}
+      rust_version: ${{ env.rust_version }}
+      cmake_version: ${{ env.cmake_version }}
+      node_version: ${{ env.node_version }}
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -27,10 +47,14 @@ jobs:
           echo 'EOF' >> $GITHUB_OUTPUT
 
   build:
-    needs: matrix
+    needs: variables
     uses: ./.github/workflows/ci-reusable.yml
     with:
-      matrix: ${{ needs.matrix.outputs.matrix }}
+      matrix: ${{ needs.variables.outputs.matrix }}
+      nim_version:   ${{ needs.variables.outputs.nim_version }}
+      rust_version:  ${{ needs.variables.outputs.rust_version }}
+      cmake_version: ${{ needs.variables.outputs.cmake_version }}
+      node_version:  ${{ needs.variables.outputs.node_version }}
 
   linting:
     runs-on: ubuntu-latest

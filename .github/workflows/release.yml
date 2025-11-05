@@ -6,17 +6,23 @@ on:
       - 'v*.*.*'
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      - '.github/**'
+      - '!.github/workflows/release.yml'
+      - 'docker/**'
   workflow_dispatch:
 
 env:
-  cache_nonce: 0 # Allows for easily busting actions/cache caches
-  nim_version: pinned
-  rust_version: 1.79.0
+  nim_version:   2.2.4
+  rust_version:  1.79.0
+  cmake_version: 3.x
   archivist_binary_base: archivist
   cirdl_binary_base: cirdl
   build_dir: build
-  nim_flags: ''
-  windows_libs: 'libstdc++-6.dll libgomp-1.dll libgcc_s_seh-1.dll libwinpthread-1.dll'
+  nim_flags: '-d:release'
+  windows_libs: 'libgcc_s_seh-1.dll libwinpthread-1.dll'
 
 jobs:
   # Matrix
@@ -30,10 +36,11 @@ jobs:
       uses: fabiocaccamo/create-matrix-action@v5
       with:
         matrix: |
-          os {linux},   cpu {amd64}, builder {ubuntu-22.04},     nim_version {${{ env.nim_version }}}, rust_version {${{ env.rust_version }}}, shell {bash --noprofile --norc -e -o pipefail}
-          os {linux},   cpu {arm64}, builder {ubuntu-22.04-arm}, nim_version {${{ env.nim_version }}}, rust_version {${{ env.rust_version }}}, shell {bash --noprofile --norc -e -o pipefail}
-          os {macos},   cpu {arm64}, builder {macos-14},         nim_version {${{ env.nim_version }}}, rust_version {${{ env.rust_version }}}, shell {bash --noprofile --norc -e -o pipefail}
-          os {windows}, cpu {amd64}, builder {windows-latest},   nim_version {${{ env.nim_version }}}, rust_version {${{ env.rust_version }}}, shell {msys2}
+          os {linux},   cpu {amd64}, builder {ubuntu-22.04},     nim_version {${{ env.nim_version }}}
+          os {linux},   cpu {arm64}, builder {ubuntu-22.04-arm}, nim_version {${{ env.nim_version }}}
+          os {macos},   cpu {amd64}, builder {macos-15-intel},   nim_version {${{ env.nim_version }}}
+          os {macos},   cpu {arm64}, builder {macos-15},         nim_version {${{ env.nim_version }}}
+          os {windows}, cpu {amd64}, builder {windows-latest}  , nim_version {${{ env.nim_version }}}
 
   # Build
   build:
@@ -42,10 +49,6 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{fromJson(needs.matrix.outputs.matrix)}}
-
-    defaults:
-      run:
-        shell: ${{ matrix.shell }} {0}
 
     name: ${{ matrix.os }}-${{ matrix.cpu }}-${{ matrix.nim_version }}
     runs-on: ${{ matrix.builder }}
@@ -56,17 +59,18 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Release - Setup Nimbus Build System
-        uses: ./.github/actions/nimbus-build-system
+      - name: CI setup
+        uses: ./.github/actions/ci-setup
         with:
-          os: ${{ matrix.os }}
-          cpu: ${{ matrix.cpu }}
-          shell: ${{ matrix.shell }}
-          nim_version: ${{ matrix.nim_version }}
-          rust_version: ${{ matrix.rust_version }}
+          nim_version: ${{ env.nim_version }}
+          rust_version: ${{ env.rust_version }}
+          cmake_version: ${{ env.cmake_version }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Release - Compute binary name
+      - name: Release - Compute variables
+        shell: bash
         run: |
+          # Binary names
           case ${{ matrix.os }} in
             linux*)   os_name="linux"   ;;
             macos*)   os_name="darwin"  ;;
@@ -79,21 +83,28 @@ jobs:
             archivist_binary="${archivist_binary}.exe"
             cirdl_binary="${cirdl_binary}.exe"
           fi
-          echo "archivist_binary=${archivist_binary}" >>$GITHUB_ENV
-          echo "cirdl_binary=${cirdl_binary}" >>$GITHUB_ENV
+          echo "archivist_binary=${archivist_binary}" >> $GITHUB_ENV
+          echo "cirdl_binary=${cirdl_binary}" >> $GITHUB_ENV
+
+          # Nim flags
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            echo "nim_flags=-d:chronicles_colors=off ${{ env.nim_flags }}" >> $GITHUB_ENV
+          fi
 
       - name: Release - Build
         run: |
-          make NIMFLAGS="--out:${{ env.build_dir }}/${{ env.archivist_binary }} ${{ env.nim_flags }}"
-          make cirdl NIMFLAGS="--out:${{ env.build_dir }}/${{ env.cirdl_binary }} ${{ env.nim_flags }}"
+          nimble build ${{ env.nim_flags }}
+          mv ${{ env.build_dir }}/${{ env.archivist_binary_base }}* ${{ env.build_dir }}/${{ env.archivist_binary }}
+          mv ${{ env.build_dir }}/tools/${{ env.cirdl_binary_base }}/${{ env.cirdl_binary_base }}* ${{ env.build_dir }}/${{ env.cirdl_binary }}
 
-      - name: Release - Libraries
+      - name: Release - Windows libraries
+        if: matrix.os == 'windows'
+        shell: bash
         run: |
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            for lib in ${{ env.windows_libs }}; do
-              cp -v "${MINGW_PREFIX}/bin/${lib}" "${{ env.build_dir }}"
-            done
-          fi
+          MINGW_PATH=$(awk -F ':' '/mingw64/ {print $1}' <<< $PATH)
+          for lib in ${{ env.windows_libs }}; do
+            cp -v "${MINGW_PATH}/${lib}" "${{ env.build_dir }}"
+          done
 
       - name: Release - Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -184,7 +195,7 @@ jobs:
           folder="/tmp/release"
 
           # Tagged releases
-          if [[ "${{ github.ref }}" == *"refs/tags/"* ]]; then
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
             aws s3 cp --recursive "${folder}" s3://${{ env.s3_bucket }}/releases/${branch} --endpoint-url ${{ env.s3_endpoint }}
             echo "${branch}" >  "${folder}"/latest
             aws s3 cp "${folder}"/latest s3://${{ env.s3_bucket }}/releases/latest --endpoint-url ${{ env.s3_endpoint }}
@@ -201,7 +212,7 @@ jobs:
 
       - name: Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.ref_type == 'tag'
         with:
           files: |
             /tmp/release/*
