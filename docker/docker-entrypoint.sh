@@ -203,7 +203,7 @@ if [[ "$@" == *"prover"* ]]; then
 fi
 
 # Show
-echo -e "\nnode run parameters:"
+echo -e "\nNode run parameters:"
 vars=$(env | grep "ARCHIVIST_" | grep -v -e "[0-9]_SERVICE_" -e "[0-9]_NODEPORT_")
 echo -e "${vars//ARCHIVIST_/   - ARCHIVIST_}"
 echo -e "   - $@\n"
