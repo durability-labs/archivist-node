@@ -84,11 +84,32 @@ if [[ -n "${BOOTSTRAP_NODE_FROM_URL}" ]]; then
   done
 fi
 
+# Marketplace address from config URL
+if [[ -n "${MARKETPLACE_ADDRESS_FROM_CONFIG_URL}" ]]; then
+  WAIT=${MARKETPLACE_ADDRESS_FROM_CONFIG_URL_WAIT:-300}
+  SECONDS=0
+  SLEEP=1
+  # Run and retry if fail
+  while (( SECONDS < WAIT )); do
+    MARKETPLACE_ADDRESS=($(curl -s -f -m 5 "${MARKETPLACE_ADDRESS_FROM_CONFIG_URL}" | jq -r '.marketplace[].contractAddress'))
+    # Check if exit code is 0 and returned value is not empty
+    if [[ $? -eq 0 && -n "${MARKETPLACE_ADDRESS}" ]]; then
+      export ARCHIVIST_MARKETPLACE_ADDRESS="${MARKETPLACE_ADDRESS}"
+      break
+    else
+      # Sleep and check again
+      echo "Can't get Marketplace address from ${MARKETPLACE_ADDRESS_FROM_CONFIG_URL} - Retry in $SLEEP seconds / $((WAIT - SECONDS))"
+      sleep $SLEEP
+    fi
+  done
+fi
+
 # Marketplace address from URL
 if [[ -n "${MARKETPLACE_ADDRESS_FROM_URL}" ]]; then
   WAIT=${MARKETPLACE_ADDRESS_FROM_URL_WAIT:-300}
   SECONDS=0
   SLEEP=1
+  echo -e "\nDeprecation notice: MARKETPLACE_ADDRESS_FROM_URL variable is deprecated, please switch to a MARKETPLACE_ADDRESS_FROM_CONFIG_URL\n"
   # Run and retry if fail
   while (( SECONDS < WAIT )); do
     MARKETPLACE_ADDRESS=($(curl -s -f -m 5 "${MARKETPLACE_ADDRESS_FROM_URL}"))
