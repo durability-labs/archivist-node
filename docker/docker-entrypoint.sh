@@ -10,9 +10,10 @@ if [[ -n "${ENV_PATH}" ]]; then
 fi
 
 # Network
+CONFIG_URL="${CONFIG_URL:-https://config.archivist.storage}"
+BOOTSTRAP_NODE_FROM_URL="${BOOTSTRAP_NODE_FROM_URL}"
 if [[ -n "${NETWORK}" ]]; then
-  BOOTSTRAP_SERVICE_URL="https://spr.archivist.storage"
-  export BOOTSTRAP_NODE_FROM_URL="${BOOTSTRAP_NODE_FROM_URL:-${BOOTSTRAP_SERVICE_URL}/${NETWORK}}"
+  BOOTSTRAP_NODE_FROM_CONFIG_URL="${BOOTSTRAP_NODE_FROM_CONFIG_URL:-${CONFIG_URL}/${NETWORK}.json}"
 fi
 
 # Bootstrap node URL
@@ -36,11 +37,35 @@ if [[ -n "${BOOTSTRAP_NODE_URL}" ]]; then
   done
 fi
 
+# Bootstrap node from config URL
+if [[ -n "${BOOTSTRAP_NODE_FROM_CONFIG_URL}" ]]; then
+  WAIT=${BOOTSTRAP_NODE_FROM_CONFIG_URL_WAIT:-300}
+  SECONDS=0
+  SLEEP=1
+  # Run and retry if fail
+  while (( SECONDS < WAIT )); do
+    SPR=($(curl -s -f -m 5 "${BOOTSTRAP_NODE_FROM_CONFIG_URL}" | jq -r '.sprs[].records[]'))
+    # Check if exit code is 0 and returned value is not empty
+    if [[ $? -eq 0 && -n "${SPR}" ]]; then
+      for node in "${SPR[@]}"; do
+        bootstrap+="--bootstrap-node=$node "
+      done
+      set -- "$@" ${bootstrap}
+      break
+    else
+      # Sleep and check again
+      echo "Can't get SPR from ${BOOTSTRAP_NODE_FROM_CONFIG_URL} - Retry in $SLEEP seconds / $((WAIT - SECONDS))"
+      sleep $SLEEP
+    fi
+  done
+fi
+
 # Bootstrap node from URL
 if [[ -n "${BOOTSTRAP_NODE_FROM_URL}" ]]; then
   WAIT=${BOOTSTRAP_NODE_FROM_URL_WAIT:-300}
   SECONDS=0
   SLEEP=1
+  echo -e "\nDeprecation notice: BOOTSTRAP_NODE_FROM_URL variable is deprecated, please switch to a BOOTSTRAP_NODE_FROM_CONFIG_URL\n"
   # Run and retry if fail
   while (( SECONDS < WAIT )); do
     SPR=($(curl -s -f -m 5 "${BOOTSTRAP_NODE_FROM_URL}"))
