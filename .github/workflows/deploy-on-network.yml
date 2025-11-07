@@ -172,7 +172,6 @@ jobs:
           host: ${{ env.SSH_HOST }}
           username: ${{ secrets[format('{0}_SSH_USERNAME', inputs.network)] }}
           key: ${{ secrets[format('{0}_SSH_KEY', inputs.network)] }}
-          port: ${{ secrets[format('{0}_SSH_PORT', inputs.network)] }}
           script: ${{ env.ARCHIVIST_IMAGE }}
 
   cluster-nodes:
@@ -424,7 +423,6 @@ jobs:
           host: ${{ env.SSH_HOST }}
           username: ${{ secrets[format('{0}_SSH_USERNAME', inputs.network)] }}
           key: ${{ secrets[format('{0}_SSH_KEY', inputs.network)] }}
-          port: ${{ secrets[format('{0}_SSH_PORT', inputs.network)] }}
           script: ${{ env.ARCHIVIST_IMAGE }}
 
   notify:
