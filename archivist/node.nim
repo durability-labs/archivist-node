@@ -54,10 +54,7 @@ export logutils
 logScope:
   topics = "archivist node"
 
-declareGauge(
-  archivist_proofs_per_period,
-  "archivist proofs per period",
-)
+declareGauge(archivist_proofs_per_period, "archivist proofs per period")
 
 const DefaultFetchBatch = 10
 
@@ -805,7 +802,8 @@ proc onProve(
 
     # Update proofs/period metric:
     if self.currentPeriod != period:
-      info "Generated proofs per period", numProofs = self.numProofs, period = self.currentPeriod
+      info "Generated proofs per period",
+        numProofs = self.numProofs, period = self.currentPeriod
       archivist_proofs_per_period.set(self.numProofs)
       self.numProofs = 1
       self.currentPeriod = period
