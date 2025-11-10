@@ -30,7 +30,7 @@ asyncchecksuite "sales state 'proving'":
     clock = MockClock.new()
     market = MockMarket.new()
     let onProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       receivedChallenge = challenge
       return success(proof)

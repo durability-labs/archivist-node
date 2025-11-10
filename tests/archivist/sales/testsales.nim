@@ -77,7 +77,7 @@ asyncchecksuite "Sales - start":
 
     queue = sales.context.slotQueue
     sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       return success(proof)
     itemsProcessed = @[]
@@ -198,7 +198,7 @@ asyncchecksuite "Sales":
 
     queue = sales.context.slotQueue
     sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       return success(proof)
     await sales.start()
@@ -522,7 +522,7 @@ asyncchecksuite "Sales":
     var provingRequest: StorageRequest
     var provingSlot: uint64
     sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       provingRequest = slot.request
       provingSlot = slot.slotIndex
@@ -562,7 +562,7 @@ asyncchecksuite "Sales":
     # fail the proof intentionally to trigger `agent.finish(success=false)`,
     # which then calls the onClear callback
     sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       return failure("proof failed")
     var clearedRequest: StorageRequest
