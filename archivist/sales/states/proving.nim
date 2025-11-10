@@ -80,7 +80,8 @@ proc proveLoop(
         debug "Proof is required", challenge = challenge
         await state.prove(slot, challenge, onProve, market, provingPeriod)
         let periodAtFinish = await getCurrentPeriod()
-        debug "Finished required proof submission", periodAtFinish = periodAtFinish
+        if periodAtFinish != provingPeriod:
+          warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
     of SlotState.Cancelled:
       debug "Slot reached cancelled state"
       # do nothing, let onCancelled callback take care of it
