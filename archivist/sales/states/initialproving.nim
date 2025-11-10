@@ -64,7 +64,7 @@ method run*(
       requestId = data.requestId,
       slotIndex = data.slotIndex
     let challenge = await context.market.getChallenge(slot.id)
-    without proof =? (await onProve(slot, challenge)), err:
+    without proof =? (await onProve(slot, challenge, provingPeriod)), err:
       error "Failed to generate initial proof", error = err.msg
       return some State(SaleErrored(error: err))
 

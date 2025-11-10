@@ -28,7 +28,7 @@ method prove*(
     provingPeriod: Period,
 ) {.base, async.} =
   try:
-    without proof =? (await onProve(slot, challenge)), err:
+    without proof =? (await onProve(slot, challenge, provingPeriod)), err:
       error "Failed to generate proof", error = err.msg
       # In this state, there's nothing we can do except try again next time.
       return
