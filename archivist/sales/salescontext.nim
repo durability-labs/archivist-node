@@ -4,6 +4,7 @@ import pkg/libp2p/cid
 
 import ../market
 import ../clock
+import ../periods
 import ./slotqueue
 import ./reservations
 import ../blocktype as bt
@@ -34,9 +35,9 @@ type
     blocksCb: BlocksCb,
     isRepairing: bool,
   ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).}
-  OnProve* = proc(slot: Slot, challenge: ProofChallenge): Future[?!Groth16Proof] {.
-    gcsafe, async: (raises: [CancelledError])
-  .}
+  OnProve* = proc(
+    slot: Slot, challenge: ProofChallenge, period: Period
+  ): Future[?!Groth16Proof] {.gcsafe, async: (raises: [CancelledError]).}
   OnExpiryUpdate* = proc(rootCid: Cid, expiry: SecondsSince1970): Future[?!void] {.
     gcsafe, async: (raises: [CancelledError])
   .}

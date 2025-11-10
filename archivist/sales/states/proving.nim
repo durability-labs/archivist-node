@@ -28,7 +28,7 @@ method prove*(
     provingPeriod: Period,
 ) {.base, async.} =
   try:
-    without proof =? (await onProve(slot, challenge)), err:
+    without proof =? (await onProve(slot, challenge, provingPeriod)), err:
       error "Failed to generate proof", error = err.msg
       # In this state, there's nothing we can do except try again next time.
       return
@@ -80,7 +80,8 @@ proc proveLoop(
         debug "Proof is required", challenge = challenge
         await state.prove(slot, challenge, onProve, market, provingPeriod)
         let periodAtFinish = await getCurrentPeriod()
-        debug "Finished required proof submission", periodAtFinish = periodAtFinish
+        if periodAtFinish != provingPeriod:
+          warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
     of SlotState.Cancelled:
       debug "Slot reached cancelled state"
       # do nothing, let onCancelled callback take care of it

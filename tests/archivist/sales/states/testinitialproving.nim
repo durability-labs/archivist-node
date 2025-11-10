@@ -30,7 +30,7 @@ asyncchecksuite "sales state 'initialproving'":
 
   setup:
     let onProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       receivedChallenge = challenge
       return success(proof)
@@ -87,7 +87,7 @@ asyncchecksuite "sales state 'initialproving'":
 
   test "switches to errored state when onProve callback fails":
     let onProveFailed: OnProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       return failure("oh no!")
 

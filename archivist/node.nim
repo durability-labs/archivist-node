@@ -21,6 +21,7 @@ import pkg/questionable/results
 import pkg/chronos
 import pkg/poseidon2
 import pkg/ethers
+import pkg/metrics except collect
 
 import pkg/libp2p/[switch, multicodec, multihash]
 import pkg/libp2p/stream/bufferstream
@@ -53,6 +54,8 @@ export logutils
 logScope:
   topics = "archivist node"
 
+declareGauge(archivist_proofs_per_period, "archivist proofs per period")
+
 const DefaultFetchBatch = 10
 
 type
@@ -75,6 +78,9 @@ type
     storage*: Contracts
     taskpool: Taskpool
     trackedFutures: TrackedFutures
+    # proofs/period metric:
+    numProofs: int64
+    currentPeriod: Period
 
   ArchivistNodeRef* = ref ArchivistNode
 
@@ -744,7 +750,7 @@ proc onStore(
   return success()
 
 proc onProve(
-    self: ArchivistNodeRef, slot: Slot, challenge: ProofChallenge
+    self: ArchivistNodeRef, slot: Slot, challenge: ProofChallenge, period: Period
 ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
   ## Generats a proof for a given slot and challenge
   ##
@@ -794,6 +800,17 @@ proc onProve(
     let groth16Proof = proof.toGroth16Proof()
     trace "Proof generated successfully", groth16Proof
 
+    # Update proofs/period metric:
+    if self.currentPeriod != period:
+      if self.currentPeriod > 0:
+        debug "Generated proofs per period",
+          numProofs = self.numProofs, period = self.currentPeriod
+        archivist_proofs_per_period.set(self.numProofs)
+      self.numProofs = 1
+      self.currentPeriod = period
+    else:
+      inc self.numProofs
+
     success groth16Proof
   else:
     warn "Prover not enabled"
@@ -838,10 +855,10 @@ proc start*(self: ArchivistNodeRef) {.async.} =
       self.onClear(request, slotIndex)
 
     hostContracts.sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge
+        slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raw: true, raises: [CancelledError]).} =
       # TODO: generate proof
-      self.onProve(slot, challenge)
+      self.onProve(slot, challenge, period)
 
     try:
       await hostContracts.start()
