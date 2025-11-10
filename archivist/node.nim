@@ -802,9 +802,10 @@ proc onProve(
 
     # Update proofs/period metric:
     if self.currentPeriod != period:
-      info "Generated proofs per period",
-        numProofs = self.numProofs, period = self.currentPeriod
-      archivist_proofs_per_period.set(self.numProofs)
+      if self.currentPeriod > 0:
+        debug "Generated proofs per period",
+          numProofs = self.numProofs, period = self.currentPeriod
+        archivist_proofs_per_period.set(self.numProofs)
       self.numProofs = 1
       self.currentPeriod = period
     else:
