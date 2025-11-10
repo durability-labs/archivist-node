@@ -21,7 +21,7 @@ import pkg/questionable/results
 import pkg/chronos
 import pkg/poseidon2
 import pkg/ethers
-from pkg/metrics import declareGauge
+import pkg/metrics except collect
 
 import pkg/libp2p/[switch, multicodec, multihash]
 import pkg/libp2p/stream/bufferstream
