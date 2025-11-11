@@ -13,7 +13,7 @@ logScope:
 # not be reserved.
 
 type SaleIgnored* = ref object of SaleState
-  reprocessSlot*: bool # readd slot to queue with `seen` flag
+  reprocessSlot*: bool # readd slot to queue
   returnsCollateral*: bool # returns collateral when a reservation was created
 
 method `$`*(state: SaleIgnored): string =

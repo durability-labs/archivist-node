@@ -330,15 +330,14 @@ asyncchecksuite "Sales":
 
     check eventually itemsProcessed.contains(expected)
 
-  test "items in queue are readded (and marked seen) once ignored":
+  test "items in queue are readded once ignored":
     await market.requestStorage(request)
     let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
     check eventually queue.len > 0
       # queue starts paused, allow items to be added to the queue
     check eventually queue.paused
-    # The first processed item will be will have been re-pushed with `seen =
-    # true`. Then, once this item is processed by the queue, its 'seen' flag
-    # will be checked, at which point the queue will be paused. This test could
+    # The first processed item will be will have been re-pushed. Then, once this
+    # item is processed by the queue, the queue will be paused. This test could
     # check item existence in the queue, but that would require inspecting
     # onProcessSlot to see which item was first, and overridding onProcessSlot
     # will prevent the queue working as expected in the Sales module.
@@ -346,9 +345,6 @@ asyncchecksuite "Sales":
 
     for item in items:
       check queue.contains(item)
-
-    for i in 0 ..< queue.len:
-      check queue[i].seen
 
   test "queue is paused once availability is insufficient to service slots in queue":
     createAvailability() # enough to fill a single slot
@@ -358,15 +354,12 @@ asyncchecksuite "Sales":
       # queue starts paused, allow items to be added to the queue
     check eventually queue.paused
     # The first processed item/slot will be filled (eventually). Subsequent
-    # items will be processed and eventually re-pushed with `seen = true`. Once
-    # a "seen" item is processed by the queue, the queue is paused. In the
-    # meantime, the other items that are process, marked as seen, and re-added
-    # to the queue may be processed simultaneously as the queue pausing.
-    # Therefore, there should eventually be 3 items remaining in the queue, all
-    # seen.
+    # items will be processed and eventually re-pushed. Once this item is
+    # processed by the queue, the queue is paused. In the meantime, the other
+    # items that are process, and re-added to the queue may be processed
+    # simultaneously as the queue pausing. Therefore, there should eventually be
+    # 3 items remaining in the queue
     check eventually queue.len == 3
-    for i in 0 ..< queue.len:
-      check queue[i].seen
 
   test "availability size is reduced by request slot size when fully downloaded":
     sales.onStore = proc(
