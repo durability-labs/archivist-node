@@ -31,7 +31,7 @@ type
     pricePerBytePerSecond: UInt256
     collateral: UInt256 # Collateral computed
     expiry: ?uint64
-    seen: bool
+    availabilitiesVersion: uint64 # used to check whether availabilities have changed
 
   # don't need to -1 to prevent overflow when adding 1 (to always allow push)
   # because AsyncHeapQueue size is of type `int`, which is larger than `uint16`
@@ -44,6 +44,7 @@ type
     running: bool
     workers: seq[Future[void].Raising([])]
     unpaused: AsyncEvent
+    availabilitiesVersion: uint64 # increases every time the availabilities change
 
   SlotQueueError = object of ArchivistError
   SlotQueueItemExistsError* = object of SlotQueueError
@@ -80,8 +81,8 @@ proc `<`*(a, b: SlotQueueItem): bool =
     if condition:
       score += 1'u8 shl addition
 
-  scoreA.addIf(a.seen < b.seen, 4)
-  scoreB.addIf(a.seen > b.seen, 4)
+  scoreA.addIf(a.availabilitiesVersion < b.availabilitiesVersion, 4)
+  scoreB.addIf(a.availabilitiesVersion > b.availabilitiesVersion, 4)
 
   scoreA.addIf(a.profitability > b.profitability, 3)
   scoreB.addIf(a.profitability < b.profitability, 3)
@@ -115,6 +116,7 @@ proc new*(
     queue: newAsyncHeapQueue[SlotQueueItem](maxSize.int + 1),
     running: false,
     unpaused: newAsyncEvent(),
+    availabilitiesVersion: 1,
   )
   # avoid instantiating `workers` in constructor to avoid side effects in
   # `newAsyncQueue` procedure
@@ -126,7 +128,7 @@ proc init*(
     ask: StorageAsk,
     expiry: ?uint64,
     collateral: UInt256,
-    seen = false,
+    availabilitiesVersion = 0'u64,
 ): SlotQueueItem =
   SlotQueueItem(
     requestId: requestId,
@@ -136,7 +138,7 @@ proc init*(
     pricePerBytePerSecond: ask.pricePerBytePerSecond,
     collateral: collateral,
     expiry: expiry,
-    seen: seen,
+    availabilitiesVersion: availabilitiesVersion,
   )
 
 proc init*(
@@ -146,9 +148,11 @@ proc init*(
     ask: StorageAsk,
     expiry: uint64,
     collateral: UInt256,
-    seen = false,
+    availabilitiesVersion = 0'u64,
 ): SlotQueueItem =
-  SlotQueueItem.init(requestId, slotIndex, ask, some expiry, collateral, seen)
+  SlotQueueItem.init(
+    requestId, slotIndex, ask, some expiry, collateral, availabilitiesVersion
+  )
 
 proc init*(
     _: type SlotQueueItem,
@@ -213,12 +217,6 @@ proc pricePerBytePerSecond*(self: SlotQueueItem): UInt256 =
 proc collateralPerByte*(self: SlotQueueItem): UInt256 =
   self.collateralPerByte
 
-proc seen*(self: SlotQueueItem): bool =
-  self.seen
-
-proc `seen=`*(self: var SlotQueueItem, seen: bool) =
-  self.seen = seen
-
 proc running*(self: SlotQueue): bool =
   self.running
 
@@ -252,7 +250,7 @@ proc push*(self: SlotQueue, item: SlotQueueItem): ?!void {.raises: [].} =
   logScope:
     requestId = item.requestId
     slotIndex = item.slotIndex
-    seen = item.seen
+    availabilitiesVersion = item.availabilitiesVersion
 
   trace "pushing item to queue"
 
@@ -275,7 +273,7 @@ proc push*(self: SlotQueue, item: SlotQueueItem): ?!void {.raises: [].} =
 
   # when slots are pushed to the queue, the queue should be unpaused if it was
   # paused
-  if self.paused and not item.seen:
+  if self.paused and item.availabilitiesVersion < self.availabilitiesVersion:
     trace "unpausing queue after new slot pushed"
     self.unpause()
 
@@ -320,22 +318,11 @@ proc delete*(self: SlotQueue, requestId: RequestId) =
 proc `[]`*(self: SlotQueue, i: Natural): SlotQueueItem =
   self.queue[i]
 
-proc clearSeenFlags*(self: SlotQueue) =
-  # Enumerate all items in the queue, overwriting each item with `seen = false`.
-  # To avoid issues with new queue items being pushed to the queue while all
-  # items are being iterated (eg if a new storage request comes in and pushes
-  # new slots to the queue), this routine must remain synchronous.
-
-  if self.queue.empty:
-    return
-
-  for item in self.queue.mitems:
-    item.seen = false # does not maintain the heap invariant
-
-  # force heap reshuffling to maintain the heap invariant
-  doAssert self.queue.update(self.queue[0]), "slot queue failed to reshuffle"
-
-  trace "all 'seen' flags cleared"
+proc availabilitiesChanged*(self: SlotQueue) =
+  inc self.availabilitiesVersion
+  if self.paused:
+    trace "unpausing queue after availabilities changed"
+    self.unpause()
 
 proc runWorker(self: SlotQueue) {.async: (raises: []).} =
   trace "slot queue worker loop started"
@@ -347,20 +334,18 @@ proc runWorker(self: SlotQueue) {.async: (raises: []).} =
       # block until unpaused is true/fired, ie wait for queue to be unpaused
       await self.unpaused.wait()
 
-      let item = await self.queue.pop() # if queue empty, wait here for new items
+      var item = await self.queue.pop() # if queue empty, wait here for new items
 
       logScope:
         reqId = item.requestId
         slotIdx = item.slotIndex
-        seen = item.seen
+        availabilitiesVersion = item.availabilitiesVersion
 
       if not self.running: # may have changed after waiting for pop
         trace "not running, exiting"
         break
 
-      # If, upon processing a slot, the slot item already has a `seen` flag set,
-      # the queue should be paused.
-      if item.seen:
+      if item.availabilitiesVersion == self.availabilitiesVersion:
         trace "processing already seen item, pausing queue",
           reqId = item.requestId, slotIdx = item.slotIndex
         self.pause()
@@ -375,6 +360,7 @@ proc runWorker(self: SlotQueue) {.async: (raises: []).} =
       without onProcessSlot =? self.onProcessSlot:
         raiseAssert "slot queue onProcessSlot not set"
 
+      item.availabilitiesVersion = self.availabilitiesVersion
       await onProcessSlot(item)
     except CancelledError:
       trace "slot queue worker cancelled"

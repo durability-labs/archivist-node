@@ -140,8 +140,7 @@ proc cleanUp(
   # draining the queue. Seen items will be ordered last.
   if reprocessSlot and request =? data.request and var item =? agent.data.slotQueueItem:
     let queue = sales.context.slotQueue
-    item.seen = true
-    trace "pushing ignored item to queue, marked as seen"
+    trace "pushing ignored item to queue"
     if err =? queue.push(item).errorOption:
       error "failed to readd slot to queue", errorType = $(type err), error = err.msg
 
@@ -254,15 +253,9 @@ proc load*(sales: Sales) {.async.} =
 proc OnAvailabilitySaved(
     sales: Sales, availability: Availability
 ) {.async: (raises: []).} =
-  ## When availabilities are modified or added, the queue should be unpaused if
-  ## it was paused and any slots in the queue should have their `seen` flag
-  ## cleared.
-  let queue = sales.context.slotQueue
-
-  queue.clearSeenFlags()
-  if queue.paused:
-    trace "unpausing queue after new availability added"
-    queue.unpause()
+  ## When availabilities are modified or added, the slot queue should be
+  ## notified so that it can reprocess slots.
+  sales.context.slotQueue.availabilitiesChanged()
 
 proc onStorageRequested(
     sales: Sales, requestId: RequestId, ask: StorageAsk, expiry: uint64
