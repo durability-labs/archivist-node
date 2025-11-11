@@ -14,6 +14,9 @@ on:
       node_version:
         type: string
 
+env:
+  UNITTEST2_OUTPUT_LVL: VERBOSE # outputs which test is currently running
+
 jobs:
   build:
     strategy:
