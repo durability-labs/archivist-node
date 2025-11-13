@@ -177,7 +177,7 @@ proc buildBlockTree*[SomeTree, SomeHash](
   if blk.isEmpty:
     success (self.emptyBlock, self.emptyDigestTree)
   else:
-    without tree =? T.digestTree(blk.data, self.cellSize.int), e:
+    without tree =? SomeTree.digestTree(blk.data, self.cellSize.int), e:
       error "Failed to create digest for block", e = e.msg
       return failure(e)
 

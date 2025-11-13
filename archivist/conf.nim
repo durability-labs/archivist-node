@@ -68,7 +68,6 @@ proc defaultDataDir*(): string =
   getHomeDir() / dataDir
 
 const
-  DefaultThreadCount* = ThreadCount(0)
   DefaultDataDir* = defaultDataDir()
   DefaultCircuitDir* = defaultDataDir() / "circuits"
 
