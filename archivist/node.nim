@@ -366,7 +366,7 @@ proc retrieve*(
   await self.streamEntireDataset(manifest, cid)
 
 proc deleteSingleBlock(
-  self: ArchivistNodeRef, cid: Cid
+    self: ArchivistNodeRef, cid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   if err =? (await self.networkStore.delBlock(cid)).errorOption:
     error "Error deleting block", cid, err = err.msg
@@ -376,7 +376,7 @@ proc deleteSingleBlock(
   return success()
 
 proc deleteEntireDataset(
-  self: ArchivistNodeRef, cid: Cid
+    self: ArchivistNodeRef, cid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   # Deletion is a strictly local operation
   var store = self.networkStore.localStore
@@ -510,7 +510,7 @@ proc store*(
   return manifestBlk.cid.success
 
 proc iterateManifests*(
-  self: ArchivistNodeRef, onManifest: OnManifest
+    self: ArchivistNodeRef, onManifest: OnManifest
 ) {.async: (raises: [CancelledError]).} =
   without cidsIter =? await self.networkStore.listBlocks(BlockType.Manifest):
     warn "Failed to listBlocks"

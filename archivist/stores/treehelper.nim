@@ -48,7 +48,7 @@ proc putSomeProofs*(
 
 proc putSomeProofs*(
     store: BlockStore, tree: ArchivistTree, iter: Iter[Natural]
-): Future[?!void] {.async: (raises: [CancelledError], raw: true).}=
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   store.putSomeProofs(tree, iter.map((i: Natural) => i.ord))
 
 proc putAllProofs*(
