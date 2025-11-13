@@ -15,21 +15,21 @@ import ./backends
 import ./prover
 
 logScope:
-  topics = "codex slots proverfactory"
+  topics = "archivist slots proverfactory"
 
-template graphFilePath(config: CodexConf): string =
+template graphFilePath(config: NodeConf): string =
   config.circuitDir / "proof_main.bin"
 
-template r1csFilePath(config: CodexConf): string =
+template r1csFilePath(config: NodeConf): string =
   config.circuitDir / "proof_main.r1cs"
 
-template wasmFilePath(config: CodexConf): string =
+template wasmFilePath(config: NodeConf): string =
   config.circuitDir / "proof_main.wasm"
 
-template zkeyFilePath(config: CodexConf): string =
+template zkeyFilePath(config: NodeConf): string =
   config.circuitDir / "proof_main.zkey"
 
-proc getGraphFile*(config: CodexConf): ?!string =
+proc getGraphFile*(config: NodeConf): ?!string =
   if fileAccessible($config.circomGraph, {AccessFlags.Read}) and
       endsWith($config.circomGraph, ".bin"):
     success $config.circomGraph
@@ -39,7 +39,7 @@ proc getGraphFile*(config: CodexConf): ?!string =
   else:
     failure("Graph file not accessible or not found")
 
-proc getR1csFile*(config: CodexConf): ?!string =
+proc getR1csFile*(config: NodeConf): ?!string =
   if fileAccessible($config.circomR1cs, {AccessFlags.Read}) and
       endsWith($config.circomR1cs, ".r1cs"):
     success $config.circomR1cs
@@ -49,7 +49,7 @@ proc getR1csFile*(config: CodexConf): ?!string =
   else:
     failure("R1CS file not accessible or not found")
 
-proc getWasmFile*(config: CodexConf): ?!string =
+proc getWasmFile*(config: NodeConf): ?!string =
   if fileAccessible($config.circomWasm, {AccessFlags.Read}) and
       endsWith($config.circomWasm, ".wasm"):
     success $config.circomWasm
@@ -59,7 +59,7 @@ proc getWasmFile*(config: CodexConf): ?!string =
   else:
     failure("WASM file not accessible or not found")
 
-proc getZkeyFile*(config: CodexConf): ?!string =
+proc getZkeyFile*(config: NodeConf): ?!string =
   if fileAccessible($config.circomZkey, {AccessFlags.Read}) and
       endsWith($config.circomZkey, ".zkey"):
     success $config.circomZkey
@@ -69,7 +69,7 @@ proc getZkeyFile*(config: CodexConf): ?!string =
   else:
     failure("ZKey file not accessible or not found")
 
-proc suggestDownloadTool(config: CodexConf) =
+proc suggestDownloadTool(config: NodeConf) =
   without address =? config.marketplaceAddress:
     raiseAssert("Proving backend initializing while marketplace address not set.")
 
@@ -81,7 +81,7 @@ proc suggestDownloadTool(config: CodexConf) =
     instructions
 
 proc initializeNimGroth16Backend(
-    config: CodexConf, tp: Taskpool
+    config: NodeConf, tp: Taskpool
 ): ?!NimGroth16BackendRef =
   trace "Initializing NimGroth16 backend"
 
@@ -104,7 +104,7 @@ proc initializeNimGroth16Backend(
   )
 
 proc initializeCircomCompatBackend(
-    config: CodexConf, tp: Taskpool
+    config: NodeConf, tp: Taskpool
 ): ?!CircomCompatBackendRef =
   trace "Initializing CircomCompat backend"
 
@@ -124,7 +124,7 @@ proc initializeCircomCompatBackend(
     config.numProofSamples,
   )
 
-proc initializeProver*(config: CodexConf, tp: Taskpool): ?!Prover =
+proc initializeProver*(config: NodeConf, tp: Taskpool): ?!Prover =
   let prover =
     case config.proverBackend
     of ProverBackendCmd.nimgroth16:
