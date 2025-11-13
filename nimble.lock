@@ -442,15 +442,15 @@
       }
     },
     "circom_witnessgen": {
-      "version": "0.1.0",
-      "vcsRevision": "6e0551d2e37a1b762910df0abc994e0bbdf3d0fd",
+      "version": "0.1.1",
+      "vcsRevision": "95562a97d6210e7724a052713d7db5fa4c425c30",
       "url": "https://github.com/durability-labs/circom-witnessgen",
       "downloadMethod": "git",
       "dependencies": [
         "constantine"
       ],
       "checksums": {
-        "sha1": "33c5b9eca66fc3db7bfe25e10b1f50b3a7bdc4e9"
+        "sha1": "45586bd8760ed60abe2ef0cba2823be26fc9d091"
       }
     },
     "circomcompat": {

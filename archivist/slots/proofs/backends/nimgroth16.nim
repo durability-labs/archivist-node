@@ -19,6 +19,8 @@ import pkg/taskpools
 import pkg/questionable/results
 
 import pkg/groth16
+import pkg/groth16/files/r1cs
+import pkg/groth16/zkey_types
 import pkg/circom_witnessgen
 import pkg/circom_witnessgen/load
 import pkg/circom_witnessgen/witness
