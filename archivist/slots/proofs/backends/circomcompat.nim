@@ -26,7 +26,7 @@ import ./converters
 export circomcompat, converters
 
 logScope:
-  topics = "codex backend circomcompat"
+  topics = "archivist backend circomcompat"
 
 type
   CircomCompatBackend* = object

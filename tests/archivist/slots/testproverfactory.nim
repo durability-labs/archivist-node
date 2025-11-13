@@ -5,10 +5,10 @@ import pkg/chronos
 import pkg/taskpools
 
 import pkg/confutils/defs
-import pkg/codex/conf
-import pkg/codex/slots/proofs/backends
-import pkg/codex/slots/proofs/proverfactory {.all.}
-import pkg/codex/utils/natutils
+import pkg/archivist/conf
+import pkg/archivist/slots/proofs/backends
+import pkg/archivist/slots/proofs/proverfactory {.all.}
+import pkg/archivist/utils/natutils
 
 import ../helpers
 import ../examples
@@ -23,7 +23,7 @@ suite "Test BackendFactory":
     removeDir(circuitDir)
 
   test "Should initialize with correct nimGroth16 config files":
-    let config = CodexConf(
+    let config = NodeConf(
       cmd: StartUpCmd.persistence,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
@@ -41,7 +41,7 @@ suite "Test BackendFactory":
       getZkeyFile(config).tryGet == $config.circomZkey
 
   test "Should initialize with correct circom compat config files":
-    let config = CodexConf(
+    let config = NodeConf(
       cmd: StartUpCmd.persistence,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
@@ -59,7 +59,7 @@ suite "Test BackendFactory":
       getZkeyFile(config).tryGet == $config.circomZkey
 
   test "Should initialize circom compat from local directory":
-    let config = CodexConf(
+    let config = NodeConf(
       cmd: StartUpCmd.persistence,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
@@ -77,7 +77,7 @@ suite "Test BackendFactory":
       getZkeyFile(config).tryGet == config.circuitDir / "proof_main.zkey"
 
   test "Should initialize nim groth16 from local directory":
-    let config = CodexConf(
+    let config = NodeConf(
       cmd: StartUpCmd.persistence,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
@@ -96,7 +96,7 @@ suite "Test BackendFactory":
 
   test "Should suggest usage of downloader tool when files not available":
     let
-      config = CodexConf(
+      config = NodeConf(
         cmd: StartUpCmd.persistence,
         nat: NatConfig(hasExtIp: false, nat: NatNone),
         metricsAddress: parseIpAddress("127.0.0.1"),

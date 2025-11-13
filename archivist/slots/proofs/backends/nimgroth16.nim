@@ -34,7 +34,7 @@ import ./converters
 export converters
 
 logScope:
-  topics = "codex backend nimgroth16"
+  topics = "archivist backend nimgroth16"
 
 const DefaultCurve* = "bn128"
 
