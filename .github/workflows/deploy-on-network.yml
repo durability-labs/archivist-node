@@ -50,24 +50,24 @@ jobs:
       contracts_deploy: ${{ steps.variables.outputs.contracts_deploy }}
       bootstrap_nodes_update: ${{ steps.variables.outputs.bootstrap_nodes_update }}
       autoclient_nodes_update: ${{ steps.variables.outputs.autoclient_nodes_update }}
-      cloud_tools_update: ${{ steps.variables.outputs.cloud_tools_update }}
+      cluster_tools_update: ${{ steps.variables.outputs.cluster_tools_update }}
       secrets_prefix: ${{ steps.case.outputs.secrets_prefix }}
     steps:
-      - name: Set commit ref
-        id: ref
+      - name: Set variables from a Docker image
         run: |
           if [[ ${{ github.event_name }} == 'workflow_dispatch' ]]; then
             docker pull ${{ env.ARCHIVIST_IMAGE }}
-            echo "sha=$(docker inspect ${{ env.ARCHIVIST_IMAGE }} --format='{{index .Config.Labels "org.opencontainers.image.revision"}}')" >> $GITHUB_OUTPUT
+            echo "ref_sha=$(docker inspect ${{ env.ARCHIVIST_IMAGE }} --format='{{index .Config.Labels "org.opencontainers.image.revision"}}')" >> $GITHUB_ENV
+            echo "image_version=$(docker inspect ${{ env.ARCHIVIST_IMAGE }} --format='{{index .Config.Labels "org.opencontainers.image.version"}}')" >> $GITHUB_ENV
           else
-            echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "ref_sha=${{ github.sha }}" >> $GITHUB_ENV
           fi
 
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
-          ref: ${{ steps.ref.outputs.sha }}
+          ref: ${{ env.ref_sha }}
 
       - name: Secrets prefix
         id: case
@@ -85,7 +85,13 @@ jobs:
           # Versions
           app_revision=$(git rev-parse --short HEAD)
           echo "app_revision=${app_revision}" >> $GITHUB_OUTPUT
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          if [[ ${{ github.event_name }} == 'workflow_dispatch' ]]; then
+            if [[ "${{ env.image_version }}" =~ [a-z]?[0-9]+\.[0-9]+\.[0-9] ]]; then
+              echo "app_version=${{ env.image_version }}" >> $GITHUB_OUTPUT
+            else
+              echo "app_version=${app_revision}" >> $GITHUB_OUTPUT
+            fi
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "app_version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
             echo "app_version=${app_revision}" >> $GITHUB_OUTPUT
@@ -97,29 +103,34 @@ jobs:
           echo "contracts_revision=${contracts_submodule}" >> $GITHUB_OUTPUT
           echo "contracts_ref=$(git rev-parse HEAD:vendor/${{ env.CONTRACTS_REPOSITORY }})" >> $GITHUB_OUTPUT
 
-          # Check if contracts-deploy is needed
-          if [[ "${contracts_deployed}" != "${contracts_submodule}" ]]; then
-            echo "Contracts revision mismatch: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
-            contracts_deploy="true"
-            echo "contracts_deploy=${contracts_deploy}" >> $GITHUB_OUTPUT
+          # Check if contracts-deploy is needed - skip for != devnet
+          if [[ "${{ env.NETWORK }}" != "devnet" ]]; then
+            echo "contracts_deploy=false" >> $GITHUB_OUTPUT
           else
-            echo "Contracts revision is the same: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
+            if [[ "${contracts_deployed}" != "${contracts_submodule}" ]]; then
+              echo "Contracts revision mismatch: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
+              contracts_deploy="true"
+              echo "contracts_deploy=${contracts_deploy}" >> $GITHUB_OUTPUT
+            else
+              echo "Contracts revision is the same: deployed=${contracts_deployed} / submodule=${contracts_submodule}"
+            fi
           fi
 
           # Check if we have bootstrap and autoclient nodes defined for a network
           if [[ $(env | grep -c ${{ steps.case.outputs.secrets_prefix }}_SSH_HOST_BOOTSTRAP_ || true) -gt 0 ]]; then echo "bootstrap_nodes_update=true" >> $GITHUB_OUTPUT; fi
           if [[ $(env | grep -c ${{ steps.case.outputs.secrets_prefix }}_SSH_HOST_AUTOCLIENT_ || true) -gt 0 ]]; then echo "autoclient_nodes_update=true" >> $GITHUB_OUTPUT; fi
 
-          # Check if cloud-tools update is needed
-          echo "cloud_tools_update=true" >> $GITHUB_OUTPUT
-          if [[ "${{ env.NETWORK }}" == "devnet" ]]; then
+          # Check if cluster-tools update is needed - forcibly for != devnet
+          if [[ "${{ env.NETWORK }}" != "devnet" ]]; then
+            echo "cluster_tools_update=true" >> $GITHUB_OUTPUT
+          else
             if [[ "${contracts_deploy}" != "true" ]]; then
-              echo "cloud_tools_update=false" >> $GITHUB_OUTPUT
+              echo "cluster_tools_update=false" >> $GITHUB_OUTPUT
             fi
           fi
 
   contracts-deploy:
-    name: Deploy contracts
+    name: Contracts deploy
     runs-on: ubuntu-latest
     needs: compute-variables
     if: needs.compute-variables.outputs.contracts_deploy == 'true'
@@ -272,7 +283,7 @@ jobs:
     name: Cluster tools
     runs-on: ubuntu-latest
     needs: [compute-variables, cluster-nodes]
-    if: needs.compute-variables.outputs.cloud_tools_update == 'true'
+    if: ${{ !(failure() || cancelled()) && needs.compute-variables.outputs.cluster_tools_update == 'true' }}
     env:
       TOOLS_NAMESPACE: ${{ secrets[format('{0}_KUBE_NAMESPACE_TOOLS', inputs.network)] }}
     steps:
@@ -341,13 +352,13 @@ jobs:
           repositories: ${{ env.CONFIG_REPOSITORY }}
 
       - name: Checkout config repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ github.repository_owner }}/${{ env.CONFIG_REPOSITORY }}
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Checkout config repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ github.repository_owner }}/${{ env.CONFIG_REPOSITORY }}
           ref: ${{ env.CONFIG_REPOSITORY_BRANCH }}
