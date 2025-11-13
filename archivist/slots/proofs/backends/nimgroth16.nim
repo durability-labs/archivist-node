@@ -19,9 +19,9 @@ import pkg/taskpools
 import pkg/questionable/results
 
 import pkg/groth16
-import pkg/nim/circom_witnessgen
-import pkg/nim/circom_witnessgen/load
-import pkg/nim/circom_witnessgen/witness
+import pkg/circom_witnessgen
+import pkg/circom_witnessgen/load
+import pkg/circom_witnessgen/witness
 
 import ../../types
 import ../../../stores
