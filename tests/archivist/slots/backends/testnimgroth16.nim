@@ -8,18 +8,18 @@ import pkg/poseidon2
 import pkg/serde/json
 import pkg/taskpools
 
-import pkg/codex/slots {.all.}
-import pkg/codex/slots/types {.all.}
-import pkg/codex/merkletree
-import pkg/codex/merkletree/poseidon2
-import pkg/codex/codextypes
-import pkg/codex/manifest
-import pkg/codex/stores
+import pkg/archivist/slots {.all.}
+import pkg/archivist/slots/types {.all.}
+import pkg/archivist/merkletree
+import pkg/archivist/merkletree/poseidon2
+import pkg/archivist/archivisttypes
+import pkg/archivist/manifest
+import pkg/archivist/stores
 
 import pkg/groth16
-import pkg/nim/circom_witnessgen
-import pkg/nim/circom_witnessgen/load
-import pkg/nim/circom_witnessgen/witness
+import pkg/circom_witnessgen
+import pkg/circom_witnessgen/load
+import pkg/circom_witnessgen/witness
 
 import ./helpers
 import ../helpers
