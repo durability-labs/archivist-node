@@ -59,10 +59,20 @@ jobs:
       run_release_tests: ${{ inputs.run_release_tests }}
     secrets: inherit
 
+  deploy-testnet:
+    name: Deploy Testnet
+    uses: ./.github/workflows/deploy-on-network.yml
+    needs: build-and-push
+    if: github.ref_type == 'tag'
+    with:
+      network: testnet
+      archivist_image: ${{ needs.build-and-push.outputs.archivist_image }}
+    secrets: inherit
+
   deploy-devnet:
     name: Deploy Devnet
     uses: ./.github/workflows/deploy-on-network.yml
-    needs: build-and-push
+    needs: [build-and-push, deploy-testnet]
     if: ${{ inputs.deploy_devnet || github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
     with:
       network: devnet
