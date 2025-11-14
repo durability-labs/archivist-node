@@ -69,12 +69,15 @@ proc getZkeyFile*(config: NodeConf): ?!string =
   else:
     failure("ZKey file not accessible or not found")
 
-proc suggestDownloadTool(config: NodeConf) =
-  without address =? config.marketplaceAddress:
-    raiseAssert("Proving backend initializing while marketplace address not set.")
+proc getMarketplaceAddressArgument(config: NodeConf): string =
+  if address =? config.marketplaceAddress:
+    return $address
+  return ""
 
+proc suggestDownloadTool(config: NodeConf) =
   let
-    tokens = ["cirdl", "\"" & $config.circuitDir & "\"", config.ethProvider, $address]
+    address = getMarketplaceAddressArgument(config)
+    tokens = ["cirdl", "\"" & $config.circuitDir & "\"", config.ethProvider, address]
     instructions = "'./" & tokens.join(" ") & "'"
 
   warn "Proving circuit files are not found. Please run the following to download them:",
