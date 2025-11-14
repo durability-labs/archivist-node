@@ -42,6 +42,9 @@ Building in windows requires the following additional setup:
   - if you have WSL installed, ensure that the WSL binaries occur after the
     mingw and msys2 folders, e.g:
     `C:\mingw64\bin;C:\msys64\usr\bin;%USERPROFILE%\AppData\Local\Microsoft\WindowsApps`
+  - if you have WSL installed and your C:\Windows\System32 contains bash.exe
+    you're on an old version of WSL and the Archivist build will not work until
+    it is uninstalled
 
 > Note: the commands in the rest of this document should be executed in
 > powershell or cmd, not in an msys shell.
