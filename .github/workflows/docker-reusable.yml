@@ -126,6 +126,14 @@ jobs:
     env:
       PLATFORM: ${{ format('{0}/{1}', 'linux', matrix.target.arch) }}
     steps:
+      - name: Show runner info
+        run: |
+          for run in "lscpu" "lshw -class processor" "dmidecode -t processor";
+            do echo "${run}";
+            eval sudo ${run};
+            echo -e "\n\n\n";
+          done
+
       - name: Checkout
         uses: actions/checkout@v4
 
