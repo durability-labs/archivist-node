@@ -44,12 +44,13 @@ suite "Command line interface":
     .waitForOutput(expectedOutput)
     .start()
 
-  test "suggests downloading of circuit files when there's no wasm file":
+  test "suggests downloading of circuit files when there's no wasm file for the circom prover backend":
     let expectedOutput =
       "Proving circuit files are not found. " &
       "Please run the following to download them:"
     discard await testbed.node
     .provider()
+    .proverBackend("circomcompat")
     .noCircomWasm()
     .availability(false)
     .waitForOutput(expectedOutput)
@@ -62,6 +63,17 @@ suite "Command line interface":
     discard await testbed.node
     .provider()
     .noCircomZkey()
+    .availability(false)
+    .waitForOutput(expectedOutput)
+    .start()
+
+  test "suggests downloading of circuit files when there's no graph file":
+    let expectedOutput =
+      "Proving circuit files are not found. " &
+      "Please run the following to download them:"
+    discard await testbed.node
+    .provider()
+    .noCircomGraph()
     .availability(false)
     .waitForOutput(expectedOutput)
     .start()

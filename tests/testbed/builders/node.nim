@@ -31,6 +31,7 @@ type NodeBuilder = ref object
   validatorGroups: ?int
   validatorGroupIndex: ?int
   prover: bool
+  proverBackend: ?string
   circomR1cs: ? ?string
   circomWasm: ? ?string
   circomZkey: ? ?string
@@ -144,6 +145,10 @@ func provider*(builder: NodeBuilder): NodeBuilder =
   builder.createInitialAvailability = true
   builder
 
+func proverBackend*(builder: NodeBuilder, backend: string): NodeBuilder =
+  builder.proverBackend = some backend
+  builder
+
 func waitForOutput*(builder: NodeBuilder, output: string): NodeBuilder =
   builder.waitForOutput = some output
   builder
@@ -244,6 +249,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--validator-group-index=" & $index)
   if builder.prover:
     arguments.add("prover")
+  if backend =? builder.proverBackend:
+    arguments.add("--prover-backend=" & backend)
   if circomR1cs =? builder.circomR1csResolved:
     arguments.add("--circom-r1cs=" & circomR1cs)
   if circomWasm =? builder.circomWasmResolved:

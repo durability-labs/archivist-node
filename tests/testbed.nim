@@ -32,8 +32,11 @@ export node.circomWasm
 export node.noCircomWasm
 export node.circomZkey
 export node.noCircomZkey
+export node.circomGraph
+export node.noCircomGraph
 export node.validator
 export node.prover
+export node.proverBackend
 export node.provider
 export node.availability
 export node.failProofs
