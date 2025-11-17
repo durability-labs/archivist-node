@@ -128,10 +128,14 @@ jobs:
     steps:
       - name: Show runner info
         run: |
-          for run in "lscpu" "lshw -class processor" "dmidecode -t processor";
-            do echo "${run}";
+          curl -sLO https://raw.githubusercontent.com/HenrikBengtsson/x86-64-level/main/x86-64-level
+          chmod ugo+x x86-64-level
+          ./x86-64-level --verbose || true
+
+          for run in "lscpu" "lshw -class processor" "dmidecode -t processor"; do
+            echo -e "\n\n";
+            echo "${run}";
             eval sudo ${run};
-            echo -e "\n\n\n";
           done
 
       - name: Checkout
