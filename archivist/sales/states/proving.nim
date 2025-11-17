@@ -32,7 +32,7 @@ method prove*(
       error "Failed to generate proof", error = err.msg
       # In this state, there's nothing we can do except try again next time.
       return
-    debug "Submitting proof", provingPeriod = provingPeriod, slotId = slot.id
+    info "Submitting proof", provingPeriod = provingPeriod, slotId = slot.id
     await market.submitProof(slot.id, proof)
   except CancelledError as error:
     trace "Submitting proof cancelled"
@@ -77,7 +77,7 @@ proc proveLoop(
       if (await market.isProofRequired(slotId)) or
           (await market.willProofBeRequired(slotId)):
         let challenge = await market.getChallenge(slotId)
-        debug "Proof is required", challenge = challenge
+        info "Generating required proof", challenge = challenge
         await state.prove(slot, challenge, onProve, market, provingPeriod)
         let periodAtFinish = await getCurrentPeriod()
         if periodAtFinish != provingPeriod:
