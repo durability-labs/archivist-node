@@ -3,7 +3,7 @@ ARG BUILDER=nimlang/nim:2.2.4-ubuntu-regular
 ARG IMAGE=ubuntu:24.04
 ARG RUST_VERSION=${RUST_VERSION:-1.79.0}
 ARG BUILD_HOME=/src
-ARG NIMFLAGS="${NIMFLAGS:-"-d:disableMarchNative"}"
+ARG NIMFLAGS="${NIMFLAGS:-"-d:release -d:disableMarchNative"}"
 ARG APP_HOME=/archivist
 ARG NAT_IP_AUTO=${NAT_IP_AUTO:-false}
 
