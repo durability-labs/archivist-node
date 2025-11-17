@@ -33,6 +33,7 @@ task testContracts, "Run contract tests":
 
 task testIntegration, "Run integration tests":
   exec "nimble c" &
+    " --define:release" &
     " --define:archivist_system_testing_options" &
     " --out:build" / "integration-test" / "archivist-for-testing".toExe &
     " archivist"
