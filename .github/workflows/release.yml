@@ -54,6 +54,19 @@ jobs:
     runs-on: ${{ matrix.builder }}
     timeout-minutes: 80
     steps:
+      - name: Show linux runner info
+        if: matrix.os == 'linux'
+        run: |
+          curl -sLO https://raw.githubusercontent.com/HenrikBengtsson/x86-64-level/main/x86-64-level
+          chmod ugo+x x86-64-level
+          ./x86-64-level --verbose || true
+
+          for run in "lscpu" "lshw -class processor" "dmidecode -t processor"; do
+            echo -e "\n\n";
+            echo "${run}";
+            eval sudo ${run};
+          done
+
       - name: Release - Checkout sources
         uses: actions/checkout@v4
         with:
