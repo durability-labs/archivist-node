@@ -32,13 +32,21 @@ task testContracts, "Run contract tests":
   exec "tests" / "testContracts".toExe
 
 task testIntegration, "Run integration tests":
+  exec "echo compile archivist-for-testing"
+  exec "date -u"
   exec "nimble c" &
     " --define:release" &
     " --define:archivist_system_testing_options" &
     " --out:build" / "integration-test" / "archivist-for-testing".toExe &
     " archivist"
+  exec "echo compile integration tests"
+  exec "date -u"
   exec "nimble c tests" / "testIntegration"
+  exec "echo run integration tests"
+  exec "date -u"
   exec "tests" / "testIntegration".toExe
+  exec "echo all done"
+  exec "date -u"
 
 task testTools, "Run circuit downloader tests":
   exec "nimble build"
