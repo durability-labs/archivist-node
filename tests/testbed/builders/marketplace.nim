@@ -33,6 +33,7 @@ proc token(builder: MarketplaceBuilder): Future[Erc20Token] {.async.} =
     let address = await builder.contract.token
     let provider = builder.testbed.provider
     token = Erc20Token.new(address, provider)
+    builder.tokenInstance = some token
   token
 
 type Recording[Event] = ref object
