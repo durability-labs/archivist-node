@@ -31,33 +31,39 @@ suite "Marketplace":
     let provider = await testbed.node.provider.availability(false).start()
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.submit(node)
+    let started = await testbed.marketplace.recordRequestStarted()
     discard await testbed.availability.create(provider)
-    await testbed.marketplace.waitForRequestStarted(request.id)
+    await started.waitForRequestStarted(request.id)
 
   test "provider withdraws its payout when a request ends":
     let provider = await testbed.node.provider.start()
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.start(node)
+    let transfers = await testbed.marketplace.recordTransfers()
     await testbed.eth.time.advance(request.duration)
-    await testbed.marketplace.waitForTransferTo(provider)
+    await transfers.waitForTransferTo(provider)
 
   test "requester withdraws remaining funds when a request ends":
     discard await testbed.node.provider.start()
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.start(node)
+    let transfers = await testbed.marketplace.recordTransfers()
     await testbed.eth.time.advance(request.duration)
-    await testbed.marketplace.waitForTransferTo(node)
+    await transfers.waitForTransferTo(node)
 
   test "provider withdraws its payout when a request is cancelled":
     let provider = await testbed.node.provider.start()
     let node = await testbed.node.persistence.start()
+    let filled = await testbed.marketplace.recordSlotFilled()
     let request = await testbed.request.submit(node)
-    await testbed.marketplace.waitForSlotFilled(request.id)
+    await filled.waitForSlotFilled(request.id)
+    let transfers = await testbed.marketplace.recordTransfers()
     await testbed.eth.time.advance(request.expiry)
-    await testbed.marketplace.waitForTransferTo(provider)
+    await transfers.waitForTransferTo(provider)
 
   test "requester withdraws remaining funds when a request is cancelled":
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.submit(node)
+    let transfers = await testbed.marketplace.recordTransfers()
     await testbed.eth.time.advance(request.expiry)
-    await testbed.marketplace.waitForTransferTo(node)
+    await transfers.waitForTransferTo(node)

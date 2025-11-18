@@ -15,11 +15,13 @@ suite "Storage Proofs":
     discard await testbed.node.provider.start()
     let node = await testbed.node.persistence.start()
     discard await testbed.request.start(node)
-    await testbed.marketplace.waitForProofSubmitted()
+    let submitted = await testbed.marketplace.recordProofSubmitted()
+    await submitted.waitForProofSubmitted()
 
   test "slot is freed after too many invalid proofs are submitted":
     discard await testbed.node.provider.failProofs(every = 1).start()
     discard await testbed.node.validator.start()
     let node = await testbed.node.persistence.start()
+    let freed = await testbed.marketplace.recordSlotFreed()
     let request = await testbed.request.start(node)
-    await testbed.marketplace.waitForSlotFreed(request.id)
+    await freed.waitForSlotFreed(request.id)

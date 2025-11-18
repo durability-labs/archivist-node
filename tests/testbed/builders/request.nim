@@ -78,12 +78,14 @@ proc submit*(builder: RequestBuilder, requester: Node): Future[Request] {.async.
       "nodes": builder.nodes |? 3,
       "tolerance": builder.tolerance |? 1,
     }
+  let requested = await builder.testbed.marketplace.recordStorageRequested()
   let requestId = await Http.post(url, body).readString()
-  await builder.testbed.marketplace.waitForStorageRequested(requestId)
+  await requested.waitForStorageRequested(requestId)
   Request.init(dataset, requestId, duration, expiry)
 
 proc start*(builder: RequestBuilder, requester: Node): Future[Request] {.async.} =
+  let started = await builder.testbed.marketplace.recordRequestStarted()
   let request = await builder.submit(requester)
   let requestId = request.id
-  await builder.testbed.marketplace.waitForRequestStarted(requestId)
+  await started.waitForRequestStarted(requestId)
   request

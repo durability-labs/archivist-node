@@ -35,88 +35,100 @@ proc token(builder: MarketplaceBuilder): Future[Erc20Token] {.async.} =
     token = Erc20Token.new(address, provider)
   token
 
+type Recording[Event] = ref object
+  builder: MarketplaceBuilder
+  subscription: Subscription
+  events: AsyncQueue[Event]
+
+proc record(
+    builder: MarketplaceBuilder, contract: Contract, Event: type
+): Future[Recording[Event]] {.async.} =
+  let recording = Recording[Event](builder: builder, events: newAsyncQueue[Event]())
+  proc onEvent(event: Event) =
+    try:
+      recording.events.putNoWait(event)
+    except AsyncQueueFullError as error:
+      raiseAssert error.msg
+
+  recording.subscription = await contract.subscribe(Event, onEvent)
+  recording
+
+template waitForIt(recording: Recording, condition: untyped): Future[void] =
+  let waiting = proc() {.async.} =
+    while true:
+      let it {.inject, used.} = await recording.events.get()
+      if condition:
+        break
+    await recording.subscription.unsubscribe()
+  waiting()
+
+proc recordStorageRequested*(
+    builder: MarketplaceBuilder
+): Future[Recording[StorageRequested]] {.async.} =
+  await builder.record(builder.contract, StorageRequested)
+
 proc waitForStorageRequested*(
-    builder: MarketplaceBuilder, requestId: string
+    recording: Recording[StorageRequested], requestId: string
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  let done = newAsyncEvent()
-  proc onEvent(event: StorageRequested) =
-    if event.requestId == requestId:
-      done.fire()
+  await recording.waitForIt(it.requestId == requestid)
 
-  let contract = builder.contract
-  let subscription = await contract.subscribe(StorageRequested, onEvent)
-  await done.wait()
-  await subscription.unsubscribe()
+proc recordSlotFilled*(
+    builder: MarketplaceBuilder
+): Future[Recording[SlotFilled]] {.async.} =
+  await builder.record(builder.contract, SlotFilled)
 
-proc waitForSlotFilled*(builder: MarketplaceBuilder, requestId: string) {.async.} =
+proc waitForSlotFilled*(recording: Recording[SlotFilled], requestId: string) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  let done = newAsyncEvent()
-  proc onEvent(event: SlotFilled) =
-    if event.requestId == requestId:
-      done.fire()
+  await recording.waitForIt(it.requestId == requestid)
 
-  let contract = builder.contract
-  let subscription = await contract.subscribe(SlotFilled, onEvent)
-  await done.wait()
-  await subscription.unsubscribe()
+proc recordRequestStarted*(
+    builder: MarketplaceBuilder
+): Future[Recording[RequestFulfilled]] {.async.} =
+  await builder.record(builder.contract, RequestFulfilled)
 
-proc waitForRequestStarted*(builder: MarketplaceBuilder, requestId: string) {.async.} =
+proc waitForRequestStarted*(
+    recording: Recording[RequestFulfilled], requestId: string
+) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  let done = newAsyncEvent()
-  proc onEvent(event: RequestFulfilled) =
-    if event.requestId == requestId:
-      done.fire()
+  await recording.waitForIt(it.requestId == requestid)
 
-  let contract = builder.contract
-  let subscription = await contract.subscribe(RequestFulfilled, onEvent)
-  await done.wait()
-  await subscription.unsubscribe()
+proc recordRequestFailed*(
+    builder: MarketplaceBuilder
+): Future[Recording[RequestFailed]] {.async.} =
+  await builder.record(builder.contract, RequestFailed)
 
-proc waitForRequestFailed*(builder: MarketplaceBuilder, requestId: string) {.async.} =
+proc waitForRequestFailed*(
+    recording: Recording[RequestFailed], requestId: string
+) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  let done = newAsyncEvent()
-  proc onEvent(event: RequestFailed) =
-    if event.requestId == requestId:
-      done.fire()
+  await recording.waitForIt(it.requestId == requestId)
 
-  let contract = builder.contract
-  let subscription = await contract.subscribe(RequestFailed, onEvent)
-  await done.wait()
-  await subscription.unsubscribe()
+proc recordProofSubmitted*(
+    builder: MarketplaceBuilder
+): Future[Recording[ProofSubmitted]] {.async.} =
+  await builder.record(builder.contract, ProofSubmitted)
 
-proc waitForProofSubmitted*(builder: MarketplaceBuilder) {.async.} =
-  let done = newAsyncEvent()
-  proc onEvent(event: ProofSubmitted) =
-    done.fire()
+proc waitForProofSubmitted*(recording: Recording[ProofSubmitted]) {.async.} =
+  await recording.waitForIt(true)
 
-  let contract = builder.contract
-  let subscription = await contract.subscribe(ProofSubmitted, onEvent)
-  await done.wait()
-  await subscription.unsubscribe()
+proc recordSlotFreed*(
+    builder: MarketplaceBuilder
+): Future[Recording[SlotFreed]] {.async.} =
+  await builder.record(builder.contract, SlotFreed)
 
-proc waitForSlotFreed*(builder: MarketplaceBuilder, requestId: string) {.async.} =
+proc waitForSlotFreed*(recording: Recording[SlotFreed], requestId: string) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  let done = newAsyncEvent()
-  proc onEvent(event: SlotFreed) =
-    if event.requestId == requestId:
-      done.fire()
+  await recording.waitForIt(it.requestId == requestId)
 
-  let contract = builder.contract
-  let subscription = await contract.subscribe(SlotFreed, onEvent)
-  await done.wait()
-  await subscription.unsubscribe()
+proc recordTransfers*(
+    builder: MarketplaceBuilder
+): Future[Recording[Transfer]] {.async.} =
+  await builder.record(await builder.token, Transfer)
 
-proc waitForTransferTo*(builder: MarketplaceBuilder, node: Node) {.async.} =
-  without receiver =? await builder.testbed.api(node).getEthAddress():
-    raise newException(TestbedError, "receiver does not have an eth address")
+proc waitForTransferTo*(recording: Recording[Transfer], node: Node) {.async.} =
+  let builder = recording.builder
   let sender = builder.contract.address
-  let done = newAsyncEvent()
-  proc onEvent(event: Transfer) =
-    if event.sender == sender and event.receiver == receiver:
-      done.fire()
-
-  let token = await builder.token
-  let subscription = await token.subscribe(Transfer, onEvent)
-  await done.wait()
-  await subscription.unsubscribe()
+  without receiver =? await builder.testbed.api(node).getEthAddress():
+    raise newException(TestbedError, "node does not have an eth address")
+  await recording.waitForIt(it.sender == sender and it.receiver == receiver)
