@@ -136,8 +136,8 @@ fi
 
 # Circuit downloader
 # cirdl [circuitPath] [rpcEndpoint] [marketplaceAddress]
-if [[ "$@" == *"prover"* ]]; then
-  echo "Prover is enabled - Run Circuit downloader"
+if [[ "$@" == *"prover"* && -z "${SKIP_DOWNLOAD_CIRCUIT}" ]]; then
+  echo "Run Circuit downloader"
 
   # Set variables required by cirdl from command line arguments when passed
   for arg in data-dir circuit-dir eth-provider marketplace-address; do
