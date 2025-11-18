@@ -10,8 +10,7 @@
 {.push raises: [].}
 
 import
-  std/[options, os, strutils, times, net, atomics],
-  stew/objects,
+  std/[options, os, times, net, atomics],
   nat_traversal/[miniupnpc, natpmp],
   json_serialization/std/net
 
