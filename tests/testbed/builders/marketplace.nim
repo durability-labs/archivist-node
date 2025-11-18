@@ -55,13 +55,15 @@ proc record(
   recording
 
 template waitForIt(recording: Recording, condition: untyped): Future[void] =
-  let waiting = proc() {.async.} =
-    while true:
-      let it {.inject, used.} = await recording.events.get()
-      if condition:
-        break
-    await recording.subscription.unsubscribe()
-  waiting()
+  block:
+    proc waiting() {.gensym, async.} =
+      while true:
+        let it {.inject, used.} = await recording.events.get()
+        if condition:
+          break
+      await recording.subscription.unsubscribe()
+
+    waiting()
 
 proc recordStorageRequested*(
     builder: MarketplaceBuilder
