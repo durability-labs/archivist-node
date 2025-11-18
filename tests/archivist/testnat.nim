@@ -1,4 +1,5 @@
-import std/[unittest, options, net]
+import std/[options, net]
+import pkg/unittest2
 import pkg/chronos
 import pkg/libp2p/[multiaddress, multihash, multicodec]
 import pkg/results
