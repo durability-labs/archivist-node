@@ -1,11 +1,10 @@
-import std/[options, net]
+import std/net
 import pkg/unittest2
 import pkg/chronos
 import pkg/libp2p/[multiaddress, multihash, multicodec]
 import pkg/results
 
 import ../../archivist/nat
-import ../../archivist/utils/natutils
 import ../../archivist/utils
 
 suite "NAT Address Tests":
