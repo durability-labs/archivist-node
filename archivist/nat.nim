@@ -10,8 +10,7 @@
 {.push raises: [].}
 
 import
-  std/[options, os, strutils, times, net, atomics],
-  stew/objects,
+  std/[options, os, times, net, atomics],
   nat_traversal/[miniupnpc, natpmp],
   json_serialization/std/net
 
@@ -402,32 +401,32 @@ proc setupAddress*(
     return setupNat(natConfig.nat, tcpPort, udpPort, clientId)
 
 proc nattedAddress*(
-    natConfig: NatConfig, addrs: seq[MultiAddress], udpPort: Port
+    natConfig: NatConfig, addresses: seq[MultiAddress], udpPort: Port
 ): tuple[libp2p, discovery: seq[MultiAddress]] =
   ## Takes a NAT configuration, sequence of multiaddresses and UDP port and returns:
   ## - Modified multiaddresses with NAT-mapped addresses for libp2p
   ## - Discovery addresses with NAT-mapped UDP ports
 
   var discoveryAddrs = newSeq[MultiAddress](0)
-  let newAddrs = addrs.mapIt:
-    block:
-      # Extract IP address and port from the multiaddress
-      let (ipPart, port) = getAddressAndPort(it)
-      if ipPart.isSome and port.isSome:
-        # Try to setup NAT mapping for the address
-        let (newIP, tcp, udp) =
-          setupAddress(natConfig, ipPart.get, port.get, udpPort, "archivist")
-        if newIP.isSome:
-          # NAT mapping successful - add discovery address with mapped UDP port
-          discoveryAddrs.add(getMultiAddrWithIPAndUDPPort(newIP.get, udp.get))
-          # Remap original address with NAT IP and TCP port
-          it.remapAddr(ip = newIP, port = tcp)
-        else:
-          # NAT mapping failed - use original address
-          echo "Failed to get external IP, using original address", it
-          discoveryAddrs.add(getMultiAddrWithIPAndUDPPort(ipPart.get, udpPort))
-          it
+  var newAddrs: seq[MultiAddress]
+  for address in addresses:
+    # Extract IP address and port from the multiaddress
+    let (ipPart, port) = getAddressAndPort(address)
+    if ipPart.isSome and port.isSome:
+      # Try to setup NAT mapping for the address
+      let (newIP, tcp, udp) =
+        setupAddress(natConfig, ipPart.get, port.get, udpPort, "archivist")
+      if newIP.isSome:
+        # NAT mapping successful - add discovery address with mapped UDP port
+        discoveryAddrs.add(getMultiAddrWithIPAndUDPPort(newIP.get, udp.get))
+        # Remap original address with NAT IP and TCP port
+        newAddrs.add(address.remapAddr(ip = newIP, port = tcp))
       else:
-        # Invalid multiaddress format - return as is
-        it
+        # NAT mapping failed - use original address
+        warn "Failed to get external IP, using original address", address
+        discoveryAddrs.add(getMultiAddrWithIPAndUDPPort(ipPart.get, udpPort))
+        newAddrs.add(address)
+    else:
+      # Invalid multiaddress format - return as is
+      newAddrs.add(address)
   (newAddrs, discoveryAddrs)
