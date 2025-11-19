@@ -31,9 +31,11 @@ type NodeBuilder = ref object
   validatorGroups: ?int
   validatorGroupIndex: ?int
   prover: bool
+  proverBackend: ?string
   circomR1cs: ? ?string
   circomWasm: ? ?string
   circomZkey: ? ?string
+  circomGraph: ? ?string
   failProofs: ?int
   blockTtl: ?int
   blockMaintenanceInterval: ?int
@@ -129,10 +131,22 @@ func noCircomZkey*(builder: NodeBuilder): NodeBuilder =
   builder.circomZkey = some none string
   builder
 
+func circomGraph*(builder: NodeBuilder, filename: string): NodeBuilder =
+  builder.circomGraph = some some filename
+  builder
+
+func noCircomGraph*(builder: NodeBuilder): NodeBuilder =
+  builder.circomGraph = some none string
+  builder
+
 func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
   builder.prover = true
   builder.createInitialAvailability = true
+  builder
+
+func proverBackend*(builder: NodeBuilder, backend: string): NodeBuilder =
+  builder.proverBackend = some backend
   builder
 
 func waitForOutput*(builder: NodeBuilder, output: string): NodeBuilder =
@@ -209,6 +223,12 @@ func circomZkeyResolved(builder: NodeBuilder): ?string =
   if builder.prover:
     return some circuitsDir / "proof_main.zkey"
 
+func circomGraphResolved(builder: NodeBuilder): ?string =
+  if circomGraph =? builder.circomGraph:
+    return circomGraph
+  if builder.prover:
+    return some circuitsDir / "proof_main.bin"
+
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
   arguments.add("--disc-port=" & $(await builder.discoveryPortResolved))
@@ -229,12 +249,16 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--validator-group-index=" & $index)
   if builder.prover:
     arguments.add("prover")
+  if backend =? builder.proverBackend:
+    arguments.add("--prover-backend=" & backend)
   if circomR1cs =? builder.circomR1csResolved:
     arguments.add("--circom-r1cs=" & circomR1cs)
   if circomWasm =? builder.circomWasmResolved:
     arguments.add("--circom-wasm=" & circomWasm)
   if circomZkey =? builder.circomZkeyResolved:
     arguments.add("--circom-zkey=" & circomZkey)
+  if circomGraph =? builder.circomGraphResolved:
+    arguments.add("--circom-graph=" & circomGraph)
   if blockTtl =? builder.blockTtl:
     arguments.add("--block-ttl=" & $blockTtl)
   if blockMaintenanceInterval =? builder.blockMaintenanceInterval:

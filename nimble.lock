@@ -441,6 +441,18 @@
         "sha1": "87f688ecbb700c29f4775b356d2f9a9b983d2236"
       }
     },
+    "circom_witnessgen": {
+      "version": "0.1.3",
+      "vcsRevision": "53066696877e238c50ac85dfe8741f43f8d39f08",
+      "url": "https://github.com/durability-labs/circom-witnessgen",
+      "downloadMethod": "git",
+      "dependencies": [
+        "constantine"
+      ],
+      "checksums": {
+        "sha1": "260bbffa9db87b53816d1b9b6a45fe9bf753757d"
+      }
+    },
     "circomcompat": {
       "version": "0.1.3",
       "vcsRevision": "95acf64cbc13932de82c3ec4033a01fa256bedef",
@@ -599,6 +611,19 @@
       ],
       "checksums": {
         "sha1": "f45784038e9d095a4469a65f1978a95683040429"
+      }
+    },
+    "groth16": {
+      "version": "0.1.0",
+      "vcsRevision": "0adcf64b7b76556227fec09297e3beef4b9c43df",
+      "url": "https://github.com/durability-labs/nim-groth16",
+      "downloadMethod": "git",
+      "dependencies": [
+        "taskpools",
+        "constantine"
+      ],
+      "checksums": {
+        "sha1": "8350e6e28bf12dc20ff69e76a127f625260113c1"
       }
     },
     "leopard": {

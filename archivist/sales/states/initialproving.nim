@@ -59,7 +59,7 @@ method run*(
     await waitForStableChallenge(market, clock, periodicity, slot.id)
     let provingPeriod = periodicity.periodOf(clock.now().Timestamp)
 
-    debug "Generating initial proof",
+    info "Generating initial proof",
       provingPeriod = provingPeriod,
       requestId = data.requestId,
       slotIndex = data.slotIndex
@@ -73,7 +73,7 @@ method run*(
       warn "Failed to generate initial proof in time",
         provingPeriod = provingPeriod, periodAtFinish = periodAtFinish
 
-    debug "Finished initial proof calculation",
+    info "Finished initial proof calculation",
       provingPeriod = periodAtFinish,
       requestId = data.requestId,
       slotIndex = data.slotIndex
