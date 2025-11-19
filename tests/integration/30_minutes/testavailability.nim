@@ -66,8 +66,9 @@ suite "Availability":
   test "node refuses to decrease totalSize below amount used by slots":
     let original = await testbed.availability.create(provider)
     let id = original["id"].getStr()
+    let filled = await testbed.marketplace.recordSlotFilled()
     let request = await testbed.request.submit(node)
-    await testbed.marketplace.waitForSlotFilled(request.id)
+    await filled.waitForSlotFilled(request.id)
     let updated = (await testbed.api(provider).getAvailability())[0]
     check updated["totalSize"].getInt() == original["totalSize"].getInt()
     check updated["freeSize"].getInt() < original["freeSize"].getInt()
@@ -82,8 +83,9 @@ suite "Availability":
   test "node refuses to decrease 'until' below request end":
     let original = await testbed.availability.create(provider)
     let id = original["id"].getStr()
+    let filled = await testbed.marketplace.recordSlotFilled()
     let request = await testbed.request.submit(node)
-    await testbed.marketplace.waitForSlotFilled(request.id)
+    await filled.waitForSlotFilled(request.id)
     await sleepAsync(chronos.seconds(1))
     try:
       let until = (await testbed.eth.time.now()) + 1

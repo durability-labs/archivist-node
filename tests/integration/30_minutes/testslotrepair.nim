@@ -24,20 +24,22 @@ suite "Repair":
     let size = request.dataset.data.len
 
     # ensure that each provider can only fill a single slot
+    let started = await testbed.marketplace.recordRequestStarted()
     discard await testbed.availability.totalSize(size div 2).create(provider1)
     discard await testbed.availability.totalSize(size div 2).create(provider2)
     discard await testbed.availability.totalSize(size div 2).create(provider3)
 
     # wait for request to start
-    await testbed.marketplace.waitForRequestStarted(request.id)
+    await started.waitForRequestStarted(request.id)
 
     # stop node and one provider
     await node.stop()
     await provider1.stop()
 
     # ensure that remaining providers can fill the missing slot
+    let filled = await testbed.marketplace.recordSlotFilled()
     discard await testbed.availability.totalSize(size div 2).create(provider2)
     discard await testbed.availability.totalSize(size div 2).create(provider3)
 
     # wait for slot to be filled
-    await testbed.marketplace.waitForSlotFilled(request.id)
+    await filled.waitForSlotFilled(request.id)

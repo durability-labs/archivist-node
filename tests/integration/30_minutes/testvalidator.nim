@@ -15,22 +15,25 @@ suite "Validator":
     let node = await testbed.node.persistence.start()
     discard await testbed.node.provider.failProofs(every = 1).start()
     discard await testbed.node.validator.start()
+    let failed = await testbed.marketplace.recordRequestFailed()
     let request = await testbed.request.start(node)
-    await testbed.marketplace.waitForRequestFailed(request.id)
+    await failed.waitForRequestFailed(request.id)
 
   test "validator marks proofs as missing when using validation groups":
     let node = await testbed.node.persistence.start()
     discard await testbed.node.provider.failProofs(every = 1).start()
     discard await testbed.node.validator(groups = 2, index = 0).start()
     discard await testbed.node.validator(groups = 2, index = 1).start()
+    let failed = await testbed.marketplace.recordRequestFailed()
     let request = await testbed.request.start(node)
-    await testbed.marketplace.waitForRequestFailed(request.id)
+    await failed.waitForRequestFailed(request.id)
 
   test "validator uses historical state to mark proofs as missing":
     let node = await testbed.node.persistence.start()
     discard await testbed.node.provider.failProofs(every = 1).start()
     let request = await testbed.request.start(node)
+    let failed = await testbed.marketplace.recordRequestFailed()
     discard await testbed.node.validator(groups = 2, index = 0).start()
     discard await testbed.node.validator(groups = 2, index = 1).start()
     await testbed.eth.time.advance(1) # ensures that validators sync their clock
-    await testbed.marketplace.waitForRequestFailed(request.id)
+    await failed.waitForRequestFailed(request.id)

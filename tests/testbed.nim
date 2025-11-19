@@ -79,12 +79,19 @@ export availability.update
 import ./testbed/builders/marketplace
 
 export marketplace.marketplace
+export marketplace.recordStorageRequested
 export marketplace.waitForStorageRequested
+export marketplace.recordSlotFilled
 export marketplace.waitForSlotFilled
+export marketplace.recordRequestStarted
 export marketplace.waitForRequestStarted
+export marketplace.recordRequestFailed
 export marketplace.waitForRequestFailed
+export marketplace.recordProofSubmitted
 export marketplace.waitForProofSubmitted
+export marketplace.recordSlotFreed
 export marketplace.waitForSlotFreed
+export marketplace.recordTransfers
 export marketplace.waitForTransferTo
 
 import ./testbed/builders/eth
