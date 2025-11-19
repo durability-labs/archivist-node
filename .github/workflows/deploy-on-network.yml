@@ -124,8 +124,8 @@ jobs:
           if [[ "${{ env.NETWORK }}" != "devnet" ]]; then
             echo "cluster_tools_update=true" >> $GITHUB_OUTPUT
           else
-            if [[ "${contracts_deploy}" != "true" ]]; then
-              echo "cluster_tools_update=false" >> $GITHUB_OUTPUT
+            if [[ "${contracts_deploy}" == "true" ]]; then
+              echo "cluster_tools_update=true" >> $GITHUB_OUTPUT
             fi
           fi
 
