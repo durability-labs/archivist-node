@@ -21,7 +21,7 @@ env:
   archivist_binary_base: archivist
   cirdl_binary_base: cirdl
   build_dir: build
-  nim_flags: '-d:release'
+  nim_flags: '-d:release -d:nimleopard_portable_build'
   windows_libs: 'libgcc_s_seh-1.dll libwinpthread-1.dll'
 
 jobs:
