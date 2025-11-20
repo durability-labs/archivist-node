@@ -385,7 +385,7 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
           Http503, "Persistence is not enabled", headers = headers
         )
 
-      let json = %(await contracts.sales.mySlots())
+      let json = %(await contracts.sales.getSlots())
       return RestApiResponse.response(
         $json, contentType = "application/json", headers = headers
       )

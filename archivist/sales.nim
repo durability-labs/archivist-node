@@ -210,7 +210,7 @@ proc deleteInactiveReservations(sales: Sales, activeSlots: seq[Slot]) {.async.} 
     else:
       trace "Deleted unused reservation"
 
-proc mySlots*(sales: Sales): Future[seq[Slot]] {.async.} =
+proc getSlots*(sales: Sales): Future[seq[Slot]] {.async.} =
   let market = sales.context.market
   let slotIds = await market.mySlots()
   var slots: seq[Slot] = @[]
@@ -230,7 +230,7 @@ proc activeSale*(sales: Sales, slotId: SlotId): Future[?SalesAgent] {.async.} =
   return none SalesAgent
 
 proc load*(sales: Sales) {.async.} =
-  let activeSlots = await sales.mySlots()
+  let activeSlots = await sales.getSlots()
 
   await sales.deleteInactiveReservations(activeSlots)
 
