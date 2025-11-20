@@ -16,14 +16,6 @@ proc printHelp() =
   info "  rpcEndpoint: URL of web3 RPC endpoint."
   info "  marketplaceAddress: Address of deployed marketplace contracts. If left out, will auto-discover based on connected network."
 
-proc getMarketplaceAddress(
-    provider: JsonRpcProvider, mpAddressOverride: ?Address
-): Future[?Address] {.async.} =
-  let deployment = Deployment.new(provider, mpAddressOverride)
-  let address = await deployment.address(Marketplace)
-
-  return address
-
 proc getCircuitHash(
     provider: JsonRpcProvider, marketplaceAddress: Address
 ): Future[?!string] {.async.} =
@@ -95,10 +87,11 @@ proc main() {.async.} =
 
   let provider = await JsonRpcProvider.connect(rpcEndpoint)
 
-  without marketplaceAddress =?
-    (await getMarketplaceAddress(provider, mpAddressOverride)), err:
-    error "No known marketplace address, nor any specified manually", msg = err.msg
-    return
+  without var marketplaceAddress =? mpAddressOverride:
+    without lookup =? await provider.getMarketplaceAddress(), err:
+      error "No known marketplace address, nor any specified manually", msg = err.msg
+      return
+    marketplaceAddress = lookup
 
   info "Marketplace address", address = $marketplaceAddress
 

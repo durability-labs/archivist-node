@@ -1,51 +1,28 @@
-import std/os
 import std/tables
 import pkg/ethers
 import pkg/questionable
+import pkg/questionable/results
 
-import ../conf
-import ../logutils
-import ./marketplace
-
-type Deployment* = ref object
-  provider: Provider
-  marketplaceAddressOverride: ?Address
-
-const knownAddresses = {
+const MarketplaceAddresses = {
   # Hardhat localhost network
-  "31337":
-    {"Marketplace": Address.init("0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44")}.toTable,
+  "31337": !Address.init("0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"),
   # Taiko Alpha-3 Testnet
-  "167005":
-    {"Marketplace": Address.init("0x948CF9291b77Bd7ad84781b9047129Addf1b894F")}.toTable,
+  "167005": !Address.init("0x948CF9291b77Bd7ad84781b9047129Addf1b894F"),
   # testnet - 2025-11-14 08:21:08 - UTC
-  "421614":
-    {"Marketplace": Address.init("0x68d043b20C0b6aBF9932357927C5032Cc916470d")}.toTable,
+  "421614": !Address.init("0x68d043b20C0b6aBF9932357927C5032Cc916470d"),
   # Linea (Status)
-  "1660990954":
-    {"Marketplace": Address.init("0x34F606C65869277f236ce07aBe9af0B8c88F486B")}.toTable,
+  "1660990954": !Address.init("0x34F606C65869277f236ce07aBe9af0B8c88F486B"),
 }.toTable
 
-proc getKnownAddress(T: type, chainId: UInt256): ?Address =
-  let id = chainId.toString(10)
-  notice "Looking for well-known contract address with ChainID ", chainId = id
-
-  if not (id in knownAddresses):
-    return none Address
-
-  return knownAddresses[id].getOrDefault($T, Address.none)
-
-proc new*(
-    _: type Deployment,
-    provider: Provider,
-    marketplaceAddressOverride: ?Address = none Address,
-): Deployment =
-  Deployment(provider: provider, marketplaceAddressOverride: marketplaceAddressOverride)
-
-proc address*(deployment: Deployment, contract: type): Future[?Address] {.async.} =
-  when contract is Marketplace:
-    if address =? deployment.marketplaceAddressOverride:
-      return some address
-
-  let chainId = await deployment.provider.getChainId()
-  return contract.getKnownAddress(chainId)
+proc getMarketplaceAddress*(
+    provider: Provider
+): Future[?!Address] {.async: (raises: [CancelledError]).} =
+  var chainId: UInt256
+  try:
+    chainId = await provider.getChainId()
+  except EthersError as error:
+    return failure error
+  let network = chainId.toString(10)
+  without address =? MarketplaceAddresses .? [network]:
+    return failure "No known marketplace address for network " & network
+  success address
