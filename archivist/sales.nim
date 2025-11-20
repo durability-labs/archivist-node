@@ -14,6 +14,7 @@ import ./sales/salescontext
 import ./sales/salesagent
 import ./sales/statemachine
 import ./sales/slotqueue
+import ./sales/salesslot
 import ./sales/states/preparing
 import ./sales/states/unknown
 import ./utils/trackedfutures
@@ -222,12 +223,17 @@ proc getSlots*(sales: Sales): Future[seq[Slot]] {.async.} =
 
   return slots
 
-proc activeSale*(sales: Sales, slotId: SlotId): Future[?SalesAgent] {.async.} =
+proc getSalesAgent(sales: Sales, slotId: SlotId): Future[?SalesAgent] {.async.} =
   for agent in sales.agents:
     if slotId(agent.data.requestId, agent.data.slotIndex) == slotId:
       return some agent
 
-  return none SalesAgent
+proc getSlot*(sales: Sales, slotId: SlotId): Future[?SalesSlot] {.async.} =
+  without agent =? await sales.getSalesAgent(slotId):
+    return none SalesSlot
+  some SalesSlot.init(
+    agent.data.requestId, agent.data.slotIndex, agent.data.request, agent.state
+  )
 
 proc load*(sales: Sales) {.async.} =
   let activeSlots = await sales.getSlots()

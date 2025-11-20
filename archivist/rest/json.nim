@@ -36,12 +36,11 @@ type
     enabled* {.serialize.}: ?bool
     until* {.serialize.}: ?SecondsSince1970
 
-  RestSalesAgent* = object
+  RestSalesSlot* = object
     state* {.serialize.}: string
     requestId* {.serialize.}: RequestId
     slotIndex* {.serialize.}: uint64
     request* {.serialize.}: ?StorageRequest
-    reservation* {.serialize.}: ?Reservation
 
   RestContent* = object
     cid* {.serialize.}: Cid
