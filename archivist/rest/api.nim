@@ -819,7 +819,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
           Http503, "Persistence is not enabled", headers = headers
         )
 
-      let purchaseIds = contracts.purchasing.getPurchaseIds()
+      let purchaseIds = contracts.purchasing.getPurchases()
       return RestApiResponse.response(
         $ %purchaseIds, contentType = "application/json", headers = headers
       )
