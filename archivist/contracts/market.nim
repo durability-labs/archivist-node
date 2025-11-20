@@ -6,7 +6,7 @@ import pkg/lrucache
 import ../utils/exceptions
 import ../logutils
 import ../market
-import ./marketplace
+import ./marketplacecontract
 import ./proofs
 import ./provider
 
@@ -17,7 +17,7 @@ logScope:
 
 type
   OnChainMarket* = ref object of Market
-    contract: Marketplace
+    contract: MarketplaceContract
     signer: Signer
     rewardRecipient: ?Address
     configuration: ?MarketplaceConfig
@@ -31,7 +31,7 @@ type
 
 func new*(
     _: type OnChainMarket,
-    contract: Marketplace,
+    contract: MarketplaceContract,
     rewardRecipient = Address.none,
     requestCacheSize: uint16 = DefaultRequestCacheSize,
 ): OnChainMarket =

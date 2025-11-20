@@ -1,6 +1,6 @@
 import pkg/ethers
 import ../clock
-import ../marketplace
+import ../marketplacecontract
 import ../market
 
 export clock

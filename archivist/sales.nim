@@ -8,7 +8,7 @@ import ./market
 import ./clock
 import ./stores
 import ./contracts/requests
-import ./contracts/marketplace
+import ./contracts/marketplacecontract
 import ./logutils
 import ./sales/salescontext
 import ./sales/salesagent

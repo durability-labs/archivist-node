@@ -118,7 +118,7 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
         quit QuitFailure
       marketplaceAddress = lookup
 
-    let marketplace = Marketplace.new(marketplaceAddress, signer)
+    let marketplace = MarketplaceContract.new(marketplaceAddress, signer)
     let market = OnChainMarket.new(
       marketplace, config.rewardRecipient, config.marketplaceRequestCacheSize
     )

@@ -7,7 +7,7 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/zippy/tarballs
 import pkg/chronos/apps/http/httpclient
-import ../../archivist/contracts/marketplace
+import ../../archivist/contracts/marketplacecontract
 import ../../archivist/contracts/deployment
 
 proc printHelp() =
@@ -19,7 +19,7 @@ proc printHelp() =
 proc getCircuitHash(
     provider: JsonRpcProvider, marketplaceAddress: Address
 ): Future[?!string] {.async.} =
-  let marketplace = Marketplace.new(marketplaceAddress, provider)
+  let marketplace = MarketplaceContract.new(marketplaceAddress, provider)
   let config = await marketplace.configuration()
   return success config.proofs.zkeyHash
 

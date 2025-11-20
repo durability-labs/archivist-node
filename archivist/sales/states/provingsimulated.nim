@@ -4,7 +4,7 @@ when defined(archivist_system_testing_options):
   import pkg/stint
   import pkg/ethers
 
-  import ../../contracts/marketplace
+  import ../../contracts/marketplacecontract
   import ../../contracts/requests
   import ../../logutils
   import ../../market
