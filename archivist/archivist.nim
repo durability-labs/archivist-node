@@ -70,7 +70,7 @@ proc waitForSync(provider: Provider): Future[void] {.async.} =
       inc sleepTime
   trace "Ethereum provider is synced."
 
-proc getClock(s: NodeServer, provider: JsonRpcProvider): Clock = 
+proc getClock(s: NodeServer, provider: JsonRpcProvider): Clock =
   if s.config.useSystemClock:
     return SystemClock()
   if s.config.validator or s.config.persistence:
