@@ -5,18 +5,18 @@ import pkg/questionable/results
 import pkg/stew/endians2
 
 import ./validationconfig
-import ./market
+import ./marketplace/abstractmarketplace
 import ./clock
 import ./logutils
 
-export market
+export abstractmarketplace
 export sets
 export validationconfig
 
 type Validation* = ref object
   slots: HashSet[SlotId]
   clock: Clock
-  market: Market
+  marketplace: AbstractMarketplace
   subscriptions: seq[Subscription]
   running: Future[void]
   periodicity: Periodicity
@@ -27,9 +27,12 @@ logScope:
   topics = "archivist validator"
 
 proc new*(
-    _: type Validation, clock: Clock, market: Market, config: ValidationConfig
+    _: type Validation,
+    clock: Clock,
+    marketplace: AbstractMarketplace,
+    config: ValidationConfig,
 ): Validation =
-  Validation(clock: clock, market: market, config: config)
+  Validation(clock: clock, marketplace: marketplace, config: config)
 
 proc slots*(validation: Validation): seq[SlotId] =
   validation.slots.toSeq
@@ -65,14 +68,14 @@ proc subscribeSlotFilled(validation: Validation) {.async.} =
       trace "Adding slot", slotId
       validation.slots.incl(slotId)
 
-  let subscription = await validation.market.subscribeSlotFilled(onSlotFilled)
+  let subscription = await validation.marketplace.subscribeSlotFilled(onSlotFilled)
   validation.subscriptions.add(subscription)
 
 proc removeSlotsThatHaveEnded(validation: Validation) {.async.} =
   var ended: HashSet[SlotId]
   let slots = validation.slots
   for slotId in slots:
-    let state = await validation.market.slotState(slotId)
+    let state = await validation.marketplace.slotState(slotId)
     if state != SlotState.Filled:
       trace "Removing slot", slotId, slotState = state
       ended.incl(slotId)
@@ -85,11 +88,11 @@ proc markProofAsMissing(
     currentPeriod = validation.getCurrentPeriod()
 
   try:
-    if await validation.market.canMarkProofAsMissing(slotId, period):
+    if await validation.marketplace.canMarkProofAsMissing(slotId, period):
       trace "Marking proof as missing", slotId, periodProofMissed = period
-      await validation.market.markProofAsMissing(slotId, period)
+      await validation.marketplace.markProofAsMissing(slotId, period)
     else:
-      let inDowntime {.used.} = await validation.market.inDowntime(slotId)
+      let inDowntime {.used.} = await validation.marketplace.inDowntime(slotId)
       trace "Proof not missing", checkedPeriod = period, inDowntime
   except CancelledError:
     raise
@@ -120,15 +123,15 @@ proc findEpoch(validation: Validation, secondsAgo: uint64): SecondsSince1970 =
 
 proc restoreHistoricalState(validation: Validation) {.async.} =
   trace "Restoring historical state..."
-  let requestDurationLimit = await validation.market.requestDurationLimit
+  let requestDurationLimit = await validation.marketplace.requestDurationLimit
   let startTimeEpoch = validation.findEpoch(secondsAgo = requestDurationLimit)
   let slotFilledEvents =
-    await validation.market.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
+    await validation.marketplace.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
   for event in slotFilledEvents:
     if not validation.maxSlotsConstraintRespected:
       break
     let slotId = slotId(event.requestId, event.slotIndex)
-    let slotState = await validation.market.slotState(slotId)
+    let slotState = await validation.marketplace.slotState(slotId)
     if slotState == SlotState.Filled and validation.shouldValidateSlot(slotId):
       trace "Adding slot [historical]", slotId
       validation.slots.incl(slotId)
@@ -137,8 +140,8 @@ proc restoreHistoricalState(validation: Validation) {.async.} =
 proc start*(validation: Validation) {.async.} =
   trace "Starting validator",
     groups = validation.config.groups, groupIndex = validation.config.groupIndex
-  validation.periodicity = await validation.market.periodicity()
-  validation.proofTimeout = await validation.market.proofTimeout()
+  validation.periodicity = await validation.marketplace.periodicity()
+  validation.proofTimeout = await validation.marketplace.proofTimeout()
   await validation.subscribeSlotFilled()
   await validation.restoreHistoricalState()
   validation.running = validation.run()

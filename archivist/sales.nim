@@ -4,7 +4,7 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 import pkg/datastore
-import ./market
+import ./marketplace/abstractmarketplace
 import ./clock
 import ./stores
 import ./contracts/requests
@@ -22,12 +22,12 @@ import ./utils/exceptions
 
 ## Sales holds a list of available storage that it may sell.
 ##
-## When storage is requested on the market that matches availability, the Sales
-## object will instruct the node to persist the requested data. Once the
-## data has been persisted, it uploads a proof of storage to the market in an
-## attempt to win a storage contract.
+## When storage is requested on the marketplace that matches availability, the
+## Sales object will instruct the node to persist the requested data. Once the
+## data has been persisted, it uploads a proof of storage to the marketplace in
+## an attempt to win a storage contract.
 ##
-##    Node                        Sales                   Market
+##    Node                        Sales                 Marketplace
 ##     |                          |                         |
 ##     | -- add availability  --> |                         |
 ##     |                          | <-- storage request --- |
@@ -50,7 +50,7 @@ type Sales* = ref object
   context*: SalesContext
   agents*: seq[SalesAgent]
   running: bool
-  subscriptions: seq[market.Subscription]
+  subscriptions: seq[abstractmarketplace.Subscription]
   trackedFutures: TrackedFutures
 
 proc `onStore=`*(sales: Sales, onStore: OnStore) =
@@ -83,11 +83,13 @@ proc onProve*(sales: Sales): ?OnProve =
 proc onExpiryUpdate*(sales: Sales): ?OnExpiryUpdate =
   sales.context.onExpiryUpdate
 
-proc new*(_: type Sales, market: Market, clock: Clock, repo: RepoStore): Sales =
+proc new*(
+    _: type Sales, marketplace: AbstractMarketplace, clock: Clock, repo: RepoStore
+): Sales =
   let reservations = Reservations.new(repo)
   Sales(
     context: SalesContext(
-      market: market,
+      marketplace: marketplace,
       clock: clock,
       reservations: reservations,
       slotQueue: SlotQueue.new(),
@@ -212,13 +214,13 @@ proc deleteInactiveReservations(sales: Sales, activeSlots: seq[Slot]) {.async.} 
       trace "Deleted unused reservation"
 
 proc getSlots*(sales: Sales): Future[seq[Slot]] {.async.} =
-  let market = sales.context.market
-  let slotIds = await market.mySlots()
+  let marketplace = sales.context.marketplace
+  let slotIds = await marketplace.mySlots()
   var slots: seq[Slot] = @[]
 
   info "Loading active slots", slotsCount = len(slots)
   for slotId in slotIds:
-    if slot =? (await market.getActiveSlot(slotId)):
+    if slot =? (await marketplace.getActiveSlot(slotId)):
       slots.add slot
 
   return slots
@@ -276,10 +278,11 @@ proc onStorageRequested(
 
   trace "storage requested, adding slots to queue"
 
-  let market = sales.context.market
+  let marketplace = sales.context.marketplace
 
-  without collateral =? market.slotCollateral(ask.collateralPerSlot, SlotState.Free),
-    err:
+  without collateral =? marketplace.slotCollateral(
+    ask.collateralPerSlot, SlotState.Free
+  ), err:
     error "Request failure, unable to calculate collateral", error = err.msg
     return
 
@@ -310,11 +313,11 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
 
   proc addSlotToQueue() {.async: (raises: []).} =
     let context = sales.context
-    let market = context.market
+    let marketplace = context.marketplace
     let queue = context.slotQueue
 
     try:
-      without request =? (await market.getRequest(requestId)), err:
+      without request =? (await marketplace.getRequest(requestId)), err:
         error "unknown request in contract", error = err.msgDetail
         return
 
@@ -324,7 +327,7 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
       # Adding the repairing state directly in the queue priority calculation
       # would not allow this flexibility.
       without collateral =?
-        market.slotCollateral(request.ask.collateralPerSlot, SlotState.Repair), err:
+        marketplace.slotCollateral(request.ask.collateralPerSlot, SlotState.Repair), err:
         error "Failed to add freed slot to queue: unable to calculate collateral",
           error = err.msg
         return
@@ -356,7 +359,7 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
 
 proc subscribeRequested(sales: Sales) {.async.} =
   let context = sales.context
-  let market = context.market
+  let marketplace = context.marketplace
 
   proc onStorageRequested(
       requestId: RequestId, ask: StorageAsk, expiry: uint64
@@ -364,7 +367,7 @@ proc subscribeRequested(sales: Sales) {.async.} =
     sales.onStorageRequested(requestId, ask, expiry)
 
   try:
-    let sub = await market.subscribeRequests(onStorageRequested)
+    let sub = await marketplace.subscribeRequests(onStorageRequested)
     sales.subscriptions.add(sub)
   except CancelledError as error:
     raise error
@@ -373,7 +376,7 @@ proc subscribeRequested(sales: Sales) {.async.} =
 
 proc subscribeCancellation(sales: Sales) {.async.} =
   let context = sales.context
-  let market = context.market
+  let marketplace = context.marketplace
   let queue = context.slotQueue
 
   proc onCancelled(requestId: RequestId) =
@@ -381,7 +384,7 @@ proc subscribeCancellation(sales: Sales) {.async.} =
     queue.delete(requestId)
 
   try:
-    let sub = await market.subscribeRequestCancelled(onCancelled)
+    let sub = await marketplace.subscribeRequestCancelled(onCancelled)
     sales.subscriptions.add(sub)
   except CancelledError as error:
     raise error
@@ -390,7 +393,7 @@ proc subscribeCancellation(sales: Sales) {.async.} =
 
 proc subscribeFulfilled*(sales: Sales) {.async.} =
   let context = sales.context
-  let market = context.market
+  let marketplace = context.marketplace
   let queue = context.slotQueue
 
   proc onFulfilled(requestId: RequestId) =
@@ -401,7 +404,7 @@ proc subscribeFulfilled*(sales: Sales) {.async.} =
       agent.onFulfilled(requestId)
 
   try:
-    let sub = await market.subscribeFulfillment(onFulfilled)
+    let sub = await marketplace.subscribeFulfillment(onFulfilled)
     sales.subscriptions.add(sub)
   except CancelledError as error:
     raise error
@@ -410,7 +413,7 @@ proc subscribeFulfilled*(sales: Sales) {.async.} =
 
 proc subscribeFailure(sales: Sales) {.async.} =
   let context = sales.context
-  let market = context.market
+  let marketplace = context.marketplace
   let queue = context.slotQueue
 
   proc onFailed(requestId: RequestId) =
@@ -421,7 +424,7 @@ proc subscribeFailure(sales: Sales) {.async.} =
       agent.onFailed(requestId)
 
   try:
-    let sub = await market.subscribeRequestFailed(onFailed)
+    let sub = await marketplace.subscribeRequestFailed(onFailed)
     sales.subscriptions.add(sub)
   except CancelledError as error:
     raise error
@@ -430,7 +433,7 @@ proc subscribeFailure(sales: Sales) {.async.} =
 
 proc subscribeSlotFilled(sales: Sales) {.async.} =
   let context = sales.context
-  let market = context.market
+  let marketplace = context.marketplace
   let queue = context.slotQueue
 
   proc onSlotFilled(requestId: RequestId, slotIndex: uint64) =
@@ -445,7 +448,7 @@ proc subscribeSlotFilled(sales: Sales) {.async.} =
       agent.onSlotFilled(requestId, slotIndex)
 
   try:
-    let sub = await market.subscribeSlotFilled(onSlotFilled)
+    let sub = await marketplace.subscribeSlotFilled(onSlotFilled)
     sales.subscriptions.add(sub)
   except CancelledError as error:
     raise error
@@ -454,13 +457,13 @@ proc subscribeSlotFilled(sales: Sales) {.async.} =
 
 proc subscribeSlotFreed(sales: Sales) {.async.} =
   let context = sales.context
-  let market = context.market
+  let marketplace = context.marketplace
 
   proc onSlotFreed(requestId: RequestId, slotIndex: uint64) =
     sales.onSlotFreed(requestId, slotIndex)
 
   try:
-    let sub = await market.subscribeSlotFreed(onSlotFreed)
+    let sub = await marketplace.subscribeSlotFreed(onSlotFreed)
     sales.subscriptions.add(sub)
   except CancelledError as error:
     raise error
@@ -469,7 +472,7 @@ proc subscribeSlotFreed(sales: Sales) {.async.} =
 
 proc subscribeSlotReservationsFull(sales: Sales) {.async.} =
   let context = sales.context
-  let market = context.market
+  let marketplace = context.marketplace
   let queue = context.slotQueue
 
   proc onSlotReservationsFull(requestId: RequestId, slotIndex: uint64) =
@@ -481,7 +484,7 @@ proc subscribeSlotReservationsFull(sales: Sales) {.async.} =
     queue.delete(requestId, slotIndex.uint16)
 
   try:
-    let sub = await market.subscribeSlotReservationsFull(onSlotReservationsFull)
+    let sub = await marketplace.subscribeSlotReservationsFull(onSlotReservationsFull)
     sales.subscriptions.add(sub)
   except CancelledError as error:
     raise error

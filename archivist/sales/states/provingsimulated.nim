@@ -7,7 +7,7 @@ when defined(archivist_system_testing_options):
   import ../../contracts/marketplacecontract
   import ../../contracts/requests
   import ../../logutils
-  import ../../market
+  import ../../marketplace/abstractmarketplace
   import ../../utils/exceptions
   import ../salescontext
   import ./proving
@@ -28,7 +28,7 @@ when defined(archivist_system_testing_options):
       slot: Slot,
       challenge: ProofChallenge,
       onProve: OnProve,
-      market: Market,
+      marketplace: AbstractMarketplace,
       currentPeriod: Period,
   ) {.async.} =
     try:
@@ -39,7 +39,7 @@ when defined(archivist_system_testing_options):
 
         try:
           warn "Submitting INVALID proof", period = currentPeriod, slotId = slot.id
-          await market.submitProof(slot.id, Groth16Proof.default)
+          await marketplace.submitProof(slot.id, Groth16Proof.default)
         except ProofInvalidError as e:
           discard # expected
         except CancelledError as error:
@@ -48,7 +48,7 @@ when defined(archivist_system_testing_options):
           onSubmitProofError(e, currentPeriod, slot.id)
       else:
         await procCall SaleProving(state).prove(
-          slot, challenge, onProve, market, currentPeriod
+          slot, challenge, onProve, marketplace, currentPeriod
         )
     except CancelledError as e:
       trace "Submitting INVALID proof cancelled", error = e.msgDetail

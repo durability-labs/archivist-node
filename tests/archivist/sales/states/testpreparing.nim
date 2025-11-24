@@ -17,14 +17,14 @@ import times
 import ../../../asynctest
 import ../../helpers
 import ../../examples
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockreservations
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'preparing'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
-  let market = MockMarket.new()
+  let marketplace = MockMarketplace.new()
   let clock = MockClock.new()
   var agent: SalesAgent
   var state: SalePreparing
@@ -49,13 +49,14 @@ asyncchecksuite "sales state 'preparing'":
     await repo.start()
 
     state = SalePreparing.new()
-    context = SalesContext(market: market, clock: clock)
+    context = SalesContext(marketplace: marketplace, clock: clock)
 
     reservations = MockReservations.new(repo)
     context.reservations = reservations
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
 
-    market.requestEnds[request.id] = clock.now() + cast[int64](request.ask.duration)
+    marketplace.requestEnds[request.id] =
+      clock.now() + cast[int64](request.ask.duration)
 
   teardown:
     await repo.stop()

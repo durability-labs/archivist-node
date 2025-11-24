@@ -12,7 +12,7 @@ import pkg/archivist/sales/salescontext
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'simulated-proving'":
@@ -22,7 +22,7 @@ asyncchecksuite "sales state 'simulated-proving'":
   let failEveryNProofs = 3
   let totalProofs = 6
 
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var clock: MockClock
   var agent: SalesAgent
   var state: SaleProvingSimulated
@@ -37,16 +37,17 @@ asyncchecksuite "sales state 'simulated-proving'":
       proofSubmitted.complete()
       proofSubmitted = newFuture[void]("proofSubmitted")
 
-    market = MockMarket.new()
-    market.slotState[slot.id] = SlotState.Filled
-    market.setProofRequired(slot.id, true)
-    subscription = await market.subscribeProofSubmission(onProofSubmission)
+    marketplace = MockMarketplace.new()
+    marketplace.slotState[slot.id] = SlotState.Filled
+    marketplace.setProofRequired(slot.id, true)
+    subscription = await marketplace.subscribeProofSubmission(onProofSubmission)
 
     let onProve = proc(
         slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       return success(proof)
-    let context = SalesContext(market: market, clock: clock, onProve: onProve.some)
+    let context =
+      SalesContext(marketplace: marketplace, clock: clock, onProve: onProve.some)
     agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
     state = SaleProvingSimulated.new()
     state.failEveryNProofs = failEveryNProofs
@@ -54,16 +55,16 @@ asyncchecksuite "sales state 'simulated-proving'":
   teardown:
     await subscription.unsubscribe()
 
-  proc advanceToNextPeriod(market: Market) {.async.} =
-    let periodicity = await market.periodicity()
+  proc advanceToNextPeriod(marketplace: AbstractMarketplace) {.async.} =
+    let periodicity = await marketplace.periodicity()
     let current = periodicity.periodOf(clock.now().Timestamp)
     let periodEnd = periodicity.periodEnd(current)
     clock.set(periodEnd.toSecondsSince1970 + 1)
 
-  proc waitForProvingRounds(market: Market, rounds: int) {.async.} =
+  proc waitForProvingRounds(marketplace: AbstractMarketplace, rounds: int) {.async.} =
     var rnds = rounds - 1 # proof round runs prior to advancing
     while rnds > 0:
-      await market.advanceToNextPeriod()
+      await marketplace.advanceToNextPeriod()
       await proofSubmitted
       rnds -= 1
 
@@ -79,18 +80,18 @@ asyncchecksuite "sales state 'simulated-proving'":
     let future = state.run(agent)
     let invalid = Groth16Proof.default
 
-    await market.waitForProvingRounds(totalProofs)
-    check market.submitted == @[proof, proof, invalid, proof, proof, invalid]
+    await marketplace.waitForProvingRounds(totalProofs)
+    check marketplace.submitted == @[proof, proof, invalid, proof, proof, invalid]
 
     await future.cancelAndWait()
 
   test "switches to payout state when request is finished":
-    market.slotState[slot.id] = SlotState.Filled
+    marketplace.slotState[slot.id] = SlotState.Filled
 
     let future = state.run(agent)
 
-    market.slotState[slot.id] = SlotState.Finished
-    await market.advanceToNextPeriod()
+    marketplace.slotState[slot.id] = SlotState.Finished
+    await marketplace.advanceToNextPeriod()
 
     check eventually future.finished
     check !(future.read()) of SalePayout

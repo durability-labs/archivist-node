@@ -1,5 +1,7 @@
+import pkg/chronos
 import ../../logutils
 import ../../utils/exceptions
+import ../../marketplace/abstractmarketplace
 import ../statemachine
 import ../salesagent
 import ./filled
@@ -32,7 +34,7 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let agent = SalesAgent(machine)
   let data = agent.data
-  let market = agent.context.market
+  let marketplace = agent.context.marketplace
 
   try:
     await agent.retrieveRequest()
@@ -44,7 +46,7 @@ method run*(
       return some State(SaleErrored(error: error))
 
     let slotId = slotId(data.requestId, data.slotIndex)
-    let slotState = await market.slotState(slotId)
+    let slotState = await marketplace.slotState(slotId)
 
     case slotState
     of SlotState.Free:

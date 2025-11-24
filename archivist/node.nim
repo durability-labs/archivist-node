@@ -104,7 +104,7 @@ func discovery*(self: ArchivistNodeRef): Discovery =
 
 proc ethAddress*(self: ArchivistNodeRef): Future[?ethers.Address] {.async.} =
   if clientInteractions =? self.contracts.client:
-    some await clientInteractions.purchasing.market.getSigner()
+    some await clientInteractions.purchasing.marketplace.getSigner()
   else:
     none ethers.Address
 

@@ -24,7 +24,7 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let agent = SalesAgent(machine)
   let data = agent.data
-  let market = agent.context.market
+  let marketplace = agent.context.marketplace
 
   without request =? data.request:
     raiseAssert "no sale request"

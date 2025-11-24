@@ -24,7 +24,7 @@ method run*(
   try:
     warn "Request cancelled, withdrawing remaining funds",
       requestId = purchase.requestId
-    await purchase.market.withdrawFunds(purchase.requestId)
+    await purchase.marketplace.withdrawFunds(purchase.requestId)
 
     let error = newException(Timeout, "Purchase cancelled due to timeout")
     purchase.future.fail(error)

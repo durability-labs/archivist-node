@@ -17,7 +17,7 @@ import pkg/archivist/utils/asyncstatemachine
 import times
 import ../../asynctest
 import ../helpers
-import ../helpers/mockmarket
+import ../helpers/mockmarketplace
 import ../helpers/mockclock
 import ../helpers/always
 import ../examples
@@ -31,7 +31,7 @@ asyncchecksuite "Sales - start":
 
   var request: StorageRequest
   var sales: Sales
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var clock: MockClock
   var reservations: Reservations
   var repo: RepoStore
@@ -53,13 +53,13 @@ asyncchecksuite "Sales - start":
       expiry: 60,
     )
 
-    market = MockMarket.new()
+    marketplace = MockMarketplace.new()
     clock = MockClock.new()
     let repoDs = repoTmp.newDb()
     let metaDs = metaTmp.newDb()
     repo = RepoStore.new(repoDs, metaDs)
     await repo.start()
-    sales = Sales.new(market, clock, repo)
+    sales = Sales.new(marketplace, clock, repo)
     reservations = sales.context.reservations
     sales.onStore = proc(
         request: StorageRequest,
@@ -89,18 +89,18 @@ asyncchecksuite "Sales - start":
     await metaTmp.destroyDb()
 
   proc fillSlot(slotIdx: uint64 = 0.uint64) {.async.} =
-    let address = await market.getSigner()
+    let address = await marketplace.getSigner()
     let slot =
       MockSlot(requestId: request.id, slotIndex: slotIdx, proof: proof, host: address)
-    market.filled.add slot
-    market.slotState[slotId(request.id, slotIdx)] = SlotState.Filled
+    marketplace.filled.add slot
+    marketplace.slotState[slotId(request.id, slotIdx)] = SlotState.Filled
 
   test "load slots when Sales module starts":
-    let me = await market.getSigner()
+    let me = await marketplace.getSigner()
 
     request.ask.slots = 2
-    market.requested = @[request]
-    market.requestState[request.id] = RequestState.New
+    marketplace.requested = @[request]
+    marketplace.requestState[request.id] = RequestState.New
 
     let slot0 = MockSlot(requestId: request.id, slotIndex: 0, proof: proof, host: me)
     await fillSlot(slot0.slotIndex)
@@ -108,9 +108,9 @@ asyncchecksuite "Sales - start":
     let slot1 = MockSlot(requestId: request.id, slotIndex: 1, proof: proof, host: me)
     await fillSlot(slot1.slotIndex)
 
-    market.activeSlots[me] = @[request.slotId(0), request.slotId(1)]
-    market.requested = @[request]
-    market.activeRequests[me] = @[request.id]
+    marketplace.activeSlots[me] = @[request.slotId(0), request.slotId(1)]
+    marketplace.requested = @[request]
+    marketplace.activeRequests[me] = @[request.id]
 
     await sales.start()
 
@@ -135,7 +135,7 @@ asyncchecksuite "Sales":
   var availability: Availability
   var request: StorageRequest
   var sales: Sales
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var clock: MockClock
   var reservations: Reservations
   var repo: RepoStore
@@ -170,17 +170,17 @@ asyncchecksuite "Sales":
       expiry: 60,
     )
 
-    market = MockMarket.new()
+    marketplace = MockMarketplace.new()
 
-    let me = await market.getSigner()
-    market.activeSlots[me] = @[]
+    let me = await marketplace.getSigner()
+    marketplace.activeSlots[me] = @[]
 
     clock = MockClock.new()
     let repoDs = repoTmp.newDb()
     let metaDs = metaTmp.newDb()
     repo = RepoStore.new(repoDs, metaDs)
     await repo.start()
-    sales = Sales.new(market, clock, repo)
+    sales = Sales.new(marketplace, clock, repo)
     reservations = sales.context.reservations
     sales.onStore = proc(
         request: StorageRequest,
@@ -221,7 +221,7 @@ asyncchecksuite "Sales":
   proc allowRequestToStart() {.async.} =
     check eventually isInState(0, "SaleInitialProving")
     # it won't start proving until the next period
-    await clock.advanceToNextPeriod(market)
+    await clock.advanceToNextPeriod(marketplace)
 
   proc getAvailability(): Availability =
     let key = availability.id.key.get
@@ -257,9 +257,9 @@ asyncchecksuite "Sales":
     createAvailability()
     # saturate queue
     while queue.len < queue.size - 1:
-      await market.requestStorage(StorageRequest.example)
+      await marketplace.requestStorage(StorageRequest.example)
     # send request
-    await market.requestStorage(request1)
+    await marketplace.requestStorage(request1)
     await sleepAsync(5.millis) # wait for request slots to be added to queue
     return request1
 
@@ -277,35 +277,35 @@ asyncchecksuite "Sales":
     ) {.async: (raises: [CancelledError]).} =
       itemsProcessed.add item
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
     check eventually items.allIt(itemsProcessed.contains(it))
 
   test "removes slots from slot queue once RequestCancelled emitted":
     let request1 = await addRequestToSaturatedQueue()
-    market.emitRequestCancelled(request1.id)
+    marketplace.emitRequestCancelled(request1.id)
     check always itemsProcessed.notProcessed(request1)
 
   test "removes request from slot queue once RequestFailed emitted":
     let request1 = await addRequestToSaturatedQueue()
-    market.emitRequestFailed(request1.id)
+    marketplace.emitRequestFailed(request1.id)
     check always itemsProcessed.notProcessed(request1)
 
   test "removes request from slot queue once RequestFulfilled emitted":
     let request1 = await addRequestToSaturatedQueue()
-    market.emitRequestFulfilled(request1.id)
+    marketplace.emitRequestFulfilled(request1.id)
     check always itemsProcessed.notProcessed(request1)
 
   test "removes slot index from slot queue once SlotFilled emitted":
     let request1 = await addRequestToSaturatedQueue()
-    market.emitSlotFilled(request1.id, 1.uint64)
+    marketplace.emitSlotFilled(request1.id, 1.uint64)
     let expected =
       SlotQueueItem.init(request1, 1'u16, collateral = request1.ask.collateralPerSlot)
     check always (not itemsProcessed.contains(expected))
 
   test "removes slot index from slot queue once SlotReservationsFull emitted":
     let request1 = await addRequestToSaturatedQueue()
-    market.emitSlotReservationsFull(request1.id, 1.uint64)
+    marketplace.emitSlotReservationsFull(request1.id, 1.uint64)
     let expected =
       SlotQueueItem.init(request1, 1'u16, collateral = request1.ask.collateralPerSlot)
     check always (not itemsProcessed.contains(expected))
@@ -317,11 +317,11 @@ asyncchecksuite "Sales":
       itemsProcessed.add item
 
     createAvailability()
-    market.requested.add request # "contract" must be able to return request
+    marketplace.requested.add request # "contract" must be able to return request
 
-    market.emitSlotFreed(request.id, 2.uint64)
+    marketplace.emitSlotFreed(request.id, 2.uint64)
 
-    without collateralPerSlot =? await market.slotCollateral(request.id, 2.uint64),
+    without collateralPerSlot =? await marketplace.slotCollateral(request.id, 2.uint64),
       error:
       fail()
 
@@ -331,7 +331,7 @@ asyncchecksuite "Sales":
     check eventually itemsProcessed.contains(expected)
 
   test "items in queue are readded once ignored":
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
     check eventually queue.len > 0
       # queue starts paused, allow items to be added to the queue
@@ -348,7 +348,7 @@ asyncchecksuite "Sales":
 
   test "queue is paused once availability is insufficient to service slots in queue":
     createAvailability() # enough to fill a single slot
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
     check eventually queue.len > 0
       # queue starts paused, allow items to be added to the queue
@@ -373,7 +373,7 @@ asyncchecksuite "Sales":
       await onBatch(blk.repeat(request.ask.slotSize.int))
 
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     check eventually getAvailability().freeSize ==
       availability.freeSize - request.ask.slotSize
 
@@ -396,7 +396,7 @@ asyncchecksuite "Sales":
 
     createAvailability()
     let origSize = availability.freeSize
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     await allowRequestToStart()
     await sold
 
@@ -408,7 +408,7 @@ asyncchecksuite "Sales":
     check result.isOk
 
     # complete request
-    market.slotState[request.slotId(slotIndex)] = SlotState.Finished
+    marketplace.slotState[request.slotId(slotIndex)] = SlotState.Finished
     clock.advance(request.ask.duration.int64)
 
     check eventually getAvailability().freeSize == origSize
@@ -416,46 +416,46 @@ asyncchecksuite "Sales":
   test "ignores download when duration not long enough":
     availability.duration = request.ask.duration - 1
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     check wasIgnored()
 
   test "ignores request when slot size is too small":
     availability.totalSize = request.ask.slotSize - 1
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     check wasIgnored()
 
   test "ignores request when reward is too low":
     availability.minPricePerBytePerSecond = request.ask.pricePerBytePerSecond + 1
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     check wasIgnored()
 
   test "ignores request when asked collateral is too high":
     var tooBigCollateral = request
     tooBigCollateral.ask.collateralPerByte = requestedCollateralPerByte + 1
     createAvailability()
-    await market.requestStorage(tooBigCollateral)
+    await marketplace.requestStorage(tooBigCollateral)
     check wasIgnored()
 
   test "ignores request when slot state is not free":
     createAvailability()
-    await market.requestStorage(request)
-    market.slotState[request.slotId(0.uint64)] = SlotState.Filled
-    market.slotState[request.slotId(1.uint64)] = SlotState.Filled
-    market.slotState[request.slotId(2.uint64)] = SlotState.Filled
-    market.slotState[request.slotId(3.uint64)] = SlotState.Filled
+    await marketplace.requestStorage(request)
+    marketplace.slotState[request.slotId(0.uint64)] = SlotState.Filled
+    marketplace.slotState[request.slotId(1.uint64)] = SlotState.Filled
+    marketplace.slotState[request.slotId(2.uint64)] = SlotState.Filled
+    marketplace.slotState[request.slotId(3.uint64)] = SlotState.Filled
     check wasIgnored()
 
   test "ignores request when availability is not enabled":
     createAvailability(enabled = false)
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     check wasIgnored()
 
   test "ignores request when availability until terminates before the duration":
     let until = getTime().toUnix()
     createAvailability(until = until)
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
 
     check wasIgnored()
 
@@ -475,8 +475,8 @@ asyncchecksuite "Sales":
       storingRequest = request
       return success()
 
-    market.requestEnds[request.id] = requestEnd
-    await market.requestStorage(request)
+    marketplace.requestEnds[request.id] = requestEnd
+    await marketplace.requestStorage(request)
     check eventually storingRequest == request
 
   test "retrieves and stores data locally":
@@ -493,7 +493,7 @@ asyncchecksuite "Sales":
       storingSlot = slot
       return success()
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     check eventually storingRequest == request
     check storingSlot < request.ask.slots
 
@@ -508,7 +508,7 @@ asyncchecksuite "Sales":
     ): Future[?!void] {.async: (raises: [CancelledError]).} =
       return failure(error)
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     check getAvailability().freeSize == availability.freeSize
 
   test "generates proof of storage":
@@ -521,7 +521,7 @@ asyncchecksuite "Sales":
       provingSlot = slot.slotIndex
       return success(Groth16Proof.example)
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     await allowRequestToStart()
 
     check eventually provingRequest == request
@@ -529,14 +529,14 @@ asyncchecksuite "Sales":
 
   test "fills a slot":
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     await allowRequestToStart()
 
-    check eventually market.filled.len > 0
-    check market.filled[0].requestId == request.id
-    check market.filled[0].slotIndex < request.ask.slots
-    check market.filled[0].proof == proof
-    check market.filled[0].host == await market.getSigner()
+    check eventually marketplace.filled.len > 0
+    check marketplace.filled[0].requestId == request.id
+    check marketplace.filled[0].slotIndex < request.ask.slots
+    check marketplace.filled[0].proof == proof
+    check marketplace.filled[0].host == await marketplace.getSigner()
 
   test "calls onFilled when slot is filled":
     var soldRequest = StorageRequest.default
@@ -545,7 +545,7 @@ asyncchecksuite "Sales":
       soldRequest = request
       soldSlotIndex = slotIndex
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     await allowRequestToStart()
 
     check eventually soldRequest == request
@@ -564,7 +564,7 @@ asyncchecksuite "Sales":
       clearedRequest = request
       clearedSlotIndex = slotIndex
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     await allowRequestToStart()
 
     check eventually clearedRequest == request
@@ -582,9 +582,9 @@ asyncchecksuite "Sales":
       await sleepAsync(chronos.hours(1))
       return success()
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     for slotIndex in 0 ..< request.ask.slots:
-      market.fillSlot(request.id, slotIndex.uint64, proof, otherHost)
+      marketplace.fillSlot(request.id, slotIndex.uint64, proof, otherHost)
     check eventually (await reservations.all(Availability)).get == @[availability]
 
   test "makes storage available again when request expires":
@@ -599,13 +599,13 @@ asyncchecksuite "Sales":
       await sleepAsync(chronos.hours(1))
       return success()
     createAvailability()
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
 
     # If we would not await, then the `clock.set` would run "too fast" as the `subscribeCancellation()`
     # would otherwise not set the timeout early enough as it uses `clock.now` in the deadline calculation.
     await sleepAsync(chronos.milliseconds(100))
-    market.requestState[request.id] = RequestState.Cancelled
-    clock.set(market.requestExpiry[request.id] + 1)
+    marketplace.requestState[request.id] = RequestState.Cancelled
+    clock.set(marketplace.requestExpiry[request.id] + 1)
     check eventually (await reservations.all(Availability)).get == @[availability]
     check getAvailability().freeSize == origSize
 
@@ -614,7 +614,7 @@ asyncchecksuite "Sales":
     # availability, the queue will be unpaused and availability will be consumed
     # by other slots
     request.ask.slots = 1
-    market.requestEnds[request.id] =
+    marketplace.requestEnds[request.id] =
       getTime().toUnix() + cast[int64](request.ask.duration)
 
     let origSize = availability.freeSize
@@ -628,43 +628,43 @@ asyncchecksuite "Sales":
       await sleepAsync(chronos.hours(1))
       return success()
     createAvailability()
-    await market.requestStorage(request)
-    market.requestState[request.id] = RequestState.New
+    await marketplace.requestStorage(request)
+    marketplace.requestState[request.id] = RequestState.New
       # "On-chain" is the request still ongoing even after local expiration
 
     # If we would not await, then the `clock.set` would run "too fast" as the `subscribeCancellation()`
     # would otherwise not set the timeout early enough as it uses `clock.now` in the deadline calculation.
     await sleepAsync(chronos.milliseconds(100))
-    clock.set(market.requestExpiry[request.id] + 1)
+    clock.set(marketplace.requestExpiry[request.id] + 1)
     check getAvailability().freeSize == 0
 
-    market.requestState[request.id] = RequestState.Cancelled
+    marketplace.requestState[request.id] = RequestState.Cancelled
       # Now "on-chain" is also expired
     check eventually getAvailability().freeSize == origSize
 
-  test "loads active slots from market":
-    let me = await market.getSigner()
+  test "loads active slots from marketplace":
+    let me = await marketplace.getSigner()
 
     request.ask.slots = 2
-    market.requested = @[request]
-    market.requestState[request.id] = RequestState.New
-    market.requestEnds[request.id] = request.expiry.toSecondsSince1970
+    marketplace.requested = @[request]
+    marketplace.requestState[request.id] = RequestState.New
+    marketplace.requestEnds[request.id] = request.expiry.toSecondsSince1970
 
     proc fillSlot(slotIdx: uint64 = 0) {.async.} =
-      let address = await market.getSigner()
+      let address = await marketplace.getSigner()
       let slot =
         MockSlot(requestId: request.id, slotIndex: slotIdx, proof: proof, host: address)
-      market.filled.add slot
-      market.slotState[slotId(request.id, slotIdx)] = SlotState.Filled
+      marketplace.filled.add slot
+      marketplace.slotState[slotId(request.id, slotIdx)] = SlotState.Filled
 
     let slot0 = MockSlot(requestId: request.id, slotIndex: 0, proof: proof, host: me)
     await fillSlot(slot0.slotIndex)
 
     let slot1 = MockSlot(requestId: request.id, slotIndex: 1, proof: proof, host: me)
     await fillSlot(slot1.slotIndex)
-    market.activeSlots[me] = @[request.slotId(0), request.slotId(1)]
-    market.requested = @[request]
-    market.activeRequests[me] = @[request.id]
+    marketplace.activeSlots[me] = @[request.slotId(0), request.slotId(1)]
+    marketplace.requested = @[request]
+    marketplace.activeRequests[me] = @[request.id]
 
     await sales.load()
 
@@ -692,10 +692,10 @@ asyncchecksuite "Sales":
     let until = getTime().toUnix() + 300.SecondsSince1970
     createAvailability(until = until)
 
-    market.requestEnds[request.id] =
+    marketplace.requestEnds[request.id] =
       getTime().toUnix() + cast[int64](request.ask.duration)
 
-    await market.requestStorage(request)
+    await marketplace.requestStorage(request)
     await allowRequestToStart()
 
     availability.until = getTime().toUnix()

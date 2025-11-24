@@ -20,7 +20,7 @@ import pkg/libp2p/cid
 import ../../manifest
 import ../../merkletree
 import ../../stores
-import ../../market
+import ../../marketplace/abstractmarketplace
 import ../../utils/poseidon2digest
 import ../../conf
 

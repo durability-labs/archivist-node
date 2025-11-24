@@ -14,24 +14,24 @@ import pkg/archivist/stores/repostore
 import ../../../asynctest
 import ../../helpers
 import ../../examples
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'SlotReserving'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var clock: MockClock
   var agent: SalesAgent
   var state: SaleSlotReserving
   var context: SalesContext
 
   setup:
-    market = MockMarket.new()
+    marketplace = MockMarketplace.new()
     clock = MockClock.new()
 
     state = SaleSlotReserving.new()
-    context = SalesContext(market: market, clock: clock)
+    context = SalesContext(marketplace: marketplace, clock: clock)
 
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
 
@@ -48,13 +48,13 @@ asyncchecksuite "sales state 'SlotReserving'":
     check !next of SaleDownloading
 
   test "run switches to ignored when slot reservation not allowed":
-    market.setCanReserveSlot(false)
+    marketplace.setCanReserveSlot(false)
     let next = await state.run(agent)
     check !next of SaleIgnored
 
   test "run switches to errored when slot reservation errors":
     let error = newException(MarketplaceError, "some error")
-    market.setErrorOnReserveSlot(error)
+    marketplace.setErrorOnReserveSlot(error)
     let next = !(await state.run(agent))
     check next of SaleErrored
     let errored = SaleErrored(next)
@@ -63,7 +63,7 @@ asyncchecksuite "sales state 'SlotReserving'":
   test "run switches to ignored when reservation is not allowed":
     let error =
       newException(SlotReservationNotAllowedError, "Reservation is not allowed")
-    market.setErrorOnReserveSlot(error)
+    marketplace.setErrorOnReserveSlot(error)
     let next = !(await state.run(agent))
     check next of SaleIgnored
     check SaleIgnored(next).reprocessSlot == false

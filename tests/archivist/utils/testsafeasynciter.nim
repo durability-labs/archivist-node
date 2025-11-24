@@ -360,7 +360,7 @@ asyncchecksuite "Test SafeAsyncIter":
     # quite tightly coupled with the way the iterator is implemented.
     # When `mapFilter` is called, it already performs first iteration
     # step: this is necessary, so that if there is nothing there left
-    # after filtering, the iterator state should be market as "finished"
+    # after filtering, the iterator state should be marked as "finished"
     # before event trying to call `next()` for the very first time (a standard
     # practice is for the called to check if the iterator is finished before
     # attempting to call `next()`). Thus, internally, the value that is to be
@@ -373,7 +373,7 @@ asyncchecksuite "Test SafeAsyncIter":
     # Now, to make sure that this mechanism works, and to document its
     # cancellation semantics, this test shows that when the async predicate
     # function is cancelled, this cancellation has immediate effect, which means
-    # that `next()` (or more precisely `getNext()` in `mapFilter` function), is 
+    # that `next()` (or more precisely `getNext()` in `mapFilter` function), is
     # interrupted immediately. If this is the case, the the iterator be interrupted
     # before `next()` returns this locally captured value from the previous
     # iteration and this is exactly the reason why at the end of the test

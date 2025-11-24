@@ -19,7 +19,7 @@ method run*(
   let purchase = Purchase(machine)
   try:
     let request = !purchase.request
-    await purchase.market.requestStorage(request)
+    await purchase.marketplace.requestStorage(request)
     return some State(PurchaseSubmitted())
   except CancelledError as e:
     trace "PurchasePending.run was cancelled", error = e.msgDetail

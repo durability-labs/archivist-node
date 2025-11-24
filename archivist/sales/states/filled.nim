@@ -1,9 +1,11 @@
+import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
 
 import ../../conf
 import ../../logutils
 import ../../utils/exceptions
+import ../../marketplace/abstractmarketplace
 import ../statemachine
 import ../salesagent
 import ./errored
@@ -36,11 +38,11 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let context = agent.context
-  let market = context.market
+  let marketplace = context.marketplace
 
   try:
-    let host = await market.getHost(data.requestId, data.slotIndex)
-    let me = await market.getSigner()
+    let host = await marketplace.getHost(data.requestId, data.slotIndex)
+    let me = await marketplace.getSigner()
 
     if host == me.some:
       info "Slot succesfully filled",
@@ -55,7 +57,7 @@ method run*(
       without onExpiryUpdate =? context.onExpiryUpdate:
         raiseAssert "onExpiryUpdate callback not set"
 
-      let requestEnd = await market.getRequestEnd(data.requestId)
+      let requestEnd = await marketplace.getRequestEnd(data.requestId)
       if err =? (await onExpiryUpdate(request.content.cid, requestEnd)).errorOption:
         return some State(SaleErrored(error: err))
 

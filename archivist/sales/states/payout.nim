@@ -1,5 +1,5 @@
 import ../../logutils
-import ../../market
+import ../../marketplace/abstractmarketplace
 import ../../utils/exceptions
 import ../statemachine
 import ../salesagent
@@ -26,7 +26,7 @@ method run*(
     state: SalePayout, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
-  let market = SalesAgent(machine).context.market
+  let marketplace = SalesAgent(machine).context.marketplace
 
   without request =? data.request:
     raiseAssert "no sale request"
@@ -35,8 +35,8 @@ method run*(
     let slot = Slot(request: request, slotIndex: data.slotIndex)
     debug "Collecting finished slot's reward",
       requestId = data.requestId, slotIndex = data.slotIndex
-    let currentCollateral = await market.currentCollateral(slot.id)
-    await market.freeSlot(slot.id)
+    let currentCollateral = await marketplace.currentCollateral(slot.id)
+    await marketplace.freeSlot(slot.id)
 
     return some State(SaleFinished(returnedCollateral: some currentCollateral))
   except CancelledError as e:

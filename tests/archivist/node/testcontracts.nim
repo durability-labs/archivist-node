@@ -35,7 +35,7 @@ import pkg/archivist/node {.all.}
 import ../../asynctest
 import ../../examples
 import ../helpers
-import ../helpers/mockmarket
+import ../helpers/mockmarketplace
 import ../helpers/mockclock
 
 import ./helpers
@@ -51,7 +51,7 @@ asyncchecksuite "Test Node - Host contracts":
     manifest: Manifest
     manifestCidStr: string
     manifestCid: Cid
-    market: MockMarket
+    marketplace: MockMarketplace
     builder: Poseidon2Builder
     verifiable: Manifest
     verifiableBlock: bt.Block
@@ -59,8 +59,8 @@ asyncchecksuite "Test Node - Host contracts":
 
   setup:
     # Setup Host Contracts and dependencies
-    market = MockMarket.new()
-    sales = Sales.new(market, clock, localStore)
+    marketplace = MockMarketplace.new()
+    sales = Sales.new(marketplace, clock, localStore)
 
     node.contracts = (
       none ClientInteractions,

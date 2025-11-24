@@ -45,7 +45,6 @@ import ../archivisttypes
 import ../logutils
 import ../clock
 import ../stores
-import ../market
 import ../contracts/requests
 import ../utils/json
 import ../utils/safeasynciter

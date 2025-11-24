@@ -23,7 +23,7 @@ method run*(
   try:
     info "Purchase finished, withdrawing remaining funds",
       requestId = purchase.requestId
-    await purchase.market.withdrawFunds(purchase.requestId)
+    await purchase.marketplace.withdrawFunds(purchase.requestId)
 
     purchase.future.complete()
   except CancelledError as e:

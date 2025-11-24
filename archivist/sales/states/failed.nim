@@ -1,5 +1,7 @@
+import pkg/chronos
 import ../../logutils
 import ../../utils/exceptions
+import ../../marketplace/abstractmarketplace
 import ../salesagent
 import ../statemachine
 import ./errored
@@ -18,7 +20,7 @@ method run*(
     state: SaleFailed, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
-  let market = SalesAgent(machine).context.market
+  let marketplace = SalesAgent(machine).context.marketplace
 
   without request =? data.request:
     raiseAssert "no sale request"
@@ -28,7 +30,7 @@ method run*(
     debug "Removing slot from mySlots",
       requestId = data.requestId, slotIndex = data.slotIndex
 
-    await market.freeSlot(slot.id)
+    await marketplace.freeSlot(slot.id)
 
     let error = newException(SaleFailedError, "Sale failed")
     return some State(SaleErrored(error: error))

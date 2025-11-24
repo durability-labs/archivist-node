@@ -25,7 +25,10 @@ export purchaseid
 export statemachine
 
 func new*(
-    _: type Purchase, requestId: RequestId, market: Market, clock: Clock
+    _: type Purchase,
+    requestId: RequestId,
+    marketplace: AbstractMarketplace,
+    clock: Clock,
 ): Purchase =
   ## create a new instance of a Purchase
   ##
@@ -33,16 +36,19 @@ func new*(
   {.cast(noSideEffect).}:
     purchase.future = newFuture[void]()
   purchase.requestId = requestId
-  purchase.market = market
+  purchase.marketplace = marketplace
   purchase.clock = clock
 
   return purchase
 
 func new*(
-    _: type Purchase, request: StorageRequest, market: Market, clock: Clock
+    _: type Purchase,
+    request: StorageRequest,
+    marketplace: AbstractMarketplace,
+    clock: Clock,
 ): Purchase =
-  ## Create a new purchase using the given market and clock
-  let purchase = Purchase.new(request.id, market, clock)
+  ## Create a new purchase using the given marketplace and clock
+  let purchase = Purchase.new(request.id, marketplace, clock)
   purchase.request = some request
   return purchase
 

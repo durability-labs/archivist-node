@@ -23,7 +23,7 @@ method run*(
   archivist_purchases_submitted.inc()
   let purchase = Purchase(machine)
   let request = !purchase.request
-  let market = purchase.market
+  let marketplace = purchase.marketplace
   let clock = purchase.clock
 
   info "Request submitted, waiting for slots to be filled",
@@ -34,12 +34,12 @@ method run*(
     proc callback(_: RequestId) =
       done.fire()
 
-    let subscription = await market.subscribeFulfillment(request.id, callback)
+    let subscription = await marketplace.subscribeFulfillment(request.id, callback)
     await done.wait()
     await subscription.unsubscribe()
 
   proc withTimeout(future: Future[void]) {.async.} =
-    let expiry = (await market.requestExpiresAt(request.id)) + 1
+    let expiry = (await marketplace.requestExpiresAt(request.id)) + 1
     trace "waiting for request fulfillment or expiry", expiry
     await future.withTimeout(clock, expiry)
 

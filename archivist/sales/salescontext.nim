@@ -2,7 +2,7 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/libp2p/cid
 
-import ../market
+import ../marketplace/abstractmarketplace
 import ../clock
 import ../periods
 import ./slotqueue
@@ -11,7 +11,7 @@ import ../blocktype as bt
 
 type
   SalesContext* = ref object
-    market*: Market
+    marketplace*: AbstractMarketplace
     clock*: Clock
     # Sales-level callbacks. Closure will be overwritten each time a slot is
     # processed.
