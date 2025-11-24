@@ -53,7 +53,7 @@ asyncchecksuite "sales state 'SlotReserving'":
     check !next of SaleIgnored
 
   test "run switches to errored when slot reservation errors":
-    let error = newException(MarketError, "some error")
+    let error = newException(MarketplaceError, "some error")
     market.setErrorOnReserveSlot(error)
     let next = !(await state.run(agent))
     check next of SaleErrored

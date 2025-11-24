@@ -103,7 +103,7 @@ asyncchecksuite "sales state 'cancelled'":
       collateral = currentCollateral,
     )
 
-    let error = newException(MarketError, "")
+    let error = newException(MarketplaceError, "")
     market.setErrorOnGetHost(error)
 
     let next = !(await state.run(agent))

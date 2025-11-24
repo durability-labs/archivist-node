@@ -14,7 +14,7 @@ method `$`*(state: SaleCancelled): string =
 
 proc slotIsFilledByMe(
     market: Market, requestId: RequestId, slotIndex: uint64
-): Future[bool] {.async: (raises: [CancelledError, MarketError]).} =
+): Future[bool] {.async: (raises: [CancelledError, MarketplaceError]).} =
   let host = await market.getHost(requestId, slotIndex)
   let me = await market.getSigner()
 

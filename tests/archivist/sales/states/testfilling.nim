@@ -49,7 +49,7 @@ suite "sales state 'filling'":
     check SaleIgnored(next).reprocessSlot == false
 
   test "run switches to errored with other error ":
-    let error = newException(MarketError, "some error")
+    let error = newException(MarketplaceError, "some error")
     market.setErrorOnFillSlot(error)
     market.requested.add(request)
     market.slotState[request.slotId(slotIndex)] = SlotState.Filled

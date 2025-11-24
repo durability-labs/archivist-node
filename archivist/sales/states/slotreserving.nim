@@ -47,7 +47,7 @@ method run*(
       except SlotReservationNotAllowedError as e:
         debug "Slot cannot be reserved, ignoring", error = e.msg
         return some State(SaleIgnored(reprocessSlot: false, returnsCollateral: true))
-      except MarketError as e:
+      except MarketplaceError as e:
         return some State(SaleErrored(error: e))
       # other CatchableErrors are handled "automatically" by the SaleState
 

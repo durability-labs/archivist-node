@@ -51,7 +51,7 @@ method run*(
     except SlotStateMismatchError as e:
       debug "Slot is already filled, ignoring slot"
       return some State(SaleIgnored(reprocessSlot: false, returnsCollateral: true))
-    except MarketError as e:
+    except MarketplaceError as e:
       return some State(SaleErrored(error: e))
     # other CatchableErrors are handled "automatically" by the SaleState
 
