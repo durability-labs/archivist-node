@@ -15,7 +15,7 @@ on:
         required: false
         type: string
       nimflags:
-        default: '-d:disableMarchNative'
+        default: '-d:disableMarchNative -d:nimleopard_portable_build'
         description: Nim flags for builds
         required: false
         type: string
