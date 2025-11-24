@@ -307,6 +307,12 @@ type
         name: "marketplace-address"
       .}: Option[EthAddress]
 
+      useSystemClock* {.
+        desc: "Assume system clock is accurate enough for chain-related operations",
+        defaultValue: false,
+        name: "use-system-clock"
+      .}: bool
+
       validator* {.
         desc: "Enables validator, requires an Ethereum node",
         defaultValue: false,

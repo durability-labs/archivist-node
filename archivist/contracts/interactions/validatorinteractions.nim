@@ -7,7 +7,7 @@ type ValidatorInteractions* = ref object of ContractInteractions
   validation: Validation
 
 proc new*(
-    _: type ValidatorInteractions, clock: OnChainClock, validation: Validation
+    _: type ValidatorInteractions, clock: Clock, validation: Validation
 ): ValidatorInteractions =
   ValidatorInteractions(clock: clock, validation: validation)
 

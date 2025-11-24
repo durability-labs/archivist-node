@@ -70,6 +70,13 @@ proc waitForSync(provider: Provider): Future[void] {.async.} =
       inc sleepTime
   trace "Ethereum provider is synced."
 
+proc getClock(s: NodeServer, provider: JsonRpcProvider): Clock = 
+  if s.config.useSystemClock:
+    return SystemClock()
+  if s.config.validator or s.config.persistence:
+    return OnChainClock.new(provider)
+  return SystemClock()
+
 proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
   ## bootstrap interactions and return contracts
   ## using clients, hosts, validators pairings
@@ -114,16 +121,13 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
     let market = OnChainMarket.new(
       marketplace, config.rewardRecipient, config.marketplaceRequestCacheSize
     )
-    let clock = OnChainClock.new(provider)
+
+    let clock = s.getClock(provider)
+    s.archivistNode.clock = clock
 
     var client: ?ClientInteractions
     var host: ?HostInteractions
     var validator: ?ValidatorInteractions
-
-    if config.validator or config.persistence:
-      s.archivistNode.clock = clock
-    else:
-      s.archivistNode.clock = SystemClock()
 
     if error =? (await market.loadConfig()).errorOption:
       fatal "Cannot load market configuration", error = error.msg
