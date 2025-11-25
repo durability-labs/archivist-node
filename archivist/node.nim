@@ -41,6 +41,7 @@ import ./blockexchange
 import ./streams
 import ./erasure
 import ./discovery
+import ./marketplace
 import ./contracts
 import ./indexingstrategy
 import ./utils
@@ -60,13 +61,6 @@ declareGauge(archivist_proofs_per_period, "archivist proofs per period")
 const DefaultFetchBatch = 10
 
 type
-  Contracts* =
-    tuple[
-      client: ?ClientInteractions,
-      host: ?HostInteractions,
-      validator: ?ValidatorInteractions,
-    ]
-
   ArchivistNode* = object
     switch: Switch
     networkId: PeerId
@@ -74,9 +68,8 @@ type
     engine: BlockExcEngine
     prover: ?Prover
     discovery: Discovery
-    contracts*: Contracts
+    marketplace: ?MarketplaceNode
     clock*: Clock
-    storage*: Contracts
     taskpool: Taskpool
     trackedFutures: TrackedFutures
     # proofs/period metric:
@@ -102,11 +95,15 @@ func engine*(self: ArchivistNodeRef): BlockExcEngine =
 func discovery*(self: ArchivistNodeRef): Discovery =
   return self.discovery
 
-proc ethAddress*(self: ArchivistNodeRef): Future[?ethers.Address] {.async.} =
-  if clientInteractions =? self.contracts.client:
-    some await clientInteractions.purchasing.marketplace.getSigner()
-  else:
-    none ethers.Address
+func ethAddress*(self: ArchivistNodeRef): ?ethers.Address =
+  self.marketplace .? address
+
+func marketplace*(self: ArchivistNodeRef): ?MarketplaceNode =
+  self.marketplace
+
+func `marketplace=`*(self: ArchivistNodeRef, marketplace: MarketplaceNode) =
+  doAssert self.marketplace.isNone
+  self.marketplace = some marketplace
 
 proc storeManifest*(
     self: ArchivistNodeRef, manifest: Manifest
@@ -625,7 +622,7 @@ proc requestStorage*(
 
   trace "Received a request for storage!"
 
-  without contracts =? self.contracts.client:
+  without purchasing =? self.marketplace .? purchasing:
     trace "Purchasing not available"
     return failure "Purchasing not available"
 
@@ -638,17 +635,7 @@ proc requestStorage*(
     trace "Unable to setup request"
     return failure err
 
-  # TODO: remove try/except once state machine has checked exceptions
-  let purchase =
-    try:
-      await contracts.purchasing.purchase(request)
-    except CancelledError as err:
-      trace "Purchase cancelled", err = err.msg
-      raise err
-    except CatchableError as err:
-      trace "Unable to purchase storage", err = err.msg
-      return failure(err)
-
+  let purchase = ?await purchasing.purchase(request)
   success purchase.id
 
 proc onStore(
@@ -656,7 +643,6 @@ proc onStore(
     request: StorageRequest,
     expiry: SecondsSince1970,
     slotIdx: uint64,
-    blocksCb: BlocksCb,
     isRepairing: bool = false,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## store data in local storage
@@ -695,10 +681,6 @@ proc onStore(
     if res.failure.len > 0:
       error "Some blocks failed to update expiry", len = res.failure.len
       return failure("Some blocks failed to update expiry (" & $res.failure.len & " )")
-
-    if not blocksCb.isNil and err =? (await blocksCb(blocks)).errorOption:
-      error "Unable to process blocks", err = err.msg
-      return failure(err)
 
     return success()
 
@@ -830,56 +812,48 @@ proc start*(self: ArchivistNodeRef) {.async.} =
   if not self.clock.isNil:
     await self.clock.start()
 
-  if hostContracts =? self.contracts.host:
-    hostContracts.sales.onStore = proc(
+  if marketplace =? self.marketplace:
+    marketplace.sales.onStore = proc(
         request: StorageRequest,
         expiry: SecondsSince1970,
         slot: uint64,
-        onBatch: BatchProc,
         isRepairing: bool = false,
     ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
-      self.onStore(request, expiry, slot, onBatch, isRepairing)
+      self.onStore(request, expiry, slot, isRepairing)
 
-    hostContracts.sales.onExpiryUpdate = proc(
+    marketplace.sales.onExpiryUpdate = proc(
         rootCid: Cid, expiry: SecondsSince1970
     ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
       self.onExpiryUpdate(rootCid, expiry)
 
-    hostContracts.sales.onClear = proc(request: StorageRequest, slotIndex: uint64) =
-      # TODO: remove data from local storage
+    marketplace.sales.onClear = proc(request: StorageRequest, slotIndex: uint64) =
       self.onClear(request, slotIndex)
 
-    hostContracts.sales.onProve = proc(
+    marketplace.sales.onProve = proc(
         slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raw: true, raises: [CancelledError]).} =
-      # TODO: generate proof
       self.onProve(slot, challenge, period)
 
     try:
-      await hostContracts.start()
+      await marketplace.sales.start()
     except CancelledError as error:
       raise error
     except CatchableError as error:
-      error "Unable to start host contract interactions", error = error.msg
-      self.contracts.host = HostInteractions.none
+      error "Unable to start sales", error = error.msg
 
-  if clientContracts =? self.contracts.client:
     try:
-      await clientContracts.start()
+      await marketplace.purchasing.start()
     except CancelledError as error:
       raise error
     except CatchableError as error:
-      error "Unable to start client contract interactions: ", error = error.msg
-      self.contracts.client = ClientInteractions.none
+      error "Unable to start purchasing: ", error = error.msg
 
-  if validatorContracts =? self.contracts.validator:
     try:
-      await validatorContracts.start()
+      await marketplace.validation.start()
     except CancelledError as error:
       raise error
     except CatchableError as error:
-      error "Unable to start validator contract interactions: ", error = error.msg
-      self.contracts.validator = ValidatorInteractions.none
+      error "Unable to start validation: ", error = error.msg
 
   self.networkId = self.switch.peerInfo.peerId
   notice "Started node", id = self.networkId, addrs = self.switch.peerInfo.addrs
@@ -895,14 +869,10 @@ proc stop*(self: ArchivistNodeRef) {.async.} =
   if not self.discovery.isNil:
     await self.discovery.stop()
 
-  if clientContracts =? self.contracts.client:
-    await clientContracts.stop()
-
-  if hostContracts =? self.contracts.host:
-    await hostContracts.stop()
-
-  if validatorContracts =? self.contracts.validator:
-    await validatorContracts.stop()
+  if marketplace =? self.marketplace:
+    await marketplace.validation.stop()
+    await marketplace.sales.stop()
+    await marketplace.purchasing.stop()
 
   if not self.clock.isNil:
     await self.clock.stop()
@@ -918,7 +888,7 @@ proc new*(
     discovery: Discovery,
     taskpool: Taskpool,
     prover = Prover.none,
-    contracts = Contracts.default,
+    marketplace = MarketplaceNode.none,
 ): ArchivistNodeRef =
   ## Create new instance of a node, call `start` to run it
   ##
@@ -930,6 +900,6 @@ proc new*(
     prover: prover,
     discovery: discovery,
     taskPool: taskpool,
-    contracts: contracts,
+    marketplace: marketplace,
     trackedFutures: TrackedFutures(),
   )

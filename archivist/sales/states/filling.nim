@@ -50,7 +50,7 @@ method run*(
       await marketplace.fillSlot(
         data.requestId, data.slotIndex, state.proof, collateral
       )
-    except SlotStateMismatchError as e:
+    except SlotStateMismatchError:
       debug "Slot is already filled, ignoring slot"
       return some State(SaleIgnored(reprocessSlot: false, returnsCollateral: true))
     except MarketplaceError as e:

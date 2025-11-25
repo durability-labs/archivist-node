@@ -8,4 +8,5 @@ export clock.SecondsSince1970
 type AvailabilityTerms* = object
   minimumPricePerBytePerSecond*: UInt256
   maximumCollateralPerByte*: UInt256
+  maximumDuration*: uint64
   availableUntil*: ?SecondsSince1970

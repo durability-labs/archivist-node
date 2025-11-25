@@ -16,12 +16,13 @@ suite "availability terms encoding":
     let json = parseJson(string.fromBytes(encoded))
     check json{"version"} == %1
 
-  test "encodes price and collateral as decimals":
+  test "encodes price, collateral and duration as decimals":
     let terms = AvailabilityTerms.example
     let encoded = terms.encode()
     let json = parseJson(string.fromBytes(encoded))
     check json{"minimumPricePerBytePerSecond"} == %($terms.minimumPricePerBytePerSecond)
     check json{"maximumCollateralPerByte"} == %($terms.maximumCollateralPerByte)
+    check json{"maximumDuration"} == %($terms.maximumDuration)
 
   test "encodes present availableUntil as integer":
     var terms = AvailabilityTerms.example
@@ -61,20 +62,24 @@ suite "availability terms encoding":
       check decoded.isFailure
       check "unknown version" in decoded.error.msg
 
-  test "decoding fails when price or collateral is absent":
+  test "decoding fails when price, collateral or duration is absent":
     let terms = AvailabilityTerms.example
     let json = parseJson(string.fromBytes(terms.encode))
-    for property in ["minimumPricePerBytePerSecond", "maximumCollateralPerByte"]:
+    let properties =
+      ["minimumPricePerBytePerSecond", "maximumCollateralPerByte", "maximumDuration"]
+    for property in properties:
       json.delete(property)
       let encoded = ($json).toBytes
       let decoded = AvailabilityTerms.decode(encoded)
       check decoded.isFailure
       check "could not decode" in decoded.error.msg
 
-  test "decoding fails when price or collateral is not a decimal string":
+  test "decoding fails when price, collateral or duration is not a decimal string":
     let terms = AvailabilityTerms.example
     let json = parseJson(string.fromBytes(terms.encode))
-    for property in ["minimumPricePerBytePerSecond", "maximumCollateralPerByte"]:
+    let properties =
+      ["minimumPricePerBytePerSecond", "maximumCollateralPerByte", "maximumDuration"]
+    for property in properties:
       for value in [newJNull(), %"", %"123ab", %123]:
         json[property] = value
         let encoded = ($json).toBytes

@@ -7,8 +7,6 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import std/sequtils
-import std/strutils
 import std/os
 import std/tables
 import std/cpuinfo
@@ -23,7 +21,6 @@ import pkg/nitro
 import pkg/stew/io2
 import pkg/datastore
 import pkg/ethers except Rng
-import pkg/stew/io2
 
 import ./node
 import ./conf
@@ -36,10 +33,8 @@ import ./utils/fileutils
 import ./erasure
 import ./discovery
 import ./contracts
-import ./systemclock
-import ./contracts/clock
-import ./contracts/deployment
-import ./utils/addrutils
+import ./marketplace
+import ./marketplacestorage
 import ./namespaces
 import ./archivisttypes
 import ./logutils
@@ -58,98 +53,34 @@ type
     taskpool: Taskpool
 
   NodePrivateKey* = libp2p.PrivateKey # alias
-  EthWallet = ethers.Wallet
 
-proc waitForSync(provider: Provider): Future[void] {.async.} =
-  var sleepTime = 1
-  trace "Checking sync state of Ethereum provider..."
-  while await provider.isSyncing:
-    notice "Waiting for Ethereum provider to sync..."
-    await sleepAsync(sleepTime.seconds)
-    if sleepTime < 10:
-      inc sleepTime
-  trace "Ethereum provider is synced."
-
-proc getClock(s: NodeServer, provider: JsonRpcProvider): Clock =
-  if s.config.useSystemClock:
-    return SystemClock()
-  if s.config.validator or s.config.persistence:
-    return OnChainClock.new(provider)
-  return SystemClock()
-
-proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
-  ## bootstrap interactions and return contracts
-  ## using clients, hosts, validators pairings
-  ##
-  let
-    config = s.config
-    repo = s.repoStore
+proc startMarketplace(s: NodeServer) {.async.} =
+  let config = s.config
 
   if config.persistence:
-    if not config.ethAccount.isSome and not config.ethPrivateKey.isSome:
-      error "Persistence enabled, but no Ethereum account was set"
+    without ethPrivateKeyFile =? config.ethPrivateKey:
+      error "Persistence enabled, but no Ethereum private key was set"
       quit QuitFailure
 
-    let provider = await JsonRpcProvider.connect(
-      config.ethProvider, maxPriorityFeePerGas = config.maxPriorityFeePerGas.u256
-    )
-    await waitForSync(provider)
-    var signer: Signer
-    if account =? config.ethAccount:
-      signer = provider.getSigner(account)
-    elif keyFile =? config.ethPrivateKey:
-      without isSecure =? checkSecureFile(keyFile):
-        error "Could not check file permissions: does Ethereum private key file exist?"
-        quit QuitFailure
-      if not isSecure:
-        error "Ethereum private key file does not have safe file permissions"
-        quit QuitFailure
-      without key =? keyFile.readAllChars():
-        error "Unable to read Ethereum private key file"
-        quit QuitFailure
-      without wallet =? EthWallet.new(key.strip(), provider):
-        error "Invalid Ethereum private key in file"
-        quit QuitFailure
-      signer = wallet
-
-    without var marketplaceAddress =? config.marketplaceAddress:
-      without lookup =? await provider.getMarketplaceAddress(), e:
-        error "No marketplace address specified or found", error = e.msg
-        quit QuitFailure
-      marketplaceAddress = lookup
-
-    let contract = MarketplaceContract.new(marketplaceAddress, signer)
-    let marketplace = OnChainMarketplace.new(
-      contract, config.rewardRecipient, config.marketplaceRequestCacheSize
+    let marketplaceResult = await MarketplaceNode.start(
+      ethProviderUrl = config.ethProvider,
+      ethPrivateKeyFile = ethPrivateKeyFile,
+      datastore = s.repoStore.metaDs,
+      storage = MarketplaceStorage.new(s.repoStore),
+      options = MarketplaceOptions(
+        maxPriorityFeePerGas: config.maxPriorityFeePerGas,
+        validationMaxSlots: some config.validatorMaxSlots,
+        validationGroups: config.validatorGroups,
+        validationGroupIndex: some config.validatorGroupIndex,
+        useSystemClock: config.useSystemClock,
+      ),
     )
 
-    let clock = s.getClock(provider)
-    s.archivistNode.clock = clock
-
-    var client: ?ClientInteractions
-    var host: ?HostInteractions
-    var validator: ?ValidatorInteractions
-
-    if error =? (await marketplace.loadConfig()).errorOption:
-      fatal "Cannot load marketplace configuration", error = error.msg
+    without marketplace =? marketplaceResult, err:
+      error "Unable to start marketplace", error = err.msg
       quit QuitFailure
 
-    let purchasing = Purchasing.new(marketplace, clock)
-    let sales = Sales.new(marketplace, clock, repo)
-    client = some ClientInteractions.new(clock, purchasing)
-    host = some HostInteractions.new(clock, sales)
-
-    if config.validator:
-      without validationConfig =?
-        ValidationConfig.init(
-          config.validatorMaxSlots, config.validatorGroups, config.validatorGroupIndex
-        ), err:
-        error "Invalid validation parameters", err = err.msg
-        quit QuitFailure
-      let validation = Validation.new(clock, marketplace, validationConfig)
-      validator = some ValidatorInteractions.new(clock, validation)
-
-    s.archivistNode.contracts = (client, host, validator)
+    s.archivistNode.marketplace = marketplace
 
 proc start*(s: NodeServer) {.async.} =
   trace "Starting node", config = $s.config
@@ -170,7 +101,7 @@ proc start*(s: NodeServer) {.async.} =
   s.archivistNode.discovery.updateAnnounceRecord(announceAddrs)
   s.archivistNode.discovery.updateDhtRecord(discoveryAddrs)
 
-  await s.bootstrapInteractions()
+  await s.startMarketplace()
   await s.archivistNode.start()
   s.restServer.start()
 

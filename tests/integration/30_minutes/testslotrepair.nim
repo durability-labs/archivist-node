@@ -1,3 +1,4 @@
+import std/json
 import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
@@ -15,31 +16,27 @@ suite "Repair":
     # setup node, validator and 3 providers
     let node = await testbed.node.persistence.start()
     discard await testbed.node.validator.start()
-    let provider1 = await testbed.node.provider.availability(false).start()
-    let provider2 = await testbed.node.provider.availability(false).start()
-    let provider3 = await testbed.node.provider.availability(false).start()
+    let provider1 = await testbed.node.provider.start()
+    let provider2 = await testbed.node.provider.start()
+    let provider3 = await testbed.node.provider.start()
 
-    # submit request
-    let request = await testbed.request.nodes(3).submit(node)
-    let size = request.dataset.data.len
+    # start request
+    # 9 slots makes the odds that all slots are filled by one node negligable
+    # tolerance of 4 ensures that there's always a node that we can stop
+    let request = await testbed.request.nodes(9).tolerance(4).start(node)
 
-    # ensure that each provider can only fill a single slot
-    let started = await testbed.marketplace.recordRequestStarted()
-    discard await testbed.availability.totalSize(size div 2).create(provider1)
-    discard await testbed.availability.totalSize(size div 2).create(provider2)
-    discard await testbed.availability.totalSize(size div 2).create(provider3)
-
-    # wait for request to start
-    await started.waitForRequestStarted(request.id)
-
-    # stop node and one provider
+    # stop node
     await node.stop()
-    await provider1.stop()
 
-    # ensure that remaining providers can fill the missing slot
+    # record new slot filled events
     let filled = await testbed.marketplace.recordSlotFilled()
-    discard await testbed.availability.totalSize(size div 2).create(provider2)
-    discard await testbed.availability.totalSize(size div 2).create(provider3)
 
-    # wait for slot to be filled
+    # stop a provider with at least one slot, and within tolerance
+    for provider in [provider1, provider2, provider3]:
+      let slots = await testbed.api(provider).getSlots()
+      if 1 <= slots.len and slots.len <= 4:
+        await provider.stop()
+        break
+
+    # wait for slot to be repaired
     await filled.waitForSlotFilled(request.id)

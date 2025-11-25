@@ -28,13 +28,10 @@ type
     error* {.serialize.}: ?string
 
   RestAvailability* = object
-    totalSize* {.serialize.}: uint64
-    duration* {.serialize.}: uint64
-    minPricePerBytePerSecond* {.serialize.}: UInt256
-    totalCollateral* {.serialize.}: UInt256
-    freeSize* {.serialize.}: ?uint64
-    enabled* {.serialize.}: ?bool
-    until* {.serialize.}: ?SecondsSince1970
+    minimumPricePerBytePerSecond* {.serialize.}: UInt256
+    maximumCollateralPerByte* {.serialize.}: UInt256
+    maximumDuration* {.serialize.}: uint64
+    availableUntil* {.serialize.}: ?SecondsSince1970
 
   RestSalesSlot* = object
     state* {.serialize.}: string

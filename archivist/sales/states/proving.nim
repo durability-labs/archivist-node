@@ -134,7 +134,7 @@ method run*(
     await state.proveLoop(marketplace, clock, request, data.slotIndex, onProve)
     debug "Stopping proving.", requestId = data.requestId, slotIndex = data.slotIndex
     return some State(SalePayout())
-  except CancelledError as e:
+  except CancelledError:
     trace "proving loop cancelled"
   except CatchableError as e:
     error "Proving failed",

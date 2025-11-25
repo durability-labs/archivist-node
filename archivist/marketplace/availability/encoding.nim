@@ -1,5 +1,6 @@
 import std/json
 import std/options
+import std/parseutils
 import pkg/questionable
 import pkg/questionable/results
 import pkg/stew/byteutils
@@ -14,6 +15,7 @@ func encode*(terms: AvailabilityTerms): seq[byte] =
       "version": 1,
       "minimumPricePerBytePerSecond": $terms.minimumPricePerBytePerSecond,
       "maximumCollateralPerByte": $terms.maximumCollateralPerByte,
+      "maximumDuration": $terms.maximumDuration,
       "availableUntil": terms.availableUntil,
     }
   ($json).toBytes
@@ -34,14 +36,30 @@ proc getInt64(json: JsonNode): ?int64 =
     return none int64
   some json.getBiggestInt()
 
+proc getUInt64(json: JsonNode): ?uint64 =
+  let decimals = json.getStr()
+  if decimals == "":
+    return none uint64
+  try:
+    var parsed: uint64
+    if parseBiggestUint(decimals, parsed) == decimals.len:
+      some parsed
+    else:
+      none uint64
+  except ValueError:
+    none uint64
+
 proc decodeVersion1(_: type AvailabilityTerms, json: JsonNode): ?!AvailabilityTerms =
   without minimumPrice =? json{"minimumPricePerBytePerSecond"}.getUInt256():
     return failure "could not decode availability terms"
   without maximumCollateral =? json{"maximumCollateralPerByte"}.getUInt256():
     return failure "could not decode availability terms"
+  without maximumDuration =? json{"maximumDuration"}.getUInt64():
+    return failure "could not decode availability terms"
   success AvailabilityTerms(
     minimumPricePerBytePerSecond: minimumPrice,
     maximumCollateralPerByte: maximumCollateral,
+    maximumDuration: uint64(maximumDuration),
     availableUntil: json{"availableUntil"}.getInt64(),
   )
 

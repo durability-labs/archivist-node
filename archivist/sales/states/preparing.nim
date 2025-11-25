@@ -4,6 +4,7 @@ import pkg/metrics
 
 import ../../logutils
 import ../../marketplace/abstractmarketplace
+import ../../marketplace/storageinterface
 import ../../utils/exceptions
 import ../salesagent
 import ../statemachine
@@ -13,11 +14,6 @@ import ./filled
 import ./ignored
 import ./slotreserving
 import ./errored
-
-declareCounter(
-  archivist_reservations_availability_mismatch,
-  "archivist reservations availability_mismatch",
-)
 
 type SalePreparing* = ref object of SaleState
 
@@ -45,7 +41,6 @@ method run*(
   let data = agent.data
   let context = agent.context
   let marketplace = context.marketplace
-  let reservations = context.reservations
 
   try:
     await agent.retrieveRequest()
@@ -72,37 +67,19 @@ method run*(
       collateralPerByte = request.ask.collateralPerByte
 
     let requestEnd = await marketplace.getRequestEnd(data.requestId)
+    let ask = request.ask
 
-    without availability =?
-      await reservations.findAvailability(
-        request.ask.slotSize, request.ask.duration, request.ask.pricePerBytePerSecond,
-        request.ask.collateralPerByte, requestEnd,
-      ):
+    var match = true
+    match = match and terms =? context.availabilityTerms
+    match = match and ask.slotSize <= context.storage.available
+    match = match and ask.duration <= terms.maximumDuration
+    match = match and ask.pricePerBytePerSecond >= terms.minimumPricePerBytePerSecond
+    match = match and ask.collateralPerByte <= terms.maximumCollateralPerByte
+    match = match and (not (until =? terms.availableUntil) or requestEnd <= until)
+    if not match:
       debug "No availability found for request, ignoring"
-
       return some State(SaleIgnored(reprocessSlot: true))
 
-    info "Availability found for request, creating reservation"
-
-    without reservation =?
-      await noCancel reservations.createReservation(
-        availability.id, request.ask.slotSize, request.id, data.slotIndex,
-        request.ask.collateralPerByte, requestEnd,
-      ), error:
-      trace "Creation of reservation failed"
-      # Race condition:
-      # reservations.findAvailability (line 64) is no guarantee. You can never know for certain that the reservation can be created until after you have it.
-      # Should createReservation fail because there's no space, we proceed to SaleIgnored.
-      if error of BytesOutOfBoundsError:
-        # Lets monitor how often this happen and if it is often we can make it more inteligent to handle it
-        archivist_reservations_availability_mismatch.inc()
-        return some State(SaleIgnored(reprocessSlot: true))
-
-      return some State(SaleErrored(error: error))
-
-    trace "Reservation created successfully"
-
-    data.reservation = some reservation
     return some State(SaleSlotReserving())
   except CancelledError as e:
     trace "SalePreparing.run was cancelled", error = e.msgDetail

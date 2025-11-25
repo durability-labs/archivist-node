@@ -19,20 +19,12 @@ suite "Marketplace":
     let purchase = await testbed.api(node).getPurchase(request.id)
     check purchase["error"].kind == JNull
 
-  test "provider uses part of its availability when filling slots":
-    let provider = await testbed.node.provider.start()
-    let node = await testbed.node.persistence.start()
-    let before = await testbed.api(provider).getAvailability()
-    discard await testbed.request.start(node)
-    let after = await testbed.api(provider).getAvailability()
-    check after[0]["freeSize"].getInt < before[0]["freeSize"].getInt
-
-  test "provider can fill slots that were posted before it had availability":
+  test "provider can fill slots that were posted before it made storage available":
     let provider = await testbed.node.provider.availability(false).start()
     let node = await testbed.node.persistence.start()
     let request = await testbed.request.submit(node)
     let started = await testbed.marketplace.recordRequestStarted()
-    discard await testbed.availability.create(provider)
+    await testbed.availability.update(provider)
     await started.waitForRequestStarted(request.id)
 
   test "provider withdraws its payout when a request ends":
