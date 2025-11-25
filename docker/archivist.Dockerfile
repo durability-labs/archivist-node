@@ -22,7 +22,7 @@ RUN echo "export PATH=$PATH:$HOME/.cargo/bin" >> $BASH_ENV
 
 WORKDIR ${BUILD_HOME}
 COPY . .
-RUN nimble build ${NIMFLAGS}
+RUN nimble build --stackTrace:on ${NIMFLAGS}
 
 # Create
 FROM ${IMAGE}
