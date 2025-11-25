@@ -13,7 +13,7 @@ type ClientInteractions* = ref object of ContractInteractions
   purchasing*: Purchasing
 
 proc new*(
-    _: type ClientInteractions, clock: OnChainClock, purchasing: Purchasing
+    _: type ClientInteractions, clock: Clock, purchasing: Purchasing
 ): ClientInteractions =
   ClientInteractions(clock: clock, purchasing: purchasing)
 
