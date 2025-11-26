@@ -259,7 +259,7 @@ components:
           format: int64
           description: Slot Index number
 
-    SlotAgent:
+    SalesSlot:
       type: object
       required:
         - state
@@ -274,11 +274,8 @@ components:
           $ref: "#/components/schemas/Id"
         request:
           $ref: "#/components/schemas/StorageRequest"
-        reservation:
-          $ref: "#/components/schemas/Reservation"
         state:
           type: string
-          description: Description of the slot's
           enum:
             - SaleCancelled
             - SaleDownloading
@@ -799,7 +796,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SlotAgent"
+                $ref: "#/components/schemas/SalesSlot"
 
         "400":
           description: Invalid or missing SlotId

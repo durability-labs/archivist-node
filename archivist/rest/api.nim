@@ -35,6 +35,8 @@ import ../erasure/erasure
 import ../manifest
 import ../streams/asyncstreamwrapper
 import ../stores
+import ../sales
+import ../sales/salesslot
 import ../utils/options
 
 import ./coders
@@ -385,7 +387,7 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
           Http503, "Persistence is not enabled", headers = headers
         )
 
-      let json = %(await contracts.sales.mySlots())
+      let json = %(await contracts.sales.getSlots())
       return RestApiResponse.response(
         $json, contentType = "application/json", headers = headers
       )
@@ -407,20 +409,19 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
     without slotId =? slotId.tryGet.catch, error:
       return RestApiResponse.error(Http400, error.msg, headers = headers)
 
-    without agent =? await contracts.sales.activeSale(slotId):
+    without slot =? await contracts.sales.getSlot(slotId):
       return
         RestApiResponse.error(Http404, "Provider not filling slot", headers = headers)
 
-    let restAgent = RestSalesAgent(
-      state: agent.state() |? "none",
-      slotIndex: agent.data.slotIndex,
-      requestId: agent.data.requestId,
-      request: agent.data.request,
-      reservation: agent.data.reservation,
+    let restSalesSlot = RestSalesSlot(
+      state: slot.state |? "none",
+      slotIndex: slot.slotIndex,
+      requestId: slot.requestId,
+      request: slot.request,
     )
 
     return RestApiResponse.response(
-      restAgent.toJson, contentType = "application/json", headers = headers
+      restSalesSlot.toJson, contentType = "application/json", headers = headers
     )
 
   router.api(MethodGet, "/api/archivist/v1/sales/availability") do() -> RestApiResponse:
@@ -819,7 +820,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
           Http503, "Persistence is not enabled", headers = headers
         )
 
-      let purchaseIds = contracts.purchasing.getPurchaseIds()
+      let purchaseIds = contracts.purchasing.getPurchases()
       return RestApiResponse.response(
         $ %purchaseIds, contentType = "application/json", headers = headers
       )

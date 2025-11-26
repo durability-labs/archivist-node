@@ -112,12 +112,13 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
         quit QuitFailure
       signer = wallet
 
-    let deploy = Deployment.new(provider, config.marketplaceAddress)
-    without marketplaceAddress =? await deploy.address(Marketplace):
-      error "No Marketplace address was specified or there is no known address for the current network"
-      quit QuitFailure
+    without var marketplaceAddress =? config.marketplaceAddress:
+      without lookup =? await provider.getMarketplaceAddress(), e:
+        error "No marketplace address specified or found", error = e.msg
+        quit QuitFailure
+      marketplaceAddress = lookup
 
-    let marketplace = Marketplace.new(marketplaceAddress, signer)
+    let marketplace = MarketplaceContract.new(marketplaceAddress, signer)
     let market = OnChainMarket.new(
       marketplace, config.rewardRecipient, config.marketplaceRequestCacheSize
     )

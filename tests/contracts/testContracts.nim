@@ -25,7 +25,7 @@ suite "Marketplace contracts":
 
   var client, host: Signer
   var rewardRecipient, collateralRecipient: Address
-  var marketplace: Marketplace
+  var marketplace: MarketplaceContract
   var token: Erc20Token
   var periodicity: Periodicity
   var request: StorageRequest
@@ -45,8 +45,8 @@ suite "Marketplace contracts":
     rewardRecipient = accounts[2]
     collateralRecipient = accounts[3]
 
-    let address = Marketplace.address(dummyVerifier = true)
-    marketplace = Marketplace.new(address, provider.getSigner())
+    let address = MarketplaceContract.address(dummyVerifier = true)
+    marketplace = MarketplaceContract.new(address, provider.getSigner())
 
     let tokenAddress = await marketplace.token()
     token = Erc20Token.new(tokenAddress, provider.getSigner())

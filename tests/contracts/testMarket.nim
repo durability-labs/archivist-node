@@ -36,7 +36,7 @@ suite "On-Chain Market":
   let proof = Groth16Proof.example
 
   var market: OnChainMarket
-  var marketplace: Marketplace
+  var marketplace: MarketplaceContract
   var token: Erc20Token
   var request: StorageRequest
   var slotIndex: uint64
@@ -56,8 +56,8 @@ suite "On-Chain Market":
     market = OnChainMarket.new(marketplace, market.rewardRecipient)
 
   setup:
-    let address = Marketplace.address(dummyVerifier = true)
-    marketplace = Marketplace.new(address, provider.getSigner())
+    let address = MarketplaceContract.address(dummyVerifier = true)
+    marketplace = MarketplaceContract.new(address, provider.getSigner())
     let config = await marketplace.configuration()
     hostRewardRecipient = accounts[2]
 

@@ -1,7 +1,6 @@
 import pkg/ethers
-import pkg/questionable
+import pkg/questionable/results
 import archivist/contracts/deployment
-import archivist/contracts
 import ../asynctest
 
 type MockProvider = ref object of Provider
@@ -15,27 +14,13 @@ method getChainId*(
 suite "Deployment":
   let provider = MockProvider()
 
-  test "uses conf value as priority":
-    let deployment = Deployment.new(
-      provider, some !Address.init("0x59b670e9fA9D0A427751Af201D676719a970aaaa")
-    )
-    provider.chainId = 1.u256
-
-    let address = await deployment.address(Marketplace)
-    check address.isSome
-    check $(!address) == "0x59b670e9fa9d0a427751af201d676719a970aaaa"
-
-  test "uses chainId hardcoded values as fallback":
-    let deployment = Deployment.new(provider)
+  test "looks up hardcoded marketplace address using the chain id":
     provider.chainId = 167005.u256
-
-    let address = await deployment.address(Marketplace)
-    check address.isSome
+    let address = await provider.getMarketplaceAddress()
+    check address.isSuccess
     check $(!address) == "0x948cf9291b77bd7ad84781b9047129addf1b894f"
 
-  test "return none for unknown networks":
-    let deployment = Deployment.new(provider)
+  test "returns error for unknown networks":
     provider.chainId = 1.u256
-
-    let address = await deployment.address(Marketplace)
-    check address.isNone
+    let address = await provider.getMarketplaceAddress()
+    check address.isFailure

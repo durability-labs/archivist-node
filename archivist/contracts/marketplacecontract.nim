@@ -15,7 +15,7 @@ export config
 export requests
 
 type
-  Marketplace* = ref object of Contract
+  MarketplaceContract* = ref object of Contract
 
   Marketplace_RepairRewardPercentageTooHigh* = object of SolidityError
   Marketplace_SlashPercentageTooHigh* = object of SolidityError
@@ -54,14 +54,17 @@ type
   Periods_InvalidSecondsPerPeriod* = object of SolidityError
   SlotReservations_ReservationNotAllowed* = object of SolidityError
 
-proc configuration*(marketplace: Marketplace): MarketplaceConfig {.contract, view.}
-proc token*(marketplace: Marketplace): Address {.contract, view.}
+proc configuration*(
+  marketplace: MarketplaceContract
+): MarketplaceConfig {.contract, view.}
+
+proc token*(marketplace: MarketplaceContract): Address {.contract, view.}
 proc currentCollateral*(
-  marketplace: Marketplace, id: SlotId
+  marketplace: MarketplaceContract, id: SlotId
 ): UInt256 {.contract, view.}
 
 proc requestStorage*(
-  marketplace: Marketplace, request: StorageRequest
+  marketplace: MarketplaceContract, request: StorageRequest
 ): Confirmable {.
   contract,
   errors: [
@@ -74,7 +77,10 @@ proc requestStorage*(
 .}
 
 proc fillSlot*(
-  marketplace: Marketplace, requestId: RequestId, slotIndex: uint64, proof: Groth16Proof
+  marketplace: MarketplaceContract,
+  requestId: RequestId,
+  slotIndex: uint64,
+  proof: Groth16Proof,
 ): Confirmable {.
   contract,
   errors: [
@@ -84,7 +90,7 @@ proc fillSlot*(
 .}
 
 proc withdrawFunds*(
-  marketplace: Marketplace, requestId: RequestId
+  marketplace: MarketplaceContract, requestId: RequestId
 ): Confirmable {.
   contract,
   errors: [
@@ -94,7 +100,7 @@ proc withdrawFunds*(
 .}
 
 proc withdrawFunds*(
-  marketplace: Marketplace, requestId: RequestId, withdrawAddress: Address
+  marketplace: MarketplaceContract, requestId: RequestId, withdrawAddress: Address
 ): Confirmable {.
   contract,
   errors: [
@@ -104,7 +110,7 @@ proc withdrawFunds*(
 .}
 
 proc freeSlot*(
-  marketplace: Marketplace, id: SlotId
+  marketplace: MarketplaceContract, id: SlotId
 ): Confirmable {.
   contract,
   errors: [
@@ -114,7 +120,7 @@ proc freeSlot*(
 .}
 
 proc freeSlot*(
-  marketplace: Marketplace,
+  marketplace: MarketplaceContract,
   id: SlotId,
   rewardRecipient: Address,
   collateralRecipient: Address,
@@ -127,40 +133,52 @@ proc freeSlot*(
 .}
 
 proc getRequest*(
-  marketplace: Marketplace, id: RequestId
+  marketplace: MarketplaceContract, id: RequestId
 ): StorageRequest {.contract, view, errors: [Marketplace_UnknownRequest].}
 
-proc getHost*(marketplace: Marketplace, id: SlotId): Address {.contract, view.}
+proc getHost*(marketplace: MarketplaceContract, id: SlotId): Address {.contract, view.}
 proc getActiveSlot*(
-  marketplace: Marketplace, id: SlotId
+  marketplace: MarketplaceContract, id: SlotId
 ): Slot {.contract, view, errors: [Marketplace_SlotIsFree].}
 
-proc myRequests*(marketplace: Marketplace): seq[RequestId] {.contract, view.}
-proc mySlots*(marketplace: Marketplace): seq[SlotId] {.contract, view.}
+proc myRequests*(marketplace: MarketplaceContract): seq[RequestId] {.contract, view.}
+proc mySlots*(marketplace: MarketplaceContract): seq[SlotId] {.contract, view.}
 proc requestState*(
-  marketplace: Marketplace, requestId: RequestId
+  marketplace: MarketplaceContract, requestId: RequestId
 ): RequestState {.contract, view, errors: [Marketplace_UnknownRequest].}
 
-proc slotState*(marketplace: Marketplace, slotId: SlotId): SlotState {.contract, view.}
+proc slotState*(
+  marketplace: MarketplaceContract, slotId: SlotId
+): SlotState {.contract, view.}
+
 proc requestEnd*(
-  marketplace: Marketplace, requestId: RequestId
+  marketplace: MarketplaceContract, requestId: RequestId
 ): SecondsSince1970 {.contract, view.}
 
 proc requestExpiry*(
-  marketplace: Marketplace, requestId: RequestId
+  marketplace: MarketplaceContract, requestId: RequestId
 ): SecondsSince1970 {.contract, view.}
 
-proc missingProofs*(marketplace: Marketplace, id: SlotId): UInt256 {.contract, view.}
-proc isProofRequired*(marketplace: Marketplace, id: SlotId): bool {.contract, view.}
-proc willProofBeRequired*(marketplace: Marketplace, id: SlotId): bool {.contract, view.}
+proc missingProofs*(
+  marketplace: MarketplaceContract, id: SlotId
+): UInt256 {.contract, view.}
+
+proc isProofRequired*(
+  marketplace: MarketplaceContract, id: SlotId
+): bool {.contract, view.}
+
+proc willProofBeRequired*(
+  marketplace: MarketplaceContract, id: SlotId
+): bool {.contract, view.}
+
 proc getChallenge*(
-  marketplace: Marketplace, id: SlotId
+  marketplace: MarketplaceContract, id: SlotId
 ): array[32, byte] {.contract, view.}
 
-proc getPointer*(marketplace: Marketplace, id: SlotId): uint8 {.contract, view.}
+proc getPointer*(marketplace: MarketplaceContract, id: SlotId): uint8 {.contract, view.}
 
 proc submitProof*(
-  marketplace: Marketplace, id: SlotId, proof: Groth16Proof
+  marketplace: MarketplaceContract, id: SlotId, proof: Groth16Proof
 ): Confirmable {.
   contract,
   errors:
@@ -168,7 +186,7 @@ proc submitProof*(
 .}
 
 proc markProofAsMissing*(
-  marketplace: Marketplace, id: SlotId, period: uint64
+  marketplace: MarketplaceContract, id: SlotId, period: uint64
 ): Confirmable {.
   contract,
   errors: [
@@ -179,7 +197,7 @@ proc markProofAsMissing*(
 .}
 
 proc canMarkProofAsMissing*(
-  marketplace: Marketplace, id: SlotId, period: uint64
+  marketplace: MarketplaceContract, id: SlotId, period: uint64
 ) {.
   contract,
   view,
@@ -191,9 +209,9 @@ proc canMarkProofAsMissing*(
 .}
 
 proc reserveSlot*(
-  marketplace: Marketplace, requestId: RequestId, slotIndex: uint64
+  marketplace: MarketplaceContract, requestId: RequestId, slotIndex: uint64
 ): Confirmable {.contract.}
 
 proc canReserveSlot*(
-  marketplace: Marketplace, requestId: RequestId, slotIndex: uint64
+  marketplace: MarketplaceContract, requestId: RequestId, slotIndex: uint64
 ): bool {.contract, view.}

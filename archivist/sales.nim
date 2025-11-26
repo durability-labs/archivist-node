@@ -8,12 +8,13 @@ import ./market
 import ./clock
 import ./stores
 import ./contracts/requests
-import ./contracts/marketplace
+import ./contracts/marketplacecontract
 import ./logutils
 import ./sales/salescontext
 import ./sales/salesagent
 import ./sales/statemachine
 import ./sales/slotqueue
+import ./sales/salesslot
 import ./sales/states/preparing
 import ./sales/states/unknown
 import ./utils/trackedfutures
@@ -210,7 +211,7 @@ proc deleteInactiveReservations(sales: Sales, activeSlots: seq[Slot]) {.async.} 
     else:
       trace "Deleted unused reservation"
 
-proc mySlots*(sales: Sales): Future[seq[Slot]] {.async.} =
+proc getSlots*(sales: Sales): Future[seq[Slot]] {.async.} =
   let market = sales.context.market
   let slotIds = await market.mySlots()
   var slots: seq[Slot] = @[]
@@ -222,15 +223,20 @@ proc mySlots*(sales: Sales): Future[seq[Slot]] {.async.} =
 
   return slots
 
-proc activeSale*(sales: Sales, slotId: SlotId): Future[?SalesAgent] {.async.} =
+proc getSalesAgent(sales: Sales, slotId: SlotId): Future[?SalesAgent] {.async.} =
   for agent in sales.agents:
     if slotId(agent.data.requestId, agent.data.slotIndex) == slotId:
       return some agent
 
-  return none SalesAgent
+proc getSlot*(sales: Sales, slotId: SlotId): Future[?SalesSlot] {.async.} =
+  without agent =? await sales.getSalesAgent(slotId):
+    return none SalesSlot
+  some SalesSlot.init(
+    agent.data.requestId, agent.data.slotIndex, agent.data.request, agent.state
+  )
 
 proc load*(sales: Sales) {.async.} =
-  let activeSlots = await sales.mySlots()
+  let activeSlots = await sales.getSlots()
 
   await sales.deleteInactiveReservations(activeSlots)
 

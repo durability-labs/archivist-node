@@ -1,11 +1,11 @@
 import contracts/requests
-import contracts/marketplace
+import contracts/marketplacecontract
 import contracts/market
 import contracts/interactions
 import contracts/provider
 
 export requests
-export marketplace
+export marketplacecontract
 export market
 export interactions
 export provider
