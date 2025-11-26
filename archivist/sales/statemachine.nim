@@ -1,11 +1,9 @@
 import pkg/questionable
 import ../errors
 import ../utils/asyncstatemachine
-import ../market
 import ../clock
 import ../contracts/requests
 
-export market
 export clock
 export asyncstatemachine
 

@@ -5,13 +5,13 @@ import pkg/archivist/sales/states/cancelled
 import pkg/archivist/sales/states/errored
 import pkg/archivist/sales/salesagent
 import pkg/archivist/sales/salescontext
-import pkg/archivist/market
+import pkg/archivist/marketplace/abstractmarketplace
 from pkg/archivist/utils/asyncstatemachine import State
 
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'cancelled'":
@@ -21,21 +21,21 @@ asyncchecksuite "sales state 'cancelled'":
 
   let currentCollateral = UInt256.example
 
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var state: SaleCancelled
   var agent: SalesAgent
   var reprocessSlotWas: ?bool
   var returnedCollateralValue: ?UInt256
 
   setup:
-    market = MockMarket.new()
+    marketplace = MockMarketplace.new()
     let onCleanUp = proc(
         reprocessSlot = false, returnedCollateral = UInt256.none
     ) {.async: (raises: []).} =
       reprocessSlotWas = some reprocessSlot
       returnedCollateralValue = returnedCollateral
 
-    let context = SalesContext(market: market, clock: clock)
+    let context = SalesContext(marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     agent.onCleanUp = onCleanUp
     state = SaleCancelled.new()
@@ -46,11 +46,11 @@ asyncchecksuite "sales state 'cancelled'":
     returnedCollateralValue = UInt256.none
 
   test "calls onCleanUp with reprocessSlot = true, and returnedCollateral = currentCollateral":
-    market.fillSlot(
+    marketplace.fillSlot(
       requestId = request.id,
       slotIndex = slotIndex,
       proof = Groth16Proof.default,
-      host = await market.getSigner(),
+      host = await marketplace.getSigner(),
       collateral = currentCollateral,
     )
     discard await state.run(agent)
@@ -58,17 +58,17 @@ asyncchecksuite "sales state 'cancelled'":
     check eventually returnedCollateralValue == some currentCollateral
 
   test "completes the cancelled state when free slot error is raised and the collateral is returned when a host is hosting a slot":
-    market.fillSlot(
+    marketplace.fillSlot(
       requestId = request.id,
       slotIndex = slotIndex,
       proof = Groth16Proof.default,
-      host = await market.getSigner(),
+      host = await marketplace.getSigner(),
       collateral = currentCollateral,
     )
 
     let error =
       newException(SlotStateMismatchError, "Failed to free slot, slot is already free")
-    market.setErrorOnFreeSlot(error)
+    marketplace.setErrorOnFreeSlot(error)
 
     let next = await state.run(agent)
     check next == none State
@@ -76,8 +76,8 @@ asyncchecksuite "sales state 'cancelled'":
     check eventually returnedCollateralValue == some currentCollateral
 
   test "completes the cancelled state when free slot error is raised and the collateral is not returned when a host is not hosting a slot":
-    discard market.reserveSlot(requestId = request.id, slotIndex = slotIndex)
-    market.fillSlot(
+    discard marketplace.reserveSlot(requestId = request.id, slotIndex = slotIndex)
+    marketplace.fillSlot(
       requestId = request.id,
       slotIndex = slotIndex,
       proof = Groth16Proof.default,
@@ -87,7 +87,7 @@ asyncchecksuite "sales state 'cancelled'":
 
     let error =
       newException(SlotStateMismatchError, "Failed to free slot, slot is already free")
-    market.setErrorOnFreeSlot(error)
+    marketplace.setErrorOnFreeSlot(error)
 
     let next = await state.run(agent)
     check next == none State
@@ -95,7 +95,7 @@ asyncchecksuite "sales state 'cancelled'":
     check eventually returnedCollateralValue == UInt256.none
 
   test "calls onCleanUp and returns the collateral when an error is raised":
-    market.fillSlot(
+    marketplace.fillSlot(
       requestId = request.id,
       slotIndex = slotIndex,
       proof = Groth16Proof.default,
@@ -103,8 +103,8 @@ asyncchecksuite "sales state 'cancelled'":
       collateral = currentCollateral,
     )
 
-    let error = newException(MarketError, "")
-    market.setErrorOnGetHost(error)
+    let error = newException(MarketplaceError, "")
+    marketplace.setErrorOnGetHost(error)
 
     let next = !(await state.run(agent))
 

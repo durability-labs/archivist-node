@@ -37,7 +37,7 @@ import pkg/archivist/node {.all.}
 import ../../asynctest
 import ../examples
 import ../helpers
-import ../helpers/mockmarket
+import ../helpers/mockmarketplace
 import ../helpers/mockclock
 import ../slots/helpers
 

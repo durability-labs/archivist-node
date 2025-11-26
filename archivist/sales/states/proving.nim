@@ -3,6 +3,7 @@ import pkg/questionable/results
 import ../../clock
 import ../../logutils
 import ../../utils/exceptions
+import ../../marketplace/abstractmarketplace
 import ../statemachine
 import ../salesagent
 import ../salescontext
@@ -24,7 +25,7 @@ method prove*(
     slot: Slot,
     challenge: ProofChallenge,
     onProve: OnProve,
-    market: Market,
+    marketplace: AbstractMarketplace,
     provingPeriod: Period,
 ) {.base, async.} =
   try:
@@ -33,7 +34,7 @@ method prove*(
       # In this state, there's nothing we can do except try again next time.
       return
     info "Submitting proof", provingPeriod = provingPeriod, slotId = slot.id
-    await market.submitProof(slot.id, proof)
+    await marketplace.submitProof(slot.id, proof)
   except CancelledError as error:
     trace "Submitting proof cancelled"
     raise error
@@ -43,7 +44,7 @@ method prove*(
 
 proc proveLoop(
     state: SaleProving,
-    market: Market,
+    marketplace: AbstractMarketplace,
     clock: Clock,
     request: StorageRequest,
     slotIndex: uint64,
@@ -59,26 +60,26 @@ proc proveLoop(
     slotId = slot.id
 
   proc getCurrentPeriod(): Future[Period] {.async.} =
-    let periodicity = await market.periodicity()
+    let periodicity = await marketplace.periodicity()
     return periodicity.periodOf(clock.now().Timestamp)
 
   proc waitUntilPeriod(period: Period) {.async.} =
-    let periodicity = await market.periodicity()
+    let periodicity = await marketplace.periodicity()
     # Ensure that we're past the period boundary by waiting an additional second
     await clock.waitUntil((periodicity.periodStart(period) + 1).toSecondsSince1970)
 
   while true:
     let provingPeriod = await getCurrentPeriod()
-    let slotState = await market.slotState(slot.id)
+    let slotState = await marketplace.slotState(slot.id)
 
     case slotState
     of SlotState.Filled:
       debug "Proving for new period"
-      if (await market.isProofRequired(slotId)) or
-          (await market.willProofBeRequired(slotId)):
-        let challenge = await market.getChallenge(slotId)
+      if (await marketplace.isProofRequired(slotId)) or
+          (await marketplace.willProofBeRequired(slotId)):
+        let challenge = await marketplace.getChallenge(slotId)
         info "Generating required proof", challenge = challenge
-        await state.prove(slot, challenge, onProve, market, provingPeriod)
+        await state.prove(slot, challenge, onProve, marketplace, provingPeriod)
         let periodAtFinish = await getCurrentPeriod()
         if periodAtFinish != provingPeriod:
           warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
@@ -123,14 +124,14 @@ method run*(
   without onProve =? context.onProve:
     raiseAssert "onProve callback not set"
 
-  without market =? context.market:
-    raiseAssert("market not set")
+  without marketplace =? context.marketplace:
+    raiseAssert("marketplace not set")
 
   without clock =? context.clock:
     raiseAssert("clock not set")
 
   try:
-    await state.proveLoop(market, clock, request, data.slotIndex, onProve)
+    await state.proveLoop(marketplace, clock, request, data.slotIndex, onProve)
     debug "Stopping proving.", requestId = data.requestId, slotIndex = data.slotIndex
     return some State(SalePayout())
   except CancelledError as e:

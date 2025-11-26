@@ -8,12 +8,12 @@ import pkg/archivist/sales/states/filling
 import pkg/archivist/sales/states/errored
 import pkg/archivist/sales/salesagent
 import pkg/archivist/sales/salescontext
-import pkg/archivist/market
+import pkg/archivist/marketplace/abstractmarketplace
 
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 import ../helpers/periods
 
@@ -21,7 +21,7 @@ asyncchecksuite "sales state 'initialproving'":
   let proof = Groth16Proof.example
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
-  let market = MockMarket.new()
+  let marketplace = MockMarketplace.new()
   let clock = MockClock.new()
 
   var state: SaleInitialProving
@@ -34,13 +34,14 @@ asyncchecksuite "sales state 'initialproving'":
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       receivedChallenge = challenge
       return success(proof)
-    let context = SalesContext(onProve: onProve.some, market: market, clock: clock)
+    let context =
+      SalesContext(onProve: onProve.some, marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     state = SaleInitialProving.new()
 
   proc allowProofToStart() {.async.} =
     # it won't start proving until the next period
-    await clock.advanceToNextPeriod(market)
+    await clock.advanceToNextPeriod(marketplace)
 
   test "switches to cancelled state when request expires":
     let next = state.onCancelled(request)
@@ -58,24 +59,24 @@ asyncchecksuite "sales state 'initialproving'":
     discard await future
 
   test "waits another period when the proof pointer is about to wrap around":
-    market.proofPointer = 250
+    marketplace.proofPointer = 250
     let future = state.run(agent)
     await allowProofToStart()
     check eventually clock.isWaiting
     check not future.finished
-    market.proofPointer = 100
+    marketplace.proofPointer = 100
     await allowProofToStart()
     discard await future
 
   test "onProve callback provides proof challenge":
-    market.proofChallenge = ProofChallenge.example
+    marketplace.proofChallenge = ProofChallenge.example
 
     let future = state.run(agent)
     await allowProofToStart()
 
     discard await future
 
-    check receivedChallenge == market.proofChallenge
+    check receivedChallenge == marketplace.proofChallenge
 
   test "switches to filling state when initial proving is complete":
     let future = state.run(agent)
@@ -92,7 +93,7 @@ asyncchecksuite "sales state 'initialproving'":
       return failure("oh no!")
 
     let proofFailedContext =
-      SalesContext(onProve: onProveFailed.some, market: market, clock: clock)
+      SalesContext(onProve: onProveFailed.some, marketplace: marketplace, clock: clock)
     agent = newSalesAgent(proofFailedContext, request.id, slotIndex, request.some)
 
     let future = state.run(agent)

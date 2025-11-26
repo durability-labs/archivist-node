@@ -6,7 +6,7 @@ import pkg/archivist/sales/salescontext
 import pkg/archivist/sales/statemachine
 
 import ../../asynctest
-import ../helpers/mockmarket
+import ../helpers/mockmarketplace
 import ../helpers/mockclock
 import ../helpers
 import ../examples
@@ -36,14 +36,14 @@ asyncchecksuite "Sales agent":
   var agent: SalesAgent
   var context: SalesContext
   var slotIndex: uint64
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var clock: MockClock
 
   setup:
-    market = MockMarket.new()
-    market.requestExpiry[request.id] = getTime().toUnix() + request.expiry.int64
+    marketplace = MockMarketplace.new()
+    marketplace.requestExpiry[request.id] = getTime().toUnix() + request.expiry.int64
     clock = MockClock.new()
-    context = SalesContext(market: market, clock: clock)
+    context = SalesContext(marketplace: marketplace, clock: clock)
     slotIndex = 0.uint64
     onCancelCalled = false
     onFailedCalled = false
@@ -55,7 +55,7 @@ asyncchecksuite "Sales agent":
 
   test "can retrieve request":
     agent = newSalesAgent(context, request.id, slotIndex, none StorageRequest)
-    market.requested = @[request]
+    marketplace.requested = @[request]
     await agent.retrieveRequest()
     check agent.data.request == some request
 
@@ -82,8 +82,8 @@ asyncchecksuite "Sales agent":
   test "current state onCancelled called when cancel emitted":
     agent.start(MockState.new())
     await agent.subscribe()
-    market.requestState[request.id] = RequestState.Cancelled
-    clock.set(market.requestExpiry[request.id] + 1)
+    marketplace.requestState[request.id] = RequestState.Cancelled
+    clock.set(marketplace.requestExpiry[request.id] + 1)
     check eventually onCancelCalled
 
   for requestState in {
@@ -92,8 +92,8 @@ asyncchecksuite "Sales agent":
     test "onCancelled is not called when request state is " & $requestState:
       agent.start(MockState.new())
       await agent.subscribe()
-      market.requestState[request.id] = requestState
-      clock.set(market.requestExpiry[request.id] + 1)
+      marketplace.requestState[request.id] = requestState
+      clock.set(marketplace.requestExpiry[request.id] + 1)
       await sleepAsync(100.millis)
       check not onCancelCalled
 
@@ -101,8 +101,8 @@ asyncchecksuite "Sales agent":
     test "cancelled future is finished when request state is " & $requestState:
       agent.start(MockState.new())
       await agent.subscribe()
-      market.requestState[request.id] = requestState
-      clock.set(market.requestExpiry[request.id] + 1)
+      marketplace.requestState[request.id] = requestState
+      clock.set(marketplace.requestExpiry[request.id] + 1)
       check eventually agent.data.cancelled.finished
 
   test "cancelled future is finished (cancelled) when onFulfilled called":

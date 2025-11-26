@@ -2,7 +2,7 @@ import pkg/questionable
 import pkg/metrics
 
 import ../../logutils
-import ../../market
+import ../../marketplace/abstractmarketplace
 import ../../utils/exceptions
 import ../salesagent
 import ../statemachine
@@ -32,22 +32,22 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let context = agent.context
-  let market = context.market
+  let marketplace = context.marketplace
 
   logScope:
     requestId = data.requestId
     slotIndex = data.slotIndex
 
   try:
-    let canReserve = await market.canReserveSlot(data.requestId, data.slotIndex)
+    let canReserve = await marketplace.canReserveSlot(data.requestId, data.slotIndex)
     if canReserve:
       try:
         trace "Reserving slot"
-        await market.reserveSlot(data.requestId, data.slotIndex)
+        await marketplace.reserveSlot(data.requestId, data.slotIndex)
       except SlotReservationNotAllowedError as e:
         debug "Slot cannot be reserved, ignoring", error = e.msg
         return some State(SaleIgnored(reprocessSlot: false, returnsCollateral: true))
-      except MarketError as e:
+      except MarketplaceError as e:
         return some State(SaleErrored(error: e))
       # other CatchableErrors are handled "automatically" by the SaleState
 

@@ -1,10 +1,11 @@
+import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
 
 import ../../blocktype as bt
 import ../../logutils
-import ../../market
 import ../../utils/exceptions
+import ../../marketplace/abstractmarketplace
 import ../salesagent
 import ../statemachine
 import ./cancelled
@@ -38,7 +39,7 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let context = agent.context
-  let market = context.market
+  let marketplace = context.marketplace
   let reservations = context.reservations
 
   without onStore =? context.onStore:
@@ -72,15 +73,15 @@ method run*(
   try:
     let requestId = request.id
     let slotId = slotId(requestId, data.slotIndex)
-    let requestState = await market.requestState(requestId)
-    let isRepairing = (await market.slotState(slotId)) == SlotState.Repair
+    let requestState = await marketplace.requestState(requestId)
+    let isRepairing = (await marketplace.slotState(slotId)) == SlotState.Repair
 
     trace "Retrieving expiry"
     var expiry: SecondsSince1970
     if state =? requestState and state == RequestState.Started:
-      expiry = await market.getRequestEnd(requestId)
+      expiry = await marketplace.getRequestEnd(requestId)
     else:
-      expiry = await market.requestExpiresAt(requestId)
+      expiry = await marketplace.requestExpiresAt(requestId)
 
     trace "Starting download"
     if err =?

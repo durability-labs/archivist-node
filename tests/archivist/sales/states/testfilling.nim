@@ -10,21 +10,21 @@ import pkg/archivist/sales/salescontext
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 suite "sales state 'filling'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
   var state: SaleFilling
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var clock: MockClock
   var agent: SalesAgent
 
   setup:
     clock = MockClock.new()
-    market = MockMarket.new()
-    let context = SalesContext(market: market, clock: clock)
+    marketplace = MockMarketplace.new()
+    let context = SalesContext(marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     state = SaleFilling.new()
 
@@ -40,19 +40,19 @@ suite "sales state 'filling'":
     let error = newException(
       SlotStateMismatchError, "Failed to fill slot because the slot is not free"
     )
-    market.setErrorOnFillSlot(error)
-    market.requested.add(request)
-    market.slotState[request.slotId(slotIndex)] = SlotState.Filled
+    marketplace.setErrorOnFillSlot(error)
+    marketplace.requested.add(request)
+    marketplace.slotState[request.slotId(slotIndex)] = SlotState.Filled
 
     let next = !(await state.run(agent))
     check next of SaleIgnored
     check SaleIgnored(next).reprocessSlot == false
 
   test "run switches to errored with other error ":
-    let error = newException(MarketError, "some error")
-    market.setErrorOnFillSlot(error)
-    market.requested.add(request)
-    market.slotState[request.slotId(slotIndex)] = SlotState.Filled
+    let error = newException(MarketplaceError, "some error")
+    marketplace.setErrorOnFillSlot(error)
+    marketplace.requested.add(request)
+    marketplace.slotState[request.slotId(slotIndex)] = SlotState.Filled
 
     let next = !(await state.run(agent))
     check next of SaleErrored

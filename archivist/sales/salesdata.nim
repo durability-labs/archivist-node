@@ -1,6 +1,5 @@
 import pkg/chronos
 import ../contracts/requests
-import ../market
 import ./reservations
 import ./slotqueue
 

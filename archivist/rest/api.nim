@@ -643,7 +643,7 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
         return RestApiResponse.error(Http400, error.msg, headers = headers)
 
       let reservations = contracts.sales.context.reservations
-      let market = contracts.sales.context.market
+      let marketplace = contracts.sales.context.marketplace
 
       if error =? (await reservations.get(keyId, Availability)).errorOption:
         if error of NotExistsError:
@@ -724,7 +724,8 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
           headers = headers,
         )
 
-      let requestDurationLimit = await contracts.purchasing.market.requestDurationLimit
+      let requestDurationLimit =
+        await contracts.purchasing.marketplace.requestDurationLimit
       if params.duration > requestDurationLimit:
         return RestApiResponse.error(
           Http422,

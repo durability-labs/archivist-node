@@ -4,18 +4,18 @@ import pkg/archivist/contracts/requests
 import pkg/archivist/sales/states/ignored
 import pkg/archivist/sales/salesagent
 import pkg/archivist/sales/salescontext
-import pkg/archivist/market
+import pkg/archivist/marketplace/abstractmarketplace
 
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'ignored'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
-  let market = MockMarket.new()
+  let marketplace = MockMarketplace.new()
   let clock = MockClock.new()
   let currentCollateral = UInt256.example
 
@@ -31,7 +31,7 @@ asyncchecksuite "sales state 'ignored'":
       reprocessSlotWas = reprocessSlot
       returnedCollateralValue = returnedCollateral
 
-    let context = SalesContext(market: market, clock: clock)
+    let context = SalesContext(marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     agent.onCleanUp = onCleanUp
     state = SaleIgnored.new()

@@ -22,8 +22,8 @@ method run*(
   try:
     archivist_purchases_unknown.inc()
     let purchase = Purchase(machine)
-    if (request =? await purchase.market.getRequest(purchase.requestId)) and
-        (requestState =? await purchase.market.requestState(purchase.requestId)):
+    if (request =? await purchase.marketplace.getRequest(purchase.requestId)) and
+        (requestState =? await purchase.marketplace.requestState(purchase.requestId)):
       purchase.request = some request
 
       case requestState

@@ -3,18 +3,18 @@ import pkg/stint
 import pkg/chronos
 import pkg/questionable
 import pkg/nimcrypto
-import ./market
+import ./marketplace/abstractmarketplace
 import ./clock
 import ./purchasing/purchase
 
 export questionable
 export chronos
-export market
+export abstractmarketplace
 export purchase
 
 type
   Purchasing* = ref object
-    market*: Market
+    marketplace*: AbstractMarketplace
     clock: Clock
     purchases: Table[PurchaseId, Purchase]
     proofProbability*: UInt256
@@ -23,14 +23,18 @@ type
 
 const DefaultProofProbability = 100.u256
 
-proc new*(_: type Purchasing, market: Market, clock: Clock): Purchasing =
-  Purchasing(market: market, clock: clock, proofProbability: DefaultProofProbability)
+proc new*(
+    _: type Purchasing, marketplace: AbstractMarketplace, clock: Clock
+): Purchasing =
+  Purchasing(
+    marketplace: marketplace, clock: clock, proofProbability: DefaultProofProbability
+  )
 
 proc load*(purchasing: Purchasing) {.async.} =
-  let market = purchasing.market
-  let requestIds = await market.myRequests()
+  let marketplace = purchasing.marketplace
+  let requestIds = await marketplace.myRequests()
   for requestId in requestIds:
-    let purchase = Purchase.new(requestId, purchasing.market, purchasing.clock)
+    let purchase = Purchase.new(requestId, purchasing.marketplace, purchasing.clock)
     purchase.load()
     purchasing.purchases[purchase.id] = purchase
 
@@ -50,13 +54,13 @@ proc populate*(
     var id = result.nonce.toArray
     doAssert randomBytes(id) == 32
     result.nonce = Nonce(id)
-  result.client = await purchasing.market.getSigner()
+  result.client = await purchasing.marketplace.getSigner()
 
 proc purchase*(
     purchasing: Purchasing, request: StorageRequest
 ): Future[Purchase] {.async.} =
   let request = await purchasing.populate(request)
-  let purchase = Purchase.new(request, purchasing.market, purchasing.clock)
+  let purchase = Purchase.new(request, purchasing.marketplace, purchasing.clock)
   purchase.start()
   purchasing.purchases[purchase.id] = purchase
   return purchase

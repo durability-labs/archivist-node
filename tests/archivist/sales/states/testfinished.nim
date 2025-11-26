@@ -5,12 +5,12 @@ import pkg/archivist/sales/states/cancelled
 import pkg/archivist/sales/states/failed
 import pkg/archivist/sales/salesagent
 import pkg/archivist/sales/salescontext
-import pkg/archivist/market
+import pkg/archivist/marketplace/abstractmarketplace
 
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'finished'":
@@ -20,7 +20,7 @@ asyncchecksuite "sales state 'finished'":
 
   let currentCollateral = UInt256.example
 
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var state: SaleFinished
   var agent: SalesAgent
   var reprocessSlotWas = bool.none
@@ -28,14 +28,14 @@ asyncchecksuite "sales state 'finished'":
   var saleCleared = bool.none
 
   setup:
-    market = MockMarket.new()
+    marketplace = MockMarketplace.new()
     let onCleanUp = proc(
         reprocessSlot = false, returnedCollateral = UInt256.none
     ) {.async: (raises: []).} =
       reprocessSlotWas = some reprocessSlot
       returnedCollateralValue = returnedCollateral
 
-    let context = SalesContext(market: market, clock: clock)
+    let context = SalesContext(marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     agent.onCleanUp = onCleanUp
     agent.context.onClear = some proc(request: StorageRequest, idx: uint64) =

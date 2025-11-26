@@ -1,5 +1,6 @@
 import ../../logutils
 import ../../utils/exceptions
+import ../../marketplace/abstractmarketplace
 import ../salesagent
 import ../statemachine
 import ./errored
@@ -13,10 +14,10 @@ method `$`*(state: SaleCancelled): string =
   "SaleCancelled"
 
 proc slotIsFilledByMe(
-    market: Market, requestId: RequestId, slotIndex: uint64
-): Future[bool] {.async: (raises: [CancelledError, MarketError]).} =
-  let host = await market.getHost(requestId, slotIndex)
-  let me = await market.getSigner()
+    marketplace: AbstractMarketplace, requestId: RequestId, slotIndex: uint64
+): Future[bool] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  let host = await marketplace.getHost(requestId, slotIndex)
+  let me = await marketplace.getSigner()
 
   return host == me.some
 
@@ -25,7 +26,7 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let agent = SalesAgent(machine)
   let data = agent.data
-  let market = agent.context.market
+  let marketplace = agent.context.marketplace
 
   without request =? data.request:
     raiseAssert "no sale request"
@@ -33,15 +34,15 @@ method run*(
   try:
     var returnedCollateral = UInt256.none
 
-    if await slotIsFilledByMe(market, data.requestId, data.slotIndex):
+    if await slotIsFilledByMe(marketplace, data.requestId, data.slotIndex):
       debug "Collecting collateral and partial payout",
         requestId = data.requestId, slotIndex = data.slotIndex
 
       let slot = Slot(request: request, slotIndex: data.slotIndex)
-      let currentCollateral = await market.currentCollateral(slot.id)
+      let currentCollateral = await marketplace.currentCollateral(slot.id)
 
       try:
-        await market.freeSlot(slot.id)
+        await marketplace.freeSlot(slot.id)
       except SlotStateMismatchError as e:
         warn "Failed to free slot because slot is already free", error = e.msg
 

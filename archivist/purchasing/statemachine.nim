@@ -1,16 +1,16 @@
 import ../utils/asyncstatemachine
-import ../market
+import ../marketplace/abstractmarketplace
 import ../clock
 import ../errors
 
-export market
+export abstractmarketplace
 export clock
 export asyncstatemachine
 
 type
   Purchase* = ref object of Machine
     future*: Future[void]
-    market*: Market
+    marketplace*: AbstractMarketplace
     clock*: Clock
     requestId*: RequestId
     request*: ?StorageRequest

@@ -2,6 +2,7 @@ import pkg/questionable/results
 import ../../clock
 import ../../logutils
 import ../../utils/exceptions
+import ../../marketplace/abstractmarketplace
 import ../statemachine
 import ../salesagent
 import ./filling
@@ -30,11 +31,14 @@ proc waitUntilNextPeriod(clock: Clock, periodicity: Periodicity) {.async.} =
   await clock.waitUntil((periodEnd + 1).toSecondsSince1970)
 
 proc waitForStableChallenge(
-    market: Market, clock: Clock, periodicity: Periodicity, slotId: SlotId
+    marketplace: AbstractMarketplace,
+    clock: Clock,
+    periodicity: Periodicity,
+    slotId: SlotId,
 ) {.async.} =
-  let downtime = await market.proofDowntime()
+  let downtime = await marketplace.proofDowntime()
   await clock.waitUntilNextPeriod(periodicity)
-  while (await market.getPointer(slotId)) > (256 - downtime):
+  while (await marketplace.getPointer(slotId)) > (256 - downtime):
     await clock.waitUntilNextPeriod(periodicity)
 
 method run*(
@@ -42,7 +46,7 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
   let context = SalesAgent(machine).context
-  let market = context.market
+  let marketplace = context.marketplace
   let clock = context.clock
 
   without request =? data.request:
@@ -52,18 +56,18 @@ method run*(
     raiseAssert "onProve callback not set"
 
   try:
-    let periodicity = await market.periodicity()
+    let periodicity = await marketplace.periodicity()
 
     debug "Waiting for a proof challenge that is valid for the entire period"
     let slot = Slot(request: request, slotIndex: data.slotIndex)
-    await waitForStableChallenge(market, clock, periodicity, slot.id)
+    await waitForStableChallenge(marketplace, clock, periodicity, slot.id)
     let provingPeriod = periodicity.periodOf(clock.now().Timestamp)
 
     info "Generating initial proof",
       provingPeriod = provingPeriod,
       requestId = data.requestId,
       slotIndex = data.slotIndex
-    let challenge = await context.market.getChallenge(slot.id)
+    let challenge = await context.marketplace.getChallenge(slot.id)
     without proof =? (await onProve(slot, challenge, provingPeriod)), err:
       error "Failed to generate initial proof", error = err.msg
       return some State(SaleErrored(error: err))

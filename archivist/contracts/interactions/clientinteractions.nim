@@ -2,7 +2,6 @@ import pkg/ethers
 
 import ../../purchasing
 import ../../logutils
-import ../market
 import ../clock
 import ./interactions
 

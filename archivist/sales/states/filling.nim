@@ -1,6 +1,6 @@
 import pkg/stint
 import ../../logutils
-import ../../market
+import ../../marketplace/abstractmarketplace
 import ../../utils/exceptions
 import ../statemachine
 import ../salesagent
@@ -29,7 +29,7 @@ method run*(
     state: SaleFilling, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
-  let market = SalesAgent(machine).context.market
+  let marketplace = SalesAgent(machine).context.marketplace
 
   without (request =? data.request):
     raiseAssert "Request not set"
@@ -39,19 +39,21 @@ method run*(
     slotIndex = data.slotIndex
 
   try:
-    without collateral =? await market.slotCollateral(data.requestId, data.slotIndex),
-      err:
+    without collateral =?
+      await marketplace.slotCollateral(data.requestId, data.slotIndex), err:
       error "Failure attempting to fill slot: unable to calculate collateral",
         error = err.msg
       return some State(SaleErrored(error: err))
 
     debug "Filling slot"
     try:
-      await market.fillSlot(data.requestId, data.slotIndex, state.proof, collateral)
+      await marketplace.fillSlot(
+        data.requestId, data.slotIndex, state.proof, collateral
+      )
     except SlotStateMismatchError as e:
       debug "Slot is already filled, ignoring slot"
       return some State(SaleIgnored(reprocessSlot: false, returnsCollateral: true))
-    except MarketError as e:
+    except MarketplaceError as e:
       return some State(SaleErrored(error: e))
     # other CatchableErrors are handled "automatically" by the SaleState
 

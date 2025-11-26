@@ -12,7 +12,7 @@ import pkg/archivist/sales/salescontext
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'proving'":
@@ -20,7 +20,7 @@ asyncchecksuite "sales state 'proving'":
   let request = slot.request
   let proof = Groth16Proof.example
 
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var clock: MockClock
   var agent: SalesAgent
   var state: SaleProving
@@ -28,18 +28,19 @@ asyncchecksuite "sales state 'proving'":
 
   setup:
     clock = MockClock.new()
-    market = MockMarket.new()
+    marketplace = MockMarketplace.new()
     let onProve = proc(
         slot: Slot, challenge: ProofChallenge, period: Period
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       receivedChallenge = challenge
       return success(proof)
-    let context = SalesContext(market: market, clock: clock, onProve: onProve.some)
+    let context =
+      SalesContext(marketplace: marketplace, clock: clock, onProve: onProve.some)
     agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
     state = SaleProving.new()
 
-  proc advanceToNextPeriod(market: Market) {.async.} =
-    let periodicity = await market.periodicity()
+  proc advanceToNextPeriod(marketplace: AbstractMarketplace) {.async.} =
+    let periodicity = await marketplace.periodicity()
     let current = periodicity.periodOf(clock.now().Timestamp)
     let periodEnd = periodicity.periodEnd(current)
     clock.set(periodEnd.toSecondsSince1970 + 1)
@@ -58,13 +59,13 @@ asyncchecksuite "sales state 'proving'":
     proc onProofSubmission(id: SlotId) =
       receivedIds.add(id)
 
-    let subscription = await market.subscribeProofSubmission(onProofSubmission)
-    market.slotState[slot.id] = SlotState.Filled
+    let subscription = await marketplace.subscribeProofSubmission(onProofSubmission)
+    marketplace.slotState[slot.id] = SlotState.Filled
 
     let future = state.run(agent)
 
-    market.setProofRequired(slot.id, true)
-    await market.advanceToNextPeriod()
+    marketplace.setProofRequired(slot.id, true)
+    await marketplace.advanceToNextPeriod()
 
     check eventually receivedIds.contains(slot.id)
 
@@ -72,34 +73,34 @@ asyncchecksuite "sales state 'proving'":
     await subscription.unsubscribe()
 
   test "switches to payout state when request is finished":
-    market.slotState[slot.id] = SlotState.Filled
+    marketplace.slotState[slot.id] = SlotState.Filled
 
     let future = state.run(agent)
 
-    market.slotState[slot.id] = SlotState.Finished
-    await market.advanceToNextPeriod()
+    marketplace.slotState[slot.id] = SlotState.Finished
+    await marketplace.advanceToNextPeriod()
 
     check eventually future.finished
     check !(future.read()) of SalePayout
 
   test "switches to error state when slot is no longer filled":
-    market.slotState[slot.id] = SlotState.Filled
+    marketplace.slotState[slot.id] = SlotState.Filled
 
     let future = state.run(agent)
 
-    market.slotState[slot.id] = SlotState.Free
-    await market.advanceToNextPeriod()
+    marketplace.slotState[slot.id] = SlotState.Free
+    await marketplace.advanceToNextPeriod()
 
     check eventually future.finished
     check !(future.read()) of SaleErrored
 
   test "onProve callback provides proof challenge":
-    market.proofChallenge = ProofChallenge.example
-    market.slotState[slot.id] = SlotState.Filled
-    market.setProofRequired(slot.id, true)
+    marketplace.proofChallenge = ProofChallenge.example
+    marketplace.slotState[slot.id] = SlotState.Filled
+    marketplace.setProofRequired(slot.id, true)
 
     let future = state.run(agent)
 
-    check eventually receivedChallenge == market.proofChallenge
+    check eventually receivedChallenge == marketplace.proofChallenge
 
     await future.cancelAndWait()

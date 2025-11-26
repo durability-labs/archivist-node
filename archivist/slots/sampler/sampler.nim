@@ -15,7 +15,7 @@ import pkg/questionable/results
 import pkg/stew/arrayops
 
 import ../../logutils
-import ../../market
+import ../../marketplace/abstractmarketplace
 import ../../blocktype as bt
 import ../../merkletree
 import ../../manifest

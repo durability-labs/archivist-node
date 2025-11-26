@@ -19,7 +19,7 @@ method run*(
 
   try:
     warn "Request failed, withdrawing remaining funds", requestId = purchase.requestId
-    await purchase.market.withdrawFunds(purchase.requestId)
+    await purchase.marketplace.withdrawFunds(purchase.requestId)
   except CancelledError as e:
     trace "PurchaseFailed.run was cancelled", error = e.msgDetail
   except CatchableError as e:

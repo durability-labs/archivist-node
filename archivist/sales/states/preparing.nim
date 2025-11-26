@@ -3,7 +3,7 @@ import pkg/questionable/results
 import pkg/metrics
 
 import ../../logutils
-import ../../market
+import ../../marketplace/abstractmarketplace
 import ../../utils/exceptions
 import ../salesagent
 import ../statemachine
@@ -44,7 +44,7 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let context = agent.context
-  let market = context.market
+  let marketplace = context.marketplace
   let reservations = context.reservations
 
   try:
@@ -57,7 +57,7 @@ method run*(
       return some State(SaleErrored(error: error))
 
     let slotId = slotId(data.requestId, data.slotIndex)
-    let state = await market.slotState(slotId)
+    let state = await marketplace.slotState(slotId)
     if state != SlotState.Free and state != SlotState.Repair:
       return some State(SaleIgnored(reprocessSlot: false))
 
@@ -71,7 +71,7 @@ method run*(
       pricePerBytePerSecond = request.ask.pricePerBytePerSecond
       collateralPerByte = request.ask.collateralPerByte
 
-    let requestEnd = await market.getRequestEnd(data.requestId)
+    let requestEnd = await marketplace.getRequestEnd(data.requestId)
 
     without availability =?
       await reservations.findAvailability(

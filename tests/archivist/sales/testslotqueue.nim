@@ -8,7 +8,7 @@ import pkg/archivist/sales/slotqueue
 
 import ../../asynctest
 import ../helpers
-import ../helpers/mockmarket
+import ../helpers/mockmarketplace
 import ../helpers/mockslotqueueitem
 import ../examples
 

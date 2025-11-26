@@ -118,9 +118,9 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
         quit QuitFailure
       marketplaceAddress = lookup
 
-    let marketplace = MarketplaceContract.new(marketplaceAddress, signer)
-    let market = OnChainMarket.new(
-      marketplace, config.rewardRecipient, config.marketplaceRequestCacheSize
+    let contract = MarketplaceContract.new(marketplaceAddress, signer)
+    let marketplace = OnChainMarketplace.new(
+      contract, config.rewardRecipient, config.marketplaceRequestCacheSize
     )
 
     let clock = s.getClock(provider)
@@ -130,12 +130,12 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
     var host: ?HostInteractions
     var validator: ?ValidatorInteractions
 
-    if error =? (await market.loadConfig()).errorOption:
-      fatal "Cannot load market configuration", error = error.msg
+    if error =? (await marketplace.loadConfig()).errorOption:
+      fatal "Cannot load marketplace configuration", error = error.msg
       quit QuitFailure
 
-    let purchasing = Purchasing.new(market, clock)
-    let sales = Sales.new(market, clock, repo)
+    let purchasing = Purchasing.new(marketplace, clock)
+    let sales = Sales.new(marketplace, clock, repo)
     client = some ClientInteractions.new(clock, purchasing)
     host = some HostInteractions.new(clock, sales)
 
@@ -146,7 +146,7 @@ proc bootstrapInteractions(s: NodeServer): Future[void] {.async.} =
         ), err:
         error "Invalid validation parameters", err = err.msg
         quit QuitFailure
-      let validation = Validation.new(clock, market, validationConfig)
+      let validation = Validation.new(clock, marketplace, validationConfig)
       validator = some ValidatorInteractions.new(clock, validation)
 
     s.archivistNode.contracts = (client, host, validator)

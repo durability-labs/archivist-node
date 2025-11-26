@@ -3,6 +3,7 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 import ../contracts/requests
+import ../marketplace/abstractmarketplace
 import ../errors
 import ../logutils
 import ../utils/exceptions
@@ -56,14 +57,14 @@ proc newSalesAgent*(
 
 proc retrieveRequest*(agent: SalesAgent) {.async.} =
   let data = agent.data
-  let market = agent.context.market
+  let marketplace = agent.context.marketplace
   if data.request.isNone:
-    data.request = await market.getRequest(data.requestId)
+    data.request = await marketplace.getRequest(data.requestId)
 
 proc retrieveRequestState*(agent: SalesAgent): Future[?RequestState] {.async.} =
   let data = agent.data
-  let market = agent.context.market
-  return await market.requestState(data.requestId)
+  let marketplace = agent.context.marketplace
+  return await marketplace.requestState(data.requestId)
 
 func state*(agent: SalesAgent): ?string =
   proc description(state: State): string =
@@ -80,8 +81,8 @@ proc subscribeCancellation(agent: SalesAgent) {.async.} =
       return
 
     try:
-      let market = agent.context.market
-      let expiry = await market.requestExpiresAt(data.requestId)
+      let marketplace = agent.context.marketplace
+      let expiry = await marketplace.requestExpiresAt(data.requestId)
 
       while true:
         let deadline = max(clock.now, expiry) + 1

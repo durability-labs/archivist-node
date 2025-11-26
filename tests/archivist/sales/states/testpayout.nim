@@ -5,12 +5,12 @@ import pkg/archivist/sales/states/payout
 import pkg/archivist/sales/states/finished
 import pkg/archivist/sales/salesagent
 import pkg/archivist/sales/salescontext
-import pkg/archivist/market
+import pkg/archivist/marketplace/abstractmarketplace
 
 import ../../../asynctest
 import ../../examples
 import ../../helpers
-import ../../helpers/mockmarket
+import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
 
 asyncchecksuite "sales state 'payout'":
@@ -20,19 +20,19 @@ asyncchecksuite "sales state 'payout'":
 
   let currentCollateral = UInt256.example
 
-  var market: MockMarket
+  var marketplace: MockMarketplace
   var state: SalePayout
   var agent: SalesAgent
 
   setup:
-    market = MockMarket.new()
+    marketplace = MockMarketplace.new()
 
-    let context = SalesContext(market: market, clock: clock)
+    let context = SalesContext(marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     state = SalePayout.new()
 
   test "switches to 'finished' state and provides returnedCollateral":
-    market.fillSlot(
+    marketplace.fillSlot(
       requestId = request.id,
       slotIndex = slotIndex,
       proof = Groth16Proof.default,
