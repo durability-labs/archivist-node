@@ -1,6 +1,4 @@
-# Setup - The plan:
-1. Read setup user input file
-
+# Setup - The simpler plan:
 1. Network:
   Mainnet*[ ]   Testnet*[X]   Devnet*[ ]    None [ ]
 
@@ -24,9 +22,8 @@
   logfile
   loglevel
 
-1. Write setup user input file
-1. Write or update config.toml
 1. ping config endpoint if needed
+1. Write config.toml
 1. if prover + main/test/devnet: run cirdl
 1. if testnet/devnet + new key: show faucet links + pubkey
 1. if webUI: open webUI
