@@ -1,5 +1,5 @@
-import ./choicequestion
-import ./app
+import ../choicequestion
+import ../app
 
 proc setNetwork(app: App, network: string) =
   app.fetchNetworkConfig(network)
@@ -20,7 +20,7 @@ proc getNetworkQuestion*(): ChoiceQuestion =
     title: "Choose a network?",
     options: @[
       ChoiceOption(
-        title: "mainnet",
+        title: "Mainnet",
         description: @[
           "Archivist mainnet where durable data storage is traded using tokens with real monetary value."
         ],
@@ -28,7 +28,7 @@ proc getNetworkQuestion*(): ChoiceQuestion =
         action: setMainnet
       ),
       ChoiceOption(
-        title: "testnet",
+        title: "Testnet",
         description: @[
           "Network for testing new Archivist versions before they launch on mainnet.",
           "Tokens used hold no real value. Ideal for testing new node installations."
@@ -37,7 +37,7 @@ proc getNetworkQuestion*(): ChoiceQuestion =
         action: setTestnet
       ),
       ChoiceOption(
-        title: "devnet",
+        title: "Devnet",
         description: @[
           "Unstable network used for development of Archivist.",
           "Tokens used hold no real value."
@@ -46,7 +46,7 @@ proc getNetworkQuestion*(): ChoiceQuestion =
         action: setDevnet
       ),
       ChoiceOption(
-        title: "none",
+        title: "None",
         description: @[
           "Setup will not configure a network for you. You can add bootstrap-records,",
           "an RPC endpoint, and a marketplace smartcontract address to the configuration file manually."

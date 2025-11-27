@@ -8,3 +8,6 @@ proc writeConfigLine*(app: App, line: string) =
 
 proc fetchNetworkConfig*(app: App, network: string) =
   info "fetch network object", network
+
+proc createNewEthKeyfile*(app: App, filename: string) =
+  info "create a new key file here", filename

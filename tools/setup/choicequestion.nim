@@ -45,7 +45,7 @@ proc print(i: int, option: ChoiceOption) =
     p3("*: " & option.warning)
 
 proc print(question: ChoiceQuestion) =
-  p1(question.title)
+  p1("[ " & question.title & " ]")
   var i = 1
   for option in question.options:
     print(i, option)
@@ -78,9 +78,7 @@ proc getSelectedOption(question: ChoiceQuestion): ChoiceOption =
       p1("quit")
       quit(0)
     if input.len == 0 and question.hasDefault:
-      let defaultOption = question.getDefault()
-      p2("default: " & defaultOption.title)
-      return defaultOption
+      return question.getDefault()
 
     try:
       let selected = parseInt(input)
@@ -91,9 +89,13 @@ proc getSelectedOption(question: ChoiceQuestion): ChoiceOption =
     p1("Invalid input received")
     newline()
 
-proc activate*(question: ChoiceQuestion, app: App) =
+proc getSelectedAction*(question: ChoiceQuestion): OptionAction =
+  newline()
   newline()
   print(question)
 
   let selectedOption = getSelectedOption(question)
-  selectedOption.action(app)
+  p2("selected: " & selectedOption.title)
+  newline()
+
+  return selectedOption.action
