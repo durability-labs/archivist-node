@@ -349,7 +349,7 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
         elif err of QueueNotRunningError:
           warn "Failed to push item to queue because queue is not running",
             error = err.msgDetail
-    except CancelledError as e:
+    except CancelledError:
       trace "sales.addSlotToQueue was cancelled"
 
   # We could get rid of this by adding the storage ask in the SlotFreed event,
@@ -518,14 +518,9 @@ proc subscribe(sales: Sales) {.async.} =
   await sales.subscribeCancellation()
   await sales.subscribeSlotReservationsFull()
 
-proc unsubscribe(sales: Sales) {.async.} =
+proc unsubscribe(sales: Sales) {.async: (raises:[]).} =
   for sub in sales.subscriptions:
-    try:
-      await sub.unsubscribe()
-    except CancelledError as error:
-      raise error
-    except CatchableError as e:
-      error "Unable to unsubscribe from subscription", error = e.msg
+    await sub.unsubscribe()
 
 proc start*(sales: Sales) {.async.} =
   await sales.load()
@@ -533,11 +528,11 @@ proc start*(sales: Sales) {.async.} =
   await sales.subscribe()
   sales.running = true
 
-proc stop*(sales: Sales) {.async.} =
+proc stop*(sales: Sales) {.async: (raises: []).} =
   trace "stopping sales"
   sales.running = false
   await sales.context.slotQueue.stop()
-  await sales.unsubscribe()
+  await noCancel sales.unsubscribe()
   await sales.trackedFutures.cancelTracked()
 
   for agent in sales.agents:

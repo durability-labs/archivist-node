@@ -383,7 +383,7 @@ proc start*(self: SlotQueue) =
     let worker = self.runWorker()
     self.workers.add(worker)
 
-proc stop*(self: SlotQueue) {.async.} =
+proc stop*(self: SlotQueue) {.async: (raises: []).} =
   if not self.running:
     return
 
