@@ -19,6 +19,9 @@ proc main() =
   for action in actions:
     action(app)
 
+  info "Wrapping up..."
+  app.finalize()
+
 when isMainModule:
   main()
   info "All done"

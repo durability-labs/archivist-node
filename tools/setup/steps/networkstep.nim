@@ -2,7 +2,7 @@ import ../choicequestion
 import ../app
 
 proc setNetwork(app: App, network: string) =
-  app.fetchNetworkConfig(network)
+  discard app.fetchNetworkConfig(network)
   app.writeConfigLine("config line!")
 
 proc setMainnet(app: App) =
