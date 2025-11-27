@@ -146,9 +146,9 @@ proc start*(validation: Validation) {.async.} =
   await validation.restoreHistoricalState()
   validation.running = validation.run()
 
-proc stop*(validation: Validation) {.async.} =
+proc stop*(validation: Validation) {.async: (raises: []).} =
   if not validation.running.isNil and not validation.running.finished:
     await validation.running.cancelAndWait()
   while validation.subscriptions.len > 0:
     let subscription = validation.subscriptions.pop()
-    await subscription.unsubscribe()
+    await noCancel subscription.unsubscribe()
