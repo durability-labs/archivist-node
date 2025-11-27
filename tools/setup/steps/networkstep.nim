@@ -1,9 +1,21 @@
+import std/sequtils
+import std/strutils
+
 import ../choicequestion
 import ../app
 
 proc setNetwork(app: App, network: string) =
-  discard app.fetchNetworkConfig(network)
-  app.writeConfigLine("config line!")
+  let config = app.fetchNetworkConfig(network)
+  let records = config.spr.records.mapIt(
+    "\"" & it & "\""
+  ).join(",")
+
+  app.writeConfigLine("# Bootstrap signed-peer-records for " & network & ":")
+  app.writeConfigLine("bootstrap-node=[" & records & "]\n")
+
+  app.writeConfigLine("# Enable marketplace connectivity:")
+  app.writeConfigLine("persistence=1")
+  app.writeConfigLine("eth-provider=\"" & config.rpcs[0] & "\"\n") # todo: Select a random one?
 
 proc setMainnet(app: App) =
   app.setNetwork("mainnet")
@@ -13,6 +25,15 @@ proc setTestnet(app: App) =
 
 proc setDevnet(app: App) =
   app.setNetwork("devnet")
+
+proc writeExample(app: App) =
+  app.writeConfigLine("# example bootstrap signed-peer-records:")
+  app.writeConfigLine("# bootstrap-node=[\"spr:Ci...\",\"spr:Ci...\"]\n")
+
+  app.writeConfigLine("# Enable marketplace connectivity:")
+  app.writeConfigLine("persistence=1")
+  app.writeConfigLine("# example eth-provider:")
+  app.writeConfigLine("# eth-provider=\"https://eth-rpc-provider.here\"\n")
 
 proc getNetworkQuestion*(): ChoiceQuestion = 
   let networkWarning = "Setup will connect to a Durability-Labs server to fetch required network information."
@@ -52,7 +73,7 @@ proc getNetworkQuestion*(): ChoiceQuestion =
           "an RPC endpoint, and a marketplace smartcontract address to the configuration file manually."
         ],
         warning: "",
-        action: proc(app: App) = discard
+        action: writeExample
       )
     ],
     defaultIndex: 1

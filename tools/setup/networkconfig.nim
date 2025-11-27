@@ -21,6 +21,7 @@ type
   NetworkConfig* = object
     latest* {.serialize.}: string
     sprs* {.serialize.}: seq[ArchivistSprEntry]
+    rpcs* {.serialize.}: seq[string]
     marketplace* {.serialize.}: seq[ArchivistMarketplaceEntry]
 
   ArchivistSprEntry* = object
@@ -35,6 +36,7 @@ type
 type
   ArchivistNetwork* = object
     spr*: ArchivistSprEntry
+    rpcs* {.serialize.}: seq[string]
     marketplace*: ArchivistMarketplaceEntry
 
 # Connector
@@ -96,6 +98,7 @@ proc mapToVersion(fullModel: NetworkConfig): ArchivistNetwork =
   info "Mapping to version", version=selected
   return ArchivistNetwork(
     spr: fullModel.sprs.filterIt(it.supportedVersions.contains(selected))[0],
+    rpcs: fullModel.rpcs,
     marketplace:
       fullModel.marketplace.filterIt(it.supportedVersions.contains(selected))[0]
   )

@@ -4,7 +4,13 @@ import ../app
 proc genNewKey(app: App) =
   let filename = "eth.key"
   app.createNewEthKeyfile(filename)
-  app.writeConfigLine("keyfile=" & filename)
+
+  app.writeConfigLine("# Archivist node private key:")
+  app.writeConfigLine("eth-private-key=" & filename & "\n")
+
+proc writeExample(app: App) =
+  app.writeConfigLine("# example Archivist node private key:")
+  app.writeConfigLine("# eth-private-key=archivist_ethereum.key\n")
 
 proc getEthKeyQuestion*(): ChoiceQuestion = 
   return ChoiceQuestion(
@@ -25,7 +31,7 @@ proc getEthKeyQuestion*(): ChoiceQuestion =
           "the configuration file manually."
         ],
         warning: "",
-        action: proc(app: App) = discard
+        action: writeExample
       )
     ],
     defaultIndex: 0
