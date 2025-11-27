@@ -41,7 +41,7 @@ proc load*(purchasing: Purchasing) {.async.} =
 proc start*(purchasing: Purchasing) {.async.} =
   await purchasing.load()
 
-proc stop*(purchasing: Purchasing) {.async.} =
+proc stop*(purchasing: Purchasing) {.async: (raises:[]).} =
   discard
 
 proc populate*(
