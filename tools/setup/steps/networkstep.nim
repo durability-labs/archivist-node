@@ -38,7 +38,7 @@ proc writeExample(app: App) =
 proc getNetworkQuestion*(): ChoiceQuestion = 
   let networkWarning = "Setup will connect to a Durability-Labs server to fetch required network information."
   return ChoiceQuestion(
-    title: "Choose a network?",
+    title: "Choose a network",
     options: @[
       ChoiceOption(
         title: "Mainnet",

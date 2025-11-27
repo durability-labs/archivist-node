@@ -3,6 +3,7 @@ import ./app
 import ./choicequestion
 import ./steps/networkstep
 import ./steps/ethkeystep
+import ./steps/modestep
 
 proc main() =
   info "Archivist Setup"
@@ -11,7 +12,8 @@ proc main() =
     app = App()
     actions = @[
       getNetworkQuestion().getSelectedAction(),
-      getEthKeyQuestion().getSelectedAction()
+      getEthKeyQuestion().getSelectedAction(),
+      getModeQuestion().getSelectedAction()
     ]
 
   info "Performing selected actions..."

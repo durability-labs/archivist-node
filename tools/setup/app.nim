@@ -9,6 +9,8 @@ type
     configLines: seq[string]
     networkConfig: ?ArchivistNetwork
 
+    circuitDir*: string # todo this and others like it will certainly be their own object.
+
 proc writeConfigLine*(app: App, line: string) =
   app.configLines.add(line)
 
@@ -30,6 +32,9 @@ proc createNewEthKeyfile*(app: App, filename: string) =
   let f = open(filename, fmWrite)
   f.writeLine("0x" & keyStr)
   f.close()
+
+proc runCircuitDownloader*(app: App) =
+  info "run cirdl here!"
 
 proc writeLinesToFile(app: App) =
   let filename = "config.toml"
