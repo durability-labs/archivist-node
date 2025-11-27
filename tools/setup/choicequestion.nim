@@ -2,11 +2,15 @@ import std/rdstdin
 import std/sequtils
 import std/strutils
 
+import ./app
+
 type
+  OptionAction* = proc(app: App): void
   ChoiceOption* = object
     title*: string
-    description*: string
+    description*: seq[string]
     warning*: string
+    action*: OptionAction
 
   ChoiceQuestion* = object
     title*: string
@@ -35,7 +39,8 @@ proc getOptionSep(option: ChoiceOption): string =
 
 proc print(i: int, option: ChoiceOption) =
   p2($i & getOptionSep(option) & option.title)
-  p3(option.description)
+  for line in option.description:
+    p3(line)
   if option.hasWarning:
     p3("*: " & option.warning)
 
@@ -59,10 +64,7 @@ proc getDefaultStr(question: ChoiceQuestion): string =
       ". " & question.getDefault().title & ")"
   return ""
 
-proc activate*(question: ChoiceQuestion): ChoiceOption =
-  newline()
-  print(question)
-
+proc getSelectedOption(question: ChoiceQuestion): ChoiceOption =
   let
     possibleValues = 1 .. question.options.len
     optionsStrs = possibleValues.mapIt($it)
@@ -89,3 +91,9 @@ proc activate*(question: ChoiceQuestion): ChoiceOption =
     p1("Invalid input received")
     newline()
 
+proc activate*(question: ChoiceQuestion, app: App) =
+  newline()
+  print(question)
+
+  let selectedOption = getSelectedOption(question)
+  selectedOption.action(app)
