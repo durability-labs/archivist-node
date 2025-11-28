@@ -406,8 +406,8 @@ type
 
         circomR1cs* {.
           desc: "The r1cs file for the storage circuit",
-          defaultValue: defaultDataDir() / "circuits" / "proof_main.r1cs",
-          defaultValueDesc: "data/circuits/proof_main.r1cs",
+          defaultValue: $DefaultCircuitDir / "proof_main.r1cs",
+          defaultValueDesc: $DefaultCircuitDir / "proof_main.r1cs",
           name: "circom-r1cs"
         .}: InputFile
 
@@ -415,7 +415,7 @@ type
           desc:
             "The graph file for the storage circuit (only used with nimgroth16 backend)",
           defaultValue: $DefaultCircuitDir / "proof_main.bin",
-          defaultValueDesc: $DefaultDataDir & "/circuits/proof_main.bin",
+          defaultValueDesc: $DefaultCircuitDir / "proof_main.bin",
           name: "circom-graph"
         .}: InputFile
 
@@ -423,14 +423,14 @@ type
           desc:
             "The wasm file for the storage circuit (only used with circomcompat backend)",
           defaultValue: $DefaultCircuitDir / "proof_main.wasm",
-          defaultValueDesc: $DefaultDataDir & "/circuits/proof_main.wasm",
+          defaultValueDesc: $DefaultCircuitDir / "proof_main.wasm",
           name: "circom-wasm"
         .}: InputFile
 
         circomZkey* {.
           desc: "The zkey file for the storage circuit",
-          defaultValue: defaultDataDir() / "circuits" / "proof_main.zkey",
-          defaultValueDesc: "data/circuits/proof_main.zkey",
+          defaultValue: $DefaultCircuitDir / "proof_main.zkey",
+          defaultValueDesc: $DefaultCircuitDir / "proof_main.zkey",
           name: "circom-zkey"
         .}: InputFile
 
