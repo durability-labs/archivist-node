@@ -69,7 +69,9 @@ proc defaultDataDir*(): string =
 
 const
   DefaultDataDir* = defaultDataDir()
-  DefaultCircuitDir* = defaultDataDir() / "circuits"
+
+proc defaultCircuitDir*(): string =
+  defaultDataDir() / "circuits"
 
 type
   StartUpCmd* {.pure.} = enum
@@ -382,7 +384,7 @@ type
       of PersistenceCmd.prover:
         circuitDir* {.
           desc: "Directory where the node will store proof circuit data",
-          defaultValue: defaultDataDir() / "circuits",
+          defaultValue: defaultCircuitDir(),
           defaultValueDesc: "data/circuits",
           abbr: "cd",
           name: "circuit-dir"
@@ -406,31 +408,31 @@ type
 
         circomR1cs* {.
           desc: "The r1cs file for the storage circuit",
-          defaultValue: $DefaultCircuitDir / "proof_main.r1cs",
-          defaultValueDesc: $DefaultCircuitDir / "proof_main.r1cs",
+          defaultValue: string(config.circuitDir) / "proof_main.r1cs",
+          defaultValueDesc: "<circuit-dir>/proof_main.r1cs",
           name: "circom-r1cs"
         .}: InputFile
 
         circomGraph* {.
           desc:
             "The graph file for the storage circuit (only used with nimgroth16 backend)",
-          defaultValue: $DefaultCircuitDir / "proof_main.bin",
-          defaultValueDesc: $DefaultCircuitDir / "proof_main.bin",
+          defaultValue: string(config.circuitDir) / "proof_main.bin",
+          defaultValueDesc: "<circuit-dir>/proof_main.bin",
           name: "circom-graph"
         .}: InputFile
 
         circomWasm* {.
           desc:
             "The wasm file for the storage circuit (only used with circomcompat backend)",
-          defaultValue: $DefaultCircuitDir / "proof_main.wasm",
-          defaultValueDesc: $DefaultCircuitDir / "proof_main.wasm",
+          defaultValue: string(config.circuitDir) / "proof_main.wasm",
+          defaultValueDesc: "<circuit-dir>/proof_main.wasm",
           name: "circom-wasm"
         .}: InputFile
 
         circomZkey* {.
           desc: "The zkey file for the storage circuit",
-          defaultValue: $DefaultCircuitDir / "proof_main.zkey",
-          defaultValueDesc: $DefaultCircuitDir / "proof_main.zkey",
+          defaultValue: string(config.circuitDir) / "proof_main.zkey",
+          defaultValueDesc: "<circuit-dir>/proof_main.zkey",
           name: "circom-zkey"
         .}: InputFile
 
