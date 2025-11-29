@@ -67,11 +67,16 @@ proc defaultDataDir*(): string =
 
   getHomeDir() / dataDir
 
-const
-  DefaultDataDir* = defaultDataDir()
+const DefaultDataDir* = defaultDataDir()
 
 proc defaultCircuitDir*(): string =
   defaultDataDir() / "circuits"
+
+proc toAbsolutePath*(path: string): string =
+  try:
+    absolutePath(path)
+  except OSError, ValueError:
+    path
 
 type
   StartUpCmd* {.pure.} = enum
@@ -408,7 +413,7 @@ type
 
         circomR1cs* {.
           desc: "The r1cs file for the storage circuit",
-          defaultValue: string(config.circuitDir) / "proof_main.r1cs",
+          defaultValue: config.circuitDirPath / "proof_main.r1cs",
           defaultValueDesc: "<circuit-dir>/proof_main.r1cs",
           name: "circom-r1cs"
         .}: InputFile
@@ -416,7 +421,7 @@ type
         circomGraph* {.
           desc:
             "The graph file for the storage circuit (only used with nimgroth16 backend)",
-          defaultValue: string(config.circuitDir) / "proof_main.bin",
+          defaultValue: config.circuitDirPath / "proof_main.bin",
           defaultValueDesc: "<circuit-dir>/proof_main.bin",
           name: "circom-graph"
         .}: InputFile
@@ -424,14 +429,14 @@ type
         circomWasm* {.
           desc:
             "The wasm file for the storage circuit (only used with circomcompat backend)",
-          defaultValue: string(config.circuitDir) / "proof_main.wasm",
+          defaultValue: config.circuitDirPath / "proof_main.wasm",
           defaultValueDesc: "<circuit-dir>/proof_main.wasm",
           name: "circom-wasm"
         .}: InputFile
 
         circomZkey* {.
           desc: "The zkey file for the storage circuit",
-          defaultValue: string(config.circuitDir) / "proof_main.zkey",
+          defaultValue: config.circuitDirPath / "proof_main.zkey",
           defaultValueDesc: "<circuit-dir>/proof_main.zkey",
           name: "circom-zkey"
         .}: InputFile
@@ -500,6 +505,10 @@ func persistence*(self: NodeConf): bool =
 
 func prover*(self: NodeConf): bool =
   self.persistence and self.persistenceCmd == PersistenceCmd.prover
+
+proc circuitDirPath*(self: NodeConf): string =
+  ## Returns the circuit directory as an absolute path
+  toAbsolutePath($self.circuitDir)
 
 proc getNodeVersion(): string =
   let tag = strip(staticExec("git tag"))
