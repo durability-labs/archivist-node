@@ -10,8 +10,6 @@ type
     configLines: seq[string]
     networkConfig: ?ArchivistNetwork
 
-    circuitDir*: string # todo this and others like it will certainly be their own object.
-
 proc writeConfigLine*(app: App, line: string) =
   app.configLines.add(line)
 

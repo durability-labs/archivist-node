@@ -30,10 +30,10 @@ proc main() =
 
   var actions = @[
       getNetworkQuestion().getSelectedAction(),
-      # getEthKeyQuestion().getSelectedAction(),
-      # getModeQuestion().getSelectedAction(),
-      # getNatQuestion().getSelectedAction(),
-      # getWebUiQuestion().getSelectedAction(),
+      getEthKeyQuestion().getSelectedAction(),
+      getModeQuestion().getSelectedAction(),
+      getNatQuestion().getSelectedAction(),
+      getWebUiQuestion().getSelectedAction(),
     ]
   
   for item in lineItems:

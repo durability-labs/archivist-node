@@ -8,11 +8,6 @@ proc getLineItemQuestions*(): seq[LineQuestion] =
       defaultValue: "./datadir"
     ),
     LineQuestion(
-      description: "Absolute or relative path where zkProver circuits will be stored",
-      key: "circuit-dir",
-      defaultValue: "./circuitdir"
-    ),
-    LineQuestion(
       description: "Network port used for Discovery (UDP) protocol",
       key: "disc-port",
       defaultValue: "8090"

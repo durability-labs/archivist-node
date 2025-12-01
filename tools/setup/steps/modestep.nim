@@ -8,7 +8,7 @@ proc setClientMode(app: App) =
 proc setStorageManualMode(app: App) =
   app.writeConfigLine("# Archivist node is configured for storage:")
   app.writeConfigLine("prover=1")
-  app.writeConfigLine("circuit-dir=" & app.circuitDir & "\n")
+  app.writeConfigLine("circuit-dir=circuitdir\n")
   
 proc setStorageMode(app: App) =
   setStorageManualMode(app)
