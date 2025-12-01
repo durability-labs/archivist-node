@@ -1,4 +1,5 @@
 import std/os
+import std/httpclient
 import pkg/chronicles
 import pkg/questionable
 import pkg/ethers
@@ -19,6 +20,16 @@ proc fetchNetworkConfig*(app: App, network: string): ArchivistNetwork =
     info "Fetching network information...", network
     app.networkConfig = some getNetworkConfig(network)
   return !app.networkConfig
+
+proc fetchPublicIp*(app: App): string =
+  let
+    url = "http://ip.archivist.storage"
+    client = newHttpClient()
+  try:
+    info "Fetching public IP...", url
+    return client.getContent(url)
+  finally:
+    client.close()
 
 proc createNewEthKeyfile*(app: App, filename: string) =
   var rng = keys.newRng()[]

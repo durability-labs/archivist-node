@@ -11,6 +11,9 @@
 1. NAT:
   any, none, upnp, pmp, extIP*
 
+1. Service:
+  Yes[ ]    No[X]
+
 1. WebUI:
   No[X]   Yes[ ]
 
