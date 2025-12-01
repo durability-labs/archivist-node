@@ -12,7 +12,7 @@ proc setStorageManualMode(app: App) =
   
 proc setStorageMode(app: App) =
   setStorageManualMode(app)
-  app.runCircuitDownloader()
+  app.storageModeSelected = true
 
 proc setValidatorMode(app: App) =
   app.writeConfigLine("# Archivist node is configured as validator:")

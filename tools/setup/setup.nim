@@ -17,6 +17,7 @@ proc intro() =
   p2("Where possible, sane default values are provided.")
   p2("The selected configuration can be adjusted afterwards")
   p2("by manually editing the generated configuration file.")
+  p3("Be sure to run this setup from Archivist's install location.")
   newline()
 
 proc main() =

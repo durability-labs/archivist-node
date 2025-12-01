@@ -1,4 +1,5 @@
 import std/os
+import std/osproc
 import std/httpclient
 import pkg/chronicles
 import pkg/questionable
@@ -9,6 +10,10 @@ type
   App* = ref object
     configLines: seq[string]
     networkConfig: ?ArchivistNetwork
+
+    # if we have networkConfig AND storage mode (not manual) is selected
+    # then run CIRDL
+    storageModeSelected*: bool
 
 proc writeConfigLine*(app: App, line: string) =
   app.configLines.add(line)
@@ -44,7 +49,16 @@ proc createNewEthKeyfile*(app: App, filename: string) =
   f.close()
 
 proc runCircuitDownloader*(app: App) =
-  info "run cirdl here!"
+  info "Preparing to download zkProver circuit files..."
+  let
+    circuitDir = "circuitdir"
+    rpcEndpoint = (!app.networkConfig).rpcs[0]
+
+  createDir(circuitDir)
+
+  let value = execCmd("cirdl " & circuitDir & " " & rpcEndpoint)
+  
+  info "Circuit downloader completed", value
 
 proc writeLinesToFile(app: App) =
   let filename = "config.toml"
@@ -62,6 +76,8 @@ proc writeLinesToFile(app: App) =
 
 proc finalize*(app: App) =
   app.writeLinesToFile()
+  if isSome(app.networkConfig) and app.storageModeSelected:
+    app.runCircuitDownloader()
 
 
 # !! get config.json
