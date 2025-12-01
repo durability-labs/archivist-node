@@ -2,11 +2,14 @@ import ../choicequestion
 import ../app
 
 proc genNewKey(app: App) =
-  let filename = "eth.key"
-  app.createNewEthKeyfile(filename)
+  let
+    privKey = "eth.key"
+    addressFile = "eth.address"
 
+  app.createNewEthKeyfile(privKey, addressFile)
   app.writeConfigLine("# Archivist node private key:")
-  app.writeConfigLine("eth-private-key=" & filename & "\n")
+  app.writeConfigLine("eth-private-key=" & privKey)
+  app.writeConfigLine("# Public key saved to: " & addressFile & "\n")
 
 proc writeExample(app: App) =
   app.writeConfigLine("# example Archivist node private key:")

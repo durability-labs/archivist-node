@@ -12,6 +12,7 @@ type
     configLines: seq[string]
     networkConfig: ?ArchivistNetwork
 
+    ethAddress: string
     # if we have networkConfig AND storage mode (not manual) is selected
     # then run CIRDL
     storageModeSelected*: bool
@@ -37,19 +38,24 @@ proc fetchPublicIp*(app: App): string =
   finally:
     client.close()
 
-proc createNewEthKeyfile*(app: App, filename: string) =
-  info "Generating Ethereum private key...", filename
-  var rng = keys.newRng()[]
-  let
-    privKey = PrivateKey.random(rng)
-    keyStr = $privKey
-
+proc saveFile(filename: string, content: string) =
   if fileExists(filename):
     removeFile(filename)
 
   let f = open(filename, fmWrite)
-  f.writeLine("0x" & keyStr)
+  f.writeLine(content)
   f.close()
+
+proc createNewEthKeyfile*(app: App, privKeyFilename: string, addressFilename: string) =
+  info "Generating Ethereum wallet...", privKeyFilename, addressFilename
+  var rng = keys.newRng()[]
+  let
+    wallet = Wallet.createRandom()
+    keyStr = "0x" & $(wallet.privateKey)
+  app.ethAddress = $(wallet.address)
+  
+  saveFile(privKeyFilename, keyStr)
+  saveFile(addressFilename, app.ethAddress)
 
 proc runCircuitDownloader*(app: App) =
   info "Preparing to download zkProver circuit files..."
@@ -83,7 +89,7 @@ proc displayFaucetLinks(app: App) =
     tstLink = "http://faucet-tst." & app.faucetLinkNetwork & ".archivist.storage"
 
   newline()
-  p2("Your ETH wallet address: todo :O")
+  p2("Your ETH wallet address: " & app.ethAddress)
   p2("Use the following links to acquire tokens:")
   p3("Ethereum: " & ethLink)
   p3("TestTokens: " & tstLink)
