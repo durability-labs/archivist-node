@@ -89,7 +89,8 @@ proc displayFaucetLinks(app: App) =
     tstLink = "http://faucet-tst." & app.faucetLinkNetwork & ".archivist.storage"
 
   newline()
-  p2("Your ETH wallet address: " & app.ethAddress)
+  if app.ethAddress.len > 0:
+    p2("Your Eth wallet address: " & app.ethAddress)
   p2("Use the following links to acquire tokens:")
   p3("Ethereum: " & ethLink)
   p3("TestTokens: " & tstLink)
