@@ -22,9 +22,11 @@ proc setMainnet(app: App) =
 
 proc setTestnet(app: App) =
   app.setNetwork("testnet")
+  app.faucetLinkNetwork = "testnet"
 
 proc setDevnet(app: App) =
   app.setNetwork("devnet")
+  app.faucetLinkNetwork = "devnet"
 
 proc writeExample(app: App) =
   app.writeConfigLine("# example bootstrap signed-peer-records:")
