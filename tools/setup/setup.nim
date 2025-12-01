@@ -5,6 +5,7 @@ import ./steps/networkstep
 import ./steps/ethkeystep
 import ./steps/modestep
 import ./steps/natstep
+import ./steps/webuistep
 
 proc main() =
   info "Archivist Setup"
@@ -15,7 +16,8 @@ proc main() =
       getNetworkQuestion().getSelectedAction(),
       getEthKeyQuestion().getSelectedAction(),
       getModeQuestion().getSelectedAction(),
-      getNatQuestion().getSelectedAction()
+      getNatQuestion().getSelectedAction(),
+      getWebUiQuestion().getSelectedAction()
     ]
 
   info "Performing selected actions..."

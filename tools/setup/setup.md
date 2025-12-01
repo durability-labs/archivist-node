@@ -11,7 +11,7 @@
 1. NAT:
   any, none, upnp, pmp, extIP*
 
-1. Service:
+1. Service: requires sudo
   Yes[ ]    No[X]
 
 1. WebUI:

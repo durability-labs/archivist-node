@@ -3,7 +3,7 @@ import ../app
 
 proc setNat(app: App, value: string) =
   app.writeConfigLine("# NAT settings:")
-  app.writeConfigLine(value)
+  app.writeConfigLine(value & "\n")
 
 proc setNatAny(app: App) =
   app.setNat("nat=any")
@@ -23,7 +23,7 @@ proc setNatExtIp(app: App) =
   
 proc setNatManual(app: App) =
   app.setNat("# nat=extip:<PUBLIC_IP_ADDRESS_HERE>")
-  app.writeConfigLine("# available nat options: any, none, upnp, pmp, extip")
+  app.writeConfigLine("# available nat options: any, none, upnp, pmp, extip\n")
 
 proc getNatQuestion*(): ChoiceQuestion = 
   return ChoiceQuestion(
