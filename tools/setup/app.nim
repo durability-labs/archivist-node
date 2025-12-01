@@ -32,6 +32,7 @@ proc fetchPublicIp*(app: App): string =
     client.close()
 
 proc createNewEthKeyfile*(app: App, filename: string) =
+  info "Generating Ethereum private key...", filename
   var rng = keys.newRng()[]
   let
     privKey = PrivateKey.random(rng)
