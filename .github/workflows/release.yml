@@ -18,8 +18,10 @@ env:
   nim_version:   2.2.4
   rust_version:  1.79.0
   cmake_version: 3.x
+  artifacts_base: archivist
   archivist_binary_base: archivist
   cirdl_binary_base: cirdl
+  setup_binary_base: setup
   build_dir: build
   nim_flags: '-d:release -d:nimleopard_portable_build'
   windows_libs: 'libgcc_s_seh-1.dll libwinpthread-1.dll'
@@ -54,7 +56,7 @@ jobs:
     runs-on: ${{ matrix.builder }}
     timeout-minutes: 80
     steps:
-      - name: Show linux runner info
+      - name: Release - Show linux runner info
         if: matrix.os == 'linux'
         run: |
           curl -sLO https://raw.githubusercontent.com/HenrikBengtsson/x86-64-level/main/x86-64-level
@@ -68,11 +70,11 @@ jobs:
           done
 
       - name: Release - Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: CI setup
+      - name: Release - CI setup
         uses: ./.github/actions/ci-setup
         with:
           nim_version: ${{ env.nim_version }}
@@ -92,12 +94,15 @@ jobs:
           github_ref_name="${GITHUB_REF_NAME/\//-}"
           archivist_binary="${{ env.archivist_binary_base }}-${github_ref_name}-${os_name}-${{ matrix.cpu }}"
           cirdl_binary="${{ env.cirdl_binary_base }}-${github_ref_name}-${os_name}-${{ matrix.cpu }}"
+          setup_binary="${{ env.setup_binary_base }}-${github_ref_name}-${os_name}-${{ matrix.cpu }}"
           if [[ ${os_name} == "windows" ]]; then
             archivist_binary="${archivist_binary}.exe"
             cirdl_binary="${cirdl_binary}.exe"
+            setup_binary="${setup_binary}.exe"
           fi
           echo "archivist_binary=${archivist_binary}" >> $GITHUB_ENV
           echo "cirdl_binary=${cirdl_binary}" >> $GITHUB_ENV
+          echo "setup_binary=${setup_binary}" >> $GITHUB_ENV
 
           # Nim flags
           if [[ "${{ matrix.os }}" == "windows" ]]; then
@@ -109,6 +114,7 @@ jobs:
           nimble build ${{ env.nim_flags }}
           mv ${{ env.build_dir }}/${{ env.archivist_binary_base }}* ${{ env.build_dir }}/${{ env.archivist_binary }}
           mv ${{ env.build_dir }}/tools/${{ env.cirdl_binary_base }}/${{ env.cirdl_binary_base }}* ${{ env.build_dir }}/${{ env.cirdl_binary }}
+          mv ${{ env.build_dir }}/tools/${{ env.setup_binary_base }}/${{ env.setup_binary_base }}* ${{ env.build_dir }}/${{ env.setup_binary }}
 
       - name: Release - Windows libraries
         if: matrix.os == 'windows'
@@ -120,25 +126,10 @@ jobs:
           done
 
       - name: Release - Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-${{ env.archivist_binary }}
-          path: ${{ env.build_dir }}/${{ env.archivist_binary_base }}*
-          retention-days: 30
-
-      - name: Release - Upload cirdl build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-${{ env.cirdl_binary }}
-          path: ${{ env.build_dir }}/${{ env.cirdl_binary_base }}*
-          retention-days: 30
-
-      - name: Release - Upload windows libs
-        if: matrix.os == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-${{ matrix.os }}-libs
-          path: ${{ env.build_dir }}/*.dll
+          path: ${{ env.build_dir }}/*
           retention-days: 30
 
   # Release
@@ -148,7 +139,7 @@ jobs:
     if: success() || failure()
     steps:
       - name: Release - Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           pattern: release*
           merge-multiple: true
@@ -158,38 +149,47 @@ jobs:
         run: |
           cd /tmp/release
           checksum() {
-            arc="${1}"
-            sha256sum "${arc}" >"${arc}.sha256"
+            archive="${1}"
+            sha256sum "${archive}" > "${archive}.sha256"
           }
 
           # Compress and prepare
-          for file in ${{ env.archivist_binary_base }}* ${{ env.cirdl_binary_base }}*; do
+          for file in ${{ env.archivist_binary_base }}*; do
             if [[ "${file}" == *".exe"* ]]; then
 
-              # Windows - binary only
-              arc="${file%.*}.zip"
-              zip "${arc}" "${file}"
-              checksum "${arc}"
-
-              # Windows - binary and libs
-              arc="${file%.*}-libs.zip"
-              zip "${arc}" "${file}" ${{ env.windows_libs }}
-              rm -f "${file}"
-              checksum "${arc}"
+              # Windows - binaries and libs
+              file="${file%.*}"
+              subset="${file//${{ env.archivist_binary_base }}-/}"
+              archive="${{ env.artifacts_base }}-${subset}.zip"
+              binaries=""
+              for binary in *-${subset}.exe; do
+                binary_packed="${binary//-${subset}/}"
+                mv "${binary}" "${binary_packed}"
+                binaries+=" ${binary_packed}"
+              done
+              zip "${archive}" ${binaries} ${{ env.windows_libs }}
+              rm -f ${binaries} ${{ env.windows_libs }}
+              checksum "${archive}"
             else
 
-              # Linux/macOS
-              arc="${file}.tar.gz"
-              chmod 755 "${file}"
-              tar cfz "${arc}" "${file}"
-              rm -f "${file}"
-              checksum "${arc}"
+              # Linux/macOS binaries
+              subset="${file//${{ env.archivist_binary_base }}-/}"
+              archive="${{ env.artifacts_base }}-${subset}.tar.gz"
+              chmod 755 *-${subset}
+              binaries=""
+              for binary in *-${subset}; do
+                binary_packed="${binary//-${subset}/}"
+                mv "${binary}" "${binary_packed}"
+                binaries+=" ${binary_packed}"
+              done
+              tar cfz "${archive}" ${binaries}
+              rm -f ${binaries}
+              checksum "${archive}"
             fi
           done
-          rm -f ${{ env.windows_libs }}
 
       - name: Release - Upload compressed artifacts and checksums
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: archives-and-checksums
           path: /tmp/release/
@@ -210,7 +210,7 @@ jobs:
           # Tagged releases
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             aws s3 cp --recursive "${folder}" s3://${{ env.s3_bucket }}/releases/${branch} --endpoint-url ${{ env.s3_endpoint }}
-            echo "${branch}" >  "${folder}"/latest
+            echo "${branch}" > "${folder}"/latest
             aws s3 cp "${folder}"/latest s3://${{ env.s3_bucket }}/releases/latest --endpoint-url ${{ env.s3_endpoint }}
             rm -f "${folder}"/latest
 
