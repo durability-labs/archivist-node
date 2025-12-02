@@ -1,8 +1,10 @@
+import std/rdstdin
 import pkg/chronicles
 import ./app
 import ./print
 import ./choicequestion
 import ./linequestion
+import ./networkconfig
 import ./steps/networkstep
 import ./steps/ethkeystep
 import ./steps/modestep
@@ -21,7 +23,7 @@ proc intro() =
   newline()
 
 proc main() =
-  info "Archivist Setup"
+  info "Archivist Setup", version = compiledVersion
 
   let
     app = App()
@@ -29,14 +31,15 @@ proc main() =
 
   intro()
 
-  var actions = @[
+  var actions =
+    @[
       getNetworkQuestion().getSelectedAction(),
       getEthKeyQuestion().getSelectedAction(),
       getModeQuestion().getSelectedAction(),
       getNatQuestion().getSelectedAction(),
       getWebUiQuestion().getSelectedAction(),
     ]
-  
+
   for item in lineItems:
     actions.add(item.getLineAction())
 
@@ -51,3 +54,6 @@ proc main() =
 when isMainModule:
   main()
   info "All done"
+  # Read a line to keep the terminal open if
+  # we were started from a pop-up.
+  discard readLineFromStdin("(enter to close)")

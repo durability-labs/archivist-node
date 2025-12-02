@@ -14,7 +14,7 @@ logScope:
 proc getCompiledVersion(): string =
   return strip(staticExec("git tag"))
 
-const compiledVersion* = "v0.1.0" # getCompiledVersion() - During development
+const compiledVersion* = getCompiledVersion()
 
 # Endpoint types
 type
@@ -33,11 +33,10 @@ type
     contractAddress* {.serialize.}: string
 
 # Application types
-type
-  ArchivistNetwork* = object
-    spr*: ArchivistSprEntry
-    rpcs* {.serialize.}: seq[string]
-    marketplace*: ArchivistMarketplaceEntry
+type ArchivistNetwork* = object
+  spr*: ArchivistSprEntry
+  rpcs* {.serialize.}: seq[string]
+  marketplace*: ArchivistMarketplaceEntry
 
 # Connector
 const EnvVarNetwork = "ARCHIVIST_NETWORK"
@@ -49,7 +48,7 @@ proc getEnvOrDefault(key: string, default: string): string =
   return getEnv(key, default)
 
 proc fetchModelFromFile(file: string): string =
-  trace "Loading model from file", file
+  info "Loading model from file", file
   return readFile(file)
 
 proc getFetchUrl(network: string): string =
@@ -65,7 +64,7 @@ proc fetchModelFromUrl(network: string): string =
     url = getFetchUrl(network)
     client = newHttpClient()
   try:
-    trace "Loading model form URL", url
+    info "Loading model form URL", url
     return client.getContent(url)
   finally:
     client.close()
@@ -82,9 +81,11 @@ proc fetchModel(network: string): NetworkConfig =
 
 proc getCompiledNodeVersion(): string =
   if compiledVersion.isEmptyOrWhitespace:
-    raiseAssert("Error: This application was not compiled from a versioned Archivist revision. " &
-      "Unable to determine version information automatically. Please define '" & EnvVarVersion &
-      "' and try again.")
+    raiseAssert(
+      "Error: This application was not compiled from a versioned Archivist revision. " &
+        "Unable to determine version information automatically. Please define '" &
+        EnvVarVersion & "' and try again."
+    )
   return compiledVersion
 
 proc getVersion(fullModel: NetworkConfig): string =
@@ -95,12 +96,23 @@ proc getVersion(fullModel: NetworkConfig): string =
 
 proc mapToVersion(fullModel: NetworkConfig): ArchivistNetwork =
   let selected = getVersion(fullModel)
-  info "Mapping to version", version=selected
+  info "Mapping to version", version = selected
+  let sprs = fullModel.sprs.filterIt(it.supportedVersions.contains(selected))
+  if sprs.len < 1:
+    error "Unable to find network configuration for selected version.",
+      version = selected
+    error "Setup is intended to be used only from released versions of Archivist."
+    error "You can override the version information by setting the following environment variable:",
+      versionVarName = EnvVarVersion
+    error "Alternatively, you can direct setup to other network configuration files by setting either of the following environment variables:",
+      netConfigUrlVarName = EnvVarConfigUrl, netConfigFileVarName = EnvVarConfigFile
+    raiseAssert("Version not found in network configuration")
+
   return ArchivistNetwork(
-    spr: fullModel.sprs.filterIt(it.supportedVersions.contains(selected))[0],
+    spr: sprs[0],
     rpcs: fullModel.rpcs,
     marketplace:
-      fullModel.marketplace.filterIt(it.supportedVersions.contains(selected))[0]
+      fullModel.marketplace.filterIt(it.supportedVersions.contains(selected))[0],
   )
 
 proc getNetworkConfig*(network: string): ArchivistNetwork =

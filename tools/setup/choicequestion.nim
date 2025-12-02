@@ -21,7 +21,7 @@ type
 proc hasWarning(option: ChoiceOption): bool =
   option.warning.len > 0
 
-proc getOptionSep(option: ChoiceOption): string = 
+proc getOptionSep(option: ChoiceOption): string =
   if option.hasWarning:
     return ".* "
   return ".  "
@@ -44,13 +44,14 @@ proc print(question: ChoiceQuestion) =
 proc hasDefault(question: ChoiceQuestion): bool =
   question.defaultIndex > -1
 
-proc getDefault(question: ChoiceQuestion): ChoiceOption = 
+proc getDefault(question: ChoiceQuestion): ChoiceOption =
   question.options[question.defaultIndex]
 
 proc getDefaultStr(question: ChoiceQuestion): string =
   if question.hasDefault:
-    return "(default: " & $(question.defaultIndex + 1) &
-      ". " & question.getDefault().title & ")"
+    return
+      "(default: " & $(question.defaultIndex + 1) & ". " & question.getDefault().title &
+      ")"
   return ""
 
 proc getSelectedOption(question: ChoiceQuestion): ChoiceOption =

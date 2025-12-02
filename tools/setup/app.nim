@@ -1,23 +1,25 @@
 import std/os
 import std/osproc
 import std/httpclient
+import std/strutils
 import pkg/chronicles
 import pkg/questionable
 import pkg/ethers
 import ./print
 import ./networkconfig
 
-type
-  App* = ref object
-    configLines: seq[string]
-    networkConfig: ?ArchivistNetwork
+type App* = ref object
+  configLines: seq[string]
+  networkConfig: ?ArchivistNetwork
 
-    ethAddress: string
-    # if we have networkConfig AND storage mode (not manual) is selected
-    # then run CIRDL
-    storageModeSelected*: bool
-    # if testnet or devnet, display faucet links
-    faucetLinkNetwork*: string
+  ethAddress: string
+  # if we have networkConfig AND storage mode (not manual) is selected
+  # then run CIRDL
+  storageModeSelected*: bool
+  # if testnet or devnet, display faucet links
+  faucetLinkNetwork*: string
+  # if set, display webui link
+  webUi*: bool
 
 proc writeConfigLine*(app: App, line: string) =
   app.configLines.add(line)
@@ -53,20 +55,30 @@ proc createNewEthKeyfile*(app: App, privKeyFilename: string, addressFilename: st
     wallet = Wallet.createRandom()
     keyStr = "0x" & $(wallet.privateKey)
   app.ethAddress = $(wallet.address)
-  
+
   saveFile(privKeyFilename, keyStr)
   saveFile(addressFilename, app.ethAddress)
+
+proc findCirdl(): string =
+  try:
+    for file in walkDir(".", true):
+      if file.path.startsWith("cirdl"):
+        return file.path
+  except Exception as exc:
+    error "Exception while looking for 'cirdl' executable.", err = exc.msg
+  raiseAssert "Failed to locate 'cirdl' executable."
 
 proc runCircuitDownloader*(app: App) =
   info "Preparing to download zkProver circuit files..."
   let
     circuitDir = "circuitdir"
     rpcEndpoint = (!app.networkConfig).rpcs[0]
+    cirdl = findCirdl()
 
   createDir(circuitDir)
 
-  let value = execCmd("cirdl " & circuitDir & " " & rpcEndpoint)
-  
+  let value = execCmd(cirdl & " " & circuitDir & " " & rpcEndpoint)
+
   info "Circuit downloader completed", value
 
 proc writeLinesToFile(app: App) =
@@ -75,7 +87,8 @@ proc writeLinesToFile(app: App) =
     removeFile(filename)
 
   let f = open(filename, fmWrite)
-  defer: f.close()
+  defer:
+    f.close()
 
   f.writeLine("# Archivist configuration file")
   f.writeLine("# created using setup executable")
@@ -83,7 +96,7 @@ proc writeLinesToFile(app: App) =
   for line in app.configLines:
     f.writeLine(line)
 
-proc displayFaucetLinks(app: App) = 
+proc displayFaucetLinks(app: App) =
   let
     ethLink = "http://faucet-arb." & app.faucetLinkNetwork & ".archivist.storage"
     tstLink = "http://faucet-tst." & app.faucetLinkNetwork & ".archivist.storage"
@@ -96,8 +109,19 @@ proc displayFaucetLinks(app: App) =
   p3("TestTokens: " & tstLink)
   newline()
 
-proc displayDocsLinks(app: App) = 
+proc displayRunInstruction() =
+  p1("You can start your Archivist node now by running the archivist executable.")
+  p1("It will automatically detect and use the config file created by setup.")
+  p1("For more information, run with '--help'")
+  newline()
+
+proc displayDocsLink() =
   p1("All the docs: http://docs.archivist.storage")
+  newline()
+
+proc displayWebUiLink() =
+  p1("After your node has started, you can use the web-UI to operate it.")
+  p2("Link: https://app.archivist.storage")
   newline()
 
 proc finalize*(app: App) =
@@ -108,12 +132,7 @@ proc finalize*(app: App) =
   if app.faucetLinkNetwork.len > 0:
     app.displayFaucetLinks()
 
-  app.displayDocsLinks()
-
-# !! get config.json
-# !! write to toml 
-# !! write to localdir new key
-# !! call cirdl  [circuitPath from boring config] [rpcEndpoint from config.json] ([marketplaceAddress])
-# !! ping ip.archivist (known address)
-# !! open browser (know address)
-
+  displayRunInstruction()
+  displayDocsLink()
+  if app.webUi:
+    displayWebUiLink()
