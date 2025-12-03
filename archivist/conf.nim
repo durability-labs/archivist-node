@@ -375,7 +375,8 @@ type
     .}: uint64
 
     prover* {.
-      desc: "Enables zkProver system, required to generate storage proofs. Requires 'persistence' to be enabled.",
+      desc:
+        "Enables zkProver system, required to generate storage proofs. Requires 'persistence' to be enabled.",
       defaultValue: false,
       name: "prover"
     .}: bool
@@ -412,8 +413,7 @@ type
     .}: InputFile
 
     circomGraph* {.
-      desc:
-        "The graph file for the storage circuit (only used with nimgroth16 backend)",
+      desc: "The graph file for the storage circuit (only used with nimgroth16 backend)",
       defaultValue: $DefaultCircuitDir / "proof_main.bin",
       defaultValueDesc: $DefaultDataDir & "/circuits/proof_main.bin",
       name: "circom-graph"
@@ -475,7 +475,7 @@ type
       defaultValueDesc: $DefaultCellElms,
       name: "max-cell-elements"
     .}: int
-  
+
   EthAddress* = ethers.Address
 
 logutils.formatIt(LogFormat.textLines, EthAddress):
