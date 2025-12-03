@@ -60,7 +60,7 @@ when isMainModule:
     # permissions are insecure.
     quit QuitFailure
 
-  if config.prover() and not (checkAndCreateDataDir((config.circuitDir).string)):
+  if config.prover and not (checkAndCreateDataDir((config.circuitDir).string)):
     quit QuitFailure
 
   trace "Data dir initialized", dir = $config.dataDir
