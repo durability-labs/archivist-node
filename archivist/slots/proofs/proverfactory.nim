@@ -18,16 +18,16 @@ logScope:
   topics = "archivist slots proverfactory"
 
 template graphFilePath(config: NodeConf): string =
-  config.circuitDir / "proof_main.bin"
+  config.circuitDirPath / "proof_main.bin"
 
 template r1csFilePath(config: NodeConf): string =
-  config.circuitDir / "proof_main.r1cs"
+  config.circuitDirPath / "proof_main.r1cs"
 
 template wasmFilePath(config: NodeConf): string =
-  config.circuitDir / "proof_main.wasm"
+  config.circuitDirPath / "proof_main.wasm"
 
 template zkeyFilePath(config: NodeConf): string =
-  config.circuitDir / "proof_main.zkey"
+  config.circuitDirPath / "proof_main.zkey"
 
 proc getGraphFile*(config: NodeConf): ?!string =
   if fileAccessible($config.circomGraph, {AccessFlags.Read}) and
@@ -77,7 +77,7 @@ proc getMarketplaceAddressArgument(config: NodeConf): string =
 proc suggestDownloadTool(config: NodeConf) =
   let
     address = getMarketplaceAddressArgument(config)
-    tokens = ["cirdl", "\"" & $config.circuitDir & "\"", config.ethProvider, address]
+    tokens = ["cirdl", "\"" & config.circuitDirPath & "\"", config.ethProvider, address]
     instructions = "'./" & tokens.join(" ") & "'"
 
   warn "Proving circuit files are not found. Please run the following to download them:",
