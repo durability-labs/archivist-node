@@ -7,7 +7,7 @@ proc setClientMode(app: App) =
 
 proc setStorageManualMode(app: App) =
   app.writeConfigLine("# Archivist node is configured for storage:")
-  app.writeConfigLine("prover=1")
+  app.writeConfigLine("prover=true")
   app.writeConfigLine("circuit-dir=circuitdir\n")
 
 proc setStorageMode(app: App) =
@@ -16,7 +16,7 @@ proc setStorageMode(app: App) =
 
 proc setValidatorMode(app: App) =
   app.writeConfigLine("# Archivist node is configured as validator:")
-  app.writeConfigLine("validator=1\n")
+  app.writeConfigLine("validator=true\n")
 
 proc getModeQuestion*(): ChoiceQuestion =
   return ChoiceQuestion(

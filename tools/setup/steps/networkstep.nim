@@ -12,7 +12,7 @@ proc setNetwork(app: App, network: string) =
   app.writeConfigLine("bootstrap-node=[" & records & "]\n")
 
   app.writeConfigLine("# Enable marketplace connectivity:")
-  app.writeConfigLine("persistence=1")
+  app.writeConfigLine("persistence=true")
   app.writeConfigLine("eth-provider=\"" & config.rpcs[0] & "\"\n")
     # todo: Select a random one?
 
@@ -32,7 +32,7 @@ proc writeExample(app: App) =
   app.writeConfigLine("# bootstrap-node=[\"spr:Ci...\",\"spr:Ci...\"]\n")
 
   app.writeConfigLine("# Enable marketplace connectivity:")
-  app.writeConfigLine("persistence=1")
+  app.writeConfigLine("persistence=true")
   app.writeConfigLine("# example eth-provider:")
   app.writeConfigLine("# eth-provider=\"https://eth-rpc-provider.here\"\n")
 
