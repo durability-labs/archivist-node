@@ -61,7 +61,8 @@ func collateralPerByte*(
   builder
 
 proc submit*(builder: RequestBuilder, requester: Node): Future[Request] {.async.} =
-  let dataset = builder.dataset |? await builder.testbed.dataset.upload(requester)
+  without var dataset =? builder.dataset:
+    dataset = await builder.testbed.dataset.upload(requester)
   without cid =? dataset.cid:
     raise newException(TestbedError, "missing cid, did you upload the dataset?")
   let url = requester.apiUrl & "/storage/request/" & cid
