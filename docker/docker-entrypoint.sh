@@ -136,7 +136,7 @@ fi
 
 # Circuit downloader
 # cirdl [circuitPath] [rpcEndpoint] [marketplaceAddress]
-if [[ "$@" == *"prover"* && -z "${SKIP_DOWNLOAD_CIRCUIT}" ]]; then
+if [[ -n "${ARCHIVIST_PROVER}" && -z "${SKIP_DOWNLOAD_CIRCUIT}" ]]; then
   echo "Run Circuit downloader"
 
   # Set variables required by cirdl from command line arguments when passed
