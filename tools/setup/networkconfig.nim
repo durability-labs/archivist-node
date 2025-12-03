@@ -91,6 +91,8 @@ proc getCompiledNodeVersion(): string =
 proc getVersion(fullModel: NetworkConfig): string =
   let selected = getEnvOrDefault(EnvVarVersion, "")
   if selected.len > 0:
+    if selected == "latest":
+      return fullModel.latest
     return selected
   return getCompiledNodeVersion()
 
