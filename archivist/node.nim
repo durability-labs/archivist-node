@@ -834,26 +834,8 @@ proc start*(self: ArchivistNodeRef) {.async.} =
     ): Future[?!Groth16Proof] {.async: (raw: true, raises: [CancelledError]).} =
       self.onProve(slot, challenge, period)
 
-    try:
-      await marketplace.sales.start()
-    except CancelledError as error:
-      raise error
-    except CatchableError as error:
-      error "Unable to start sales", error = error.msg
-
-    try:
-      await marketplace.purchasing.start()
-    except CancelledError as error:
-      raise error
-    except CatchableError as error:
-      error "Unable to start purchasing: ", error = error.msg
-
-    try:
-      await marketplace.validation.start()
-    except CancelledError as error:
-      raise error
-    except CatchableError as error:
-      error "Unable to start validation: ", error = error.msg
+    if error =? (await marketplace.start()).errorOption:
+      error "Unable to start marketplace", error = error.msg
 
   self.networkId = self.switch.peerInfo.peerId
   notice "Started node", id = self.networkId, addrs = self.switch.peerInfo.addrs
@@ -870,9 +852,7 @@ proc stop*(self: ArchivistNodeRef) {.async.} =
     await self.discovery.stop()
 
   if marketplace =? self.marketplace:
-    await marketplace.validation.stop()
-    await marketplace.sales.stop()
-    await marketplace.purchasing.stop()
+    await marketplace.stop()
 
   if not self.clock.isNil:
     await self.clock.stop()

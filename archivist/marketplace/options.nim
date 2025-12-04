@@ -7,6 +7,7 @@ type MarketplaceOptions* = object
   rewardRecipient*: ?Address
   maxPriorityFeePerGas*: uint64 = DefaultMaxPriorityFeePerGas
   requestCacheSize*: uint16 = DefaultRequestCacheSize
+  validationEnabled*: bool
   validationMaxSlots*: ?MaxSlots
   validationGroups*: ?ValidationGroups
   validationGroupIndex*: ?uint16

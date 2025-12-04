@@ -23,9 +23,9 @@ type MarketplaceNode* = ref object
   address: Address
   purchasing: Purchasing
   sales: Sales
-  validation: Validation
+  validation: ?Validation
 
-proc start*(
+proc connect*(
     _: type MarketplaceNode,
     ethProviderUrl: string,
     ethPrivateKeyFile: string,
@@ -42,8 +42,9 @@ proc start*(
   let purchasing = Purchasing.new(marketplace, clock)
   let availability = AvailabilityStore.new(datastore)
   let sales = Sales.new(marketplace, clock, availability, storage)
-  let validation = ?Validation.new(marketplace, clock, options)
-  ?await provider.waitForSync()
+  var validation: ?Validation
+  if options.validationEnabled:
+    validation = some ?Validation.new(marketplace, clock, options)
   success MarketplaceNode(
     clock: clock,
     provider: provider,
@@ -53,10 +54,21 @@ proc start*(
     validation: validation,
   )
 
+proc start*(
+    node: MarketplaceNode
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ?await node.provider.waitForSync()
+  ?await node.purchasing.start()
+  ?await node.sales.start()
+  if validation =? node.validation:
+    ?await validation.start()
+  success()
+
 proc stop*(marketplace: MarketplaceNode) {.async: (raises: []).} =
-  await marketplace.validation.stop()
-  await marketplace.sales.stop()
   await marketplace.purchasing.stop()
+  await marketplace.sales.stop()
+  if validation =? marketplace.validation:
+    await validation.stop()
   try:
     await noCancel marketplace.provider.close()
   except ProviderError:
@@ -73,6 +85,3 @@ func purchasing*(marketplace: MarketplaceNode): Purchasing =
 
 func sales*(marketplace: MarketplaceNode): Sales =
   marketplace.sales
-
-func validation*(marketplace: MarketplaceNode): Validation =
-  marketplace.validation

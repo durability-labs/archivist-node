@@ -472,12 +472,18 @@ proc unsubscribe(sales: Sales) {.async: (raises: []).} =
   for sub in sales.subscriptions:
     await sub.unsubscribe()
 
-proc start*(sales: Sales) {.async.} =
-  sales.context.availabilityTerms = (await sales.availabilityStore.load()).toOption
-  await sales.load()
-  sales.startSlotQueue()
-  await sales.subscribe()
-  sales.running = true
+proc start*(sales: Sales): Future[?!void] {.async: (raises: [CancelledError]).} =
+  try:
+    sales.context.availabilityTerms = (await sales.availabilityStore.load()).toOption
+    await sales.load()
+    sales.startSlotQueue()
+    await sales.subscribe()
+    sales.running = true
+    success()
+  except CancelledError as error:
+    raise error
+  except CatchableError as error:
+    failure error
 
 proc stop*(sales: Sales) {.async: (raises: []).} =
   trace "stopping sales"

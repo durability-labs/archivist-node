@@ -104,7 +104,7 @@ asyncchecksuite "Sales - start":
     marketplace.requested = @[request]
     marketplace.activeRequests[me] = @[request.id]
 
-    await sales.start()
+    !await sales.start()
 
     check eventually sales.agents.len == 2
     check sales.agents.any(
@@ -175,7 +175,7 @@ asyncchecksuite "Sales":
     ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
       return success(proof)
     itemsProcessed = @[]
-    await sales.start()
+    !await sales.start()
 
   teardown:
     await sales.stop()

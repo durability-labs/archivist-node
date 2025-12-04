@@ -109,39 +109,39 @@ asyncchecksuite "validation":
       validationGroups,
       (groupIndex + 1) mod uint16(!validationGroups),
     )
-    await validation.start()
+    !await validation.start()
     await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
     check validation.slots.len == 0
 
   test "when a slot is filled on chain, it is added to the list":
-    await validation.start()
+    !await validation.start()
     await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
     check validation.slots == @[slot.id]
 
   test "slot should be observed if maxSlots is set to 0":
     validation = newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
-    await validation.start()
+    !await validation.start()
     await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
     check validation.slots == @[slot.id]
 
   test "slot should be observed if validation group is not set (and " &
     "maxSlots is not 0)":
     validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
-    await validation.start()
+    !await validation.start()
     await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
     check validation.slots == @[slot.id]
 
   for state in [SlotState.Finished, SlotState.Failed]:
     test fmt"when slot state changes to {state}, it is removed from the list":
       validation = newValidation(clock, marketplace, maxSlots, validationGroups)
-      await validation.start()
+      !await validation.start()
       await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
       marketplace.slotState[slot.id] = state
       advanceToNextPeriod()
       check eventually validation.slots.len == 0
 
   test "when a proof is missed, it is marked as missing":
-    await validation.start()
+    !await validation.start()
     await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
     marketplace.setCanMarkProofAsMissing(slot.id, true)
     advanceToNextPeriod()
@@ -149,7 +149,7 @@ asyncchecksuite "validation":
     check marketplace.markedAsMissingProofs.contains(slot.id)
 
   test "when a proof can not be marked as missing, it will not be marked":
-    await validation.start()
+    !await validation.start()
     await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
     marketplace.setCanMarkProofAsMissing(slot.id, false)
     advanceToNextPeriod()
@@ -158,7 +158,7 @@ asyncchecksuite "validation":
 
   test "it does not monitor more than the maximum number of slots":
     validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
-    await validation.start()
+    !await validation.start()
     for _ in 0 ..< maxSlots + 1:
       let slot = Slot.example
       await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
@@ -179,7 +179,7 @@ asyncchecksuite "validation":
 
       validation =
         newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
-      await validation.start()
+      !await validation.start()
 
       check validation.slots == @[slot.id]
 
@@ -194,7 +194,7 @@ asyncchecksuite "validation":
 
         validation =
           newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
-        await validation.start()
+        !await validation.start()
 
         check validation.slots == @[slot2.id]
 
@@ -203,7 +203,7 @@ asyncchecksuite "validation":
         let slot = Slot.example
         await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
       validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
-      await validation.start()
+      !await validation.start()
       check validation.slots.len == maxSlots
 
     test "slot is not observed if it is not in the validation group":
@@ -215,19 +215,19 @@ asyncchecksuite "validation":
         validationGroups,
         (groupIndex + 1) mod uint16(!validationGroups),
       )
-      await validation.start()
+      !await validation.start()
       check validation.slots.len == 0
 
     test "slot should be observed if maxSlots is set to 0":
       await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
       validation =
         newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
-      await validation.start()
+      !await validation.start()
       check validation.slots == @[slot.id]
 
     test "slot should be observed if validation " &
       "group is not set (and maxSlots is not 0)":
       await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
       validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
-      await validation.start()
+      !await validation.start()
       check validation.slots == @[slot.id]

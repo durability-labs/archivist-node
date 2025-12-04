@@ -39,8 +39,16 @@ proc load*(purchasing: Purchasing) {.async.} =
     purchase.load()
     purchasing.purchases[purchase.id] = purchase
 
-proc start*(purchasing: Purchasing) {.async.} =
-  await purchasing.load()
+proc start*(
+    purchasing: Purchasing
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  try:
+    await purchasing.load()
+    success()
+  except CancelledError as error:
+    raise error
+  except CatchableError as error:
+    failure error
 
 proc stop*(purchasing: Purchasing) {.async: (raises: []).} =
   discard

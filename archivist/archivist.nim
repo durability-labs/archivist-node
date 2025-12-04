@@ -54,7 +54,7 @@ type
 
   NodePrivateKey* = libp2p.PrivateKey # alias
 
-proc startMarketplace(s: NodeServer) {.async.} =
+proc connectMarketplace(s: NodeServer) {.async.} =
   let config = s.config
 
   if config.persistence:
@@ -62,13 +62,14 @@ proc startMarketplace(s: NodeServer) {.async.} =
       error "Persistence enabled, but no Ethereum private key was set"
       quit QuitFailure
 
-    let marketplaceResult = await MarketplaceNode.start(
+    let marketplaceResult = await MarketplaceNode.connect(
       ethProviderUrl = config.ethProvider,
       ethPrivateKeyFile = ethPrivateKeyFile,
       datastore = s.repoStore.metaDs,
       storage = MarketplaceStorage.new(s.repoStore),
       options = MarketplaceOptions(
         maxPriorityFeePerGas: config.maxPriorityFeePerGas,
+        validationEnabled: config.validator,
         validationMaxSlots: some config.validatorMaxSlots,
         validationGroups: config.validatorGroups,
         validationGroupIndex: some config.validatorGroupIndex,
@@ -77,7 +78,7 @@ proc startMarketplace(s: NodeServer) {.async.} =
     )
 
     without marketplace =? marketplaceResult, err:
-      error "Unable to start marketplace", error = err.msg
+      error "Unable to connect to marketplace", error = err.msg
       quit QuitFailure
 
     s.archivistNode.marketplace = marketplace
@@ -101,7 +102,7 @@ proc start*(s: NodeServer) {.async.} =
   s.archivistNode.discovery.updateAnnounceRecord(announceAddrs)
   s.archivistNode.discovery.updateDhtRecord(discoveryAddrs)
 
-  await s.startMarketplace()
+  await s.connectMarketplace()
   await s.archivistNode.start()
   s.restServer.start()
 
