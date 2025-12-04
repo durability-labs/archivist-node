@@ -411,7 +411,7 @@ type
       defaultValueDesc: $Curves.bn128,
       name: "curve"
     .}: Curves
-  
+
     circomR1cs* {.
       desc: "The r1cs file for the storage circuit",
       defaultValue: config.circuitDirPath / "proof_main.r1cs",
@@ -420,8 +420,7 @@ type
     .}: InputFile
 
     circomGraph* {.
-      desc:
-        "The graph file for the storage circuit (only used with nimgroth16 backend)",
+      desc: "The graph file for the storage circuit (only used with nimgroth16 backend)",
       defaultValue: config.circuitDirPath / "proof_main.bin",
       defaultValueDesc: "<circuit-dir>/proof_main.bin",
       name: "circom-graph"
