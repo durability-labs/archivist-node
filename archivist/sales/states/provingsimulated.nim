@@ -1,6 +1,5 @@
 import ../../conf
 when defined(archivist_system_testing_options):
-  import std/strutils
   import pkg/stint
   import pkg/ethers
 
@@ -11,7 +10,6 @@ when defined(archivist_system_testing_options):
   import ../../utils/exceptions
   import ../salescontext
   import ./proving
-  import ./errored
 
   logScope:
     topics = "marketplace sales simulated-proving"

@@ -43,6 +43,8 @@ import ./erasure
 import ./discovery
 import ./marketplace
 import ./contracts
+import ./sales
+import ./marketplace/abstractmarketplace
 import ./indexingstrategy
 import ./utils
 import ./errors

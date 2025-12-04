@@ -2,6 +2,7 @@ import std/times
 import pkg/chronos
 import pkg/stint
 import pkg/archivist/purchasing
+import pkg/archivist/purchasing/purchase
 import pkg/archivist/purchasing/states/finished
 import pkg/archivist/purchasing/states/started
 import pkg/archivist/purchasing/states/submitted

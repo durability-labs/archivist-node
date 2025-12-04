@@ -1,11 +1,11 @@
 import contracts/requests
 import contracts/marketplacecontract
 import contracts/onchainmarketplace
-import contracts/interactions
 import contracts/provider
+import contracts/proofs
 
 export requests
 export marketplacecontract
 export onchainmarketplace
-export interactions
 export provider
+export proofs

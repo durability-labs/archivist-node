@@ -8,10 +8,11 @@ import ./marketplace/abstractmarketplace
 import ./clock
 import ./purchasing/purchase
 
-export questionable
-export chronos
-export abstractmarketplace
-export purchase
+export purchase.Purchase
+export purchase.PurchaseId
+export purchase.id
+export purchase.state
+export purchase.error
 
 type
   Purchasing* = ref object
