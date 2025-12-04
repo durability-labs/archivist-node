@@ -66,7 +66,7 @@ proc connectMarketplace(s: NodeServer) {.async.} =
       ethProviderUrl = config.ethProvider,
       ethPrivateKeyFile = ethPrivateKeyFile,
       datastore = s.repoStore.metaDs,
-      storage = MarketplaceStorage.new(s.repoStore),
+      storage = MarketplaceStorage.new(s.archivistNode, s.repoStore),
       options = MarketplaceOptions(
         marketplaceAddress: config.marketplaceAddress,
         rewardRecipient: config.rewardRecipient,

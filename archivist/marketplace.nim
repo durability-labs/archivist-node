@@ -52,6 +52,6 @@ import ./marketplace/storageinterface
 
 export storageinterface.StorageInterface
 export storageinterface.available
-# export storageinterface.storeSlot
-# export storageinterface.proveSlot
-# export storageinterface.updateSlotExpiry
+export storageinterface.storeSlot
+export storageinterface.proveSlot
+export storageinterface.updateSlotExpiry
