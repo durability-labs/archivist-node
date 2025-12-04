@@ -6,6 +6,7 @@ import ../../blocktype as bt
 import ../../logutils
 import ../../utils/exceptions
 import ../../marketplace/abstractmarketplace
+import ../../marketplace/storageinterface
 import ../salesagent
 import ../statemachine
 import ./cancelled
@@ -40,9 +41,7 @@ method run*(
   let data = agent.data
   let context = agent.context
   let marketplace = context.marketplace
-
-  without onStore =? context.onStore:
-    raiseAssert "onStore callback not set"
+  let storage = context.storage
 
   without request =? data.request:
     raiseAssert "no sale request"
@@ -55,7 +54,7 @@ method run*(
     let requestId = request.id
     let slotId = slotId(requestId, data.slotIndex)
     let requestState = await marketplace.requestState(requestId)
-    let isRepairing = (await marketplace.slotState(slotId)) == SlotState.Repair
+    let repair = (await marketplace.slotState(slotId)) == SlotState.Repair
 
     trace "Retrieving expiry"
     var expiry: SecondsSince1970
@@ -65,7 +64,9 @@ method run*(
       expiry = await marketplace.requestExpiresAt(requestId)
 
     trace "Starting download"
-    if err =? (await onStore(request, expiry, data.slotIndex, isRepairing)).errorOption:
+    let cid = request.content.cid
+    let slotIndex = data.slotIndex
+    if err =? (await storage.storeSlot(cid, slotIndex, expiry, repair)).errorOption:
       return some State(SaleErrored(error: err, reprocessSlot: false))
 
     trace "Download complete"

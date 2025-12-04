@@ -774,10 +774,6 @@ proc proveSlot*(
     warn "Prover not enabled"
     failure "Prover not enabled"
 
-proc onClear(self: ArchivistNodeRef, request: StorageRequest, slotIndex: uint64) =
-  # TODO: remove data from local storage
-  discard
-
 proc start*(self: ArchivistNodeRef) {.async.} =
   if not self.engine.isNil:
     await self.engine.start()
@@ -786,27 +782,6 @@ proc start*(self: ArchivistNodeRef) {.async.} =
     await self.discovery.start()
 
   if marketplace =? self.marketplace:
-    marketplace.sales.onStore = proc(
-        request: StorageRequest,
-        expiry: SecondsSince1970,
-        slot: uint64,
-        isRepairing: bool = false,
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      await self.storeSlot(request.content.cid, slot, expiry, isRepairing)
-
-    marketplace.sales.onExpiryUpdate = proc(
-        rootCid: Cid, expiry: SecondsSince1970
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      await self.updateExpiry(rootCid, expiry)
-
-    marketplace.sales.onClear = proc(request: StorageRequest, slotIndex: uint64) =
-      self.onClear(request, slotIndex)
-
-    marketplace.sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      await self.proveSlot(slot.request.content.cid, slot.slotIndex, challenge)
-
     if error =? (await marketplace.start()).errorOption:
       error "Unable to start marketplace", error = error.msg
 

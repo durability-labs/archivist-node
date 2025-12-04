@@ -48,9 +48,6 @@ method run*(
 
       returnedCollateral = currentCollateral.some
 
-    if onClear =? agent.context.onClear and request =? data.request:
-      onClear(request, data.slotIndex)
-
     if onCleanUp =? agent.onCleanUp:
       await onCleanUp(reprocessSlot = false, returnedCollateral = returnedCollateral)
 
