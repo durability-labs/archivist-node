@@ -136,7 +136,7 @@ func compress*(x, y: openArray[byte], key: ByteTreeKey, mhash: MHash): ?!ByteHas
   ##
 
   # Using Constantine's SHA256 instead of mhash for optimal performance on 32-byte merkle node hashing
-  # See: https://github.com/codex-storage/nim-codex/issues/1162
+  # See: https://github.com/logos-storage/nim-codex/issues/1162
 
   let input = @x & @y & @[key.byte]
   var digest = hashes.sha256.hash(input)

@@ -321,12 +321,12 @@ jobs:
       max-parallel: 1
       matrix:
         tests: ${{ fromJSON(needs.compute-continuous-tests-inputs.outputs.continuous_tests_list) }}
-    uses: codex-storage/cs-codex-dist-tests/.github/workflows/run-continuous-tests.yaml@master
+    uses: durability-labs/cs-archivist-dist-tests/.github/workflows/run-continuous-tests.yaml@main
 
     with:
       source: ${{ needs.compute-tests-inputs.outputs.source }}
       branch: ${{ needs.compute-tests-inputs.outputs.branch }}
-      codexdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
+      archivistdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
       nameprefix: ${{ needs.compute-continuous-tests-inputs.outputs.nameprefix }}-${{ matrix.tests }}-${{ needs.compute-continuous-tests-inputs.outputs.continuous_tests_duration }}
       tests_filter: ${{ matrix.tests }}
       tests_target_duration: ${{ needs.compute-tests-inputs.outputs.continuous_tests_duration }}
@@ -339,10 +339,10 @@ jobs:
     name: Run Release Tests
     needs: [compute-tests-inputs]
     if: ${{ inputs.run_release_tests == 'true' }}
-    uses: codex-storage/cs-codex-dist-tests/.github/workflows/run-release-tests.yaml@master
+    uses: durability-labs/cs-archivist-dist-tests/.github/workflows/run-release-tests.yaml@main
     with:
       source: ${{ needs.compute-tests-inputs.outputs.source }}
       branch: ${{ needs.compute-tests-inputs.outputs.branch }}
-      codexdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
+      archivistdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
       workflow_source: ${{ needs.compute-tests-inputs.outputs.workflow_source }}
     secrets: inherit
