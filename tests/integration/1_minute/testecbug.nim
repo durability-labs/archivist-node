@@ -3,7 +3,7 @@ import pkg/asynctest/chronos/unittest2
 import ../../testbed
 
 suite "Bug 821 - node crashes during erasure coding":
-  # https://github.com/codex-storage/nim-codex/issues/821
+  # https://github.com/logos-storage/nim-codex/issues/821
 
   var testbed: Testbed
   var node: Node
