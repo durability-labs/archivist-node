@@ -1,13 +1,9 @@
 import std/os
 import std/options
 import std/math
-import std/importutils
 
 import pkg/chronos
 import pkg/stew/byteutils
-import pkg/datastore
-import pkg/datastore/typedds
-import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 import pkg/poseidon2
@@ -19,9 +15,7 @@ import pkg/archivistdht/discv5/protocol as discv5
 
 import pkg/archivist/logutils
 import pkg/archivist/stores
-import pkg/archivist/clock
 import pkg/archivist/contracts
-import pkg/archivist/systemclock
 import pkg/archivist/blockexchange
 import pkg/archivist/chunker
 import pkg/archivist/slots
@@ -38,18 +32,30 @@ import ../../asynctest
 import ../examples
 import ../helpers
 import ../helpers/mockmarketplace
-import ../helpers/mockclock
 import ../slots/helpers
 
 import ./helpers
-
-privateAccess(ArchivistNodeRef) # enable access to private fields
+import ./tempnode
 
 asyncchecksuite "Test Node - Basic":
-  setupAndTearDown()
+  var temporary: TemporaryNode
+  var node: ArchivistNodeRef
+  var localStore: RepoStore
+  var networkStore: NetworkStore
+  var file: File
+  var chunker: Chunker
 
   setup:
-    await node.start()
+    temporary = await TemporaryNode.create()
+    node = temporary.node
+    localStore = temporary.localStore
+    networkStore = temporary.networkStore
+    file = open(currentSourcePath().parentDir / ".." / ".." / "fixtures" / "test.jpg")
+    chunker = FileChunker.new(file = file, chunkSize = DefaultBlockSize)
+
+  teardown:
+    file.close()
+    await temporary.destroy()
 
   test "Fetch Manifest":
     let
@@ -174,8 +180,9 @@ asyncchecksuite "Test Node - Basic":
 
   test "Setup purchase request":
     let
-      erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+      erasure = Erasure.new(
+        networkStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new()
+      )
       manifest = await storeDataGetManifest(localStore, chunker)
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
@@ -217,7 +224,7 @@ asyncchecksuite "Test Node - Basic":
     let
       blocks = await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)
       manifest = await storeDataGetManifest(localStore, blocks)
-      manifestBlock = (await store.storeManifest(manifest)).tryGet()
+      manifestBlock = (await networkStore.storeManifest(manifest)).tryGet()
       manifestCid = manifestBlock.cid
 
     check await manifestCid in localStore
