@@ -5,10 +5,10 @@ import pkg/chronos
 import pkg/datastore/typedds
 import pkg/questionable
 import pkg/questionable/results
-import pkg/archivist/sales
-import pkg/archivist/sales/salesdata
-import pkg/archivist/sales/salescontext
-import pkg/archivist/sales/slotqueue
+import pkg/archivist/marketplace/sales
+import pkg/archivist/marketplace/sales/salesdata
+import pkg/archivist/marketplace/sales/salescontext
+import pkg/archivist/marketplace/sales/slotqueue
 import pkg/archivist/marketplace/availability/store
 import pkg/archivist/marketplace/availability/terms
 import pkg/archivist/blocktype as bt

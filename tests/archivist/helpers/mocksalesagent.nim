@@ -1,4 +1,4 @@
-import pkg/archivist/sales/salesagent
+import pkg/archivist/marketplace/sales/salesagent
 
 type MockSalesAgent = ref object of SalesAgent
   fulfilledCalled*: bool

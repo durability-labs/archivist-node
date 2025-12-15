@@ -17,10 +17,10 @@ import pkg/stew/byteutils
 import pkg/results
 import pkg/stint
 
-import ../sales
-import ../purchasing
+import ../marketplace/sales
+import ../marketplace/purchasing
+import ../marketplace/contracts/requests
 import ../utils/stintutils
-import ../contracts/requests
 
 proc encodeString*(cid: type Cid): Result[string, cstring] =
   ok($cid)

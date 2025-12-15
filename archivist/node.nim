@@ -42,8 +42,8 @@ import ./streams
 import ./erasure
 import ./discovery
 import ./marketplace
-import ./contracts
-import ./sales
+import ./marketplace/contracts
+import ./marketplace/sales
 import ./marketplace/abstractmarketplace
 import ./indexingstrategy
 import ./utils

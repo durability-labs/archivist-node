@@ -2,7 +2,7 @@ import pkg/chronos
 import pkg/questionable/results
 import pkg/libp2p/cid
 import ../clock
-import ../contracts/proofs
+import ./contracts/proofs
 import ./abstractmarketplace
 
 type StorageInterface* = ref object of RootObj

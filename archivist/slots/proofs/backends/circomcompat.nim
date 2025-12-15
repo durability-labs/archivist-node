@@ -19,7 +19,7 @@ import pkg/circomcompat
 
 import ../../types
 import ../../../stores
-import ../../../contracts
+import ../../../marketplace/contracts
 
 import ./converters
 

@@ -2,8 +2,8 @@ import pkg/chronos
 import std/strformat
 import std/times
 
-import archivist/validation
-import archivist/periods
+import archivist/marketplace/validation
+import archivist/marketplace/periods
 import archivist/clock
 
 import ../asynctest

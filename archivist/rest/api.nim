@@ -36,7 +36,7 @@ import ../streams/asyncstreamwrapper
 import ../stores
 import ../marketplace
 import ../marketplace/abstractmarketplace
-import ../purchasing
+import ../marketplace/purchasing
 
 import ./coders
 import ./json

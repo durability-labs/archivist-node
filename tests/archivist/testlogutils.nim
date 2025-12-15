@@ -4,9 +4,9 @@ import std/strutils
 import pkg/unittest2
 import pkg/archivist/blocktype
 import pkg/archivist/conf
-import pkg/archivist/contracts/requests
+import pkg/archivist/marketplace/contracts/requests
 import pkg/archivist/logutils
-import pkg/archivist/purchasing/purchaseid
+import pkg/archivist/marketplace/purchasing/purchaseid
 import pkg/archivist/units
 import pkg/archivist/utils/json
 import pkg/libp2p/cid

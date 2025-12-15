@@ -13,7 +13,7 @@ import pkg/groth16
 import pkg/circomcompat
 import pkg/constantine/math/io/io_fields
 
-import ../../../contracts
+import ../../../marketplace/contracts
 import ../../types
 import ../../../merkletree
 

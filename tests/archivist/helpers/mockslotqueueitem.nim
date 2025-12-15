@@ -1,5 +1,5 @@
-import pkg/archivist/contracts/requests
-import pkg/archivist/sales/slotqueue
+import pkg/archivist/marketplace/contracts/requests
+import pkg/archivist/marketplace/sales/slotqueue
 
 type MockSlotQueueItem* = object
   requestId*: RequestId

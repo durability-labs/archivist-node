@@ -2,7 +2,7 @@ import std/options
 import std/importutils
 import pkg/chronos
 import pkg/ethers/erc20
-import archivist/contracts
+import archivist/marketplace/contracts
 import pkg/libp2p/cid
 import pkg/lrucache
 import ../asynctest

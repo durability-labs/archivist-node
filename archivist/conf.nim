@@ -44,8 +44,8 @@ import ./utils
 import ./nat
 import ./utils/natutils
 
-from ./contracts/config import DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
-from ./validationconfig import MaxSlots, ValidationGroups
+from ./marketplace/contracts/config import DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
+from ./marketplace/validation/validationconfig import MaxSlots, ValidationGroups
 
 export units, net, archivisttypes, logutils, completeCmdArg, parseCmdArg, NatConfig
 export ValidationGroups, MaxSlots

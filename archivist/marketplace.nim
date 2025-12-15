@@ -9,25 +9,25 @@ export node.address
 export node.purchasing
 export node.sales
 
-import ./marketplace/options
+import ./marketplace/node/options
 
 export options.MarketplaceOptions
 
-import ./purchasing
+import ./marketplace/purchasing
 
 export purchasing.Purchasing
 export purchasing.purchase
 export purchasing.getPurchases
 export purchasing.getPurchase
 
-import ./purchasing/purchase
+import ./marketplace/purchasing/purchase
 
 export purchase.Purchase
 export purchase.PurchaseId
 export purchase.id
 export purchase.state
 
-import ./sales
+import ./marketplace/sales
 
 export sales.Sales
 export sales.availability
@@ -35,7 +35,7 @@ export sales.updateAvailability
 export sales.getSlots
 export sales.getSlot
 
-import ./sales/salesslot
+import ./marketplace/sales/salesslot
 
 export salesslot.SalesSlot
 export salesslot.id

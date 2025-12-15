@@ -1,14 +1,14 @@
 import std/times
 import pkg/chronos
 import pkg/stint
-import pkg/archivist/purchasing
-import pkg/archivist/purchasing/purchase
-import pkg/archivist/purchasing/states/finished
-import pkg/archivist/purchasing/states/started
-import pkg/archivist/purchasing/states/submitted
-import pkg/archivist/purchasing/states/unknown
-import pkg/archivist/purchasing/states/cancelled
-import pkg/archivist/purchasing/states/failed
+import pkg/archivist/marketplace/purchasing
+import pkg/archivist/marketplace/purchasing/purchase
+import pkg/archivist/marketplace/purchasing/states/finished
+import pkg/archivist/marketplace/purchasing/states/started
+import pkg/archivist/marketplace/purchasing/states/submitted
+import pkg/archivist/marketplace/purchasing/states/unknown
+import pkg/archivist/marketplace/purchasing/states/cancelled
+import pkg/archivist/marketplace/purchasing/states/failed
 
 import ../asynctest
 import ./helpers/mockmarketplace

@@ -3,10 +3,10 @@ import std/sequtils
 import std/times
 import std/typetraits
 
-import pkg/archivist/contracts/requests
+import pkg/archivist/marketplace/contracts/requests
 import pkg/archivist/rng
-import pkg/archivist/contracts/proofs
-import pkg/archivist/sales/slotqueue
+import pkg/archivist/marketplace/contracts/proofs
+import pkg/archivist/marketplace/sales/slotqueue
 import pkg/archivist/stores
 import pkg/archivist/units
 

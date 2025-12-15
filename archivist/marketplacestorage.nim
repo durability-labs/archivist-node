@@ -1,9 +1,9 @@
 import pkg/chronos
 import ./marketplace
+import ./marketplace/contracts/proofs
+import ./marketplace/abstractmarketplace
 import ./node
 import ./stores/repostore
-import ./contracts/proofs
-import ./marketplace/abstractmarketplace
 import ./clock
 
 type MarketplaceStorage* = ref object of marketplace.StorageInterface

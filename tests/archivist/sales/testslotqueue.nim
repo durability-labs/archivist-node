@@ -4,7 +4,7 @@ import pkg/questionable
 import pkg/questionable/results
 
 import pkg/archivist/logutils
-import pkg/archivist/sales/slotqueue
+import pkg/archivist/marketplace/sales/slotqueue
 
 import ../../asynctest
 import ../helpers

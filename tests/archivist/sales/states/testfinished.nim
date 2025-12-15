@@ -1,10 +1,10 @@
 import pkg/questionable
-import pkg/archivist/contracts/requests
-import pkg/archivist/sales/states/finished
-import pkg/archivist/sales/states/cancelled
-import pkg/archivist/sales/states/failed
-import pkg/archivist/sales/salesagent
-import pkg/archivist/sales/salescontext
+import pkg/archivist/marketplace/contracts/requests
+import pkg/archivist/marketplace/sales/states/finished
+import pkg/archivist/marketplace/sales/states/cancelled
+import pkg/archivist/marketplace/sales/states/failed
+import pkg/archivist/marketplace/sales/salesagent
+import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/marketplace/abstractmarketplace
 
 import ../../../asynctest

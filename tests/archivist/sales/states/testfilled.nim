@@ -1,12 +1,12 @@
 import pkg/questionable/results
 
-import pkg/archivist/contracts/requests
-import pkg/archivist/sales
-import pkg/archivist/sales/salesagent
-import pkg/archivist/sales/salescontext
-import pkg/archivist/sales/states/filled
-import pkg/archivist/sales/states/errored
-import pkg/archivist/sales/states/proving
+import pkg/archivist/marketplace/contracts/requests
+import pkg/archivist/marketplace/sales
+import pkg/archivist/marketplace/sales/salesagent
+import pkg/archivist/marketplace/sales/salescontext
+import pkg/archivist/marketplace/sales/states/filled
+import pkg/archivist/marketplace/sales/states/errored
+import pkg/archivist/marketplace/sales/states/proving
 
 import ../../../asynctest
 import ../../helpers/mockmarketplace

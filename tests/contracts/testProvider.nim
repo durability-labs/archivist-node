@@ -1,5 +1,5 @@
 import pkg/chronos
-import archivist/contracts
+import archivist/marketplace/contracts
 import ../asynctest
 import ../testbed
 import ./helpers/mockprovider
