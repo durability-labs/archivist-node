@@ -10,11 +10,11 @@ import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/marketplace/abstractmarketplace
 
-import ../../../asynctest
-import ../../examples
-import ../../helpers
-import ../../helpers/mockmarketplace
-import ../../helpers/mockclock
+import ../../../../asynctest
+import ../../../examples
+import ../../../helpers
+import ../../../helpers/mockmarketplace
+import ../../../helpers/mockclock
 import ../mockstorage
 import ../helpers/periods
 

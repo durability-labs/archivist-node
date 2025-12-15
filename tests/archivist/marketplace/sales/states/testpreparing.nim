@@ -13,11 +13,11 @@ import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/stores/repostore
 import times
-import ../../../asynctest
-import ../../helpers
-import ../../examples
-import ../../helpers/mockmarketplace
-import ../../helpers/mockclock
+import ../../../../asynctest
+import ../../../helpers
+import ../../../examples
+import ../../../helpers/mockmarketplace
+import ../../../helpers/mockclock
 import ../mockstorage
 
 asyncchecksuite "sales state 'preparing'":

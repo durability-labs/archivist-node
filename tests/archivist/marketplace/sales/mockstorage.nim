@@ -4,7 +4,7 @@ import pkg/libp2p/cid
 import pkg/archivist/marketplace/storageinterface
 import pkg/archivist/marketplace/abstractmarketplace
 import pkg/archivist/clock
-import ../../examples
+import ../../../examples
 
 type MockStorage* = ref object of StorageInterface
   available: uint64

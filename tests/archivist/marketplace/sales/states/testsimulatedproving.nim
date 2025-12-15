@@ -1,44 +1,70 @@
 import pkg/chronos
 import pkg/questionable
 import pkg/archivist/marketplace/contracts/requests
+import pkg/archivist/marketplace/sales/states/provingsimulated
 import pkg/archivist/marketplace/sales/states/proving
 import pkg/archivist/marketplace/sales/states/cancelled
 import pkg/archivist/marketplace/sales/states/failed
 import pkg/archivist/marketplace/sales/states/payout
-import pkg/archivist/marketplace/sales/states/errored
 import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 
-import ../../../asynctest
-import ../../examples
-import ../../helpers
-import ../../helpers/mockmarketplace
-import ../../helpers/mockclock
+import ../../../../asynctest
+import ../../../examples
+import ../../../helpers
+import ../../../helpers/mockmarketplace
+import ../../../helpers/mockclock
 import ../mockstorage
 
-asyncchecksuite "sales state 'proving'":
+asyncchecksuite "sales state 'simulated-proving'":
   let slot = Slot.example
   let request = slot.request
+  let proof = Groth16Proof.example
+  let failEveryNProofs = 3
+  let totalProofs = 6
 
   var marketplace: MockMarketplace
   var storage: MockStorage
   var clock: MockClock
   var agent: SalesAgent
-  var state: SaleProving
+  var state: SaleProvingSimulated
+
+  var proofSubmitted: Future[void] = newFuture[void]("proofSubmitted")
+  var subscription: Subscription
 
   setup:
     clock = MockClock.new()
-    marketplace = MockMarketplace.new()
     storage = MockStorage.new()
+
+    proc onProofSubmission(id: SlotId) =
+      proofSubmitted.complete()
+      proofSubmitted = newFuture[void]("proofSubmitted")
+
+    marketplace = MockMarketplace.new()
+    marketplace.slotState[slot.id] = SlotState.Filled
+    marketplace.setProofRequired(slot.id, true)
+    subscription = await marketplace.subscribeProofSubmission(onProofSubmission)
+
     let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
     agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
-    state = SaleProving.new()
+    state = SaleProvingSimulated.new()
+    state.failEveryNProofs = failEveryNProofs
+
+  teardown:
+    await subscription.unsubscribe()
 
   proc advanceToNextPeriod(marketplace: AbstractMarketplace) {.async.} =
     let periodicity = await marketplace.periodicity()
     let current = periodicity.periodOf(clock.now().Timestamp)
     let periodEnd = periodicity.periodEnd(current)
     clock.set(periodEnd.toSecondsSince1970 + 1)
+
+  proc waitForProvingRounds(marketplace: AbstractMarketplace, rounds: int) {.async.} =
+    var rnds = rounds - 1 # proof round runs prior to advancing
+    while rnds > 0:
+      await marketplace.advanceToNextPeriod()
+      await proofSubmitted
+      rnds -= 1
 
   test "switches to cancelled state when request expires":
     let next = state.onCancelled(request)
@@ -48,24 +74,15 @@ asyncchecksuite "sales state 'proving'":
     let next = state.onFailed(request)
     check !next of SaleFailed
 
-  test "submits proofs":
-    var receivedIds: seq[SlotId]
-
-    proc onProofSubmission(id: SlotId) =
-      receivedIds.add(id)
-
-    let subscription = await marketplace.subscribeProofSubmission(onProofSubmission)
-    marketplace.slotState[slot.id] = SlotState.Filled
-
+  test "submits invalid proof every 3 proofs":
+    storage.proveSlotResult = success(proof)
     let future = state.run(agent)
+    let invalid = Groth16Proof.default
 
-    marketplace.setProofRequired(slot.id, true)
-    await marketplace.advanceToNextPeriod()
-
-    check eventually receivedIds.contains(slot.id)
+    await marketplace.waitForProvingRounds(totalProofs)
+    check marketplace.submitted == @[proof, proof, invalid, proof, proof, invalid]
 
     await future.cancelAndWait()
-    await subscription.unsubscribe()
 
   test "switches to payout state when request is finished":
     marketplace.slotState[slot.id] = SlotState.Filled
@@ -77,27 +94,3 @@ asyncchecksuite "sales state 'proving'":
 
     check eventually future.finished
     check !(future.read()) of SalePayout
-
-  test "switches to error state when slot is no longer filled":
-    marketplace.slotState[slot.id] = SlotState.Filled
-
-    let future = state.run(agent)
-
-    marketplace.slotState[slot.id] = SlotState.Free
-    await marketplace.advanceToNextPeriod()
-
-    check eventually future.finished
-    check !(future.read()) of SaleErrored
-
-  test "provides proof challenge to prover":
-    marketplace.proofChallenge = ProofChallenge.example
-    marketplace.slotState[slot.id] = SlotState.Filled
-    marketplace.setProofRequired(slot.id, true)
-
-    let future = state.run(agent)
-
-    check eventually storage.proveSlotCalls.len == 1
-    let (_, _, challenge) = storage.proveSlotCalls[0]
-    check challenge == marketplace.proofChallenge
-
-    await future.cancelAndWait()

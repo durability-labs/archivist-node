@@ -8,11 +8,11 @@ import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/marketplace/abstractmarketplace
 from pkg/archivist/utils/asyncstatemachine import State
 
-import ../../../asynctest
-import ../../examples
-import ../../helpers
-import ../../helpers/mockmarketplace
-import ../../helpers/mockclock
+import ../../../../asynctest
+import ../../../examples
+import ../../../helpers
+import ../../../helpers/mockmarketplace
+import ../../../helpers/mockclock
 
 asyncchecksuite "sales state 'cancelled'":
   let request = StorageRequest.example

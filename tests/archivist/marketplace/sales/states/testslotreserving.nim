@@ -10,11 +10,11 @@ import pkg/archivist/marketplace/sales/states/errored
 import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/stores/repostore
-import ../../../asynctest
-import ../../helpers
-import ../../examples
-import ../../helpers/mockmarketplace
-import ../../helpers/mockclock
+import ../../../../asynctest
+import ../../../helpers
+import ../../../examples
+import ../../../helpers/mockmarketplace
+import ../../../helpers/mockclock
 
 asyncchecksuite "sales state 'SlotReserving'":
   let request = StorageRequest.example

@@ -6,11 +6,11 @@ import archivist/marketplace/validation
 import archivist/marketplace/periods
 import archivist/clock
 
-import ../asynctest
-import ./helpers/mockmarketplace
-import ./helpers/mockclock
-import ./examples
-import ./helpers
+import ../../asynctest
+import ../helpers/mockmarketplace
+import ../helpers/mockclock
+import ../examples
+import ../helpers
 
 logScope:
   topics = "testValidation"

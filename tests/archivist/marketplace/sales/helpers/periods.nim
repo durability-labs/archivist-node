@@ -1,5 +1,5 @@
 import pkg/archivist/marketplace/abstractmarketplace
-import ../../helpers/mockclock
+import ../../../helpers/mockclock
 
 proc advanceToNextPeriod*(
     clock: MockClock, marketplace: AbstractMarketplace

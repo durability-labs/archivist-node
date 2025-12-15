@@ -5,11 +5,11 @@ import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/marketplace/sales/statemachine
 
-import ../../asynctest
-import ../helpers/mockmarketplace
-import ../helpers/mockclock
-import ../helpers
-import ../examples
+import ../../../asynctest
+import ../../helpers/mockmarketplace
+import ../../helpers/mockclock
+import ../../helpers
+import ../../examples
 
 var onCancelCalled = false
 var onFailedCalled = false

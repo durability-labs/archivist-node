@@ -14,12 +14,12 @@ import pkg/archivist/marketplace/availability/terms
 import pkg/archivist/blocktype as bt
 import pkg/archivist/node
 import pkg/archivist/utils/asyncstatemachine
-import ../../asynctest
-import ../helpers
-import ../helpers/mockmarketplace
-import ../helpers/mockclock
-import ../helpers/always
-import ../examples
+import ../../../asynctest
+import ../../helpers
+import ../../helpers/mockmarketplace
+import ../../helpers/mockclock
+import ../../helpers/always
+import ../../examples
 import ./helpers/periods
 import ./mockstorage
 

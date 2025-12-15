@@ -6,11 +6,11 @@ import pkg/questionable/results
 import pkg/archivist/logutils
 import pkg/archivist/marketplace/sales/slotqueue
 
-import ../../asynctest
-import ../helpers
-import ../helpers/mockmarketplace
-import ../helpers/mockslotqueueitem
-import ../examples
+import ../../../asynctest
+import ../../helpers
+import ../../helpers/mockmarketplace
+import ../../helpers/mockslotqueueitem
+import ../../examples
 
 suite "Slot queue start/stop":
   var queue: SlotQueue

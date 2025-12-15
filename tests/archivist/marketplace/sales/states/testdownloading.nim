@@ -5,8 +5,8 @@ import pkg/archivist/marketplace/sales/states/cancelled
 import pkg/archivist/marketplace/sales/states/downloading
 import pkg/archivist/marketplace/sales/states/failed
 import pkg/archivist/marketplace/sales/states/filled
-import ../../examples
-import ../../helpers
+import ../../../examples
+import ../../../helpers
 
 suite "sales state 'downloading'":
   let request = StorageRequest.example

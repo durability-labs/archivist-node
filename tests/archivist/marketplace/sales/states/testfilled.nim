@@ -8,10 +8,10 @@ import pkg/archivist/marketplace/sales/states/filled
 import pkg/archivist/marketplace/sales/states/errored
 import pkg/archivist/marketplace/sales/states/proving
 
-import ../../../asynctest
-import ../../helpers/mockmarketplace
-import ../../examples
-import ../../helpers
+import ../../../../asynctest
+import ../../../helpers/mockmarketplace
+import ../../../examples
+import ../../../helpers
 import ../mockstorage
 
 suite "sales state 'filled'":

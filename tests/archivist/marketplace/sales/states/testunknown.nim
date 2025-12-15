@@ -9,10 +9,10 @@ import pkg/archivist/marketplace/sales/states/finished
 import pkg/archivist/marketplace/sales/states/failed
 import pkg/archivist/marketplace/sales/states/payout
 
-import ../../../asynctest
-import ../../helpers/mockmarketplace
-import ../../examples
-import ../../helpers
+import ../../../../asynctest
+import ../../../helpers/mockmarketplace
+import ../../../examples
+import ../../../helpers
 
 suite "sales state 'unknown'":
   let request = StorageRequest.example

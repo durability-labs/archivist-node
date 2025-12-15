@@ -10,11 +10,11 @@ import pkg/archivist/marketplace/purchasing/states/unknown
 import pkg/archivist/marketplace/purchasing/states/cancelled
 import pkg/archivist/marketplace/purchasing/states/failed
 
-import ../asynctest
-import ./helpers/mockmarketplace
-import ./helpers/mockclock
-import ./examples
-import ./helpers
+import ../../asynctest
+import ../helpers/mockmarketplace
+import ../helpers/mockclock
+import ../examples
+import ../helpers
 
 asyncchecksuite "Purchasing":
   var purchasing: Purchasing

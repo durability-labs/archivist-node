@@ -7,11 +7,11 @@ import pkg/archivist/marketplace/sales/states/ignored
 import pkg/archivist/marketplace/sales/states/errored
 import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
-import ../../../asynctest
-import ../../examples
-import ../../helpers
-import ../../helpers/mockmarketplace
-import ../../helpers/mockclock
+import ../../../../asynctest
+import ../../../examples
+import ../../../helpers
+import ../../../helpers/mockmarketplace
+import ../../../helpers/mockclock
 
 suite "sales state 'filling'":
   let request = StorageRequest.example
