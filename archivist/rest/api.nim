@@ -37,7 +37,6 @@ import ../stores
 import ../marketplace
 import ../marketplace/abstractmarketplace
 import ../purchasing
-import ../sales/reservations
 
 import ./coders
 import ./json
@@ -505,15 +504,6 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
     except CatchableError as exc:
       trace "Excepting processing request", exc = exc.msg
       return RestApiResponse.error(Http500, headers = headers)
-
-  router.api(MethodOptions, "/api/archivist/v1/sales/availability/{id}") do(
-    id: AvailabilityId, resp: HttpResponseRef
-  ) -> RestApiResponse:
-    if corsOrigin =? allowedOrigin:
-      resp.setCorsHeaders("PATCH", corsOrigin)
-
-    resp.status = Http204
-    await resp.sendBody("")
 
 proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
   let allowedOrigin = router.allowedOrigin

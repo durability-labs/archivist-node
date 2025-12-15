@@ -20,6 +20,7 @@ import pkg/stint
 import ../sales
 import ../purchasing
 import ../utils/stintutils
+import ../contracts/requests
 
 proc encodeString*(cid: type Cid): Result[string, cstring] =
   ok($cid)
@@ -82,7 +83,7 @@ proc decodeString*(
   except ValueError as e:
     err e.msg.cstring
 
-proc decodeString*[T: PurchaseId | RequestId | Nonce | SlotId | AvailabilityId](
+proc decodeString*[T: PurchaseId | RequestId | Nonce | SlotId](
     _: type T, value: string
 ): Result[T, cstring] =
   array[32, byte].decodeString(value).map(id => T(id))

@@ -41,7 +41,6 @@ import ./utils/exceptions
 ##     |                          | ---- storage proof ---> |
 
 export stint
-export reservations
 export salesagent
 export salescontext
 

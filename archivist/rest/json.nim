@@ -5,6 +5,7 @@ import pkg/archivistdht/discv5/node as dn
 import pkg/archivistdht/discv5/routing_table as rt
 import ../sales
 import ../purchasing
+import ../contracts/requests
 import ../utils/json
 import ../manifest
 import ../units

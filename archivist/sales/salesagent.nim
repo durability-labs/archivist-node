@@ -10,10 +10,7 @@ import ../utils/exceptions
 import ./statemachine
 import ./salescontext
 import ./salesdata
-import ./reservations
 import ./slotqueue
-
-export reservations
 
 logScope:
   topics = "marketplace sales"

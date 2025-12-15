@@ -22,7 +22,6 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let agent = SalesAgent(machine)
   let data = agent.data
-  let context = agent.context
 
   error "Sale error",
     error = state.error.msgDetail,

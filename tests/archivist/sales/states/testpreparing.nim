@@ -11,7 +11,6 @@ import pkg/archivist/sales/states/ignored
 import pkg/archivist/sales/states/errored
 import pkg/archivist/sales/salesagent
 import pkg/archivist/sales/salescontext
-import pkg/archivist/sales/reservations
 import pkg/archivist/stores/repostore
 import times
 import ../../../asynctest
