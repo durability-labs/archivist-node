@@ -178,7 +178,7 @@ asyncchecksuite "Test Node - Basic":
     await stream.readExactly(addr data[0], data.len)
     check string.fromBytes(data) == testString
 
-  test "Setup purchase request":
+  test "Setup purchase request - Basic manifest":
     let
       erasure = Erasure.new(
         networkStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new()
@@ -211,6 +211,100 @@ asyncchecksuite "Test Node - Basic":
       (await verifiableBlock.cid in localStore) == true
       request.content.cid == verifiableBlock.cid
       request.content.merkleRoot == builder.verifyRoot.get.toBytes
+
+  test "Setup purchase request - Protected manifest":
+    let
+      erasure =
+        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+      manifest = await storeDataGetManifest(localStore, chunker)
+      protected = (await erasure.encode(manifest, 3, 2)).tryGet()
+      protectedManifestBlock =
+        bt.Block.new(protected.encode().tryGet(), codec = ManifestCodec).tryGet()
+      builder = Poseidon2Builder.new(localStore, protected).tryGet()
+      verifiable = (await builder.buildManifest()).tryGet()
+      verifiableBlock =
+        bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+
+    (await localStore.putBlock(protectedManifestBlock)).tryGet()
+
+    let request = (
+      await node.setupRequest(
+        cid = protectedManifestBlock.cid,
+        nodes = 5,
+        tolerance = 2,
+        duration = 100.uint64,
+        pricePerBytePerSecond = 1.u256,
+        proofProbability = 3.u256,
+        expiry = 200.uint64,
+        collateralPerByte = 1.u256,
+      )
+    ).tryGet
+
+    check:
+      (await verifiableBlock.cid in localStore) == true
+      request.content.cid == verifiableBlock.cid
+      request.content.merkleRoot == builder.verifyRoot.get.toBytes
+
+  test "Setup purchase request - Verifiable manifest":
+    let
+      erasure =
+        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+      manifest = await storeDataGetManifest(localStore, chunker)
+      protected = (await erasure.encode(manifest, 3, 2)).tryGet()
+      builder = Poseidon2Builder.new(localStore, protected).tryGet()
+      verifiable = (await builder.buildManifest()).tryGet()
+      verifiableBlock =
+        bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+
+    (await localStore.putBlock(verifiableBlock)).tryGet()
+
+    let request = (
+      await node.setupRequest(
+        cid = verifiableBlock.cid,
+        nodes = 5,
+        tolerance = 2,
+        duration = 100.uint64,
+        pricePerBytePerSecond = 1.u256,
+        proofProbability = 3.u256,
+        expiry = 200.uint64,
+        collateralPerByte = 1.u256,
+      )
+    ).tryGet
+
+    check:
+      request.content.cid == verifiableBlock.cid
+      request.content.merkleRoot == builder.verifyRoot.get.toBytes
+
+  test "Setup purchase request - Verifiable manifest fails when ec params mismatch":
+    let
+      erasure =
+        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+      manifest = await storeDataGetManifest(localStore, chunker)
+      protected = (await erasure.encode(manifest, 3, 2)).tryGet()
+      builder = Poseidon2Builder.new(localStore, protected).tryGet()
+      verifiable = (await builder.buildManifest()).tryGet()
+      verifiableBlock =
+        bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+
+    (await localStore.putBlock(verifiableBlock)).tryGet()
+
+    let request = (
+      await node.setupRequest(
+        cid = verifiableBlock.cid,
+        nodes = 6,
+        tolerance = 2,
+        duration = 100.uint64,
+        pricePerBytePerSecond = 1.u256,
+        proofProbability = 3.u256,
+        expiry = 200.uint64,
+        collateralPerByte = 1.u256,
+      )
+    )
+
+    check not request.isSuccess
+    check request.error.msg ==
+      "Attempt to proceed with protected manifest with parameters " &
+      "3/2 but required: 4/2"
 
   test "Should delete a single block":
     let randomBlock = bt.Block.new("Random block".toBytes).tryGet()
