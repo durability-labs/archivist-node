@@ -1,10 +1,12 @@
 import std/sequtils
-import std/sugar
 import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 import pkg/datastore
 import ./marketplace/abstractmarketplace
+import ./marketplace/availability/store
+import ./marketplace/availability/terms
+import ./marketplace/storageinterface
 import ./clock
 import ./stores
 import ./contracts/requests
@@ -50,6 +52,7 @@ type Sales* = ref object
   context*: SalesContext
   agents*: seq[SalesAgent]
   running: bool
+  availabilityStore: AvailabilityStore
   subscriptions: seq[abstractmarketplace.Subscription]
   trackedFutures: TrackedFutures
 
@@ -84,16 +87,20 @@ proc onExpiryUpdate*(sales: Sales): ?OnExpiryUpdate =
   sales.context.onExpiryUpdate
 
 proc new*(
-    _: type Sales, marketplace: AbstractMarketplace, clock: Clock, repo: RepoStore
+    _: type Sales,
+    marketplace: AbstractMarketplace,
+    clock: Clock,
+    availability: AvailabilityStore,
+    storage: StorageInterface,
 ): Sales =
-  let reservations = Reservations.new(repo)
   Sales(
     context: SalesContext(
       marketplace: marketplace,
       clock: clock,
-      reservations: reservations,
+      storage: storage,
       slotQueue: SlotQueue.new(),
     ),
+    availabilityStore: availability,
     trackedFutures: TrackedFutures.new(),
     subscriptions: @[],
   )
@@ -113,31 +120,8 @@ proc cleanUp(
     topics = "sales cleanUp"
     requestId = data.requestId
     slotIndex = data.slotIndex
-    reservationId = data.reservation .? id |? ReservationId.default
-    availabilityId = data.reservation .? availabilityId |? AvailabilityId.default
 
   trace "cleaning up sales agent"
-
-  # if reservation for the SalesAgent was not created, then it means
-  # that the cleanUp was called before the sales process really started, so
-  # there are not really any bytes to be returned
-  if request =? data.request and reservation =? data.reservation:
-    if returnErr =? (
-      await noCancel sales.context.reservations.returnBytesToAvailability(
-        reservation.availabilityId, reservation.id, request.ask.slotSize
-      )
-    ).errorOption:
-      error "failure returning bytes",
-        error = returnErr.msg, bytes = request.ask.slotSize
-
-    # delete reservation and return reservation bytes back to the availability
-    if reservation =? data.reservation and
-        deleteErr =? (
-          await noCancel sales.context.reservations.deleteReservation(
-            reservation.id, reservation.availabilityId, returnedCollateral
-          )
-        ).errorOption:
-      error "failure deleting reservation", error = deleteErr.msg
 
   # Re-add items back into the queue to prevent small availabilities from
   # draining the queue. Seen items will be ordered last.
@@ -184,35 +168,6 @@ proc processSlot(
   await completed.wait()
   trace "slot processing completed"
 
-proc deleteInactiveReservations(sales: Sales, activeSlots: seq[Slot]) {.async.} =
-  let reservations = sales.context.reservations
-  without reservs =? await reservations.all(Reservation):
-    return
-
-  let unused = reservs.filter(
-    r => (
-      let slotId = slotId(r.requestId, r.slotIndex)
-      not activeSlots.any(slot => slot.id == slotId)
-    )
-  )
-
-  if unused.len == 0:
-    return
-
-  info "Found unused reservations for deletion", unused = unused.len
-
-  for reservation in unused:
-    logScope:
-      reservationId = reservation.id
-      availabilityId = reservation.availabilityId
-
-    if err =? (
-      await reservations.deleteReservation(reservation.id, reservation.availabilityId)
-    ).errorOption:
-      error "Failed to delete unused reservation", error = err.msg
-    else:
-      trace "Deleted unused reservation"
-
 proc getSlots*(sales: Sales): Future[seq[Slot]] {.async.} =
   let marketplace = sales.context.marketplace
   let slotIds = await marketplace.mySlots()
@@ -240,8 +195,6 @@ proc getSlot*(sales: Sales, slotId: SlotId): Future[?SalesSlot] {.async.} =
 proc load*(sales: Sales) {.async.} =
   let activeSlots = await sales.getSlots()
 
-  await sales.deleteInactiveReservations(activeSlots)
-
   for slot in activeSlots:
     let agent =
       newSalesAgent(sales.context, slot.request.id, slot.slotIndex, some slot.request)
@@ -257,13 +210,6 @@ proc load*(sales: Sales) {.async.} =
 
     agent.start(SaleUnknown())
     sales.agents.add agent
-
-proc OnAvailabilitySaved(
-    sales: Sales, availability: Availability
-) {.async: (raises: []).} =
-  ## When availabilities are modified or added, the slot queue should be
-  ## notified so that it can reprocess slots.
-  sales.context.slotQueue.availabilitiesChanged()
 
 proc onStorageRequested(
     sales: Sales, requestId: RequestId, ask: StorageAsk, expiry: uint64
@@ -349,7 +295,7 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
         elif err of QueueNotRunningError:
           warn "Failed to push item to queue because queue is not running",
             error = err.msgDetail
-    except CancelledError as e:
+    except CancelledError:
       trace "sales.addSlotToQueue was cancelled"
 
   # We could get rid of this by adding the storage ask in the SlotFreed event,
@@ -493,7 +439,6 @@ proc subscribeSlotReservationsFull(sales: Sales) {.async.} =
 
 proc startSlotQueue(sales: Sales) =
   let slotQueue = sales.context.slotQueue
-  let reservations = sales.context.reservations
 
   slotQueue.onProcessSlot = proc(
       item: SlotQueueItem
@@ -503,11 +448,16 @@ proc startSlotQueue(sales: Sales) =
 
   slotQueue.start()
 
-  proc OnAvailabilitySaved(availability: Availability) {.async: (raises: []).} =
-    if availability.enabled:
-      await sales.OnAvailabilitySaved(availability)
+proc availability*(sales: Sales): ?AvailabilityTerms =
+  sales.context.availabilityTerms
 
-  reservations.OnAvailabilitySaved = OnAvailabilitySaved
+proc updateAvailability*(
+    sales: Sales, terms: AvailabilityTerms
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ?await sales.availabilityStore.save(terms)
+  sales.context.availabilityTerms = some terms
+  sales.context.slotQueue.availabilityChanged()
+  success()
 
 proc subscribe(sales: Sales) {.async.} =
   await sales.subscribeRequested()
@@ -518,26 +468,28 @@ proc subscribe(sales: Sales) {.async.} =
   await sales.subscribeCancellation()
   await sales.subscribeSlotReservationsFull()
 
-proc unsubscribe(sales: Sales) {.async.} =
+proc unsubscribe(sales: Sales) {.async: (raises: []).} =
   for sub in sales.subscriptions:
-    try:
-      await sub.unsubscribe()
-    except CancelledError as error:
-      raise error
-    except CatchableError as e:
-      error "Unable to unsubscribe from subscription", error = e.msg
+    await sub.unsubscribe()
 
-proc start*(sales: Sales) {.async.} =
-  await sales.load()
-  sales.startSlotQueue()
-  await sales.subscribe()
-  sales.running = true
+proc start*(sales: Sales): Future[?!void] {.async: (raises: [CancelledError]).} =
+  try:
+    sales.context.availabilityTerms = (await sales.availabilityStore.load()).toOption
+    await sales.load()
+    sales.startSlotQueue()
+    await sales.subscribe()
+    sales.running = true
+    success()
+  except CancelledError as error:
+    raise error
+  except CatchableError as error:
+    failure error
 
-proc stop*(sales: Sales) {.async.} =
+proc stop*(sales: Sales) {.async: (raises: []).} =
   trace "stopping sales"
   sales.running = false
   await sales.context.slotQueue.stop()
-  await sales.unsubscribe()
+  await noCancel sales.unsubscribe()
   await sales.trackedFutures.cancelTracked()
 
   for agent in sales.agents:

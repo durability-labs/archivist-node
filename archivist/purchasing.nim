@@ -2,15 +2,17 @@ import std/tables
 import pkg/stint
 import pkg/chronos
 import pkg/questionable
+import pkg/questionable/results
 import pkg/nimcrypto
 import ./marketplace/abstractmarketplace
 import ./clock
 import ./purchasing/purchase
 
-export questionable
-export chronos
-export abstractmarketplace
-export purchase
+export purchase.Purchase
+export purchase.PurchaseId
+export purchase.id
+export purchase.state
+export purchase.error
 
 type
   Purchasing* = ref object
@@ -38,32 +40,44 @@ proc load*(purchasing: Purchasing) {.async.} =
     purchase.load()
     purchasing.purchases[purchase.id] = purchase
 
-proc start*(purchasing: Purchasing) {.async.} =
-  await purchasing.load()
+proc start*(
+    purchasing: Purchasing
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  try:
+    await purchasing.load()
+    success()
+  except CancelledError as error:
+    raise error
+  except CatchableError as error:
+    failure error
 
-proc stop*(purchasing: Purchasing) {.async.} =
+proc stop*(purchasing: Purchasing) {.async: (raises: []).} =
   discard
 
 proc populate*(
     purchasing: Purchasing, request: StorageRequest
-): Future[StorageRequest] {.async.} =
-  result = request
-  if result.ask.proofProbability == 0.u256:
-    result.ask.proofProbability = purchasing.proofProbability
-  if result.nonce == Nonce.default:
-    var id = result.nonce.toArray
+): Future[?!StorageRequest] {.async: (raises: [CancelledError]).} =
+  var populated = request
+  if populated.ask.proofProbability == 0.u256:
+    populated.ask.proofProbability = purchasing.proofProbability
+  if populated.nonce == Nonce.default:
+    var id = populated.nonce.toArray
     doAssert randomBytes(id) == 32
-    result.nonce = Nonce(id)
-  result.client = await purchasing.marketplace.getSigner()
+    populated.nonce = Nonce(id)
+  try:
+    populated.client = await purchasing.marketplace.getSigner()
+  except MarketplaceError as error:
+    return failure error
+  success populated
 
 proc purchase*(
     purchasing: Purchasing, request: StorageRequest
-): Future[Purchase] {.async.} =
-  let request = await purchasing.populate(request)
+): Future[?!Purchase] {.async: (raises: [CancelledError]).} =
+  let request = ?await purchasing.populate(request)
   let purchase = Purchase.new(request, purchasing.marketplace, purchasing.clock)
   purchase.start()
   purchasing.purchases[purchase.id] = purchase
-  return purchase
+  success purchase
 
 func getPurchase*(purchasing: Purchasing, id: PurchaseId): ?Purchase =
   if purchasing.purchases.hasKey(id):

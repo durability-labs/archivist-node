@@ -572,8 +572,11 @@ method subscribeProofSubmission*(
     let subscription = await marketplace.contract.subscribe(ProofSubmitted, onEvent)
     return OnChainMarketSubscription(eventSubscription: subscription)
 
-method unsubscribe*(subscription: OnChainMarketSubscription) {.async.} =
-  await subscription.eventSubscription.unsubscribe()
+method unsubscribe*(subscription: OnChainMarketSubscription) {.async: (raises: []).} =
+  try:
+    await noCancel subscription.eventSubscription.unsubscribe()
+  except ProviderError:
+    discard
 
 method queryPastSlotFilledEvents*(
     marketplace: OnChainMarketplace, fromBlock: BlockTag

@@ -14,7 +14,7 @@ suite "Command line interface":
     await testbed.stop()
 
   test "complains when persistence is enabled without ethereum private key":
-    let expectedOutput = "Persistence enabled, but no Ethereum account was set"
+    let expectedOutput = "Persistence enabled, but no Ethereum private key was set"
     discard await testbed.node
     .persistence()
     .noEthPrivateKey()

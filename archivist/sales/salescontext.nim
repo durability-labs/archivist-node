@@ -3,16 +3,17 @@ import pkg/questionable/results
 import pkg/libp2p/cid
 
 import ../marketplace/abstractmarketplace
+import ../marketplace/availability/terms
+import ../marketplace/storageinterface
 import ../clock
 import ../periods
 import ./slotqueue
-import ./reservations
-import ../blocktype as bt
 
 type
   SalesContext* = ref object
     marketplace*: AbstractMarketplace
     clock*: Clock
+    storage*: StorageInterface
     # Sales-level callbacks. Closure will be overwritten each time a slot is
     # processed.
     onStore*: ?OnStore
@@ -20,20 +21,13 @@ type
     onSale*: ?OnSale
     onProve*: ?OnProve
     onExpiryUpdate*: ?OnExpiryUpdate
-    reservations*: Reservations
+    availabilityTerms*: ?AvailabilityTerms
     slotQueue*: SlotQueue
     when defined(archivist_system_testing_options):
       simulateProofFailures*: int
 
-  BlocksCb* = proc(blocks: seq[bt.Block]): Future[?!void] {.
-    gcsafe, async: (raises: [CancelledError])
-  .}
   OnStore* = proc(
-    request: StorageRequest,
-    expiry: SecondsSince1970,
-    slot: uint64,
-    blocksCb: BlocksCb,
-    isRepairing: bool,
+    request: StorageRequest, expiry: SecondsSince1970, slot: uint64, isRepairing: bool
   ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).}
   OnProve* = proc(
     slot: Slot, challenge: ProofChallenge, period: Period

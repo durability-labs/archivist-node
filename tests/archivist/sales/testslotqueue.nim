@@ -65,11 +65,11 @@ suite "Slot queue workers":
     await queue.stop()
 
   test "maxWorkers cannot be 0":
-    expect ValueError:
+    expect AssertionDefect:
       discard SlotQueue.new(maxSize = 1, maxWorkers = 0)
 
   test "maxWorkers cannot surpass maxSize":
-    expect ValueError:
+    expect AssertionDefect:
       discard SlotQueue.new(maxSize = 1, maxWorkers = 2)
 
 suite "Slot queue":
@@ -571,7 +571,7 @@ suite "Slot queue":
     # queue should be paused
     check eventually queue.paused
     # notify queue of change in availabilities
-    queue.availabilitiesChanged()
+    queue.availabilityChanged()
     # queue should be unpaused
     check not queue.paused
     # seen item is processed again

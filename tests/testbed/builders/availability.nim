@@ -7,71 +7,45 @@ import ./api
 
 type AvailabilityBuilder = ref object
   testbed: Testbed
-  totalSize: ?int
-  totalCollateral: ?int
-  duration: ?uint64
-  minPricePerBytePerSecond: ?int
-  enabled: ?bool
-  until: ?uint64
+  maximumCollateralPerByte: ?int
+  maximumDuration: ?uint64
+  minimumPricePerBytePerSecond: ?int
+  availableUntil: ?uint64
 
 func availability*(testbed: Testbed): AvailabilityBuilder =
   AvailabilityBuilder(testbed: testbed)
 
-func totalSize*(builder: AvailabilityBuilder, totalSize: int): AvailabilityBuilder =
-  builder.totalSize = some totalSize
-  builder
-
-func totalCollateral*(
-    builder: AvailabilityBuilder, totalCollateral: int
+func maximumCollateralPerByte*(
+    builder: AvailabilityBuilder, collateral: int
 ): AvailabilityBuilder =
-  builder.totalCollateral = some totalCollateral
+  builder.maximumCollateralPerByte = some collateral
   builder
 
-func duration*(builder: AvailabilityBuilder, duration: uint64): AvailabilityBuilder =
-  builder.duration = some duration
-  builder
-
-func minPricePerBytePerSecond*(
-    builder: AvailabilityBuilder, minPricePerBytePerSecond: int
+func maximumDuration*(
+    builder: AvailabilityBuilder, duration: uint64
 ): AvailabilityBuilder =
-  builder.minPricePerBytePerSecond = some minPricePerBytePerSecond
+  builder.maximumDuration = some duration
   builder
 
-func enabled*(builder: AvailabilityBuilder, enabled: bool): AvailabilityBuilder =
-  builder.enabled = some enabled
+func minimumPricePerBytePerSecond*(
+    builder: AvailabilityBuilder, price: int
+): AvailabilityBuilder =
+  builder.minimumPricePerBytePerSecond = some price
   builder
 
-func until*(builder: AvailabilityBuilder, timestamp: uint64): AvailabilityBuilder =
-  builder.until = some timestamp
+func availableUntil*(
+    builder: AvailabilityBuilder, timestamp: uint64
+): AvailabilityBuilder =
+  builder.availableUntil = some timestamp
   builder
 
-proc create*(builder: AvailabilityBuilder, node: Node): Future[JsonNode] {.async.} =
-  let totalSize = builder.totalSize |? 1 * 1024 * 1024 * 1024
+proc update*(builder: AvailabilityBuilder, node: Node) {.async.} =
   let properties =
     %*{
-      "totalSize": totalSize,
-      "totalCollateral": builder.totalCollateral |? 5000 * totalSize,
-      "duration": builder.duration |? 30 * 24 * 60 * 60,
-      "minPricePerBytePerSecond": builder.minPricePerBytePerSecond |? 1,
+      "maximumCollateralPerByte": builder.maximumCollateralPerByte |? 5000,
+      "maximumDuration": builder.maximumDuration |? 30 * 24 * 60 * 60,
+      "minimumPricePerBytePerSecond": builder.minimumPricePerBytePerSecond |? 1,
     }
-  if enabled =? builder.enabled:
-    properties["enabled"] = %enabled
-  if until =? builder.until:
-    properties["until"] = %until
-  await builder.testbed.api(node).createAvailability(properties)
-
-proc update*(builder: AvailabilityBuilder, node: Node, id: string) {.async.} =
-  let properties = newJObject()
-  if totalSize =? builder.totalSize:
-    properties["totalSize"] = %totalSize
-  if totalCollateral =? builder.totalCollateral:
-    properties["totalCollateral"] = %totalCollateral
-  if duration =? builder.duration:
-    properties["duration"] = %duration
-  if minPricePerBytePerSecond =? builder.minPricePerBytePerSecond:
-    properties["minPricePerBytePerSecond"] = %minPricePerBytePerSecond
-  if enabled =? builder.enabled:
-    properties["enabled"] = %enabled
-  if until =? builder.until:
-    properties["until"] = %until
-  await builder.testbed.api(node).updateAvailability(id, properties)
+  if availableUntil =? builder.availableUntil:
+    properties["availableUntil"] = %availableUntil
+  await builder.testbed.api(node).updateAvailability(properties)

@@ -11,7 +11,6 @@ import pkg/archivist/stores
 import pkg/archivist/units
 
 import pkg/chronos
-import pkg/stew/byteutils
 import pkg/stint
 
 import ./archivist/helpers/randomchunker

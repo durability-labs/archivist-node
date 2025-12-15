@@ -137,18 +137,26 @@ proc restoreHistoricalState(validation: Validation) {.async.} =
       validation.slots.incl(slotId)
   trace "Historical state restored", numberOfSlots = validation.slots.len
 
-proc start*(validation: Validation) {.async.} =
-  trace "Starting validator",
-    groups = validation.config.groups, groupIndex = validation.config.groupIndex
-  validation.periodicity = await validation.marketplace.periodicity()
-  validation.proofTimeout = await validation.marketplace.proofTimeout()
-  await validation.subscribeSlotFilled()
-  await validation.restoreHistoricalState()
-  validation.running = validation.run()
+proc start*(
+    validation: Validation
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  try:
+    trace "Starting validator",
+      groups = validation.config.groups, groupIndex = validation.config.groupIndex
+    validation.periodicity = await validation.marketplace.periodicity()
+    validation.proofTimeout = await validation.marketplace.proofTimeout()
+    await validation.subscribeSlotFilled()
+    await validation.restoreHistoricalState()
+    validation.running = validation.run()
+    success()
+  except CancelledError as error:
+    raise error
+  except CatchableError as error:
+    failure error
 
-proc stop*(validation: Validation) {.async.} =
+proc stop*(validation: Validation) {.async: (raises: []).} =
   if not validation.running.isNil and not validation.running.finished:
     await validation.running.cancelAndWait()
   while validation.subscriptions.len > 0:
     let subscription = validation.subscriptions.pop()
-    await subscription.unsubscribe()
+    await noCancel subscription.unsubscribe()

@@ -36,9 +36,7 @@ proc setSystemTestingOption*(
 ): Future[void] {.async.} =
   discard await Http.post(builder.url & "/debug/testing/option/" & key & "/" & value)
 
-proc setSimulateProofFailures*(
-    builder: ApiBuilder, proofFailures: int
-): Future[void] {.async.} =
+proc setSimulateProofFailures*(builder: ApiBuilder, proofFailures: int) {.async.} =
   await builder.setSystemTestingOption("simulate_proof_failures", $proofFailures)
 
 proc getSpr*(builder: ApiBuilder): Future[?string] {.async.} =
@@ -73,21 +71,20 @@ proc getPurchase*(builder: RawBuilder, id: string): Future[HttpResponse] {.async
 proc getPurchase*(builder: ApiBuilder, id: string): Future[JsonNode] {.async.} =
   await builder.raw.getPurchase(id).readJson()
 
-proc createAvailability*(
-    builder: ApiBuilder, properties: JsonNode
-): Future[JsonNode] {.async.} =
-  await Http.post(builder.url & "/sales/availability", properties).readJson()
-
-proc updateAvailability*(
-    builder: ApiBuilder, id: string, properties: JsonNode
-) {.async.} =
-  await Http.patch(builder.url & "/sales/availability/" & id, properties).close()
+proc updateAvailability*(builder: ApiBuilder, properties: JsonNode) {.async.} =
+  await Http.post(builder.url & "/sales/availability", properties).close()
 
 proc getAvailability*(builder: RawBuilder): Future[HttpResponse] {.async.} =
   await Http.get(builder.url & "/sales/availability")
 
 proc getAvailability*(builder: ApiBuilder): Future[JsonNode] {.async.} =
   await builder.raw.getAvailability().readJson()
+
+proc getSlots*(builder: RawBuilder): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/sales/slots")
+
+proc getSlots*(builder: ApiBuilder): Future[JsonNode] {.async.} =
+  await builder.raw.getSlots().readJson()
 
 proc upload*(
     builder: RawBuilder,

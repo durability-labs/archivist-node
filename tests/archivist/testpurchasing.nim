@@ -2,6 +2,7 @@ import std/times
 import pkg/chronos
 import pkg/stint
 import pkg/archivist/purchasing
+import pkg/archivist/purchasing/purchase
 import pkg/archivist/purchasing/states/finished
 import pkg/archivist/purchasing/states/started
 import pkg/archivist/purchasing/states/submitted
@@ -41,7 +42,7 @@ asyncchecksuite "Purchasing":
     populatedRequest.client = await marketplace.getSigner()
 
   test "submits a storage request when asked":
-    discard await purchasing.purchase(request)
+    discard !await purchasing.purchase(request)
     check eventually marketplace.requested.len > 0
     check marketplace.requested[0].ask.slots == request.ask.slots
     check marketplace.requested[0].ask.slotSize == request.ask.slotSize
@@ -50,8 +51,8 @@ asyncchecksuite "Purchasing":
       request.ask.pricePerBytePerSecond
 
   test "remembers purchases":
-    let purchase1 = await purchasing.purchase(request)
-    let purchase2 = await purchasing.purchase(request)
+    let purchase1 = !await purchasing.purchase(request)
+    let purchase2 = !await purchasing.purchase(request)
     check purchasing.getPurchase(purchase1.id) == some purchase1
     check purchasing.getPurchase(purchase2.id) == some purchase2
 
@@ -60,30 +61,30 @@ asyncchecksuite "Purchasing":
 
   test "can change default value for proof probability":
     purchasing.proofProbability = 42.u256
-    discard await purchasing.purchase(request)
+    discard !await purchasing.purchase(request)
     check eventually marketplace.requested.len > 0
     check marketplace.requested[0].ask.proofProbability == 42.u256
 
   test "can override proof probability per request":
     request.ask.proofProbability = 42.u256
-    discard await purchasing.purchase(request)
+    discard !await purchasing.purchase(request)
     check eventually marketplace.requested.len > 0
     check marketplace.requested[0].ask.proofProbability == 42.u256
 
   test "includes a random nonce in every storage request":
-    discard await purchasing.purchase(request)
-    discard await purchasing.purchase(request)
+    discard !await purchasing.purchase(request)
+    discard !await purchasing.purchase(request)
     check eventually marketplace.requested.len > 0
     check marketplace.requested[0].nonce != marketplace.requested[1].nonce
 
   test "sets client address in request":
-    discard await purchasing.purchase(request)
+    discard !await purchasing.purchase(request)
     check eventually marketplace.requested.len > 0
     check marketplace.requested[0].client == await marketplace.getSigner()
 
   test "succeeds when request is finished":
     marketplace.requestExpiry[populatedRequest.id] = getTime().toUnix() + 10
-    let purchase = await purchasing.purchase(populatedRequest)
+    let purchase = !await purchasing.purchase(populatedRequest)
 
     check eventually marketplace.requested.len > 0
     let request = marketplace.requested[0]
@@ -96,7 +97,7 @@ asyncchecksuite "Purchasing":
     check purchase.error.isNone
 
   test "fails when request times out":
-    let purchase = await purchasing.purchase(populatedRequest)
+    let purchase = !await purchasing.purchase(populatedRequest)
     check eventually marketplace.requested.len > 0
 
     let expiry = marketplace.requestExpiry[populatedRequest.id]
@@ -105,7 +106,7 @@ asyncchecksuite "Purchasing":
       await purchase.wait()
 
   test "checks that funds were withdrawn when purchase times out":
-    let purchase = await purchasing.purchase(populatedRequest)
+    let purchase = !await purchasing.purchase(populatedRequest)
     check eventually marketplace.requested.len > 0
     let request = marketplace.requested[0]
     let expiry = marketplace.requestExpiry[populatedRequest.id]

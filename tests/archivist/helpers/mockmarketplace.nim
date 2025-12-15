@@ -77,41 +77,36 @@ type
     onRequestFailed: seq[RequestFailedSubscription]
     onProofSubmitted: seq[ProofSubmittedSubscription]
 
-  RequestSubscription* = ref object of Subscription
+  MockSubscription = ref object of Subscription
     marketplace: MockMarketplace
+
+  RequestSubscription* = ref object of MockSubscription
     callback: OnRequest
 
-  FulfillmentSubscription* = ref object of Subscription
-    marketplace: MockMarketplace
+  FulfillmentSubscription* = ref object of MockSubscription
     requestId: ?RequestId
     callback: OnFulfillment
 
-  SlotFilledSubscription* = ref object of Subscription
-    marketplace: MockMarketplace
+  SlotFilledSubscription* = ref object of MockSubscription
     requestId: ?RequestId
     slotIndex: ?uint64
     callback: OnSlotFilled
 
-  SlotFreedSubscription* = ref object of Subscription
-    marketplace: MockMarketplace
+  SlotFreedSubscription* = ref object of MockSubscription
     callback: OnSlotFreed
 
-  SlotReservationsFullSubscription* = ref object of Subscription
-    marketplace: MockMarketplace
+  SlotReservationsFullSubscription* = ref object of MockSubscription
     callback: OnSlotReservationsFull
 
-  RequestCancelledSubscription* = ref object of Subscription
-    marketplace: MockMarketplace
+  RequestCancelledSubscription* = ref object of MockSubscription
     requestId: ?RequestId
     callback: OnRequestCancelled
 
-  RequestFailedSubscription* = ref object of Subscription
-    marketplace: MockMarketplace
+  RequestFailedSubscription* = ref object of MockSubscription
     requestId: ?RequestId
     callback: OnRequestCancelled
 
-  ProofSubmittedSubscription = ref object of Subscription
-    marketplace: MockMarketplace
+  ProofSubmittedSubscription = ref object of MockSubscription
     callback: OnProofSubmitted
 
 proc hash*(address: Address): Hash =
@@ -228,7 +223,7 @@ method slotState*(
 
   try:
     return marketplace.slotState[slotId]
-  except KeyError as e:
+  except KeyError:
     raiseAssert "SlotId not found in known slots (MockMarketplace.slotState)"
 
 method getRequestEnd*(
@@ -603,31 +598,17 @@ method queryPastSlotFilledEvents*(
     slot => SlotFilled(requestId: slot.requestId, slotIndex: slot.slotIndex)
   )
 
-method unsubscribe*(subscription: RequestSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onRequest.keepItIf(it != subscription)
-
-method unsubscribe*(subscription: FulfillmentSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onFulfillment.keepItIf(it != subscription)
-
-method unsubscribe*(subscription: SlotFilledSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onSlotFilled.keepItIf(it != subscription)
-
-method unsubscribe*(subscription: SlotFreedSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onSlotFreed.keepItIf(it != subscription)
-
-method unsubscribe*(subscription: RequestCancelledSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onRequestCancelled.keepItIf(it != subscription)
-
-method unsubscribe*(subscription: RequestFailedSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onRequestFailed.keepItIf(it != subscription)
-
-method unsubscribe*(subscription: ProofSubmittedSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onProofSubmitted.keepItIf(it != subscription)
-
-method unsubscribe*(subscription: SlotReservationsFullSubscription) {.async.} =
-  subscription.marketplace.subscriptions.onSlotReservationsFull.keepItIf(
-    it != subscription
-  )
+method unsubscribe*(subscription: Subscription) {.async: (raises: []).} =
+  let subscription = MockSubscription(subscription)
+  let marketplace = subscription.marketplace
+  marketplace.subscriptions.onRequest.keepItIf(subscription != it)
+  marketplace.subscriptions.onFulfillment.keepItIf(subscription != it)
+  marketplace.subscriptions.onSlotFilled.keepItIf(subscription != it)
+  marketplace.subscriptions.onSlotFreed.keepItIf(subscription != it)
+  marketplace.subscriptions.onRequestCancelled.keepItIf(subscription != it)
+  marketplace.subscriptions.onRequestFailed.keepItIf(subscription != it)
+  marketplace.subscriptions.onProofSubmitted.keepItIf(subscription != it)
+  marketplace.subscriptions.onSlotReservationsFull.keepItIf(subscription != it)
 
 method slotCollateral*(
     marketplace: MockMarketplace, requestId: RequestId, slotIndex: uint64

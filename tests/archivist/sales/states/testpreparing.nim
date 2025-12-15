@@ -1,7 +1,7 @@
 import pkg/chronos
 import pkg/questionable
-import pkg/datastore
 import pkg/archivist/contracts/requests
+import pkg/archivist/marketplace/availability/terms
 import pkg/archivist/sales/states/preparing
 import pkg/archivist/sales/states/slotreserving
 import pkg/archivist/sales/states/cancelled
@@ -18,48 +18,47 @@ import ../../../asynctest
 import ../../helpers
 import ../../examples
 import ../../helpers/mockmarketplace
-import ../../helpers/mockreservations
 import ../../helpers/mockclock
+import ../mockstorage
 
 asyncchecksuite "sales state 'preparing'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
-  let marketplace = MockMarketplace.new()
-  let clock = MockClock.new()
-  var agent: SalesAgent
   var state: SalePreparing
-  var repo: RepoStore
-  var availability: Availability
+  var agent: SalesAgent
+  var marketplace: MockMarketplace
+  var storage: MockStorage
+  var terms: AvailabilityTerms
   var context: SalesContext
-  var reservations: MockReservations
 
   setup:
-    availability = Availability.init(
-      totalSize = request.ask.slotSize + 100.uint64,
-      freeSize = request.ask.slotSize + 100.uint64,
-      duration = request.ask.duration + 60.uint64,
-      minPricePerBytePerSecond = request.ask.pricePerBytePerSecond,
-      totalCollateral = request.ask.collateralPerSlot * request.ask.slots.u256,
-      enabled = true,
-      until = 0.SecondsSince1970,
-    )
-    let repoDs = SQLiteDatastore.new(Memory).tryGet()
-    let metaDs = SQLiteDatastore.new(Memory).tryGet()
-    repo = RepoStore.new(repoDs, metaDs)
-    await repo.start()
-
-    state = SalePreparing.new()
-    context = SalesContext(marketplace: marketplace, clock: clock)
-
-    reservations = MockReservations.new(repo)
-    context.reservations = reservations
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    let clock = MockClock.new()
+    marketplace = MockMarketplace.new()
 
     marketplace.requestEnds[request.id] =
       clock.now() + cast[int64](request.ask.duration)
 
-  teardown:
-    await repo.stop()
+    terms = AvailabilityTerms(
+      maximumduration: request.ask.duration + 60.uint64,
+      minimumPricePerBytePerSecond: request.ask.pricePerBytePerSecond,
+      maximumCollateralPerByte: request.ask.collateralPerByte,
+      availableUntil: none SecondsSince1970,
+    )
+
+    storage = MockStorage.new()
+
+    storage.available = request.ask.slotSize
+
+    context = SalesContext(
+      marketplace: marketplace,
+      clock: clock,
+      storage: storage,
+      availabilityTerms: some terms,
+    )
+
+    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+
+    state = SalePreparing.new()
 
   test "switches to cancelled state when request expires":
     let next = state.onCancelled(request)
@@ -73,54 +72,55 @@ asyncchecksuite "sales state 'preparing'":
     let next = state.onSlotFilled(request.id, slotIndex)
     check !next of SaleFilled
 
-  test "run switches to errored when the request cannot be retrieved":
+  test "switches to errored state when the request cannot be retrieved":
     agent = newSalesAgent(context, request.id, slotIndex, StorageRequest.none)
     let next = !(await state.run(agent))
     check next of SaleErrored
     check SaleErrored(next).error.msg == "request could not be retrieved"
 
-  proc createAvailability(enabled = true) {.async.} =
-    let a = await reservations.createAvailability(
-      availability.totalSize,
-      availability.duration,
-      availability.minPricePerBytePerSecond,
-      availability.totalCollateral,
-      enabled,
-      until = 0.SecondsSince1970,
-    )
-    availability = a.get
-
-  test "run switches to ignored when no availability":
+  test "switches to ignored state when there is no availability":
+    context.availabilityTerms = none AvailabilityTerms
     let next = !(await state.run(agent))
     check next of SaleIgnored
     let ignored = SaleIgnored(next)
     check ignored.reprocessSlot
 
-  test "run switches to ignored when availability is not enabled":
-    await createAvailability(enabled = false)
+  test "switches to ignored state when duration is too long":
+    terms.maximumDuration = request.ask.duration - 1
+    context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored
 
-  test "run switches to slot reserving state after reservation created":
-    await createAvailability()
+  test "switches to ignored state when reward is too low":
+    terms.minimumPricePerBytePerSecond = request.ask.pricePerBytePerSecond + 1
+    context.availabilityTerms = some terms
+    let next = !(await state.run(agent))
+    check next of SaleIgnored
+
+  test "switches to ignored state when collateral is too high":
+    terms.maximumCollateralPerByte = request.ask.collateralPerByte - 1
+    context.availabilityTerms = some terms
+    let next = !(await state.run(agent))
+    check next of SaleIgnored
+
+  test "switches to ignored state when slot is not free":
+    marketplace.slotState[slotId(request.id, slotIndex)] = SlotState.Filled
+    let next = !(await state.run(agent))
+    check next of SaleIgnored
+
+  test "switches to ignored state when request ends after availability ends":
+    terms.availableUntil = some marketplace.requestEnds[request.id] - 1
+    context.availabilityTerms = some terms
+    let next = !(await state.run(agent))
+    check next of SaleIgnored
+
+  test "switches to ignored when not enough storage":
+    storage.available = request.ask.slotSize - 1
+    let next = !(await state.run(agent))
+    check next of SaleIgnored
+    let ignored = SaleIgnored(next)
+    check ignored.reprocessSlot
+
+  test "switches to slot reserving state after reservation created":
     let next = await state.run(agent)
     check !next of SaleSlotReserving
-
-  test "run switches to ignored when reserve fails with BytesOutOfBounds":
-    await createAvailability()
-    reservations.setCreateReservationThrowBytesOutOfBoundsError(true)
-
-    let next = !(await state.run(agent))
-    check next of SaleIgnored
-    let ignored = SaleIgnored(next)
-    check ignored.reprocessSlot
-
-  test "run switches to errored when reserve fails with other error":
-    await createAvailability()
-    let error = newException(CatchableError, "some error")
-    reservations.setCreateReservationThrowError(some error)
-
-    let next = !(await state.run(agent))
-    check next of SaleErrored
-    let errored = SaleErrored(next)
-    check errored.error == error

@@ -24,7 +24,6 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let agent = SalesAgent(machine)
   let data = agent.data
-  let marketplace = agent.context.marketplace
 
   without request =? data.request:
     raiseAssert "no sale request"
@@ -37,7 +36,6 @@ method run*(
       # be created and the collateral assigned to that reservation.
       # The returnedCollateral will be used in the cleanup function
       # and be passed to the deleteReservation function.
-      let slot = Slot(request: request, slotIndex: data.slotIndex)
       returnedCollateral = request.ask.collateralPerSlot.some
 
     if onCleanUp =? agent.onCleanUp:
