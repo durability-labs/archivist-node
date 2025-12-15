@@ -520,7 +520,19 @@ proc iterateManifests*(
 
       onManifest(cid, manifest)
 
-proc ensureVerifiableManifest(self: ArchivistNodeRef, manifest: Manifest, ecK: uint, ecM: uint): Future[?!Manifest] {.async: (raises: [CancelledError]).} = 
+proc ensureProtectedManifest(self: ArchivistNodeRef, manifest: Manifest, ecK: uint, ecM: uint): Future[?!Manifest] {.async: (raises: [CancelledError]).} = 
+  # If the provided dataset is already erasure-coded,
+  # then we require that the ecK and ecM parameters are an exact match.
+  if manifest.protected:
+    if not manifest.ecK == ecK.int or not manifest.ecM == ecM.int:
+      return failure("Attempt to proceed with protected manifest with parameters " &
+        $(manifest.ecK) & "/" & $(manifest.ecM) &
+        " but required: " & $ecK & "/" & $ecM
+      )
+
+    trace "Provided manifest is already protected"
+    return success manifest
+
   # Erasure code the dataset according to provided parameters
   let
     erasure = Erasure.new(
@@ -528,8 +540,18 @@ proc ensureVerifiableManifest(self: ArchivistNodeRef, manifest: Manifest, ecK: u
       self.taskpool,
     )
 
-    encoded = ?await erasure.encode(manifest, ecK, ecM)
-    builder = ?Poseidon2Builder.new(self.networkStore.localStore, encoded)
+  return await erasure.encode(manifest, ecK, ecM)
+
+proc ensureVerifiableManifest(self: ArchivistNodeRef, manifest: Manifest, ecK: uint, ecM: uint): Future[?!Manifest] {.async: (raises: [CancelledError]).} = 
+  let protected = ?await self.ensureProtectedManifest(manifest, ecK, ecM)
+  # If the provided dataset is already verifiable, use it
+  if protected.verifiable:
+    trace "Provided manifest is already verifiable"
+    return success protected
+
+  # Create verifiable manifest from protected manifest
+  let
+    builder = ?Poseidon2Builder.new(self.networkStore.localStore, protected)
   return await builder.buildManifest()
 
 proc setupRequest(
