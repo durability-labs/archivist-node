@@ -520,6 +520,18 @@ proc iterateManifests*(
 
       onManifest(cid, manifest)
 
+proc ensureVerifiableManifest(self: ArchivistNodeRef, manifest: Manifest, ecK: uint, ecM: uint): Future[?!Manifest] {.async: (raises: [CancelledError]).} = 
+  # Erasure code the dataset according to provided parameters
+  let
+    erasure = Erasure.new(
+      self.networkStore.localStore, leoEncoderProvider, leoDecoderProvider,
+      self.taskpool,
+    )
+
+    encoded = ?await erasure.encode(manifest, ecK, ecM)
+    builder = ?Poseidon2Builder.new(self.networkStore.localStore, encoded)
+  return await builder.buildManifest()
+
 proc setupRequest(
     self: ArchivistNodeRef,
     cid: Cid,
@@ -554,28 +566,17 @@ proc setupRequest(
 
   let
     manifest = ?await self.fetchManifest(cid)
-
-    # Erasure code the dataset according to provided parameters
-    erasure = Erasure.new(
-      self.networkStore.localStore, leoEncoderProvider, leoDecoderProvider,
-      self.taskpool,
-    )
-
-    encoded = ?await erasure.encode(manifest, ecK, ecM)
-    builder = ?Poseidon2Builder.new(self.networkStore.localStore, encoded)
-    verifiable = ?await builder.buildManifest()
+    verifiable = ?await self.ensureVerifiableManifest(manifest, ecK, ecM)
     manifestBlk = ?await self.storeManifest(verifiable)
 
-    verifyRoot =
-      if builder.verifyRoot.isNone:
-        return failure("No slots root")
-      else:
-        builder.verifyRoot.get.toBytes
+    verifyRoot = (?verifiable.verifyRoot.fromVerifyCid).toBytes
+    slotBytes = (verifiable.blockSize.int * verifiable.numSlotBlocks).NBytes
 
+  let
     request = StorageRequest(
       ask: StorageAsk(
         slots: verifiable.numSlots.uint64,
-        slotSize: builder.slotBytes.uint64,
+        slotSize: slotBytes.uint64,
         duration: duration,
         proofProbability: proofProbability,
         pricePerBytePerSecond: pricePerBytePerSecond,
