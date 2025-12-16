@@ -451,7 +451,7 @@ components:
         quotaReservedBytes:
           type: integer
           format: int64
-          description: "Amount of storage reserved (in bytes) in the node's local repository for future use when storage requests will be picked up and hosted by the node using node's availabilities. This does not include the storage currently in use."
+          description: "Amount of storage reserved (in bytes) in the node's local repository for future use when storage requests will be picked up and hosted by the node using node's availability. This does not include the storage currently in use."
 
 servers:
   - url: "http://localhost:8080/api/archivist/v1"
@@ -752,16 +752,16 @@ paths:
     get:
       summary: "Returns storage that is for sale"
       tags: [Marketplace]
-      operationId: getAvailabilities
+      operationId: getAvailability
       responses:
         "200":
-          description: Retrieved storage availabilities of the node
+          description: Retrieved storage availability of the node
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SalesAvailability"
         "500":
-          description: Error getting unused availabilities
+          description: Error getting unused availability
         "503":
           description: Persistence is not enabled
 
