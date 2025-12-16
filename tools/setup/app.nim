@@ -2,11 +2,13 @@ import std/os
 import std/osproc
 import std/httpclient
 import std/strutils
+import std/rdstdin
 import pkg/chronicles
 import pkg/questionable
 import pkg/ethers
 import ./print
 import ./networkconfig
+from ../../archivist/utils/fileutils import secureWriteFile, ioErrorMsg
 
 type App* = ref object
   configLines: seq[string]
@@ -25,10 +27,11 @@ proc writeConfigLine*(app: App, line: string) =
   app.configLines.add(line)
 
 proc fetchNetworkConfig*(app: App, network: string): ArchivistNetwork =
-  if isNone(app.networkConfig):
+  without var networkConfig =? app.networkConfig:
     info "Fetching network information...", network
-    app.networkConfig = some getNetworkConfig(network)
-  return !app.networkConfig
+    networkConfig = getNetworkConfig(network)
+    app.networkConfig = some networkConfig
+  return networkConfig
 
 proc fetchPublicIp*(app: App): string =
   let
@@ -48,15 +51,19 @@ proc saveFile(filename: string, content: string) =
   f.writeLine(content)
   f.close()
 
+proc saveFileSecure(path: string, content: string) =
+  info "Creating a private key and saving it"
+  if err =? secureWriteFile(path, content).errorOption:
+    raiseAssert("Failed to write key file with secure permissions: " & ioErrorMsg(err))
+
 proc createNewEthKeyfile*(app: App, privKeyFilename: string, addressFilename: string) =
   info "Generating Ethereum wallet...", privKeyFilename, addressFilename
-  var rng = keys.newRng()[]
   let
     wallet = Wallet.createRandom()
     keyStr = "0x" & $(wallet.privateKey)
   app.ethAddress = $(wallet.address)
 
-  saveFile(privKeyFilename, keyStr)
+  saveFileSecure(privKeyFilename, keyStr)
   saveFile(addressFilename, app.ethAddress)
 
 proc findCirdl(): string =
@@ -84,6 +91,12 @@ proc runCircuitDownloader*(app: App) =
 proc writeLinesToFile(app: App) =
   let filename = "config.toml"
   if fileExists(filename):
+    newline()
+    p1("Warning: Config file already exists.")
+    let input = readLineFromStdin("Overwrite?[y/N]: ")
+    if input != "y" and input != "Y":
+      raiseAssert "Aborted by user: Do not overwrite existing config."
+
     removeFile(filename)
 
   let f = open(filename, fmWrite)

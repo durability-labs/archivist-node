@@ -24,7 +24,8 @@ proc getEthKeyQuestion*(): ChoiceQuestion =
           title: "Generate new key-pair",
           description:
             @[
-              "Generates a new private-key file and adds it to the Archivist node configuration."
+              "Generates a new private-key file and adds it to",
+              "the Archivist node configuration.",
             ],
           warning: "",
           action: genNewKey,
@@ -33,8 +34,8 @@ proc getEthKeyQuestion*(): ChoiceQuestion =
           title: "Skip",
           description:
             @[
-              "Setup will not generate a new key-pair for you. You can add your own key-file to,",
-              "the configuration file manually.",
+              "Setup will not generate a new key-pair for you.",
+              "You can add your own key-file to,", "the configuration file manually.",
             ],
           warning: "",
           action: writeExample,

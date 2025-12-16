@@ -59,15 +59,15 @@ proc getNatQuestion*(): ChoiceQuestion =
         ChoiceOption(
           title: "extIP",
           description: @["The Archivist node will use your external IP address."],
-          warning:
-            "Setup will connect to a Durability-Labs server to determine your external IP address",
+          warning: "Setup connects to Durability-Labs server to find your external IP",
           action: setNatExtIp,
         ),
         ChoiceOption(
           title: "extIP (manual)",
           description:
             @[
-              "Setup will not add a NAT setting for you. You can edit the config file to set it manually."
+              "Setup will not add a NAT setting for you.",
+              "You can edit the config file to set it manually.",
             ],
           warning: "",
           action: setNatManual,

@@ -38,7 +38,7 @@ proc writeExample(app: App) =
 
 proc getNetworkQuestion*(): ChoiceQuestion =
   let networkWarning =
-    "Setup will connect to a Durability-Labs server to fetch required network information."
+    "Setup will use Durability-Labs server to fetch network information."
   return ChoiceQuestion(
     title: "Choose a network",
     options:
@@ -47,7 +47,8 @@ proc getNetworkQuestion*(): ChoiceQuestion =
           title: "Mainnet",
           description:
             @[
-              "Archivist mainnet where durable data storage is traded using tokens with real monetary value."
+              "Archivist mainnet where durable data storage is traded",
+              "using tokens with real monetary value.",
             ],
           warning: networkWarning,
           action: setMainnet,
@@ -56,8 +57,9 @@ proc getNetworkQuestion*(): ChoiceQuestion =
           title: "Testnet",
           description:
             @[
-              "Network for testing new Archivist versions before they launch on mainnet.",
-              "Tokens used hold no real value. Ideal for testing new node installations.",
+              "Network for testing new Archivist versions before",
+              "they launch on mainnet. Tokens used hold no real value.",
+              "Ideal for testing new node installations.",
             ],
           warning: networkWarning,
           action: setTestnet,
@@ -76,8 +78,9 @@ proc getNetworkQuestion*(): ChoiceQuestion =
           title: "None",
           description:
             @[
-              "Setup will not configure a network for you. You can add bootstrap-records,",
-              "an RPC endpoint, and a marketplace smartcontract address to the configuration file manually.",
+              "Setup will not configure a network for you.",
+              "You can add bootstrap-records, an RPC endpoint, and a marketplace",
+              "smartcontract address to the configuration file manually.",
             ],
           warning: "",
           action: writeExample,

@@ -14,8 +14,7 @@ proc getLineItemQuestions*(): seq[LineQuestion] =
         defaultValue: "8090",
       ),
       LineQuestion(
-        description:
-          "Multi-addresses defining the network interfaces and ports to use for accepting data-carrying (TCP) connections",
+        description: "Multi-addresses of interfaces used for data (TCP) connections",
         key: "listen-addrs",
         defaultValue: "[\"/ip4/0.0.0.0/tcp/8070\"]",
       ),

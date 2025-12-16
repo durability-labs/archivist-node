@@ -19,14 +19,13 @@ proc getWebUiQuestion*(): ChoiceQuestion =
           title: "Yes",
           description:
             @["The Archivist node will support the Durability-Labs web interface."],
-          warning:
-            "Cross-origin requests will be enabled. The web interface is hosted on Durability-Labs servers.",
+          warning: "Allows Cross-origin. WebApp hosted on Durability-Labs servers.",
           action: setEnableWebUi,
         ),
         ChoiceOption(
           title: "No",
           description:
-            @["The Archivist node will not support the Durability-Labs web interface."],
+            @["The Archivist node will not support the Durability-Labs webApp."],
           warning: "",
           action: setNo,
         ),
