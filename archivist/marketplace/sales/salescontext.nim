@@ -6,6 +6,7 @@ import ../abstractmarketplace
 import ../availability/terms
 import ../storageinterface
 import ./slotqueue
+import ./metrics
 
 type SalesContext* = ref object
   marketplace*: AbstractMarketplace
@@ -13,5 +14,6 @@ type SalesContext* = ref object
   storage*: StorageInterface
   availabilityTerms*: ?AvailabilityTerms
   slotQueue*: SlotQueue
+  metrics*: SalesMetrics
   when defined(archivist_system_testing_options):
     simulateProofFailures*: int
