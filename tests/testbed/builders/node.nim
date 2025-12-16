@@ -37,10 +37,11 @@ type NodeBuilder = ref object
   circomZkey: ? ?string
   circomGraph: ? ?string
   failProofs: ?int
+  storageQuota: ?int
   blockTtl: ?int
   blockMaintenanceInterval: ?int
   waitForOutput: ?string
-  createInitialAvailability: bool
+  setInitialAvailability: bool
 
 func node*(testbed: Testbed): NodeBuilder =
   NodeBuilder(testbed: testbed)
@@ -142,7 +143,7 @@ func noCircomGraph*(builder: NodeBuilder): NodeBuilder =
 func provider*(builder: NodeBuilder): NodeBuilder =
   builder.persistence = true
   builder.prover = true
-  builder.createInitialAvailability = true
+  builder.setInitialAvailability = true
   builder
 
 func proverBackend*(builder: NodeBuilder, backend: string): NodeBuilder =
@@ -153,12 +154,16 @@ func waitForOutput*(builder: NodeBuilder, output: string): NodeBuilder =
   builder.waitForOutput = some output
   builder
 
-func availability*(builder: NodeBuilder, createInitialAvailability: bool): NodeBuilder =
-  builder.createInitialAvailability = createInitialAvailability
+func availability*(builder: NodeBuilder, setInitialAvailability: bool): NodeBuilder =
+  builder.setInitialAvailability = setInitialAvailability
   builder
 
 func failProofs*(builder: NodeBuilder, every: int): NodeBuilder =
   builder.failProofs = some every
+  builder
+
+func storageQuota*(builder: NodeBuilder, quota: int): NodeBuilder =
+  builder.storageQuota = some quota
   builder
 
 func blockTtl*(builder: NodeBuilder, ttl: int): NodeBuilder =
@@ -237,7 +242,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   if builder.logTopics.len > 0:
     arguments.add("--log-level=INFO;TRACE:" & builder.logTopics.join(","))
   if builder.persistence:
-    arguments.add("persistence")
+    arguments.add("--persistence")
     arguments.add("--eth-provider=" & builder.testbed.hardhatInstance.jsonRpcUrl)
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
@@ -248,7 +253,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   if index =? builder.validatorGroupIndex:
     arguments.add("--validator-group-index=" & $index)
   if builder.prover:
-    arguments.add("prover")
+    arguments.add("--prover")
   if backend =? builder.proverBackend:
     arguments.add("--prover-backend=" & backend)
   if circomR1cs =? builder.circomR1csResolved:
@@ -259,6 +264,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--circom-zkey=" & circomZkey)
   if circomGraph =? builder.circomGraphResolved:
     arguments.add("--circom-graph=" & circomGraph)
+  if quota =? builder.storageQuota:
+    arguments.add("--storage-quota=" & $quota)
   if blockTtl =? builder.blockTtl:
     arguments.add("--block-ttl=" & $blockTtl)
   if blockMaintenanceInterval =? builder.blockMaintenanceInterval:
@@ -275,8 +282,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     waitForOutput = some builder.waitForOutput |? "REST service started",
   )
   builder.testbed.nodeInstances.add(node)
-  if builder.createInitialAvailability:
-    discard await builder.testbed.availability.create(node)
+  if builder.setInitialAvailability:
+    await builder.testbed.availability.update(node)
   if failProofs =? builder.failProofs:
     await builder.testbed.api(node).setSimulateProofFailures(failProofs)
   node

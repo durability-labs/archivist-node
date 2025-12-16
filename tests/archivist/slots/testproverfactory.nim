@@ -24,10 +24,10 @@ suite "Test BackendFactory":
 
   test "Should initialize with correct nimGroth16 config files":
     let config = NodeConf(
-      cmd: StartUpCmd.persistence,
+      persistence: true,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
-      persistenceCmd: PersistenceCmd.prover,
+      prover: true,
       marketplaceAddress: EthAddress.example.some,
       proverBackend: ProverBackendCmd.nimgroth16,
       circomGraph: InputFile("tests/circuits/fixtures/proof_main.bin"),
@@ -42,10 +42,10 @@ suite "Test BackendFactory":
 
   test "Should initialize with correct circom compat config files":
     let config = NodeConf(
-      cmd: StartUpCmd.persistence,
+      persistence: true,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
-      persistenceCmd: PersistenceCmd.prover,
+      prover: true,
       marketplaceAddress: EthAddress.example.some,
       proverBackend: ProverBackendCmd.circomcompat,
       circomWasm: InputFile("tests/circuits/fixtures/proof_main.wasm"),
@@ -60,10 +60,10 @@ suite "Test BackendFactory":
 
   test "Should initialize circom compat from local directory":
     let config = NodeConf(
-      cmd: StartUpCmd.persistence,
+      persistence: true,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
-      persistenceCmd: PersistenceCmd.prover,
+      prover: true,
       marketplaceAddress: EthAddress.example.some,
       proverBackend: ProverBackendCmd.circomcompat,
       # Set the circuitDir such that the tests/circuits/fixtures/ files
@@ -72,16 +72,16 @@ suite "Test BackendFactory":
     )
 
     check:
-      getR1csFile(config).tryGet == config.circuitDir / "proof_main.r1cs"
-      getWasmFile(config).tryGet == config.circuitDir / "proof_main.wasm"
-      getZkeyFile(config).tryGet == config.circuitDir / "proof_main.zkey"
+      getR1csFile(config).tryGet == config.circuitDirPath / "proof_main.r1cs"
+      getWasmFile(config).tryGet == config.circuitDirPath / "proof_main.wasm"
+      getZkeyFile(config).tryGet == config.circuitDirPath / "proof_main.zkey"
 
   test "Should initialize nim groth16 from local directory":
     let config = NodeConf(
-      cmd: StartUpCmd.persistence,
+      persistence: true,
       nat: NatConfig(hasExtIp: false, nat: NatNone),
       metricsAddress: parseIpAddress("127.0.0.1"),
-      persistenceCmd: PersistenceCmd.prover,
+      prover: true,
       marketplaceAddress: EthAddress.example.some,
       proverBackend: ProverBackendCmd.nimgroth16,
       # Set the circuitDir such that the tests/circuits/fixtures/ files
@@ -90,17 +90,17 @@ suite "Test BackendFactory":
     )
 
     check:
-      getGraphFile(config).tryGet == config.circuitDir / "proof_main.bin"
-      getR1csFile(config).tryGet == config.circuitDir / "proof_main.r1cs"
-      getZkeyFile(config).tryGet == config.circuitDir / "proof_main.zkey"
+      getGraphFile(config).tryGet == config.circuitDirPath / "proof_main.bin"
+      getR1csFile(config).tryGet == config.circuitDirPath / "proof_main.r1cs"
+      getZkeyFile(config).tryGet == config.circuitDirPath / "proof_main.zkey"
 
   test "Should suggest usage of downloader tool when files not available":
     let
       config = NodeConf(
-        cmd: StartUpCmd.persistence,
+        persistence: true,
         nat: NatConfig(hasExtIp: false, nat: NatNone),
         metricsAddress: parseIpAddress("127.0.0.1"),
-        persistenceCmd: PersistenceCmd.prover,
+        prover: true,
         proverBackend: ProverBackendCmd.nimgroth16,
         marketplaceAddress: EthAddress.example.some,
         circuitDir: OutDir(circuitDir),

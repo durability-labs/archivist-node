@@ -6,7 +6,6 @@ import pkg/chronos
 import pkg/archivist/archivisttypes
 import pkg/archivist/chunker
 import pkg/archivist/stores
-import pkg/taskpools
 
 import ../../asynctest
 

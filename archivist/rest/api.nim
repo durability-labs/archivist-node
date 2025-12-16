@@ -30,14 +30,14 @@ import ../logutils
 import ../node
 import ../blocktype
 import ../conf
-import ../contracts
 import ../erasure/erasure
 import ../manifest
 import ../streams/asyncstreamwrapper
 import ../stores
-import ../sales
-import ../sales/salesslot
-import ../utils/options
+import ../marketplace
+import ../marketplace/abstractmarketplace
+import ../purchasing
+import ../sales/reservations
 
 import ./coders
 import ./json
@@ -382,12 +382,12 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
 
     ## Returns active slots for the host
     try:
-      without contracts =? node.contracts.host:
+      without marketplace =? node.marketplace:
         return RestApiResponse.error(
           Http503, "Persistence is not enabled", headers = headers
         )
 
-      let json = %(await contracts.sales.getSlots())
+      let json = %(await marketplace.sales.getSlots())
       return RestApiResponse.response(
         $json, contentType = "application/json", headers = headers
       )
@@ -402,14 +402,14 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
     ## slot is not active for the host.
     var headers = buildCorsHeaders("GET", allowedOrigin)
 
-    without contracts =? node.contracts.host:
+    without marketplace =? node.marketplace:
       return
         RestApiResponse.error(Http503, "Persistence is not enabled", headers = headers)
 
     without slotId =? slotId.tryGet.catch, error:
       return RestApiResponse.error(Http400, error.msg, headers = headers)
 
-    without slot =? await contracts.sales.getSlot(slotId):
+    without slot =? await marketplace.sales.getSlot(slotId):
       return
         RestApiResponse.error(Http404, "Provider not filling slot", headers = headers)
 
@@ -429,16 +429,21 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
     var headers = buildCorsHeaders("GET", allowedOrigin)
 
     try:
-      without contracts =? node.contracts.host:
+      without marketplace =? node.marketplace:
         return RestApiResponse.error(
           Http503, "Persistence is not enabled", headers = headers
         )
 
-      without avails =? (await contracts.sales.context.reservations.all(Availability)),
-        err:
-        return RestApiResponse.error(Http500, err.msg, headers = headers)
+      without availability =? marketplace.sales.availability:
+        return RestApiResponse.error(Http404, "not found", headers = headers)
 
-      let json = %avails
+      let json =
+        %*{
+          "minimumPricePerBytePerSecond": availability.minimumPricePerBytePerSecond,
+          "maximumCollateralPerByte": availability.maximumCollateralPerByte,
+          "maximumDuration": availability.maximumDuration,
+          "availableUntil": availability.availableUntil,
+        }
       return RestApiResponse.response(
         $json, contentType = "application/json", headers = headers
       )
@@ -447,21 +452,12 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
       return RestApiResponse.error(Http500, headers = headers)
 
   router.rawApi(MethodPost, "/api/archivist/v1/sales/availability") do() -> RestApiResponse:
-    ## Add available storage to sell.
-    ## Every time Availability's offer finishes, its capacity is
-    ## returned to the availability.
-    ##
-    ## totalSize - size of available storage in bytes
-    ## duration - maximum time the storage should be sold for (in seconds)
-    ## minPricePerBytePerSecond - minimal price per byte paid (in amount of
-    ##   tokens) to be matched against the request's pricePerBytePerSecond
-    ## totalCollateral - total collateral (in amount of
-    ##   tokens) that can be distributed among matching requests
+    ## Sets availabilty; the terms under which the node will sell storage
 
     var headers = buildCorsHeaders("POST", allowedOrigin)
 
     try:
-      without contracts =? node.contracts.host:
+      without marketplace =? node.marketplace:
         return RestApiResponse.error(
           Http503, "Persistence is not enabled", headers = headers
         )
@@ -471,57 +467,41 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
       without restAv =? RestAvailability.fromJson(body), error:
         return RestApiResponse.error(Http400, error.msg, headers = headers)
 
-      let reservations = contracts.sales.context.reservations
-
-      if restAv.totalSize == 0:
+      if restAv.maximumDuration == 0:
         return RestApiResponse.error(
-          Http422, "Total size must be larger then zero", headers = headers
+          Http422, "maximumDuration must be larger than zero", headers = headers
         )
 
-      if restAv.duration == 0:
-        return RestApiResponse.error(
-          Http422, "duration must be larger then zero", headers = headers
-        )
-
-      if restAv.minPricePerBytePerSecond == 0:
+      if restAv.minimumPricePerBytePerSecond == 0:
         return RestApiResponse.error(
           Http422,
-          "minPricePerBytePerSecond must be larger then zero",
+          "minimumPricePerBytePerSecond must be larger than zero",
           headers = headers,
         )
 
-      if restAv.totalCollateral == 0:
+      if restAv.maximumCollateralPerByte == 0:
         return RestApiResponse.error(
-          Http422, "totalCollateral must be larger then zero", headers = headers
+          Http422,
+          "maximumCollateralPerByte must be larger than zero",
+          headers = headers,
         )
 
-      if not reservations.hasAvailable(restAv.totalSize):
-        return
-          RestApiResponse.error(Http422, "Not enough storage quota", headers = headers)
-
-      without availability =? (
-        await reservations.createAvailability(
-          restAv.totalSize,
-          restAv.duration,
-          restAv.minPricePerBytePerSecond,
-          restAv.totalCollateral,
-          enabled = restAv.enabled |? true,
-          until = restAv.until |? 0,
+      if availableUntil =? restAv.availableUntil and availableUntil < 0:
+        return RestApiResponse.error(
+          Http422, "availableUntil must not be negative", headers = headers
         )
-      ), error:
-        if error of CancelledError:
-          raise error
-        if error of UntilOutOfBoundsError:
-          return RestApiResponse.error(Http422, error.msg)
 
+      let terms = AvailabilityTerms(
+        minimumPricePerBytePerSecond: restAv.minimumPricePerBytePerSecond,
+        maximumCollateralPerByte: restAv.maximumCollateralPerByte,
+        maximumDuration: restAv.maximumDuration,
+        availableUntil: restAv.availableUntil,
+      )
+
+      if error =? (await marketplace.sales.updateAvailability(terms)).errorOption:
         return RestApiResponse.error(Http500, error.msg, headers = headers)
 
-      return RestApiResponse.response(
-        availability.toJson,
-        Http201,
-        contentType = "application/json",
-        headers = headers,
-      )
+      return RestApiResponse.response("", Http201, headers = headers)
     except CatchableError as exc:
       trace "Excepting processing request", exc = exc.msg
       return RestApiResponse.error(Http500, headers = headers)
@@ -534,137 +514,6 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
 
     resp.status = Http204
     await resp.sendBody("")
-
-  router.rawApi(MethodPatch, "/api/archivist/v1/sales/availability/{id}") do(
-    id: AvailabilityId
-  ) -> RestApiResponse:
-    ## Updates Availability.
-    ## The new parameters will be only considered for new requests.
-    ## Existing Requests linked to this Availability will continue as is.
-    ##
-    ## totalSize - size of available storage in bytes.
-    ##   When decreasing the size, then lower limit is
-    ##   the currently `totalSize - freeSize`.
-    ## duration - maximum time the storage should be sold for (in seconds)
-    ## minPricePerBytePerSecond - minimal price per byte paid (in amount of
-    ##   tokens) to be matched against the request's pricePerBytePerSecond
-    ## totalCollateral - total collateral (in amount of
-    ##   tokens) that can be distributed among matching requests
-
-    try:
-      without contracts =? node.contracts.host:
-        return RestApiResponse.error(Http503, "Persistence is not enabled")
-
-      without id =? id.tryGet.catch, error:
-        return RestApiResponse.error(Http400, error.msg)
-      without keyId =? id.key.tryGet.catch, error:
-        return RestApiResponse.error(Http400, error.msg)
-
-      let
-        body = await request.getBody()
-        reservations = contracts.sales.context.reservations
-
-      type OptRestAvailability = Optionalize(RestAvailability)
-      without restAv =? OptRestAvailability.fromJson(body), error:
-        return RestApiResponse.error(Http400, error.msg)
-
-      without availability =? (await reservations.get(keyId, Availability)), error:
-        if error of NotExistsError:
-          return RestApiResponse.error(Http404, "Availability not found")
-
-        return RestApiResponse.error(Http500, error.msg)
-
-      if isSome restAv.freeSize:
-        return RestApiResponse.error(Http422, "Updating freeSize is not allowed")
-
-      if size =? restAv.totalSize:
-        if size <= 0 or size > NBytes.high.uint64:
-          return RestApiResponse.error(
-            Http422, "Total size must be > 0 and <= " & $NBytes.high.uint64
-          )
-
-        # we don't allow lowering the totalSize bellow currently utilized size
-        if size < (availability.totalSize - availability.freeSize):
-          return RestApiResponse.error(
-            Http422,
-            "New totalSize must be larger then current totalSize - freeSize, which is currently: " &
-              $(availability.totalSize - availability.freeSize),
-          )
-
-        if not reservations.hasAvailable(size):
-          return RestApiResponse.error(Http422, "Not enough storage quota")
-
-        availability.freeSize += size - availability.totalSize
-        availability.totalSize = size
-
-      if duration =? restAv.duration:
-        availability.duration = duration
-
-      if minPricePerBytePerSecond =? restAv.minPricePerBytePerSecond:
-        availability.minPricePerBytePerSecond = minPricePerBytePerSecond
-
-      if totalCollateral =? restAv.totalCollateral:
-        availability.totalCollateral = totalCollateral
-
-      if until =? restAv.until:
-        availability.until = until
-
-      if enabled =? restAv.enabled:
-        availability.enabled = enabled
-
-      if err =? (await reservations.update(availability)).errorOption:
-        if err of CancelledError:
-          raise err
-        if err of UntilOutOfBoundsError:
-          return RestApiResponse.error(Http422, err.msg)
-        else:
-          return RestApiResponse.error(Http500, err.msg)
-
-      return RestApiResponse.response(Http204)
-    except CatchableError as exc:
-      trace "Excepting processing request", exc = exc.msg
-      return RestApiResponse.error(Http500)
-
-  router.rawApi(MethodGet, "/api/archivist/v1/sales/availability/{id}/reservations") do(
-    id: AvailabilityId
-  ) -> RestApiResponse:
-    ## Gets Availability's reservations.
-    var headers = buildCorsHeaders("GET", allowedOrigin)
-
-    try:
-      without contracts =? node.contracts.host:
-        return RestApiResponse.error(
-          Http503, "Persistence is not enabled", headers = headers
-        )
-
-      without id =? id.tryGet.catch, error:
-        return RestApiResponse.error(Http400, error.msg, headers = headers)
-      without keyId =? id.key.tryGet.catch, error:
-        return RestApiResponse.error(Http400, error.msg, headers = headers)
-
-      let reservations = contracts.sales.context.reservations
-      let marketplace = contracts.sales.context.marketplace
-
-      if error =? (await reservations.get(keyId, Availability)).errorOption:
-        if error of NotExistsError:
-          return
-            RestApiResponse.error(Http404, "Availability not found", headers = headers)
-        else:
-          return RestApiResponse.error(Http500, error.msg, headers = headers)
-
-      without availabilitysReservations =? (await reservations.all(Reservation, id)),
-        err:
-        return RestApiResponse.error(Http500, err.msg, headers = headers)
-
-      # TODO: Expand this structure with information about the linked StorageRequest not only RequestID
-      return RestApiResponse.response(
-        availabilitysReservations.toJson,
-        contentType = "application/json",
-        headers = headers,
-      )
-    except CatchableError as exc:
-      trace "Excepting processing request", exc = exc.msg
-      return RestApiResponse.error(Http500, headers = headers)
 
 proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
   let allowedOrigin = router.allowedOrigin
@@ -685,7 +534,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
     ## tolerance        - allowed number of nodes that can be lost before content is lost
     ## colateralPerByte - requested collateral per byte from hosts when they fill slot
     try:
-      without contracts =? node.contracts.client:
+      without marketplace =? node.marketplace:
         return RestApiResponse.error(
           Http503, "Persistence is not enabled", headers = headers
         )
@@ -725,7 +574,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
         )
 
       let requestDurationLimit =
-        await contracts.purchasing.marketplace.requestDurationLimit
+        await marketplace.purchasing.marketplace.requestDurationLimit
       if params.duration > requestDurationLimit:
         return RestApiResponse.error(
           Http422,
@@ -786,7 +635,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
     var headers = buildCorsHeaders("GET", allowedOrigin)
 
     try:
-      without contracts =? node.contracts.client:
+      without marketplace =? node.marketplace:
         return RestApiResponse.error(
           Http503, "Persistence is not enabled", headers = headers
         )
@@ -794,7 +643,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
       without id =? id.tryGet.catch, error:
         return RestApiResponse.error(Http400, error.msg, headers = headers)
 
-      without purchase =? contracts.purchasing.getPurchase(id):
+      without purchase =? marketplace.purchasing.getPurchase(id):
         return RestApiResponse.error(Http404, headers = headers)
 
       let json =
@@ -816,12 +665,12 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
     var headers = buildCorsHeaders("GET", allowedOrigin)
 
     try:
-      without contracts =? node.contracts.client:
+      without marketplace =? node.marketplace:
         return RestApiResponse.error(
           Http503, "Persistence is not enabled", headers = headers
         )
 
-      let purchaseIds = contracts.purchasing.getPurchases()
+      let purchaseIds = marketplace.purchasing.getPurchases()
       return RestApiResponse.response(
         $ %purchaseIds, contentType = "application/json", headers = headers
       )
@@ -933,7 +782,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
             else:
               "",
           "announceAddresses": node.discovery.announceAddrs,
-          "ethAddress": await node.ethAddress,
+          "ethAddress": node.ethAddress,
           "table": table,
           "archivist": {
             "version": $nodeVersion,
@@ -1006,7 +855,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
           valueInt = parseInt(value.get())
 
         if keyStr == "simulate_proof_failures":
-          node.contracts.host.get().sales.context.simulateProofFailures = valueInt
+          node.marketplace.get().sales.context.simulateProofFailures = valueInt
         elif keyStr == "dht_send_fail_probability":
           node.discovery.protocol.transport.sendFailProb = valueInt
         else:

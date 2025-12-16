@@ -104,10 +104,8 @@ proc new*(
     maxWorkers = DefaultMaxWorkers,
     maxSize: SlotQueueSize = DefaultMaxSize,
 ): SlotQueue =
-  if maxWorkers <= 0:
-    raise newException(ValueError, "maxWorkers must be positive")
-  if maxWorkers.uint16 > maxSize:
-    raise newException(ValueError, "maxWorkers must be less than maxSize")
+  doAssert maxWorkers > 0, "maxWorkers must be positive"
+  doAssert maxWorkers.uint16 <= maxSize, "maxWorkers must be less than maxSize"
 
   SlotQueue(
     maxWorkers: maxWorkers,
@@ -318,7 +316,7 @@ proc delete*(self: SlotQueue, requestId: RequestId) =
 proc `[]`*(self: SlotQueue, i: Natural): SlotQueueItem =
   self.queue[i]
 
-proc availabilitiesChanged*(self: SlotQueue) =
+proc availabilityChanged*(self: SlotQueue) =
   inc self.availabilitiesVersion
   if self.paused:
     trace "unpausing queue after availabilities changed"
@@ -383,7 +381,7 @@ proc start*(self: SlotQueue) =
     let worker = self.runWorker()
     self.workers.add(worker)
 
-proc stop*(self: SlotQueue) {.async.} =
+proc stop*(self: SlotQueue) {.async: (raises: []).} =
   if not self.running:
     return
 

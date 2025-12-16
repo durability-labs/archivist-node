@@ -195,53 +195,22 @@ components:
     SalesAvailability:
       type: object
       required:
-        - totalSize
-        - duration
-        - minPricePerBytePerSecond
-        - totalCollateral
+        - minimumPricePerBytePerSecond
+        - maximumCollateralPerByte
+        - maximumDuration
       properties:
-        totalSize:
-          type: integer
-          format: int64
-          description: Total size of availability's storage in bytes
-        duration:
+        maximumDuration:
           $ref: "#/components/schemas/Duration"
-        minPricePerBytePerSecond:
+        minimumPricePerBytePerSecond:
           type: string
           description: Minimal price per byte per second paid (in amount of tokens) for the hosted request's slot for the request's duration as decimal string
-        totalCollateral:
+        maximumCollateralPerByte:
           type: string
-          description: Total collateral (in amount of tokens) that can be used for matching requests
-        enabled:
-          type: boolean
-          description: Enable the ability to receive sales on this availability.
-          default: true
-        until:
+          description: Maximum collateral per byte that can be used for matching requests
+        availableUntil:
           type: integer
           description: Specifies the latest timestamp, after which the availability will no longer host any slots. If set to 0, there will be no restrictions.
           default: 0
-
-    SalesAvailabilityREAD:
-      required:
-        - id
-        - totalRemainingCollateral
-        - freeSize
-      allOf:
-        - $ref: "#/components/schemas/SalesAvailability"
-        - type: object
-          properties:
-            id:
-              $ref: "#/components/schemas/Id"
-              readonly: true
-            freeSize:
-              type: integer
-              format: int64
-              description: Unused size of availability's storage in bytes as decimal string
-              readOnly: true
-            totalRemainingCollateral:
-              type: string
-              description: Total collateral effective (in amount of tokens) that can be used for matching requests
-              readOnly: true
 
     Slot:
       type: object
@@ -290,34 +259,6 @@ components:
             - SalePreparing
             - SaleProving
             - SaleUnknown
-
-    Reservation:
-      type: object
-      required:
-        - id
-        - availabilityId
-        - size
-        - requestId
-        - slotIndex
-        - validUntil
-      properties:
-        id:
-          $ref: "#/components/schemas/Id"
-        availabilityId:
-          $ref: "#/components/schemas/Id"
-        size:
-          type: integer
-          format: int64
-          description: Size of the slot in bytes
-        requestId:
-          $ref: "#/components/schemas/Id"
-        slotIndex:
-          type: integer
-          format: int64
-          description: Slot Index number
-        validUntil:
-          type: integer
-          description: Timestamp after which the reservation will no longer be valid.
 
     StorageRequestCreation:
       type: object
@@ -510,7 +451,7 @@ components:
         quotaReservedBytes:
           type: integer
           format: int64
-          description: "Amount of storage reserved (in bytes) in the node's local repository for future use when storage requests will be picked up and hosted by the node using node's availabilities. This does not include the storage currently in use."
+          description: "Amount of storage reserved (in bytes) in the node's local repository for future use when storage requests will be picked up and hosted by the node using node's availability. This does not include the storage currently in use."
 
 servers:
   - url: "http://localhost:8080/api/archivist/v1"
@@ -811,18 +752,16 @@ paths:
     get:
       summary: "Returns storage that is for sale"
       tags: [Marketplace]
-      operationId: getAvailabilities
+      operationId: getAvailability
       responses:
         "200":
-          description: Retrieved storage availabilities of the node
+          description: Retrieved storage availability of the node
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SalesAvailabilityREAD"
+                $ref: "#/components/schemas/SalesAvailability"
         "500":
-          description: Error getting unused availabilities
+          description: Error getting unused availability
         "503":
           description: Persistence is not enabled
 
@@ -838,80 +777,12 @@ paths:
       responses:
         "201":
           description: Created storage availability
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SalesAvailabilityREAD"
         "400":
           description: Invalid data input
         "422":
           description: Not enough node's storage quota available or the provided parameters did not pass validation
         "500":
           description: Error reserving availability
-        "503":
-          description: Persistence is not enabled
-  "/sales/availability/{id}":
-    patch:
-      summary: "Updates availability"
-      description: |
-        The new parameters will be only considered for new requests.
-        Existing Requests linked to this Availability will continue as is.
-      operationId: updateOfferedStorage
-      tags: [Marketplace]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-          description: ID of Availability
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SalesAvailability"
-      responses:
-        "204":
-          description: Availability successfully updated
-        "400":
-          description: Invalid data input
-        "404":
-          description: Availability not found
-        "422":
-          description: The provided parameters did not pass validation
-        "500":
-          description: Error reserving availability
-        "503":
-          description: Persistence is not enabled
-
-  "/sales/availability/{id}/reservations":
-    get:
-      summary: "Get availability's reservations"
-      description: Return's list of Reservations for ongoing Storage Requests that the node hosts.
-      operationId: getReservations
-      tags: [Marketplace]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-          description: ID of Availability
-      responses:
-        "200":
-          description: Retrieved storage availabilities of the node
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Reservation"
-        "400":
-          description: Invalid Availability ID
-        "404":
-          description: Availability not found
-        "500":
-          description: Error getting reservations
         "503":
           description: Persistence is not enabled
 

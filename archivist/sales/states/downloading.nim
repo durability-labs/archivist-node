@@ -40,7 +40,6 @@ method run*(
   let data = agent.data
   let context = agent.context
   let marketplace = context.marketplace
-  let reservations = context.reservations
 
   without onStore =? context.onStore:
     raiseAssert "onStore callback not set"
@@ -48,27 +47,9 @@ method run*(
   without request =? data.request:
     raiseAssert "no sale request"
 
-  without reservation =? data.reservation:
-    raiseAssert("no reservation")
-
   logScope:
     requestId = request.id
     slotIndex = data.slotIndex
-    reservationId = reservation.id
-    availabilityId = reservation.availabilityId
-
-  proc onBlocks(
-      blocks: seq[bt.Block]
-  ): Future[?!void] {.async: (raises: [CancelledError]).} =
-    # release batches of blocks as they are written to disk and
-    # update availability size
-    var bytes: uint = 0
-    for blk in blocks:
-      if not blk.cid.isEmpty:
-        bytes += blk.data.len.uint
-
-    trace "Releasing batch of bytes written to disk", bytes
-    return await reservations.release(reservation.id, reservation.availabilityId, bytes)
 
   try:
     let requestId = request.id
@@ -84,8 +65,7 @@ method run*(
       expiry = await marketplace.requestExpiresAt(requestId)
 
     trace "Starting download"
-    if err =?
-        (await onStore(request, expiry, data.slotIndex, onBlocks, isRepairing)).errorOption:
+    if err =? (await onStore(request, expiry, data.slotIndex, isRepairing)).errorOption:
       return some State(SaleErrored(error: err, reprocessSlot: false))
 
     trace "Download complete"

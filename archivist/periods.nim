@@ -1,5 +1,3 @@
-import pkg/stint
-
 type
   Periodicity* = object
     seconds*: uint64

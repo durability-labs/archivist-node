@@ -40,6 +40,7 @@ export node.proverBackend
 export node.provider
 export node.availability
 export node.failProofs
+export node.storageQuota
 export node.blockTtl
 export node.blockMaintenanceInterval
 export node.waitForOutput
@@ -70,13 +71,10 @@ export request.start
 import ./testbed/builders/availability
 
 export availability.availability
-export availability.totalSize
-export availability.totalCollateral
-export availability.duration
-export availability.minPricePerBytePerSecond
-export availability.enabled
-export availability.until
-export availability.create
+export availability.maximumCollateralPerByte
+export availability.maximumDuration
+export availability.minimumPricePerBytePerSecond
+export availability.availableUntil
 export availability.update
 
 import ./testbed/builders/marketplace
@@ -123,9 +121,9 @@ export api.getEthAddress
 export api.getSpace
 export api.getData
 export api.getPurchase
-export api.createAvailability
 export api.updateAvailability
 export api.getAvailability
+export api.getSlots
 export api.download
 export api.downloadManifest
 export api.downloadInBackground

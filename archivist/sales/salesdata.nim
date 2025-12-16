@@ -1,6 +1,6 @@
 import pkg/chronos
+import pkg/questionable
 import ../contracts/requests
-import ./reservations
 import ./slotqueue
 
 type SalesData* = ref object
@@ -9,5 +9,4 @@ type SalesData* = ref object
   request*: ?StorageRequest
   slotIndex*: uint64
   cancelled*: Future[void]
-  reservation*: ?Reservation
   slotQueueItem*: ?SlotQueueItem

@@ -67,19 +67,18 @@ proc defaultDataDir*(): string =
 
   getHomeDir() / dataDir
 
-const
-  DefaultDataDir* = defaultDataDir()
-  DefaultCircuitDir* = defaultDataDir() / "circuits"
+const DefaultDataDir* = defaultDataDir()
+
+proc defaultCircuitDir*(): string =
+  defaultDataDir() / "circuits"
+
+proc toAbsolutePath*(path: string): string =
+  try:
+    absolutePath(path)
+  except OSError, ValueError:
+    path
 
 type
-  StartUpCmd* {.pure.} = enum
-    noCmd
-    persistence
-
-  PersistenceCmd* {.pure.} = enum
-    noCmd
-    prover
-
   ProverBackendCmd* {.pure.} = enum
     nimgroth16
     circomcompat
@@ -278,207 +277,211 @@ type
       desc: "Logs to file", defaultValue: string.none, name: "log-file", hidden
     .}: Option[string]
 
-    case cmd* {.defaultValue: noCmd, command.}: StartUpCmd
-    of persistence:
-      ethProvider* {.
-        desc: "The URL of the JSON-RPC API of the Ethereum node",
-        defaultValue: "ws://localhost:8545",
-        name: "eth-provider"
-      .}: string
+    persistence* {.
+      desc: "Enables marketplace persistence. Requires 'eth-provider' option to be set.",
+      defaultValue: false,
+      name: "persistence"
+    .}: bool
 
-      ethAccount* {.
-        desc: "The Ethereum account that is used for storage contracts",
-        defaultValue: EthAddress.none,
-        defaultValueDesc: "",
-        name: "eth-account"
-      .}: Option[EthAddress]
+    ethProvider* {.
+      desc: "The URL of the JSON-RPC API of the Ethereum node",
+      defaultValue: "ws://localhost:8545",
+      name: "eth-provider"
+    .}: string
 
-      ethPrivateKey* {.
-        desc: "File containing Ethereum private key for storage contracts",
-        defaultValue: string.none,
-        defaultValueDesc: "",
-        name: "eth-private-key"
-      .}: Option[string]
+    ethAccount* {.
+      desc: "The Ethereum account that is used for storage contracts",
+      defaultValue: EthAddress.none,
+      defaultValueDesc: "",
+      name: "eth-account"
+    .}: Option[EthAddress]
 
-      marketplaceAddress* {.
-        desc: "Address of deployed Marketplace contract",
-        defaultValue: EthAddress.none,
-        defaultValueDesc: "",
-        name: "marketplace-address"
-      .}: Option[EthAddress]
+    ethPrivateKey* {.
+      desc: "File containing Ethereum private key for storage contracts",
+      defaultValue: string.none,
+      defaultValueDesc: "",
+      name: "eth-private-key"
+    .}: Option[string]
 
-      useSystemClock* {.
-        desc: "Assume system clock is accurate enough for chain-related operations",
-        defaultValue: false,
-        name: "use-system-clock"
-      .}: bool
+    marketplaceAddress* {.
+      desc: "Address of deployed Marketplace contract",
+      defaultValue: EthAddress.none,
+      defaultValueDesc: "",
+      name: "marketplace-address"
+    .}: Option[EthAddress]
 
-      validator* {.
-        desc: "Enables validator, requires an Ethereum node",
-        defaultValue: false,
-        name: "validator"
-      .}: bool
+    useSystemClock* {.
+      desc: "Assume system clock is accurate enough for chain-related operations",
+      defaultValue: false,
+      name: "use-system-clock"
+    .}: bool
 
-      validatorMaxSlots* {.
-        desc: "Maximum number of slots that the validator monitors",
-        longDesc:
-          "If set to 0, the validator will not limit " &
-          "the maximum number of slots it monitors",
-        defaultValue: 1000,
-        name: "validator-max-slots"
-      .}: MaxSlots
+    validator* {.
+      desc: "Enables validator, requires an Ethereum node",
+      defaultValue: false,
+      name: "validator"
+    .}: bool
 
-      validatorGroups* {.
-        desc: "Slot validation groups",
-        longDesc:
-          "A number indicating total number of groups into " &
-          "which the whole slot id space will be divided. " &
-          "The value must be in the range [2, 65535]. " &
-          "If not provided, the validator will observe " &
-          "the whole slot id space and the value of " &
-          "the --validator-group-index parameter will be ignored. " &
-          "Powers of twos are advised for even distribution",
-        defaultValue: ValidationGroups.none,
-        name: "validator-groups"
-      .}: Option[ValidationGroups]
+    validatorMaxSlots* {.
+      desc: "Maximum number of slots that the validator monitors",
+      longDesc:
+        "If set to 0, the validator will not limit " &
+        "the maximum number of slots it monitors",
+      defaultValue: 1000,
+      name: "validator-max-slots"
+    .}: MaxSlots
 
-      validatorGroupIndex* {.
-        desc: "Slot validation group index",
-        longDesc:
-          "The value provided must be in the range " &
-          "[0, validatorGroups). Ignored when --validator-groups " &
-          "is not provided. Only slot ids satisfying condition " &
-          "[(slotId mod validationGroups) == groupIndex] will be " &
-          "observed by the validator",
-        defaultValue: 0,
-        name: "validator-group-index"
-      .}: uint16
+    validatorGroups* {.
+      desc: "Slot validation groups",
+      longDesc:
+        "A number indicating total number of groups into " &
+        "which the whole slot id space will be divided. " &
+        "The value must be in the range [2, 65535]. " &
+        "If not provided, the validator will observe " &
+        "the whole slot id space and the value of " &
+        "the --validator-group-index parameter will be ignored. " &
+        "Powers of twos are advised for even distribution",
+      defaultValue: ValidationGroups.none,
+      name: "validator-groups"
+    .}: Option[ValidationGroups]
 
-      rewardRecipient* {.
-        desc: "Address to send payouts to (eg rewards and refunds)",
-        name: "reward-recipient"
-      .}: Option[EthAddress]
+    validatorGroupIndex* {.
+      desc: "Slot validation group index",
+      longDesc:
+        "The value provided must be in the range " &
+        "[0, validatorGroups). Ignored when --validator-groups " &
+        "is not provided. Only slot ids satisfying condition " &
+        "[(slotId mod validationGroups) == groupIndex] will be " &
+        "observed by the validator",
+      defaultValue: 0,
+      name: "validator-group-index"
+    .}: uint16
 
-      marketplaceRequestCacheSize* {.
-        desc:
-          "Maximum number of StorageRequests kept in memory." &
-          "Reduces fetching of StorageRequest data from the contract.",
-        defaultValue: DefaultRequestCacheSize,
-        defaultValueDesc: $DefaultRequestCacheSize,
-        name: "request-cache-size",
-        hidden
-      .}: uint16
+    rewardRecipient* {.
+      desc: "Address to send payouts to (eg rewards and refunds)",
+      name: "reward-recipient"
+    .}: Option[EthAddress]
 
-      maxPriorityFeePerGas* {.
-        desc:
-          "Sets the default maximum priority fee per gas for Ethereum EIP-1559 transactions, in wei, when not provided by the network.",
-        defaultValue: DefaultMaxPriorityFeePerGas,
-        defaultValueDesc: $DefaultMaxPriorityFeePerGas,
-        name: "max-priority-fee-per-gas",
-        hidden
-      .}: uint64
+    marketplaceRequestCacheSize* {.
+      desc:
+        "Maximum number of StorageRequests kept in memory." &
+        "Reduces fetching of StorageRequest data from the contract.",
+      defaultValue: DefaultRequestCacheSize,
+      defaultValueDesc: $DefaultRequestCacheSize,
+      name: "request-cache-size",
+      hidden
+    .}: uint16
 
-      case persistenceCmd* {.defaultValue: noCmd, command.}: PersistenceCmd
-      of PersistenceCmd.prover:
-        circuitDir* {.
-          desc: "Directory where the node will store proof circuit data",
-          defaultValue: defaultDataDir() / "circuits",
-          defaultValueDesc: "data/circuits",
-          abbr: "cd",
-          name: "circuit-dir"
-        .}: OutDir
+    maxPriorityFeePerGas* {.
+      desc:
+        "Sets the default maximum priority fee per gas for Ethereum EIP-1559 transactions, in wei, when not provided by the network.",
+      defaultValue: DefaultMaxPriorityFeePerGas,
+      defaultValueDesc: $DefaultMaxPriorityFeePerGas,
+      name: "max-priority-fee-per-gas",
+      hidden
+    .}: uint64
 
-        proverBackend* {.
-          desc:
-            "The backend to use for the prover. " &
-            "Must be one of: nimgroth16, circomcompat",
-          defaultValue: ProverBackendCmd.nimgroth16,
-          defaultValueDesc: "nimgroth16",
-          name: "prover-backend"
-        .}: ProverBackendCmd
+    prover* {.
+      desc:
+        "Enables zkProver system, required to generate storage proofs. Requires 'persistence' to be enabled.",
+      defaultValue: false,
+      name: "prover"
+    .}: bool
 
-        curve* {.
-          desc: "The curve to use for the storage circuit",
-          defaultValue: Curves.bn128,
-          defaultValueDesc: $Curves.bn128,
-          name: "curve"
-        .}: Curves
+    circuitDir* {.
+      desc: "Directory where the node will store proof circuit data",
+      defaultValue: defaultCircuitDir(),
+      defaultValueDesc: "data/circuits",
+      abbr: "cd",
+      name: "circuit-dir"
+    .}: OutDir
 
-        circomR1cs* {.
-          desc: "The r1cs file for the storage circuit",
-          defaultValue: defaultDataDir() / "circuits" / "proof_main.r1cs",
-          defaultValueDesc: "data/circuits/proof_main.r1cs",
-          name: "circom-r1cs"
-        .}: InputFile
+    proverBackend* {.
+      desc:
+        "The backend to use for the prover. " &
+        "Must be one of: nimgroth16, circomcompat",
+      defaultValue: ProverBackendCmd.nimgroth16,
+      defaultValueDesc: "nimgroth16",
+      name: "prover-backend"
+    .}: ProverBackendCmd
 
-        circomGraph* {.
-          desc:
-            "The graph file for the storage circuit (only used with nimgroth16 backend)",
-          defaultValue: $DefaultCircuitDir / "proof_main.bin",
-          defaultValueDesc: $DefaultDataDir & "/circuits/proof_main.bin",
-          name: "circom-graph"
-        .}: InputFile
+    curve* {.
+      desc: "The curve to use for the storage circuit",
+      defaultValue: Curves.bn128,
+      defaultValueDesc: $Curves.bn128,
+      name: "curve"
+    .}: Curves
 
-        circomWasm* {.
-          desc:
-            "The wasm file for the storage circuit (only used with circomcompat backend)",
-          defaultValue: $DefaultCircuitDir / "proof_main.wasm",
-          defaultValueDesc: $DefaultDataDir & "/circuits/proof_main.wasm",
-          name: "circom-wasm"
-        .}: InputFile
+    circomR1cs* {.
+      desc: "The r1cs file for the storage circuit",
+      defaultValue: config.circuitDirPath / "proof_main.r1cs",
+      defaultValueDesc: "<circuit-dir>/proof_main.r1cs",
+      name: "circom-r1cs"
+    .}: InputFile
 
-        circomZkey* {.
-          desc: "The zkey file for the storage circuit",
-          defaultValue: defaultDataDir() / "circuits" / "proof_main.zkey",
-          defaultValueDesc: "data/circuits/proof_main.zkey",
-          name: "circom-zkey"
-        .}: InputFile
+    circomGraph* {.
+      desc: "The graph file for the storage circuit (only used with nimgroth16 backend)",
+      defaultValue: config.circuitDirPath / "proof_main.bin",
+      defaultValueDesc: "<circuit-dir>/proof_main.bin",
+      name: "circom-graph"
+    .}: InputFile
 
-        circomNoZkey* {.
-          desc: "Ignore the zkey file - use only for testing!",
-          defaultValue: false,
-          name: "circom-no-zkey",
-          hidden
-        .}: bool
+    circomWasm* {.
+      desc:
+        "The wasm file for the storage circuit (only used with circomcompat backend)",
+      defaultValue: config.circuitDirPath / "proof_main.wasm",
+      defaultValueDesc: "<circuit-dir>/proof_main.wasm",
+      name: "circom-wasm"
+    .}: InputFile
 
-        numProofSamples* {.
-          desc: "Number of samples to prove",
-          defaultValue: DefaultSamplesNum,
-          defaultValueDesc: $DefaultSamplesNum,
-          name: "proof-samples"
-        .}: int
+    circomZkey* {.
+      desc: "The zkey file for the storage circuit",
+      defaultValue: config.circuitDirPath / "proof_main.zkey",
+      defaultValueDesc: "<circuit-dir>/proof_main.zkey",
+      name: "circom-zkey"
+    .}: InputFile
 
-        maxSlotDepth* {.
-          desc: "The maximum depth of the slot tree",
-          defaultValue: DefaultMaxSlotDepth,
-          defaultValueDesc: $DefaultMaxSlotDepth,
-          name: "max-slot-depth"
-        .}: int
+    circomNoZkey* {.
+      desc: "Ignore the zkey file - use only for testing!",
+      defaultValue: false,
+      name: "circom-no-zkey",
+      hidden
+    .}: bool
 
-        maxDatasetDepth* {.
-          desc: "The maximum depth of the dataset tree",
-          defaultValue: DefaultMaxDatasetDepth,
-          defaultValueDesc: $DefaultMaxDatasetDepth,
-          name: "max-dataset-depth"
-        .}: int
+    numProofSamples* {.
+      desc: "Number of samples to prove",
+      defaultValue: DefaultSamplesNum,
+      defaultValueDesc: $DefaultSamplesNum,
+      name: "proof-samples"
+    .}: int
 
-        maxBlockDepth* {.
-          desc: "The maximum depth of the network block merkle tree",
-          defaultValue: DefaultBlockDepth,
-          defaultValueDesc: $DefaultBlockDepth,
-          name: "max-block-depth"
-        .}: int
+    maxSlotDepth* {.
+      desc: "The maximum depth of the slot tree",
+      defaultValue: DefaultMaxSlotDepth,
+      defaultValueDesc: $DefaultMaxSlotDepth,
+      name: "max-slot-depth"
+    .}: int
 
-        maxCellElms* {.
-          desc: "The maximum number of elements in a cell",
-          defaultValue: DefaultCellElms,
-          defaultValueDesc: $DefaultCellElms,
-          name: "max-cell-elements"
-        .}: int
-      of PersistenceCmd.noCmd:
-        discard
-    of StartUpCmd.noCmd:
-      discard # end of persistence
+    maxDatasetDepth* {.
+      desc: "The maximum depth of the dataset tree",
+      defaultValue: DefaultMaxDatasetDepth,
+      defaultValueDesc: $DefaultMaxDatasetDepth,
+      name: "max-dataset-depth"
+    .}: int
+
+    maxBlockDepth* {.
+      desc: "The maximum depth of the network block merkle tree",
+      defaultValue: DefaultBlockDepth,
+      defaultValueDesc: $DefaultBlockDepth,
+      name: "max-block-depth"
+    .}: int
+
+    maxCellElms* {.
+      desc: "The maximum number of elements in a cell",
+      defaultValue: DefaultCellElms,
+      defaultValueDesc: $DefaultCellElms,
+      name: "max-cell-elements"
+    .}: int
 
   EthAddress* = ethers.Address
 
@@ -493,11 +496,9 @@ func defaultAddress*(conf: NodeConf): IpAddress =
 func defaultNatConfig*(): NatConfig =
   result = NatConfig(hasExtIp: false, nat: NatStrategy.NatAny)
 
-func persistence*(self: NodeConf): bool =
-  self.cmd == StartUpCmd.persistence
-
-func prover*(self: NodeConf): bool =
-  self.persistence and self.persistenceCmd == PersistenceCmd.prover
+proc circuitDirPath*(self: NodeConf): string =
+  ## Returns the circuit directory as an absolute path
+  toAbsolutePath($self.circuitDir)
 
 proc getNodeVersion(): string =
   let tag = strip(staticExec("git tag"))

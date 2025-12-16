@@ -291,7 +291,7 @@ method subscribeProofSubmission*(
 ): Future[Subscription] {.base, async.} =
   raiseAssert("not implemented")
 
-method unsubscribe*(subscription: Subscription) {.base, async, raises: [].} =
+method unsubscribe*(subscription: Subscription) {.base, async: (raises: []).} =
   raiseAssert("not implemented")
 
 method queryPastSlotFilledEvents*(
