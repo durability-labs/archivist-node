@@ -12,3 +12,6 @@ proc hash*(x: PurchaseId): Hash {.borrow.}
 proc `==`*(x, y: PurchaseId): bool {.borrow.}
 proc toHex*(x: PurchaseId): string =
   array[32, byte](x).toHex
+
+proc `$`*(id: PurchaseId): string =
+  id.toHex

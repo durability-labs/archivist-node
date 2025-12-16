@@ -27,7 +27,7 @@ import pkg/circom_witnessgen/witness
 
 import ../../types
 import ../../../stores
-import ../../../marketplace/contracts
+import ../../../marketplace
 
 import ./converters
 

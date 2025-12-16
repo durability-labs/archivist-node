@@ -17,9 +17,7 @@ import pkg/stew/byteutils
 import pkg/results
 import pkg/stint
 
-import ../marketplace/sales
-import ../marketplace/purchasing
-import ../marketplace/contracts/requests
+import ../marketplace
 import ../utils/stintutils
 
 proc encodeString*(cid: type Cid): Result[string, cstring] =

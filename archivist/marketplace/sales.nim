@@ -460,3 +460,7 @@ proc stop*(sales: Sales) {.async: (raises: []).} =
     await agent.stop()
 
   sales.agents = @[]
+
+when defined(archivist_system_testing_options):
+  func simulateProofFailures*(sales: Sales, every: int) =
+    sales.context.simulateProofFailures = every

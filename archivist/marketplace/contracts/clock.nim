@@ -4,7 +4,6 @@ import pkg/questionable
 import pkg/chronos
 import pkg/stint
 import ../.. /clock
-import ../../conf
 
 export clock
 

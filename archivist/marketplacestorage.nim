@@ -1,7 +1,5 @@
 import pkg/chronos
 import ./marketplace
-import ./marketplace/contracts/proofs
-import ./marketplace/abstractmarketplace
 import ./node
 import ./stores/repostore
 import ./clock

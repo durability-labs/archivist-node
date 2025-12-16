@@ -9,11 +9,12 @@
 
 {.push raises: [].}
 
+import pkg/stint
 import pkg/groth16
 import pkg/circomcompat
 import pkg/constantine/math/io/io_fields
 
-import ../../../marketplace/contracts
+import ../../../marketplace
 import ../../types
 import ../../../merkletree
 

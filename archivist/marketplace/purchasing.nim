@@ -20,10 +20,14 @@ type
     clock: Clock
     purchases: Table[PurchaseId, Purchase]
     proofProbability*: UInt256
+    durationLimit: uint64
 
   PurchaseTimeout* = Timeout
 
 const DefaultProofProbability = 100.u256
+
+func durationLimit*(purchasing: Purchasing): uint64 =
+  purchasing.durationLimit
 
 proc new*(
     _: type Purchasing, marketplace: AbstractMarketplace, clock: Clock
@@ -44,6 +48,7 @@ proc start*(
     purchasing: Purchasing
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   try:
+    purchasing.durationLimit = await purchasing.marketplace.requestDurationLimit()
     await purchasing.load()
     success()
   except CancelledError as error:

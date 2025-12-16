@@ -1,4 +1,3 @@
-import ../../../conf
 when defined(archivist_system_testing_options):
   import pkg/stint
   import pkg/ethers

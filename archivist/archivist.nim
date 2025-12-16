@@ -33,7 +33,6 @@ import ./utils/fileutils
 import ./erasure
 import ./discovery
 import ./marketplace
-import ./marketplace/contracts
 import ./marketplacestorage
 import ./namespaces
 import ./archivisttypes

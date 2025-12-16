@@ -23,7 +23,6 @@ import ../../rng
 import ../../stores/blockstore
 import ../../blocktype
 import ../../utils
-import ../../utils/exceptions
 import ../../utils/trackedfutures
 import ../../merkletree
 import ../../logutils
@@ -202,7 +201,7 @@ proc downloadInternal(
       if handle.finished:
         trace "Handle for block finished", failed = handle.failed
         break
-  except CancelledError as exc:
+  except CancelledError:
     trace "Block download cancelled"
     if not handle.finished:
       await handle.cancelAndWait()
@@ -472,7 +471,7 @@ proc wantListHandler*(
           have =
             try:
               await e.address in self.localStore
-            except CatchableError as exc:
+            except CatchableError:
               # TODO: should not be necessary once we have proper exception tracking on the BlockStore interface
               false
           price = @(self.pricing.get(Pricing(price: 0.u256)).price.toBytesBE)

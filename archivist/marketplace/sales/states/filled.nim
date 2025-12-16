@@ -2,7 +2,6 @@ import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
 
-import ../../../conf
 import ../../../logutils
 import ../../../utils/exceptions
 import ../../abstractmarketplace
