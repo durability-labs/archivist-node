@@ -34,6 +34,8 @@ when isMainModule:
   logScope:
     topics = "archivist"
 
+  const defaultConfigFile = "config.toml"
+
   when defined(posix):
     import system/ansi_c
 
@@ -42,15 +44,19 @@ when isMainModule:
     Stopping
     Running
 
+  proc addConfigFileSources(
+      config: NodeConf, sources: auto
+  ) {.gcsafe, raises: [ConfigurationError].} =
+    if configFile =? config.configFile:
+      sources.addConfigFile(Toml, configFile)
+    # If a local config.toml file exists, use it automatically.
+    elif fileExists(defaultConfigFile):
+      sources.addConfigFile(Toml, InputFile(defaultConfigFile))
+
   let config = NodeConf.load(
     version = nodeFullVersion,
     envVarsPrefix = "archivist",
-    secondarySources = proc(
-        config: NodeConf, sources: auto
-    ) {.gcsafe, raises: [ConfigurationError].} =
-      if configFile =? config.configFile:
-        sources.addConfigFile(Toml, configFile)
-    ,
+    secondarySources = addConfigFileSources,
   )
   config.setupLogging()
   config.setupMetrics()
@@ -60,7 +66,7 @@ when isMainModule:
     # permissions are insecure.
     quit QuitFailure
 
-  if config.prover() and not (checkAndCreateDataDir((config.circuitDir).string)):
+  if config.prover and not (checkAndCreateDataDir((config.circuitDir).string)):
     quit QuitFailure
 
   trace "Data dir initialized", dir = $config.dataDir

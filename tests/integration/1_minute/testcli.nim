@@ -1,3 +1,4 @@
+import std/os
 import std/tempfiles
 import pkg/asynctest/chronos/unittest2
 import pkg/stew/io2
@@ -77,3 +78,15 @@ suite "Command line interface":
     .availability(false)
     .waitForOutput(expectedOutput)
     .start()
+
+  test "automatically uses local config.toml":
+    let
+      expectedOutput = "Persistence enabled, but no Ethereum account was set"
+      configFile = "config.toml"
+      content = "persistence=true"
+
+    writeFile(configFile, content)
+    defer:
+      osfiles.removeFile(configFile)
+
+    discard await testbed.node.waitForOutput(expectedOutput).start()

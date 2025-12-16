@@ -242,7 +242,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   if builder.logTopics.len > 0:
     arguments.add("--log-level=INFO;TRACE:" & builder.logTopics.join(","))
   if builder.persistence:
-    arguments.add("persistence")
+    arguments.add("--persistence")
     arguments.add("--eth-provider=" & builder.testbed.hardhatInstance.jsonRpcUrl)
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
@@ -253,7 +253,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   if index =? builder.validatorGroupIndex:
     arguments.add("--validator-group-index=" & $index)
   if builder.prover:
-    arguments.add("prover")
+    arguments.add("--prover")
   if backend =? builder.proverBackend:
     arguments.add("--prover-backend=" & backend)
   if circomR1cs =? builder.circomR1csResolved:
