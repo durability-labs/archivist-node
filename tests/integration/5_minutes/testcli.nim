@@ -79,9 +79,16 @@ suite "Command line interface":
     .waitForOutput(expectedOutput)
     .start()
 
+  test "warns about invalid marketplace address":
+    discard await testbed.node
+    .persistence()
+    .marketplaceAddress("0xDEADDEADDEADDEADDEADDEADDEADDEADDEADDEAD")
+    .waitForOutput("Unable to start marketplace")
+    .start()
+
   test "automatically uses local config.toml":
     let
-      expectedOutput = "Persistence enabled, but no Ethereum account was set"
+      expectedOutput = "Persistence enabled, but no Ethereum private key was set"
       configFile = "config.toml"
       content = "persistence=true"
 

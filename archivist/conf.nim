@@ -289,13 +289,6 @@ type
       name: "eth-provider"
     .}: string
 
-    ethAccount* {.
-      desc: "The Ethereum account that is used for storage contracts",
-      defaultValue: EthAddress.none,
-      defaultValueDesc: "",
-      name: "eth-account"
-    .}: Option[EthAddress]
-
     ethPrivateKey* {.
       desc: "File containing Ethereum private key for storage contracts",
       defaultValue: string.none,

@@ -27,6 +27,7 @@ type NodeBuilder = ref object
   logTopics: seq[string]
   persistence: bool
   ethPrivateKey: ? ?string
+  marketplaceAddress: ?string
   validator: bool
   validatorGroups: ?int
   validatorGroupIndex: ?int
@@ -91,6 +92,10 @@ func ethPrivateKey*(builder: NodeBuilder, filename: string): NodeBuilder =
 
 func noEthPrivateKey*(builder: NodeBuilder): NodeBuilder =
   builder.ethPrivateKey = some none string
+  builder
+
+func marketplaceAddress*(builder: NodeBuilder, address: string): NodeBuilder =
+  builder.marketplaceAddress = some address
   builder
 
 func validator*(builder: NodeBuilder): NodeBuilder =
@@ -246,6 +251,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--eth-provider=" & builder.testbed.hardhatInstance.jsonRpcUrl)
   if ethPrivateKey =? builder.ethPrivateKeyResolved:
     arguments.add("--eth-private-key=" & ethPrivateKey)
+  if marketplaceAddress =? builder.marketplaceAddress:
+    arguments.add("--marketplace-address=" & marketplaceAddress)
   if builder.validator:
     arguments.add("--validator")
   if groups =? builder.validatorGroups:
