@@ -8,6 +8,7 @@ import ../../storageinterface
 import ../statemachine
 import ../salesagent
 import ../salescontext
+import ../metrics
 import ./cancelled
 import ./failed
 import ./errored
@@ -25,17 +26,19 @@ method prove*(
     state: SaleProving,
     slot: Slot,
     challenge: ProofChallenge,
-    marketplace: AbstractMarketplace,
-    storage: StorageInterface,
+    context: SalesContext,
     provingPeriod: Period,
 ) {.base, async.} =
   try:
+    let marketplace = context.marketplace
+    let storage = context.storage
     let cid = slot.request.content.cid
     let slotIndex = slot.slotIndex
     without proof =? await storage.proveSlot(cid, slotIndex, challenge), err:
       error "Failed to generate proof", error = err.msg
       # In this state, there's nothing we can do except try again next time.
       return
+    context.metrics.increaseNumberOfProofs(provingPeriod)
     info "Submitting proof", provingPeriod = provingPeriod, slotId = slot.id
     await marketplace.submitProof(slot.id, proof)
   except CancelledError as error:
@@ -47,12 +50,12 @@ method prove*(
 
 proc proveLoop(
     state: SaleProving,
-    marketplace: AbstractMarketplace,
-    storage: StorageInterface,
-    clock: Clock,
+    context: SalesContext,
     request: StorageRequest,
     slotIndex: uint64,
 ) {.async.} =
+  let marketplace = context.marketplace
+  let clock = context.clock
   let slot = Slot(request: request, slotIndex: slotIndex)
   let slotId = slot.id
 
@@ -82,7 +85,7 @@ proc proveLoop(
           (await marketplace.willProofBeRequired(slotId)):
         let challenge = await marketplace.getChallenge(slotId)
         info "Generating required proof", challenge = challenge
-        await state.prove(slot, challenge, marketplace, storage, provingPeriod)
+        await state.prove(slot, challenge, context, provingPeriod)
         let periodAtFinish = await getCurrentPeriod()
         if periodAtFinish != provingPeriod:
           warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
@@ -120,15 +123,13 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
   let context = SalesAgent(machine).context
-  let marketplace = context.marketplace
-  let storage = context.storage
   let clock = context.clock
 
   without request =? data.request:
     raiseAssert "no sale request"
 
   try:
-    await state.proveLoop(marketplace, storage, clock, request, data.slotIndex)
+    await state.proveLoop(context, request, data.slotIndex)
     debug "Stopping proving.", requestId = data.requestId, slotIndex = data.slotIndex
     return some State(SalePayout())
   except CancelledError:

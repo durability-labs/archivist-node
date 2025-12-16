@@ -6,6 +6,7 @@ import ../../abstractmarketplace
 import ../../storageinterface
 import ../statemachine
 import ../salesagent
+import ../metrics
 import ./filling
 import ./cancelled
 import ./errored
@@ -77,6 +78,8 @@ method run*(
     if periodAtFinish != provingPeriod:
       warn "Failed to generate initial proof in time",
         provingPeriod = provingPeriod, periodAtFinish = periodAtFinish
+
+    context.metrics.increaseNumberOfProofs(provingPeriod)
 
     info "Finished initial proof calculation",
       provingPeriod = periodAtFinish,
