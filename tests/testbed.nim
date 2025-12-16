@@ -26,6 +26,7 @@ export node.log
 export node.persistence
 export node.ethPrivateKey
 export node.noEthPrivateKey
+export node.marketplaceAddress
 export node.circomR1cs
 export node.noCircomR1cs
 export node.circomWasm
