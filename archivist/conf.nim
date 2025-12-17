@@ -334,9 +334,9 @@ type
         "the whole slot id space and the value of " &
         "the --validator-group-index parameter will be ignored. " &
         "Powers of twos are advised for even distribution",
-      defaultValue: ValidationGroups.none,
+      defaultValue: int.none,
       name: "validator-groups"
-    .}: Option[ValidationGroups]
+    .}: Option[int]
 
     validatorGroupIndex* {.
       desc: "Slot validation group index",
