@@ -614,8 +614,8 @@
       }
     },
     "groth16": {
-      "version": "0.1.0",
-      "vcsRevision": "0adcf64b7b76556227fec09297e3beef4b9c43df",
+      "version": "0.1.1",
+      "vcsRevision": "e86837330525b60c9198d7cee1878feae9110080",
       "url": "https://github.com/durability-labs/nim-groth16",
       "downloadMethod": "git",
       "dependencies": [
@@ -623,7 +623,7 @@
         "constantine"
       ],
       "checksums": {
-        "sha1": "8350e6e28bf12dc20ff69e76a127f625260113c1"
+        "sha1": "a9cadf8dfd6a23d0f3c3871e93c427089c65aa06"
       }
     },
     "leopard": {
