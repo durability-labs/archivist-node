@@ -8,8 +8,25 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)](#stability)
 
+## Download
 
-## Build and Run
+### Binaries
+Release binaries are available for several platforms on the [Github Release Page](https://github.com/durability-labs/archivist-node/releases/).
+
+1. Download the binaries for your platform.
+1. Unpack in an install location of your choice.
+1. Skip to [Configuration](#configuration).
+
+### Docker
+Docker images are available for each released version. Images are tagged as follows: `durabilitylabs/archivist-node:<VERSION NUMBER>`
+
+For example: `durabilitylabs/archivist-node:0.1.0`
+
+We recommend configuring your Archivist docker container using environment variables. Here is an example [docker-compose.yaml](./docker/docker-compose.yaml)
+
+> WARNING: Release binaries and docker images are built with common CPU instruction sets and may not be optimal for your system. To get the best performance out of Archivist, we recommend you [build from sources](#build).
+
+## Build
 
 ### Prerequisites
 
@@ -66,14 +83,6 @@ nimble build
 
 The executable will be placed under the `build` directory under the project root.
 
-### Run
-
-Run the node with:
-
-```bash
-build/archivist
-```
-
 ## Configuration
 
 It is possible to configure an Archivist node in several ways:
@@ -82,6 +91,22 @@ It is possible to configure an Archivist node in several ways:
  3. Configuration file
 
 The order of priority is the same as above: CLI options --> Environment variables --> Configuration file.
+
+### Setup
+
+Archivist comes with a guided setup tool. This will generate a configuration file for you.
+
+```bash
+build/setup
+```
+
+## Run
+
+Run the archivist executable to start the node:
+
+```bash
+build/archivist
+```
 
 ## API
 

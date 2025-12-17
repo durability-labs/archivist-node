@@ -2,7 +2,7 @@ version = "0.1.0"
 author = "Archivist Team"
 description = "data durability engine"
 license = "MIT"
-bin = @["archivist", "tools/cirdl/cirdl"]
+bin = @["archivist", "tools/cirdl/cirdl", "tools/setup/setup"]
 binDir = "build"
 
 requires "https://github.com/durability-labs/nim-libp2p#multihash-poseidon2"
