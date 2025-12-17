@@ -16,7 +16,7 @@ method waitUntil*(clock: Clock, time: SecondsSince1970) {.base, async.} =
 method start*(clock: Clock) {.base, async.} =
   discard
 
-method stop*(clock: Clock) {.base, async.} =
+method stop*(clock: Clock) {.base, async: (raises: []).} =
   discard
 
 proc withTimeout*(

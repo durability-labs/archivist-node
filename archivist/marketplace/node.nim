@@ -69,6 +69,7 @@ proc stop*(marketplace: MarketplaceNode) {.async: (raises: []).} =
   await marketplace.sales.stop()
   if validation =? marketplace.validation:
     await validation.stop()
+  await marketplace.clock.stop()
   try:
     await noCancel marketplace.provider.close()
   except ProviderError:

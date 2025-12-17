@@ -71,7 +71,6 @@ type
     prover: ?Prover
     discovery: Discovery
     marketplace: ?MarketplaceNode
-    clock*: Clock
     taskpool: Taskpool
     trackedFutures: TrackedFutures
     # proofs/period metric:
@@ -620,7 +619,6 @@ proc requestStorage*(
     proofProbability = proofProbability
     collateralPerByte = collateralPerByte
     expiry = expiry
-    now = self.clock.now
 
   trace "Received a request for storage!"
 
@@ -811,9 +809,6 @@ proc start*(self: ArchivistNodeRef) {.async.} =
   if not self.discovery.isNil:
     await self.discovery.start()
 
-  if not self.clock.isNil:
-    await self.clock.start()
-
   if marketplace =? self.marketplace:
     marketplace.sales.onStore = proc(
         request: StorageRequest,
@@ -855,9 +850,6 @@ proc stop*(self: ArchivistNodeRef) {.async.} =
 
   if marketplace =? self.marketplace:
     await marketplace.stop()
-
-  if not self.clock.isNil:
-    await self.clock.stop()
 
   if not self.networkStore.isNil:
     await self.networkStore.close

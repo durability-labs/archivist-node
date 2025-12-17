@@ -45,11 +45,15 @@ method start*(clock: OnChainClock) {.async.} =
   clock.subscription = await clock.provider.subscribe(onBlock)
   clock.started = true
 
-method stop*(clock: OnChainClock) {.async.} =
+method stop*(clock: OnChainClock) {.async: (raises: []).} =
   if not clock.started:
     return
 
-  await clock.subscription.unsubscribe()
+  try:
+    await noCancel clock.subscription.unsubscribe()
+  except ProviderError:
+    discard
+
   clock.started = false
 
 method now*(clock: OnChainClock): SecondsSince1970 =
