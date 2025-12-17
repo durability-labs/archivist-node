@@ -313,12 +313,12 @@ method listBlocks*(
 
   proc next(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
     await idleAsync()
-    if pair =? (await queryIter.next()) and cid =? pair.key:
-      doAssert pair.data.len == 0
-      trace "Retrieved record from repo", cid
-      return Cid.init(cid.value).mapFailure
-    else:
-      return Cid.failure("No or invalid Cid")
+    if pair =? (await queryIter.next()):
+      if cid =? pair.key:
+        doAssert pair.data.len == 0
+        trace "Retrieved record from repo", cid
+        return Cid.init(cid.value).mapFailure
+    return Cid.failure("No or invalid Cid")
 
   proc isFinished(): bool =
     queryIter.finished
