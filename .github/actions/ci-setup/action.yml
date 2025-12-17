@@ -16,11 +16,10 @@ runs:
   using: "composite"
   steps:
       - name: Install Nim
-        uses: iffy/install-nim@v5
+        uses: jiro4989/setup-nim-action@v2
         with:
-          version: binary:${{ inputs.nim_version }}
-        env:
-          GITHUB_TOKEN: ${{ inputs.github_token }}
+          nim-version: ${{ inputs.nim_version }}
+          repo-token: ${{ inputs.github_token }}
 
       - name: Setup CMake
         uses: lukka/get-cmake@latest
