@@ -91,6 +91,9 @@ func switch*(self: ArchivistNodeRef): Switch =
 func blockStore*(self: ArchivistNodeRef): BlockStore =
   return self.networkStore
 
+func networkStore*(self: ArchivistNodeRef): NetworkStore =
+  return self.networkStore
+
 func engine*(self: ArchivistNodeRef): BlockExcEngine =
   return self.engine
 
