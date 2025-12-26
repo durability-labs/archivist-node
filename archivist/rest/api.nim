@@ -366,11 +366,16 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       while normalPath.len > 0 and normalPath[0] == '/':
         normalPath = normalPath[1..^1]
 
-      if ".." in normalPath:
-        return RestApiResponse.error(
-          Http400, "Invalid path (directory traversal not allowed): " & pathStr,
-          headers = headers,
-        )
+      # Check for directory traversal - ".." must be a path segment, not part of filename
+      # Valid: "F.R.E.S.H..mp3" (double dot in filename)
+      # Invalid: "../etc/passwd" or "foo/../bar"
+      let pathParts = normalPath.split('/')
+      for part in pathParts:
+        if part == "..":
+          return RestApiResponse.error(
+            Http400, "Invalid path (directory traversal not allowed): " & pathStr,
+            headers = headers,
+          )
 
       if normalPath.len == 0:
         continue
@@ -510,10 +515,65 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
     cid: Cid, resp: HttpResponseRef
   ) -> RestApiResponse:
     if corsOrigin =? allowedOrigin:
-      resp.setCorsHeaders("GET,DELETE", corsOrigin)
+      resp.setCorsHeaders("GET,HEAD,DELETE", corsOrigin)
 
     resp.status = Http204
     await resp.sendBody("")
+
+  router.api(MethodHead, "/api/archivist/v1/data/{cid}") do(
+    cid: Cid, resp: HttpResponseRef
+  ) -> RestApiResponse:
+    ## HEAD request - returns headers without body
+    ## Used to check content type and size before fetching
+    var headers = buildCorsHeaders("HEAD", allowedOrigin)
+
+    if cid.isErr:
+      return RestApiResponse.error(Http400, $cid.error(), headers = headers)
+
+    let cidVal = cid.get()
+
+    if corsOrigin =? allowedOrigin:
+      resp.setCorsHeaders("HEAD", corsOrigin)
+
+    # Check if this is a directory manifest
+    without isDir =? cidVal.isDirectory, err:
+      return RestApiResponse.error(Http400, err.msg, headers = headers)
+
+    if isDir:
+      # Directory - check if it exists
+      without directory =? (await fetchDirectoryManifest(node.networkStore, cidVal)), err:
+        return RestApiResponse.error(Http404, err.msg, headers = headers)
+
+      # Check Accept header to determine response format
+      let acceptHeader = request.headers.getString("Accept")
+      if "application/json" in acceptHeader:
+        resp.setHeader("Content-Type", "application/json")
+      else:
+        resp.setHeader("Content-Type", "text/html; charset=utf-8")
+      resp.setHeader("Content-Length", $(directory.totalSize.int))
+      resp.status = Http200
+      await resp.sendBody("")
+
+    else:
+      # Regular file - get manifest for headers
+      without manifest =? (await node.fetchManifest(cidVal)), err:
+        return RestApiResponse.error(Http404, err.msg, headers = headers)
+
+      if manifest.mimetype.isSome:
+        resp.setHeader("Content-Type", manifest.mimetype.get())
+      else:
+        resp.setHeader("Content-Type", "application/octet-stream")
+
+      let contentLength =
+        if manifest.protected: manifest.originalDatasetSize else: manifest.datasetSize
+      resp.setHeader("Content-Length", $(contentLength.int))
+
+      if manifest.filename.isSome:
+        resp.setHeader("Content-Disposition",
+          "attachment; filename=\"" & manifest.filename.get() & "\"")
+
+      resp.status = Http200
+      await resp.sendBody("")
 
   router.api(MethodGet, "/api/archivist/v1/data/{cid}") do(
     cid: Cid, resp: HttpResponseRef
@@ -631,6 +691,26 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
 
     resp.setHeader("Access-Control-Expose-Headers", "Content-Disposition")
     await node.retrieveCid(cid.get(), local = false, resp = resp)
+
+  router.api(MethodHead, "/api/archivist/v1/data/{cid}/network/stream") do(
+    cid: Cid, resp: HttpResponseRef
+  ) -> RestApiResponse:
+    ## HEAD request for network stream - returns headers without body
+    ##
+    var headers = buildCorsHeaders("HEAD", allowedOrigin)
+
+    if cid.isErr:
+      return RestApiResponse.error(Http400, $cid.error(), headers = headers)
+
+    if corsOrigin =? allowedOrigin:
+      resp.setCorsHeaders("HEAD", corsOrigin)
+
+    # For streaming endpoint, just return 200 with audio content type
+    # The actual content-length isn't known without fetching
+    resp.setHeader("Content-Type", "application/octet-stream")
+    resp.setHeader("Accept-Ranges", "bytes")
+    resp.status = Http200
+    await resp.sendBody("")
 
   router.api(MethodGet, "/api/archivist/v1/data/{cid}/network/manifest") do(
     cid: Cid, resp: HttpResponseRef
