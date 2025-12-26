@@ -707,14 +707,29 @@ proc findAvailability*(
     return none Availability
 
   for item in storables.items:
-    if bytesResult =? (await item) and bytes =? bytesResult and
-        availability =? Availability.fromJson(bytes):
-      if availability.enabled and size <= availability.freeSize and
-          duration <= availability.duration and
-          collateralPerByte <= availability.maxCollateralPerByte and
-          pricePerBytePerSecond >= availability.minPricePerBytePerSecond and
-          (availability.until == 0 or availability.until >= validUntil):
-        trace "availability matched",
+    if bytesResult =? (await item):
+      if bytes =? bytesResult and availability =? Availability.fromJson(bytes):
+        if availability.enabled and size <= availability.freeSize and
+            duration <= availability.duration and
+            collateralPerByte <= availability.maxCollateralPerByte and
+            pricePerBytePerSecond >= availability.minPricePerBytePerSecond and
+            (availability.until == 0 or availability.until >= validUntil):
+          trace "availability matched",
+            id = availability.id,
+            enabled = availability.enabled,
+            size,
+            availFreeSize = availability.freeSize,
+            duration,
+            availDuration = availability.duration,
+            pricePerBytePerSecond,
+            availMinPricePerBytePerSecond = availability.minPricePerBytePerSecond,
+            collateralPerByte,
+            availMaxCollateralPerByte = availability.maxCollateralPerByte,
+            until = availability.until
+
+          return some availability
+
+        trace "availability did not match",
           id = availability.id,
           enabled = availability.enabled,
           size,
@@ -726,18 +741,3 @@ proc findAvailability*(
           collateralPerByte,
           availMaxCollateralPerByte = availability.maxCollateralPerByte,
           until = availability.until
-
-        return some availability
-
-      trace "availability did not match",
-        id = availability.id,
-        enabled = availability.enabled,
-        size,
-        availFreeSize = availability.freeSize,
-        duration,
-        availDuration = availability.duration,
-        pricePerBytePerSecond,
-        availMinPricePerBytePerSecond = availability.minPricePerBytePerSecond,
-        collateralPerByte,
-        availMaxCollateralPerByte = availability.maxCollateralPerByte,
-        until = availability.until

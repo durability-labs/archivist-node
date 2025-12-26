@@ -334,9 +334,9 @@ type
         "the whole slot id space and the value of " &
         "the --validator-group-index parameter will be ignored. " &
         "Powers of twos are advised for even distribution",
-      defaultValue: ValidationGroups.none,
+      defaultValue: int.none,
       name: "validator-groups"
-    .}: Option[ValidationGroups]
+    .}: Option[int]
 
     validatorGroupIndex* {.
       desc: "Slot validation group index",
@@ -607,6 +607,16 @@ proc readValue*(
     r: var TomlReader, val: var EthAddress
 ) {.raises: [SerializationError, IOError].} =
   val = EthAddress.init(r.readValue(string)).get()
+
+proc readValue*(
+    r: var TomlReader, val: var Cid
+) {.raises: [SerializationError, IOError].} =
+  let cidStr = r.readValue(string)
+  let cidResult = Cid.init(cidStr)
+  if cidResult.isOk:
+    val = cidResult.get()
+  else:
+    raise newException(SerializationError, "Invalid CID: " & cidStr)
 
 proc readValue*(r: var TomlReader, val: var SignedPeerRecord) =
   without uri =? r.readValue(string).catch, err:

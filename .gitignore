@@ -41,6 +41,10 @@ docker/hostdatadir
 docker/prometheus-data
 .DS_Store
 
+.claude
+.mcp.json
+
 data/
 nimbledeps
 logs/
+

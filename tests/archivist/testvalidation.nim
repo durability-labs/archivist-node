@@ -69,6 +69,12 @@ asyncchecksuite "validation":
   test "the list of slots that it's monitoring is empty initially":
     check validation.slots.len == 0
 
+  test "initializing ValidationConfig fails when groups < 2":
+    for groups in [int.low, -1, 0, 1]:
+      let config = ValidationConfig.init(maxSlots, groups.some, groupIndex)
+      check config.isFailure
+      check config.error.msg == "number of validation groups should be at least 2"
+
   for (validationGroups, groupIndex) in [(100, 100'u16), (100, 101'u16)]:
     test "initializing ValidationConfig fails when groupIndex is " &
       "greater than or equal to validationGroups " &
