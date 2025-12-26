@@ -38,6 +38,8 @@ import ../erasure/erasure
 import ../manifest
 import ../manifest/directory
 import ../streams/asyncstreamwrapper
+import ../streams/rangestream
+import ../streams/storestream
 import ../stores
 import ../marketplace
 import ../marketplace/abstractmarketplace
@@ -53,6 +55,62 @@ logScope:
 
 declareCounter(archivist_api_uploads, "archivist API uploads")
 declareCounter(archivist_api_downloads, "archivist API downloads")
+
+type
+  ByteRange* = object
+    start*: int
+    finish*: Option[int]  # None means "to end of file"
+
+proc parseRangeHeader*(header: string): Option[ByteRange] =
+  ## Parse an HTTP Range header value like "bytes=0-499" or "bytes=500-"
+  ## Returns None if the header is missing, malformed, or uses unsupported syntax.
+  ## Only supports single ranges (not multi-part ranges).
+  ##
+  if header.len == 0:
+    return ByteRange.none
+
+  # Must start with "bytes="
+  if not header.startsWith("bytes="):
+    return ByteRange.none
+
+  let rangeSpec = header[6..^1]  # Skip "bytes="
+
+  # We don't support multi-part ranges (e.g., "bytes=0-100,200-300")
+  if ',' in rangeSpec:
+    return ByteRange.none
+
+  let parts = rangeSpec.split('-')
+  if parts.len != 2:
+    return ByteRange.none
+
+  # Parse start (required)
+  if parts[0].len == 0:
+    # Suffix range like "bytes=-500" (last 500 bytes) - not supported yet
+    return ByteRange.none
+
+  var start: int
+  try:
+    start = parseInt(parts[0])
+  except ValueError:
+    return ByteRange.none
+
+  if start < 0:
+    return ByteRange.none
+
+  # Parse end (optional)
+  var finish: Option[int]
+  if parts[1].len > 0:
+    try:
+      let endVal = parseInt(parts[1])
+      if endVal < start:
+        return ByteRange.none
+      finish = endVal.some
+    except ValueError:
+      return ByteRange.none
+  else:
+    finish = int.none
+
+  return ByteRange(start: start, finish: finish).some
 
 proc validate(pattern: string, value: string): int {.gcsafe, raises: [Defect].} =
   0
@@ -77,10 +135,14 @@ proc isPending(resp: HttpResponseRef): bool =
   return resp.getResponseState() == HttpResponseState.Empty
 
 proc retrieveCid(
-    node: ArchivistNodeRef, cid: Cid, local: bool = true, resp: HttpResponseRef
+    node: ArchivistNodeRef,
+    cid: Cid,
+    local: bool = true,
+    resp: HttpResponseRef,
+    byteRange: Option[ByteRange] = ByteRange.none
 ): Future[void] {.async: (raises: [CancelledError, HttpWriteError]).} =
-  ## Download a file from the node in a streaming
-  ## manner
+  ## Download a file from the node in a streaming manner.
+  ## If byteRange is provided, returns partial content (HTTP 206).
   ##
 
   var lpStream: LPStream
@@ -99,14 +161,20 @@ proc retrieveCid(
         await resp.sendBody(error.msg)
         return
 
-    lpStream = stream
-
     # It is ok to fetch again the manifest because it will hit the cache
     without manifest =? (await node.fetchManifest(cid)), err:
       error "Failed to fetch manifest", err = err.msg
       resp.status = Http404
       await resp.sendBody(err.msg)
       return
+
+    # Total size of the content
+    let totalSize =
+      if manifest.protected: manifest.originalDatasetSize.int
+      else: manifest.datasetSize.int
+
+    # Advertise that we support range requests
+    resp.setHeader("Accept-Ranges", "bytes")
 
     if manifest.mimetype.isSome:
       resp.setHeader("Content-Type", manifest.mimetype.get())
@@ -121,19 +189,51 @@ proc retrieveCid(
     else:
       resp.setHeader("Content-Disposition", "attachment")
 
-    # For erasure-coded datasets, we need to return the _original_ length; i.e.,
-    # the length of the non-erasure-coded dataset, as that's what we will be
-    # returning to the client.
-    let contentLength =
-      if manifest.protected: manifest.originalDatasetSize else: manifest.datasetSize
-    resp.setHeader("Content-Length", $(contentLength.int))
+    # Determine what we're actually sending
+    var rangeStart = 0
+    var rangeEnd = totalSize - 1
+    var isRangeRequest = false
+
+    if byteRange.isSome:
+      let br = byteRange.get()
+      rangeStart = br.start
+
+      # Validate range start
+      if rangeStart >= totalSize:
+        resp.status = Http416  # Range Not Satisfiable
+        resp.setHeader("Content-Range", "bytes */" & $totalSize)
+        await resp.sendBody("Range not satisfiable")
+        return
+
+      # Calculate range end
+      if br.finish.isSome:
+        rangeEnd = min(br.finish.get(), totalSize - 1)
+      else:
+        rangeEnd = totalSize - 1
+
+      isRangeRequest = true
+
+    let contentLength = rangeEnd - rangeStart + 1
+
+    if isRangeRequest:
+      resp.status = Http206
+      resp.setHeader("Content-Range", "bytes " & $rangeStart & "-" & $rangeEnd & "/" & $totalSize)
+
+    resp.setHeader("Content-Length", $contentLength)
+
+    # Wrap stream for range request if needed
+    let storeStream = StoreStream(stream)
+    if isRangeRequest:
+      lpStream = RangeStream.new(storeStream, rangeStart, rangeEnd)
+    else:
+      lpStream = stream
 
     await resp.prepare(HttpResponseStreamType.Plain)
 
-    while not stream.atEof:
+    while not lpStream.atEof:
       var
         buff = newSeqUninitialized[byte](DefaultBlockSize.int)
-        len = await stream.readOnce(addr buff[0], buff.len)
+        len = await lpStream.readOnce(addr buff[0], buff.len)
 
       buff.setLen(len)
       if buff.len <= 0:
@@ -152,7 +252,7 @@ proc retrieveCid(
     if resp.isPending():
       await resp.sendBody(exc.msg)
   finally:
-    info "Sent bytes", cid = cid, bytes
+    info "Sent bytes", cid = cid, bytes, isRange = byteRange.isSome
     if not lpStream.isNil:
       await lpStream.close()
 
@@ -628,8 +728,10 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
         json["entries"] = entriesJson
         return RestApiResponse.response($json, contentType = "application/json", headers = headers)
 
-    # Regular file - stream it
-    await node.retrieveCid(cidVal, local = true, resp = resp)
+    # Regular file - stream it (with optional range support)
+    let rangeHeader = request.headers.getString("Range")
+    let byteRange = parseRangeHeader(rangeHeader)
+    await node.retrieveCid(cidVal, local = true, resp = resp, byteRange = byteRange)
 
   router.api(MethodDelete, "/api/archivist/v1/data/{cid}") do(
     cid: Cid, resp: HttpResponseRef
@@ -690,7 +792,9 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       resp.setHeader("Access-Control-Headers", "X-Requested-With")
 
     resp.setHeader("Access-Control-Expose-Headers", "Content-Disposition")
-    await node.retrieveCid(cid.get(), local = false, resp = resp)
+    let rangeHeader = request.headers.getString("Range")
+    let byteRange = parseRangeHeader(rangeHeader)
+    await node.retrieveCid(cid.get(), local = false, resp = resp, byteRange = byteRange)
 
   router.api(MethodHead, "/api/archivist/v1/data/{cid}/network/stream") do(
     cid: Cid, resp: HttpResponseRef
@@ -801,13 +905,15 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
             Http307, "/api/archivist/v1/data/" & $foundEntry.cid
           )
         else:
-          # Serve the file
+          # Serve the file (with optional range support)
           if corsOrigin =? allowedOrigin:
             resp.setCorsHeaders("GET", corsOrigin)
             resp.setHeader("Access-Control-Headers", "X-Requested-With")
 
           resp.setHeader("Access-Control-Expose-Headers", "Content-Disposition")
-          await node.retrieveCid(foundEntry.cid, local = true, resp = resp)
+          let rangeHeader = request.headers.getString("Range")
+          let byteRange = parseRangeHeader(rangeHeader)
+          await node.retrieveCid(foundEntry.cid, local = true, resp = resp, byteRange = byteRange)
           return RestApiResponse.response("")
       else:
         # Navigate into subdirectory
