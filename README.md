@@ -31,7 +31,7 @@ We recommend configuring your Archivist docker container using environment varia
 ### Prerequisites
 
 The following should be installed before building the node:
-- [Nim][nim] 2.2.4
+- [Nim][nim] 2.2.6
 - [Cmake][cmake] 3.x
 - [Rust][rustup] 1.79.0
 - Optional: [NodeJS][nodejs] 22.x, only required for some tests

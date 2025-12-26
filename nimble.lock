@@ -373,7 +373,7 @@
     "questionable": {
       "version": "0.10.15",
       "vcsRevision": "82d90b67bcfb7f2e918b61dace2ff1a4ced60935",
-      "url": "https://github.com/logos-storage/questionable",
+      "url": "https://github.com/codex-storage/questionable",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
@@ -419,8 +419,8 @@
       }
     },
     "archivistdht": {
-      "version": "0.7.1",
-      "vcsRevision": "a2669b0351613da6c55684f897c119db7cbd30ad",
+      "version": "0.7.2",
+      "vcsRevision": "d44be375ed8417d7bf0b25499f3ad209c9db5c56",
       "url": "https://github.com/durability-labs/archivist-dht",
       "downloadMethod": "git",
       "dependencies": [
@@ -438,19 +438,19 @@
         "questionable"
       ],
       "checksums": {
-        "sha1": "87f688ecbb700c29f4775b356d2f9a9b983d2236"
+        "sha1": "de73c9d1b1ebc59223be7be905bdc2397522d437"
       }
     },
     "circom_witnessgen": {
-      "version": "0.1.3",
-      "vcsRevision": "53066696877e238c50ac85dfe8741f43f8d39f08",
+      "version": "0.1.4",
+      "vcsRevision": "15289d5b896cea5df7cc91e2c9bec054238bc74a",
       "url": "https://github.com/durability-labs/circom-witnessgen",
       "downloadMethod": "git",
       "dependencies": [
         "constantine"
       ],
       "checksums": {
-        "sha1": "260bbffa9db87b53816d1b9b6a45fe9bf753757d"
+        "sha1": "34537ae8d63ba9c08593e7482e362d5e30001108"
       }
     },
     "circomcompat": {
@@ -465,7 +465,7 @@
     },
     "confutils": {
       "version": "0.1.0",
-      "vcsRevision": "eec84f4b5e8ea322f42b9c4008e549825c310a8d",
+      "vcsRevision": "20ae94b46852e99d9d548ca1af9e7cc1777b1272",
       "url": "https://github.com/status-im/nim-confutils",
       "downloadMethod": "git",
       "dependencies": [
@@ -473,7 +473,7 @@
         "serialization"
       ],
       "checksums": {
-        "sha1": "a26438274bd33da733aa06ef50090c61e51403f9"
+        "sha1": "2057604a2a27ca44ea2d0bf7a26bd1b7a616af97"
       }
     },
     "contractabi": {
@@ -614,8 +614,8 @@
       }
     },
     "groth16": {
-      "version": "0.1.0",
-      "vcsRevision": "0adcf64b7b76556227fec09297e3beef4b9c43df",
+      "version": "0.1.1",
+      "vcsRevision": "e86837330525b60c9198d7cee1878feae9110080",
       "url": "https://github.com/durability-labs/nim-groth16",
       "downloadMethod": "git",
       "dependencies": [
@@ -623,7 +623,7 @@
         "constantine"
       ],
       "checksums": {
-        "sha1": "8350e6e28bf12dc20ff69e76a127f625260113c1"
+        "sha1": "a9cadf8dfd6a23d0f3c3871e93c427089c65aa06"
       }
     },
     "leopard": {
@@ -667,8 +667,8 @@
       }
     },
     "presto": {
-      "version": "0.1.0",
-      "vcsRevision": "92b1c7ff141e6920e1f8a98a14c35c1fa098e3be",
+      "version": "0.1.1",
+      "vcsRevision": "d66043dd7ede146442e6c39720c76a20bde5225f",
       "url": "https://github.com/status-im/nim-presto",
       "downloadMethod": "git",
       "dependencies": [
@@ -679,7 +679,7 @@
         "stew"
       ],
       "checksums": {
-        "sha1": "ea53609c6b79e4c63e36aba5fe78b291ad0df4da"
+        "sha1": "8df97c45683abe2337bdff43b844c4fbcc124ca2"
       }
     },
     "toml_serialization": {

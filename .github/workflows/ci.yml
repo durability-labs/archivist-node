@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  nim_version:   2.2.4
+  nim_version:   2.2.6
   rust_version:  1.79.0
   cmake_version: 3.x
   node_version:  22
