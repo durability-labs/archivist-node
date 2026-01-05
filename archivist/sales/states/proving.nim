@@ -4,6 +4,7 @@ import ../../clock
 import ../../logutils
 import ../../utils/exceptions
 import ../../marketplace/abstractmarketplace
+import ../../marketplace/storageinterface
 import ../statemachine
 import ../salesagent
 import ../salescontext
@@ -24,12 +25,14 @@ method prove*(
     state: SaleProving,
     slot: Slot,
     challenge: ProofChallenge,
-    onProve: OnProve,
     marketplace: AbstractMarketplace,
+    storage: StorageInterface,
     provingPeriod: Period,
 ) {.base, async.} =
   try:
-    without proof =? (await onProve(slot, challenge, provingPeriod)), err:
+    let cid = slot.request.content.cid
+    let slotIndex = slot.slotIndex
+    without proof =? await storage.proveSlot(cid, slotIndex, challenge), err:
       error "Failed to generate proof", error = err.msg
       # In this state, there's nothing we can do except try again next time.
       return
@@ -45,10 +48,10 @@ method prove*(
 proc proveLoop(
     state: SaleProving,
     marketplace: AbstractMarketplace,
+    storage: StorageInterface,
     clock: Clock,
     request: StorageRequest,
     slotIndex: uint64,
-    onProve: OnProve,
 ) {.async.} =
   let slot = Slot(request: request, slotIndex: slotIndex)
   let slotId = slot.id
@@ -79,7 +82,7 @@ proc proveLoop(
           (await marketplace.willProofBeRequired(slotId)):
         let challenge = await marketplace.getChallenge(slotId)
         info "Generating required proof", challenge = challenge
-        await state.prove(slot, challenge, onProve, marketplace, provingPeriod)
+        await state.prove(slot, challenge, marketplace, storage, provingPeriod)
         let periodAtFinish = await getCurrentPeriod()
         if periodAtFinish != provingPeriod:
           warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
@@ -117,21 +120,15 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
   let context = SalesAgent(machine).context
+  let marketplace = context.marketplace
+  let storage = context.storage
+  let clock = context.clock
 
   without request =? data.request:
     raiseAssert "no sale request"
 
-  without onProve =? context.onProve:
-    raiseAssert "onProve callback not set"
-
-  without marketplace =? context.marketplace:
-    raiseAssert("marketplace not set")
-
-  without clock =? context.clock:
-    raiseAssert("clock not set")
-
   try:
-    await state.proveLoop(marketplace, clock, request, data.slotIndex, onProve)
+    await state.proveLoop(marketplace, storage, clock, request, data.slotIndex)
     debug "Stopping proving.", requestId = data.requestId, slotIndex = data.slotIndex
     return some State(SalePayout())
   except CancelledError:

@@ -1,5 +1,4 @@
 import std/options
-import std/importutils
 import std/times
 
 import pkg/chronos
@@ -7,7 +6,6 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 
-import pkg/archivist/logutils
 import pkg/archivist/stores
 import pkg/archivist/contracts
 import pkg/archivist/slots
@@ -16,18 +14,13 @@ import pkg/archivist/erasure
 import pkg/archivist/blocktype as bt
 import pkg/chronos/transports/stream
 
-import pkg/archivist/node {.all.}
+import pkg/archivist/node
 
 import ../../asynctest
 import ../../examples
 import ../helpers
 
 import ./helpers
-
-privateAccess(ArchivistNodeRef) # enable access to private fields
-
-logScope:
-  topics = "testSlotRepair"
 
 proc fetchStreamData(stream: LPStream, datasetSize: int): Future[seq[byte]] {.async.} =
   var buf = newSeq[byte](datasetSize)
@@ -108,40 +101,39 @@ asyncchecksuite "Test Node - Slot Repair":
     # Populate protected manifest in local store
     (await localStore.putBlock(verifiableBlock)).tryGet()
 
-    var request = StorageRequest.example
-    request.content.cid = verifiableBlock.cid
+    let cid = verifiableBlock.cid
 
     for i in 0 ..< protected.numSlots.uint64:
-      (await nodes[i + 1].onStore(request, expiry, i, isRepairing = false)).tryGet()
+      (await nodes[i + 1].storeSlot(cid, i, expiry, repair = false)).tryGet()
 
     await nodes[0].switch.stop() # acts as client
     await nodes[1].switch.stop() # slot 0 missing now
 
     # repair missing slot
-    (await nodes[4].onStore(request, expiry, 0.uint64, isRepairing = true)).tryGet()
+    (await nodes[4].storeSlot(cid, 0.uint64, expiry, repair = true)).tryGet()
 
     await nodes[2].switch.stop() # slot 1 missing now
 
-    (await nodes[5].onStore(request, expiry, 1.uint64, isRepairing = true)).tryGet()
+    (await nodes[5].storeSlot(cid, 1.uint64, expiry, repair = true)).tryGet()
 
     await nodes[3].switch.stop() # slot 2 missing now
 
-    (await nodes[6].onStore(request, expiry, 2.uint64, isRepairing = true)).tryGet()
+    (await nodes[6].storeSlot(cid, 2.uint64, expiry, repair = true)).tryGet()
 
     await nodes[4].switch.stop() # slot 0 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[7].onStore(request, expiry, 0.uint64, isRepairing = true)).tryGet()
+    (await nodes[7].storeSlot(cid, 0.uint64, expiry, repair = true)).tryGet()
 
     await nodes[5].switch.stop() # slot 1 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[8].onStore(request, expiry, 1.uint64, isRepairing = true)).tryGet()
+    (await nodes[8].storeSlot(cid, 1.uint64, expiry, repair = true)).tryGet()
 
     await nodes[6].switch.stop() # slot 2 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[9].onStore(request, expiry, 2.uint64, isRepairing = true)).tryGet()
+    (await nodes[9].storeSlot(cid, 2.uint64, expiry, repair = true)).tryGet()
 
     let
       stream = (await nodes[10].retrieve(verifiableBlock.cid, local = false)).tryGet()
@@ -187,31 +179,30 @@ asyncchecksuite "Test Node - Slot Repair":
     # Populate protected manifest in local store
     (await localStore.putBlock(verifiableBlock)).tryGet()
 
-    var request = StorageRequest.example
-    request.content.cid = verifiableBlock.cid
+    let cid = verifiableBlock.cid
 
     for i in 0 ..< protected.numSlots.uint64:
-      (await nodes[i + 1].onStore(request, expiry, i, isRepairing = false)).tryGet()
+      (await nodes[i + 1].storeSlot(cid, i, expiry, repair = false)).tryGet()
 
     await nodes[0].switch.stop() # acts as client
     await nodes[1].switch.stop() # slot 0 missing now
     await nodes[3].switch.stop() # slot 2 missing now
 
     # repair missing slots
-    (await nodes[6].onStore(request, expiry, 0.uint64, isRepairing = true)).tryGet()
-    (await nodes[7].onStore(request, expiry, 2.uint64, isRepairing = true)).tryGet()
+    (await nodes[6].storeSlot(cid, 0.uint64, expiry, repair = true)).tryGet()
+    (await nodes[7].storeSlot(cid, 2.uint64, expiry, repair = true)).tryGet()
 
     await nodes[2].switch.stop() # slot 1 missing now
     await nodes[4].switch.stop() # slot 3 missing now
 
     # repair missing slots from repaired slots
-    (await nodes[8].onStore(request, expiry, 1.uint64, isRepairing = true)).tryGet()
-    (await nodes[9].onStore(request, expiry, 3.uint64, isRepairing = true)).tryGet()
+    (await nodes[8].storeSlot(cid, 1.uint64, expiry, repair = true)).tryGet()
+    (await nodes[9].storeSlot(cid, 3.uint64, expiry, repair = true)).tryGet()
 
     await nodes[5].switch.stop() # slot 4 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[10].onStore(request, expiry, 4.uint64, isRepairing = true)).tryGet()
+    (await nodes[10].storeSlot(cid, 4.uint64, expiry, repair = true)).tryGet()
 
     let
       stream = (await nodes[11].retrieve(verifiableBlock.cid, local = false)).tryGet()

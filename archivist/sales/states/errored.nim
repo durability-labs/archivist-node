@@ -30,9 +30,6 @@ method run*(
     slotIndex = data.slotIndex
 
   try:
-    if onClear =? context.onClear and request =? data.request:
-      onClear(request, data.slotIndex)
-
     if onCleanUp =? agent.onCleanUp:
       await onCleanUp(reprocessSlot = state.reprocessSlot)
   except CancelledError as e:

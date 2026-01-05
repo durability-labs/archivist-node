@@ -1,6 +1,5 @@
 import pkg/questionable/results
 
-import pkg/archivist/clock
 import pkg/archivist/contracts/requests
 import pkg/archivist/sales
 import pkg/archivist/sales/salesagent
@@ -13,36 +12,30 @@ import ../../../asynctest
 import ../../helpers/mockmarketplace
 import ../../examples
 import ../../helpers
+import ../mockstorage
 
 suite "sales state 'filled'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
 
   var marketplace: MockMarketplace
+  var storage: MockStorage
   var slot: MockSlot
   var agent: SalesAgent
   var state: SaleFilled
-  var onExpiryUpdatePassedExpiry: SecondsSince1970
 
   setup:
     marketplace = MockMarketplace.new()
+    storage = MockStorage.new()
     slot = MockSlot(
       requestId: request.id,
       host: Address.example,
       slotIndex: slotIndex,
       proof: Groth16Proof.default,
     )
+    let context = SalesContext(marketplace: marketplace, storage: storage)
 
     marketplace.requestEnds[request.id] = 321
-    onExpiryUpdatePassedExpiry = -1
-    let onExpiryUpdate = proc(
-        rootCid: Cid, expiry: SecondsSince1970
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      onExpiryUpdatePassedExpiry = expiry
-      return success()
-    let context =
-      SalesContext(marketplace: marketplace, onExpiryUpdate: some onExpiryUpdate)
-
     agent = newSalesAgent(context, request.id, slotIndex, some request)
     state = SaleFilled.new()
 
@@ -52,7 +45,7 @@ suite "sales state 'filled'":
     let next = await state.run(agent)
     check !next of SaleProving
 
-  test "calls onExpiryUpdate with request end":
+  test "updates storage expiry with request end":
     slot.host = await marketplace.getSigner()
     marketplace.filled = @[slot]
 
@@ -60,7 +53,11 @@ suite "sales state 'filled'":
     marketplace.requestEnds[request.id] = expectedExpiry
     let next = await state.run(agent)
     check !next of SaleProving
-    check onExpiryUpdatePassedExpiry == expectedExpiry
+    check storage.updateSlotExpiryCalls.len > 0
+    let (cid, index, expiry) = storage.updateSlotExpiryCalls[0]
+    check cid == request.content.cid
+    check index == slot.slotIndex
+    check expiry == expectedExpiry
 
   test "switches to error state when slot is filled by another host":
     slot.host = Address.example

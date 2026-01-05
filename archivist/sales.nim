@@ -56,36 +56,6 @@ type Sales* = ref object
   subscriptions: seq[abstractmarketplace.Subscription]
   trackedFutures: TrackedFutures
 
-proc `onStore=`*(sales: Sales, onStore: OnStore) =
-  sales.context.onStore = some onStore
-
-proc `onClear=`*(sales: Sales, onClear: OnClear) =
-  sales.context.onClear = some onClear
-
-proc `onSale=`*(sales: Sales, callback: OnSale) =
-  sales.context.onSale = some callback
-
-proc `onProve=`*(sales: Sales, callback: OnProve) =
-  sales.context.onProve = some callback
-
-proc `onExpiryUpdate=`*(sales: Sales, callback: OnExpiryUpdate) =
-  sales.context.onExpiryUpdate = some callback
-
-proc onStore*(sales: Sales): ?OnStore =
-  sales.context.onStore
-
-proc onClear*(sales: Sales): ?OnClear =
-  sales.context.onClear
-
-proc onSale*(sales: Sales): ?OnSale =
-  sales.context.onSale
-
-proc onProve*(sales: Sales): ?OnProve =
-  sales.context.onProve
-
-proc onExpiryUpdate*(sales: Sales): ?OnExpiryUpdate =
-  sales.context.onExpiryUpdate
-
 proc new*(
     _: type Sales,
     marketplace: AbstractMarketplace,
@@ -134,10 +104,6 @@ proc cleanUp(
   let fut = sales.remove(agent)
   sales.trackedFutures.track(fut)
 
-proc filled(sales: Sales, request: StorageRequest, slotIndex: uint64) =
-  if onSale =? sales.context.onSale:
-    onSale(request, slotIndex)
-
 proc processSlot(
     sales: Sales, item: SlotQueueItem
 ) {.async: (raises: [CancelledError]).} =
@@ -158,7 +124,6 @@ proc processSlot(
 
   agent.onFilled = some proc(request: StorageRequest, slotIndex: uint64) =
     trace "slot filled"
-    sales.filled(request, slotIndex)
     completed.fire()
 
   agent.start(SalePreparing())

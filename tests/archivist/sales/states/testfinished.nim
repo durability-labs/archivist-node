@@ -38,8 +38,6 @@ asyncchecksuite "sales state 'finished'":
     let context = SalesContext(marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     agent.onCleanUp = onCleanUp
-    agent.context.onClear = some proc(request: StorageRequest, idx: uint64) =
-      saleCleared = some true
     state = SaleFinished(returnedCollateral: some currentCollateral)
 
   test "switches to cancelled state when request expires":
@@ -54,4 +52,3 @@ asyncchecksuite "sales state 'finished'":
     discard await state.run(agent)
     check eventually reprocessSlotWas == some false
     check eventually returnedCollateralValue == some currentCollateral
-    check eventually saleCleared == some true

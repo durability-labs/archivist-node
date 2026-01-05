@@ -14,6 +14,7 @@ import ../../examples
 import ../../helpers
 import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
+import ../mockstorage
 
 asyncchecksuite "sales state 'simulated-proving'":
   let slot = Slot.example
@@ -23,6 +24,7 @@ asyncchecksuite "sales state 'simulated-proving'":
   let totalProofs = 6
 
   var marketplace: MockMarketplace
+  var storage: MockStorage
   var clock: MockClock
   var agent: SalesAgent
   var state: SaleProvingSimulated
@@ -32,6 +34,7 @@ asyncchecksuite "sales state 'simulated-proving'":
 
   setup:
     clock = MockClock.new()
+    storage = MockStorage.new()
 
     proc onProofSubmission(id: SlotId) =
       proofSubmitted.complete()
@@ -42,12 +45,7 @@ asyncchecksuite "sales state 'simulated-proving'":
     marketplace.setProofRequired(slot.id, true)
     subscription = await marketplace.subscribeProofSubmission(onProofSubmission)
 
-    let onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      return success(proof)
-    let context =
-      SalesContext(marketplace: marketplace, clock: clock, onProve: onProve.some)
+    let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
     agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
     state = SaleProvingSimulated.new()
     state.failEveryNProofs = failEveryNProofs
@@ -77,6 +75,7 @@ asyncchecksuite "sales state 'simulated-proving'":
     check !next of SaleFailed
 
   test "submits invalid proof every 3 proofs":
+    storage.proveSlotResult = success(proof)
     let future = state.run(agent)
     let invalid = Groth16Proof.default
 

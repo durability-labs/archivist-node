@@ -15,27 +15,25 @@ import ../../examples
 import ../../helpers
 import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
+import ../mockstorage
 import ../helpers/periods
 
 asyncchecksuite "sales state 'initialproving'":
   let proof = Groth16Proof.example
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
-  let marketplace = MockMarketplace.new()
-  let clock = MockClock.new()
 
   var state: SaleInitialProving
   var agent: SalesAgent
-  var receivedChallenge: ProofChallenge
+  var marketplace: MockMarketplace
+  var storage: MockStorage
+  var clock: MockClock
 
   setup:
-    let onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      receivedChallenge = challenge
-      return success(proof)
-    let context =
-      SalesContext(onProve: onProve.some, marketplace: marketplace, clock: clock)
+    marketplace = MockMarketplace.new()
+    storage = MockStorage.new()
+    clock = MockClock.new()
+    let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     state = SaleInitialProving.new()
 
@@ -68,7 +66,7 @@ asyncchecksuite "sales state 'initialproving'":
     await allowProofToStart()
     discard await future
 
-  test "onProve callback provides proof challenge":
+  test "provides proof challenge to prover":
     marketplace.proofChallenge = ProofChallenge.example
 
     let future = state.run(agent)
@@ -76,9 +74,13 @@ asyncchecksuite "sales state 'initialproving'":
 
     discard await future
 
-    check receivedChallenge == marketplace.proofChallenge
+    check storage.proveSlotCalls.len == 1
+    let (_, _, challenge) = storage.proveSlotCalls[0]
+    check challenge == marketplace.proofChallenge
 
   test "switches to filling state when initial proving is complete":
+    storage.proveSlotResult = success(proof)
+
     let future = state.run(agent)
     await allowProofToStart()
     let next = await future
@@ -86,15 +88,8 @@ asyncchecksuite "sales state 'initialproving'":
     check !next of SaleFilling
     check SaleFilling(!next).proof == proof
 
-  test "switches to errored state when onProve callback fails":
-    let onProveFailed: OnProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      return failure("oh no!")
-
-    let proofFailedContext =
-      SalesContext(onProve: onProveFailed.some, marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(proofFailedContext, request.id, slotIndex, request.some)
+  test "switches to errored state when proving fails":
+    storage.proveSlotResult = Groth16Proof.failure("oh no!")
 
     let future = state.run(agent)
     await allowProofToStart()

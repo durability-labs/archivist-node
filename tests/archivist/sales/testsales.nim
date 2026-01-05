@@ -31,6 +31,7 @@ asyncchecksuite "Sales - start":
   var request: StorageRequest
   var sales: Sales
   var marketplace: MockMarketplace
+  var storage: MockStorage
   var clock: MockClock
   var queue: SlotQueue
   var itemsProcessed: seq[SlotQueueItem]
@@ -54,26 +55,9 @@ asyncchecksuite "Sales - start":
     clock = MockClock.new()
     let metaDs = TypedDatastore.init(metaTmp.newDb())
     let availability = AvailabilityStore.new(metaDs)
-    let storage = MockStorage.new()
+    storage = MockStorage.new()
     sales = Sales.new(marketplace, clock, availability, storage)
-    sales.onStore = proc(
-        request: StorageRequest,
-        expiry: SecondsSince1970,
-        slot: uint64,
-        isRepairing = false,
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      return success()
-
-    sales.onExpiryUpdate = proc(
-        rootCid: Cid, expiry: SecondsSince1970
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      return success()
-
     queue = sales.context.slotQueue
-    sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      return success(proof)
     itemsProcessed = @[]
 
   teardown:
@@ -156,24 +140,7 @@ asyncchecksuite "Sales":
     let metaDs = TypedDatastore.init(metaTmp.newDb())
     let availability = AvailabilityStore.new(metaDs)
     sales = Sales.new(marketplace, clock, availability, storage)
-    sales.onStore = proc(
-        request: StorageRequest,
-        expiry: SecondsSince1970,
-        slot: uint64,
-        isRepairing = false,
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      return success()
-
-    sales.onExpiryUpdate = proc(
-        rootCid: Cid, expiry: SecondsSince1970
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      return success()
-
     queue = sales.context.slotQueue
-    sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      return success(proof)
     itemsProcessed = @[]
     !await sales.start()
 
@@ -314,39 +281,24 @@ asyncchecksuite "Sales":
       check queue.contains(item)
 
   test "retrieves and stores data locally":
-    var storingRequest: StorageRequest
-    var storingSlot: uint64
-    sales.onStore = proc(
-        request: StorageRequest,
-        expiry: SecondsSince1970,
-        slot: uint64,
-        isRepairing = false,
-    ): Future[?!void] {.async: (raises: [CancelledError]).} =
-      storingRequest = request
-      storingSlot = slot
-      return success()
     await setAvailability()
     await marketplace.requestStorage(request)
-    check eventually storingRequest == request
-    check storingSlot < request.ask.slots
+    check eventually storage.storeSlotCalls.len > 0
+    for (cid, index, _, _) in storage.storeSlotCalls:
+      check cid == request.content.cid
+      check index < request.ask.slots
 
   test "generates proof of storage":
-    var provingRequest: StorageRequest
-    var provingSlot: uint64
-    sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      provingRequest = slot.request
-      provingSlot = slot.slotIndex
-      return success(Groth16Proof.example)
     await setAvailability()
     await marketplace.requestStorage(request)
     await allowRequestToStart()
-
-    check eventually provingRequest == request
-    check provingSlot < request.ask.slots
+    check eventually storage.proveSlotCalls.len > 0
+    for (cid, index, _) in storage.proveSlotCalls:
+      check cid == request.content.cid
+      check index < request.ask.slots
 
   test "fills a slot":
+    storage.proveSlotResult = success(proof)
     await setAvailability()
     await marketplace.requestStorage(request)
     await allowRequestToStart()
@@ -356,38 +308,6 @@ asyncchecksuite "Sales":
     check marketplace.filled[0].slotIndex < request.ask.slots
     check marketplace.filled[0].proof == proof
     check marketplace.filled[0].host == await marketplace.getSigner()
-
-  test "calls onFilled when slot is filled":
-    var soldRequest = StorageRequest.default
-    var soldSlotIndex = uint64.high
-    sales.onSale = proc(request: StorageRequest, slotIndex: uint64) =
-      soldRequest = request
-      soldSlotIndex = slotIndex
-    await setAvailability()
-    await marketplace.requestStorage(request)
-    await allowRequestToStart()
-
-    check eventually soldRequest == request
-    check soldSlotIndex < request.ask.slots
-
-  test "calls onClear when storage becomes available again":
-    # fail the proof intentionally to trigger `agent.finish(success=false)`,
-    # which then calls the onClear callback
-    sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      return failure("proof failed")
-    var clearedRequest: StorageRequest
-    var clearedSlotIndex: uint64
-    sales.onClear = proc(request: StorageRequest, slotIndex: uint64) =
-      clearedRequest = request
-      clearedSlotIndex = slotIndex
-    await setAvailability()
-    await marketplace.requestStorage(request)
-    await allowRequestToStart()
-
-    check eventually clearedRequest == request
-    check clearedSlotIndex < request.ask.slots
 
   test "loads active slots from marketplace":
     let me = await marketplace.getSigner()

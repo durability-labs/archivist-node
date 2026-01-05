@@ -6,6 +6,7 @@ import ../../conf
 import ../../logutils
 import ../../utils/exceptions
 import ../../marketplace/abstractmarketplace
+import ../../marketplace/storageinterface
 import ../statemachine
 import ../salesagent
 import ./errored
@@ -39,6 +40,7 @@ method run*(
   let data = agent.data
   let context = agent.context
   let marketplace = context.marketplace
+  let storage = context.storage
 
   try:
     let host = await marketplace.getHost(data.requestId, data.slotIndex)
@@ -54,11 +56,10 @@ method run*(
       if onFilled =? agent.onFilled:
         onFilled(request, data.slotIndex)
 
-      without onExpiryUpdate =? context.onExpiryUpdate:
-        raiseAssert "onExpiryUpdate callback not set"
-
-      let requestEnd = await marketplace.getRequestEnd(data.requestId)
-      if err =? (await onExpiryUpdate(request.content.cid, requestEnd)).errorOption:
+      let expiry = await marketplace.getRequestEnd(data.requestId)
+      let cid = request.content.cid
+      let slotIndex = data.slotIndex
+      if err =? (await storage.updateSlotExpiry(cid, slotIndex, expiry)).errorOption:
         return some State(SaleErrored(error: err))
 
       when defined(archivist_system_testing_options):

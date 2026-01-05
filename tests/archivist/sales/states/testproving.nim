@@ -14,28 +14,23 @@ import ../../examples
 import ../../helpers
 import ../../helpers/mockmarketplace
 import ../../helpers/mockclock
+import ../mockstorage
 
 asyncchecksuite "sales state 'proving'":
   let slot = Slot.example
   let request = slot.request
-  let proof = Groth16Proof.example
 
   var marketplace: MockMarketplace
+  var storage: MockStorage
   var clock: MockClock
   var agent: SalesAgent
   var state: SaleProving
-  var receivedChallenge: ProofChallenge
 
   setup:
     clock = MockClock.new()
     marketplace = MockMarketplace.new()
-    let onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-      receivedChallenge = challenge
-      return success(proof)
-    let context =
-      SalesContext(marketplace: marketplace, clock: clock, onProve: onProve.some)
+    storage = MockStorage.new()
+    let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
     agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
     state = SaleProving.new()
 
@@ -94,13 +89,15 @@ asyncchecksuite "sales state 'proving'":
     check eventually future.finished
     check !(future.read()) of SaleErrored
 
-  test "onProve callback provides proof challenge":
+  test "provides proof challenge to prover":
     marketplace.proofChallenge = ProofChallenge.example
     marketplace.slotState[slot.id] = SlotState.Filled
     marketplace.setProofRequired(slot.id, true)
 
     let future = state.run(agent)
 
-    check eventually receivedChallenge == marketplace.proofChallenge
+    check eventually storage.proveSlotCalls.len == 1
+    let (_, _, challenge) = storage.proveSlotCalls[0]
+    check challenge == marketplace.proofChallenge
 
     await future.cancelAndWait()

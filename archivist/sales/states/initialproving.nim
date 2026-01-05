@@ -3,6 +3,7 @@ import ../../clock
 import ../../logutils
 import ../../utils/exceptions
 import ../../marketplace/abstractmarketplace
+import ../../marketplace/storageinterface
 import ../statemachine
 import ../salesagent
 import ./filling
@@ -47,13 +48,11 @@ method run*(
   let data = SalesAgent(machine).data
   let context = SalesAgent(machine).context
   let marketplace = context.marketplace
+  let storage = context.storage
   let clock = context.clock
 
   without request =? data.request:
     raiseAssert "no sale request"
-
-  without onProve =? context.onProve:
-    raiseAssert "onProve callback not set"
 
   try:
     let periodicity = await marketplace.periodicity()
@@ -67,8 +66,10 @@ method run*(
       provingPeriod = provingPeriod,
       requestId = data.requestId,
       slotIndex = data.slotIndex
+    let cid = request.content.cid
+    let slotIndex = data.slotIndex
     let challenge = await context.marketplace.getChallenge(slot.id)
-    without proof =? (await onProve(slot, challenge, provingPeriod)), err:
+    without proof =? await storage.proveSlot(cid, slotIndex, challenge), err:
       error "Failed to generate initial proof", error = err.msg
       return some State(SaleErrored(error: err))
 

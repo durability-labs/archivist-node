@@ -20,7 +20,7 @@ proc new*(
 
 method getBlock*(
     self: CountingStore, address: BlockAddress
-): Future[?!Block] {.async.} =
+): Future[?!Block] {.async: (raises: [CancelledError]).} =
   self.lookups.mgetOrPut(address.cid, 0).inc
   await procCall getBlock(NetworkStore(self), address)
 
@@ -57,72 +57,3 @@ proc pipeChunker*(stream: BufferStream, chunker: Chunker) {.async.} =
   finally:
     await stream.pushEof()
     await stream.close()
-
-template setupAndTearDown*() {.dirty.} =
-  var
-    file: File
-    chunker: Chunker
-    switch: Switch
-    wallet: WalletRef
-    network: BlockExcNetwork
-    clock: Clock
-    localStore: RepoStore
-    localStoreRepoDs: Datastore
-    localStoreMetaDs: Datastore
-    engine: BlockExcEngine
-    store: NetworkStore
-    node: ArchivistNodeRef
-    blockDiscovery: Discovery
-    peerStore: PeerCtxStore
-    pendingBlocks: PendingBlocksManager
-    discovery: DiscoveryEngine
-    advertiser: Advertiser
-
-  let
-    path = currentSourcePath().parentDir
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
-
-  setup:
-    file = open(path /../ "" /../ "fixtures" / "test.jpg")
-    chunker = FileChunker.new(file = file, chunkSize = DefaultBlockSize)
-    switch = newStandardSwitch()
-    wallet = WalletRef.new(EthPrivateKey.random())
-    network = BlockExcNetwork.new(switch)
-
-    clock = SystemClock.new()
-    localStoreMetaDs = metaTmp.newDb()
-    localStoreRepoDs = repoTmp.newDb()
-    localStore = RepoStore.new(localStoreRepoDs, localStoreMetaDs, clock = clock)
-    await localStore.start()
-
-    blockDiscovery = Discovery.new(
-      switch.peerInfo.privateKey,
-      announceAddrs =
-        @[
-          MultiAddress.init("/ip4/127.0.0.1/tcp/0").expect("Should return multiaddress")
-        ],
-    )
-    peerStore = PeerCtxStore.new()
-    pendingBlocks = PendingBlocksManager.new()
-    discovery =
-      DiscoveryEngine.new(localStore, peerStore, network, blockDiscovery, pendingBlocks)
-    advertiser = Advertiser.new(localStore, blockDiscovery)
-    engine = BlockExcEngine.new(
-      localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
-    )
-    store = NetworkStore.new(engine, localStore)
-    node = ArchivistNodeRef.new(
-      switch = switch,
-      networkStore = store,
-      engine = engine,
-      prover = Prover.none,
-      discovery = blockDiscovery,
-      taskpool = Taskpool.new(),
-    )
-
-  teardown:
-    file.close()
-    await node.stop()
-    await metaTmp.destroyDb()
-    await repoTmp.destroyDb()

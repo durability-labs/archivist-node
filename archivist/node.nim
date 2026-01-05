@@ -638,18 +638,15 @@ proc requestStorage*(
   let purchase = ?await purchasing.purchase(request)
   success purchase.id
 
-proc onStore(
+proc storeSlot*(
     self: ArchivistNodeRef,
-    request: StorageRequest,
-    expiry: SecondsSince1970,
+    cid: Cid,
     slotIdx: uint64,
-    isRepairing: bool = false,
+    expiry: SecondsSince1970,
+    repair: bool,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## store data in local storage
   ##
-
-  let cid = request.content.cid
-
   logScope:
     cid = $cid
     slotIdx = slotIdx
@@ -692,7 +689,7 @@ proc onStore(
     error "Unable to get indices from strategy", err = err.msg
     return failure(err)
 
-  if isRepairing:
+  if repair:
     trace "start repairing slot", slotIdx
     try:
       let erasure = Erasure.new(
@@ -736,18 +733,14 @@ proc onStore(
 
   return success()
 
-proc onProve(
-    self: ArchivistNodeRef, slot: Slot, challenge: ProofChallenge, period: Period
+proc proveSlot*(
+    self: ArchivistNodeRef, cid: Cid, slotIdx: uint64, challenge: ProofChallenge
 ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
-  ## Generats a proof for a given slot and challenge
+  ## Generates a proof for a given slot and challenge
   ##
 
-  let
-    cidStr = $slot.request.content.cid
-    slotIdx = slot.slotIndex
-
   logScope:
-    cid = cidStr
+    cid = $cid
     slot = slotIdx
     challenge = challenge
 
@@ -757,7 +750,6 @@ proc onProve(
     trace "Prover enabled"
 
     let
-      cid = ?Cid.init(cidStr).mapFailure
       manifest = ?await self.fetchManifest(cid)
       builder =
         ?Poseidon2Builder.new(self.networkStore, manifest, manifest.verifiableStrategy)
@@ -777,30 +769,10 @@ proc onProve(
 
     trace "Proof generated successfully", proof
 
-    # Update proofs/period metric:
-    if self.currentPeriod != period:
-      if self.currentPeriod > 0:
-        debug "Generated proofs per period",
-          numProofs = self.numProofs, period = self.currentPeriod
-        archivist_proofs_per_period.set(self.numProofs)
-      self.numProofs = 1
-      self.currentPeriod = period
-    else:
-      inc self.numProofs
-
     success proof
   else:
     warn "Prover not enabled"
     failure "Prover not enabled"
-
-proc onExpiryUpdate(
-    self: ArchivistNodeRef, rootCid: Cid, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  return await self.updateExpiry(rootCid, expiry)
-
-proc onClear(self: ArchivistNodeRef, request: StorageRequest, slotIndex: uint64) =
-  # TODO: remove data from local storage
-  discard
 
 proc start*(self: ArchivistNodeRef) {.async.} =
   if not self.engine.isNil:
@@ -810,27 +782,6 @@ proc start*(self: ArchivistNodeRef) {.async.} =
     await self.discovery.start()
 
   if marketplace =? self.marketplace:
-    marketplace.sales.onStore = proc(
-        request: StorageRequest,
-        expiry: SecondsSince1970,
-        slot: uint64,
-        isRepairing: bool = false,
-    ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
-      self.onStore(request, expiry, slot, isRepairing)
-
-    marketplace.sales.onExpiryUpdate = proc(
-        rootCid: Cid, expiry: SecondsSince1970
-    ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
-      self.onExpiryUpdate(rootCid, expiry)
-
-    marketplace.sales.onClear = proc(request: StorageRequest, slotIndex: uint64) =
-      self.onClear(request, slotIndex)
-
-    marketplace.sales.onProve = proc(
-        slot: Slot, challenge: ProofChallenge, period: Period
-    ): Future[?!Groth16Proof] {.async: (raw: true, raises: [CancelledError]).} =
-      self.onProve(slot, challenge, period)
-
     if error =? (await marketplace.start()).errorOption:
       error "Unable to start marketplace", error = error.msg
 
