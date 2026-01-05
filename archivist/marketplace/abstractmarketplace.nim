@@ -1,11 +1,11 @@
 import pkg/chronos
 import pkg/questionable
 import pkg/ethers/erc20
-import ../contracts/requests
-import ../contracts/proofs
 import ../clock
 import ../errors
-import ../periods
+import ./contracts/requests
+import ./contracts/proofs
+import ./periods
 
 export chronos
 export questionable

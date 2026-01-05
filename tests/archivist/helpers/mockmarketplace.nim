@@ -5,9 +5,9 @@ import std/sets
 import std/sugar
 import pkg/questionable
 import pkg/archivist/marketplace/abstractmarketplace
-import pkg/archivist/contracts/requests
-import pkg/archivist/contracts/proofs
-import pkg/archivist/contracts/config
+import pkg/archivist/marketplace/contracts/requests
+import pkg/archivist/marketplace/contracts/proofs
+import pkg/archivist/marketplace/contracts/config
 import pkg/questionable/results
 
 from pkg/ethers import BlockTag

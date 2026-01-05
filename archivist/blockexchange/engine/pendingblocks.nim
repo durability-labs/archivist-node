@@ -11,7 +11,6 @@
 
 import std/tables
 import std/monotimes
-import std/strutils
 
 import pkg/chronos
 import pkg/libp2p

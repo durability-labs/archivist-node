@@ -42,9 +42,6 @@ import ./streams
 import ./erasure
 import ./discovery
 import ./marketplace
-import ./contracts
-import ./sales
-import ./marketplace/abstractmarketplace
 import ./indexingstrategy
 import ./utils
 import ./errors
@@ -57,8 +54,6 @@ export logutils
 
 logScope:
   topics = "archivist node"
-
-declareGauge(archivist_proofs_per_period, "archivist proofs per period")
 
 const DefaultFetchBatch = 10
 
@@ -75,7 +70,6 @@ type
     trackedFutures: TrackedFutures
     # proofs/period metric:
     numProofs: int64
-    currentPeriod: Period
 
   ArchivistNodeRef* = ref ArchivistNode
 

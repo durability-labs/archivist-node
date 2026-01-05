@@ -20,9 +20,6 @@ import ../../errors
 
 import ./archivist
 
-const MaxMerkleTreeSize = 100.MiBs.uint
-const MaxMerkleProofSize = 1.MiBs.uint
-
 proc encode*(self: ArchivistTree): seq[byte] =
   var pb = initProtoBuffer()
   pb.write(1, self.mcodec.uint64)

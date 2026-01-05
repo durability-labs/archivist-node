@@ -6,7 +6,7 @@ import pkg/stint
 import pkg/archivist/rng
 import pkg/archivist/stores
 import pkg/archivist/blocktype as bt
-import pkg/archivist/sales
+import pkg/archivist/marketplace/sales
 import pkg/archivist/merkletree
 import pkg/archivist/manifest
 import ../examples
@@ -64,27 +64,6 @@ proc example*(_: type Manifest): Manifest =
 proc example*(_: type MultiHash, mcodec = Sha256HashCodec): MultiHash =
   let bytes = newSeqWith(256, rand(uint8))
   MultiHash.digest($mcodec, bytes).tryGet()
-
-proc example*(
-    _: type Availability, collateralPerByte = uint8.example.u256
-): Availability =
-  let totalSize = uint16.example.uint64
-  Availability.init(
-    totalSize = totalSize,
-    freeSize = uint16.example.uint64,
-    duration = uint16.example.uint64,
-    minPricePerBytePerSecond = uint8.example.u256,
-    totalCollateral = totalSize.u256 * collateralPerByte,
-    enabled = true,
-    until = 0.SecondsSince1970,
-  )
-
-proc example*(_: type Reservation): Reservation =
-  Reservation.init(
-    availabilityId = AvailabilityId(array[32, byte].example),
-    size = uint16.example.uint64,
-    slotId = SlotId.example,
-  )
 
 proc example*(_: type MerkleProof): MerkleProof =
   MerkleProof.init(3, @[MultiHash.example]).tryget()

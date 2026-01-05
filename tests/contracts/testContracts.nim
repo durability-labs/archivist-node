@@ -1,6 +1,6 @@
 import pkg/chronos
 import pkg/ethers/erc20
-import archivist/contracts
+import archivist/marketplace/contracts
 import ../asynctest
 import ../testbed
 import ./examples

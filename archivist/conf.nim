@@ -10,15 +10,10 @@
 {.push raises: [].}
 
 import std/os
-
-{.push warning[UnusedImport]: on.}
-import std/terminal # Is not used in tests
-{.pop.}
-
 import std/options
 import std/strutils
+import std/parseutils
 import std/typetraits
-import std/cpuinfo
 
 import pkg/chronos
 import pkg/chronicles/helpers
@@ -28,7 +23,6 @@ import pkg/confutils/std/net
 import pkg/toml_serialization
 import pkg/metrics
 import pkg/metrics/chronos_httpserver
-import pkg/stew/shims/parseutils
 import pkg/stew/byteutils
 import pkg/libp2p
 import pkg/ethers
@@ -39,13 +33,14 @@ import ./archivisttypes
 import ./discovery
 import ./logutils
 import ./stores
+import ./marketplace
 import ./units
 import ./utils
 import ./nat
 import ./utils/natutils
 
-from ./contracts/config import DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
-from ./validationconfig import MaxSlots, ValidationGroups
+when defaultChroniclesStream.outputs.type.arity == 3:
+  import std/terminal
 
 export units, net, archivisttypes, logutils, completeCmdArg, parseCmdArg, NatConfig
 export ValidationGroups, MaxSlots

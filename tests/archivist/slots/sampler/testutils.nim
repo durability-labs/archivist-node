@@ -11,8 +11,8 @@ import pkg/chronos
 import pkg/archivist/chunker
 import pkg/archivist/stores
 import pkg/archivist/blocktype as bt
-import pkg/archivist/contracts/requests
-import pkg/archivist/contracts
+import pkg/archivist/marketplace/contracts/requests
+import pkg/archivist/marketplace/contracts
 import pkg/archivist/merkletree
 import pkg/archivist/stores/cachestore
 import pkg/archivist/slots/types

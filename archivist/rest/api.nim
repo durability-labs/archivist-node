@@ -35,9 +35,6 @@ import ../manifest
 import ../streams/asyncstreamwrapper
 import ../stores
 import ../marketplace
-import ../marketplace/abstractmarketplace
-import ../purchasing
-import ../sales/reservations
 
 import ./coders
 import ./json
@@ -506,15 +503,6 @@ proc initSalesApi(node: ArchivistNodeRef, router: var RestRouter) =
       trace "Excepting processing request", exc = exc.msg
       return RestApiResponse.error(Http500, headers = headers)
 
-  router.api(MethodOptions, "/api/archivist/v1/sales/availability/{id}") do(
-    id: AvailabilityId, resp: HttpResponseRef
-  ) -> RestApiResponse:
-    if corsOrigin =? allowedOrigin:
-      resp.setCorsHeaders("PATCH", corsOrigin)
-
-    resp.status = Http204
-    await resp.sendBody("")
-
 proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
   let allowedOrigin = router.allowedOrigin
 
@@ -573,12 +561,11 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
           headers = headers,
         )
 
-      let requestDurationLimit =
-        await marketplace.purchasing.marketplace.requestDurationLimit
-      if params.duration > requestDurationLimit:
+      let durationLimit = marketplace.purchasing.durationLimit
+      if params.duration > durationLimit:
         return RestApiResponse.error(
           Http422,
-          "Duration exceeds limit of " & $requestDurationLimit & " seconds",
+          "Duration exceeds limit of " & $durationLimit & " seconds",
           headers = headers,
         )
 
@@ -624,7 +611,7 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
 
         return RestApiResponse.error(Http500, error.msg, headers = headers)
 
-      return RestApiResponse.response(purchaseId.toHex)
+      return RestApiResponse.response($purchaseId)
     except CatchableError as exc:
       trace "Excepting processing request", exc = exc.msg
       return RestApiResponse.error(Http500, headers = headers)
@@ -855,7 +842,7 @@ proc initDebugApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter
           valueInt = parseInt(value.get())
 
         if keyStr == "simulate_proof_failures":
-          node.marketplace.get().sales.context.simulateProofFailures = valueInt
+          node.marketplace.get().sales.simulateProofFailures(valueInt)
         elif keyStr == "dht_send_fail_probability":
           node.discovery.protocol.transport.sendFailProb = valueInt
         else:

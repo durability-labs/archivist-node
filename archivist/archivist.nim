@@ -32,7 +32,6 @@ import ./blockexchange
 import ./utils/fileutils
 import ./erasure
 import ./discovery
-import ./contracts
 import ./marketplace
 import ./marketplacestorage
 import ./namespaces

@@ -3,8 +3,7 @@ import pkg/stew/byteutils
 import pkg/libp2p
 import pkg/archivistdht/discv5/node as dn
 import pkg/archivistdht/discv5/routing_table as rt
-import ../sales
-import ../purchasing
+import ../marketplace
 import ../utils/json
 import ../manifest
 import ../units

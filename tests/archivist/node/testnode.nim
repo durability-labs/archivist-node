@@ -15,7 +15,7 @@ import pkg/archivistdht/discv5/protocol as discv5
 
 import pkg/archivist/logutils
 import pkg/archivist/stores
-import pkg/archivist/contracts
+import pkg/archivist/marketplace/contracts
 import pkg/archivist/blockexchange
 import pkg/archivist/chunker
 import pkg/archivist/slots

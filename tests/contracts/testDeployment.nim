@@ -1,6 +1,6 @@
 import pkg/ethers
 import pkg/questionable/results
-import archivist/contracts/deployment
+import archivist/marketplace/contracts/deployment
 import ../asynctest
 
 type MockProvider = ref object of Provider

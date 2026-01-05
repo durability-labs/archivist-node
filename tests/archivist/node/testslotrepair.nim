@@ -7,7 +7,7 @@ import pkg/questionable/results
 import pkg/stint
 
 import pkg/archivist/stores
-import pkg/archivist/contracts
+import pkg/archivist/marketplace/contracts
 import pkg/archivist/slots
 import pkg/archivist/manifest
 import pkg/archivist/erasure
