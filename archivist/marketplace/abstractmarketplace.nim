@@ -64,14 +64,9 @@ type
   ProofSubmitted* = object of MarketplaceEvent
     id*: SlotId
 
-method loadConfig*(
-    marketplace: AbstractMarketplace
-): Future[?!void] {.base, async: (raises: [CancelledError]).} =
-  raiseAssert("not implemented")
-
 method getZkeyHash*(
     marketplace: AbstractMarketplace
-): Future[?string] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
+): string {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method getSigner*(
@@ -81,27 +76,27 @@ method getSigner*(
 
 method periodicity*(
     marketplace: AbstractMarketplace
-): Future[Periodicity] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
+): Periodicity {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method proofTimeout*(
     marketplace: AbstractMarketplace
-): Future[uint64] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
+): uint64 {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method repairRewardPercentage*(
     marketplace: AbstractMarketplace
-): Future[uint8] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
+): uint8 {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method requestDurationLimit*(
     marketplace: AbstractMarketplace
-): Future[uint64] {.base, async.} =
+): uint64 {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method proofDowntime*(
     marketplace: AbstractMarketplace
-): Future[uint8] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
+): uint8 {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")
 
 method getPointer*(
@@ -112,7 +107,7 @@ method getPointer*(
 proc inDowntime*(
     marketplace: AbstractMarketplace, slotId: SlotId
 ): Future[bool] {.async.} =
-  let downtime = await marketplace.proofDowntime
+  let downtime = marketplace.proofDowntime
   let pntr = await marketplace.getPointer(slotId)
   return pntr < downtime
 
@@ -326,5 +321,5 @@ method slotCollateral*(
 
 method slotCollateral*(
     marketplace: AbstractMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): ?!UInt256 {.base, gcsafe, raises: [].} =
+): UInt256 {.base, gcsafe, raises: [].} =
   raiseAssert("not implemented")

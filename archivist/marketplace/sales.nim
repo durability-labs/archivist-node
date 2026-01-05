@@ -190,11 +190,7 @@ proc onStorageRequested(
 
   let marketplace = sales.context.marketplace
 
-  without collateral =? marketplace.slotCollateral(
-    ask.collateralPerSlot, SlotState.Free
-  ), err:
-    error "Request failure, unable to calculate collateral", error = err.msg
-    return
+  let collateral = marketplace.slotCollateral(ask.collateralPerSlot, SlotState.Free)
 
   without items =? SlotQueueItem.init(requestId, ask, expiry, collateral).catch, err:
     if err of SlotsOutOfRangeError:
@@ -236,11 +232,8 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
       # and we want to give the user the ability to tweak the parameters.
       # Adding the repairing state directly in the queue priority calculation
       # would not allow this flexibility.
-      without collateral =?
-        marketplace.slotCollateral(request.ask.collateralPerSlot, SlotState.Repair), err:
-        error "Failed to add freed slot to queue: unable to calculate collateral",
-          error = err.msg
-        return
+      let collateral =
+        marketplace.slotCollateral(request.ask.collateralPerSlot, SlotState.Repair)
 
       if slotIndex > uint16.high.uint64:
         error "Cannot cast slot index to uint16, value = ", slotIndex

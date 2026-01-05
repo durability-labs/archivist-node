@@ -34,10 +34,11 @@ proc connect*(
     options = MarketplaceOptions(),
 ): Future[?!MarketplaceNode] {.async: (raises: [CancelledError]).} =
   let provider = ?await Provider.connect(ethProviderUrl, options)
+  ?await provider.waitForSync()
   let marketplaceAddress = ?await getMarketplaceAddress(provider, options)
   let wallet = ?loadWallet(ethPrivateKeyFile, provider)
   let contract = ?catch MarketplaceContract.new(marketplaceAddress, wallet)
-  let marketplace = OnchainMarketplace.new(contract, options)
+  let marketplace = ?await OnchainMarketplace.load(contract, options)
   let clock = ?await Clock.start(provider, options)
   let purchasing = Purchasing.new(marketplace, clock)
   let availability = AvailabilityStore.new(datastore)
@@ -57,7 +58,6 @@ proc connect*(
 proc start*(
     node: MarketplaceNode
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ?await node.provider.waitForSync()
   ?await node.purchasing.start()
   ?await node.sales.start()
   if validation =? node.validation:

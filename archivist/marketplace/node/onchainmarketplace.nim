@@ -1,12 +1,16 @@
+import pkg/chronos
+import pkg/questionable/results
 import ../contracts/onchainmarketplace
 import ../contracts/marketplacecontract
 import ./options
 
 export onchainmarketplace.OnchainMarketplace
 
-func new*(
+proc load*(
     _: type OnchainMarketplace,
     contract: MarketplaceContract,
     options: MarketplaceOptions,
-): OnchainMarketplace =
-  OnchainMarketplace.new(contract, options.rewardRecipient, options.requestCacheSize)
+): Future[?!OnchainMarketplace] {.async: (raises: [CancelledError]).} =
+  await OnchainMarketplace.load(
+    contract, options.rewardRecipient, options.requestCacheSize
+  )

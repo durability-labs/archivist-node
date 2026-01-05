@@ -50,10 +50,10 @@ suite "On-Chain Marketplace":
   ): UInt256 =
     return (endTimestamp - startTimestamp).u256 * r.ask.pricePerSlotPerSecond
 
-  proc switchAccount(account: Signer) =
+  proc switchAccount(account: Signer) {.async.} =
     contract = contract.connect(account)
     token = token.connect(account)
-    marketplace = OnChainMarketplace.new(contract, marketplace.rewardRecipient)
+    marketplace = !await OnChainMarketplace.load(contract, marketplace.rewardRecipient)
 
   setup:
     let address = MarketplaceContract.address(dummyVerifier = true)
@@ -61,7 +61,7 @@ suite "On-Chain Marketplace":
     let config = await contract.configuration()
     hostRewardRecipient = accounts[2]
 
-    marketplace = OnChainMarketplace.new(contract)
+    marketplace = !await OnChainMarketplace.load(contract)
     let tokenAddress = await contract.token()
     token = Erc20Token.new(tokenAddress, provider.getSigner())
 
@@ -94,27 +94,22 @@ suite "On-Chain Marketplace":
     :
       await advanceToNextPeriod()
 
-  test "caches marketplace configuration":
-    check isNone marketplace.configuration
-    discard await marketplace.periodicity()
-    check isSome marketplace.configuration
-
   test "fails to instantiate when contract does not have a signer":
     let storageWithoutSigner = contract.connect(provider)
     expect AssertionDefect:
-      discard OnChainMarketplace.new(storageWithoutSigner)
+      discard await OnChainMarketplace.load(storageWithoutSigner)
 
   test "knows signer address":
     check (await marketplace.getSigner()) == (await provider.getSigner().getAddress())
 
   test "can retrieve proof periodicity":
-    let periodicity = await marketplace.periodicity()
+    let periodicity = marketplace.periodicity()
     let config = await contract.configuration()
     let periodLength = config.proofs.period
     check periodicity.seconds == periodLength
 
   test "can retrieve proof timeout":
-    let proofTimeout = await marketplace.proofTimeout()
+    let proofTimeout = marketplace.proofTimeout()
     let config = await contract.configuration()
     check proofTimeout == config.proofs.timeout
 
@@ -332,9 +327,9 @@ suite "On-Chain Marketplace":
       await marketplace.subscribeSlotReservationsFull(onSlotReservationsFull)
 
     await marketplace.reserveSlot(request.id, slotIndex)
-    switchAccount(account2)
+    await switchAccount(account2)
     await marketplace.reserveSlot(request.id, slotIndex)
-    switchAccount(account3)
+    await switchAccount(account3)
     await marketplace.reserveSlot(request.id, slotIndex)
 
     check eventually receivedRequestIds == @[request.id] and receivedIdxs == @[
@@ -649,7 +644,7 @@ suite "On-Chain Marketplace":
     await marketplace.requestStorage(request)
 
     let address = await host.getAddress()
-    switchAccount(host)
+    await switchAccount(host)
     await marketplace.reserveSlot(request.id, 0.uint64)
     await marketplace.fillSlot(
       request.id, 0.uint64, proof, request.ask.collateralPerSlot
@@ -673,12 +668,12 @@ suite "On-Chain Marketplace":
     check endBalance == (startBalance + expectedPayout + request.ask.collateralPerSlot)
 
   test "pays rewards to reward recipient, collateral to host":
-    marketplace = OnChainMarketplace.new(contract, hostRewardRecipient.some)
+    marketplace = !await OnChainMarketplace.load(contract, hostRewardRecipient.some)
     let hostAddress = await host.getAddress()
 
     await marketplace.requestStorage(request)
 
-    switchAccount(host)
+    await switchAccount(host)
     await marketplace.reserveSlot(request.id, 0.uint64)
     await marketplace.fillSlot(
       request.id, 0.uint64, proof, request.ask.collateralPerSlot
@@ -713,24 +708,18 @@ suite "On-Chain Marketplace":
       request.id, 0.uint64, proof, request.ask.collateralPerSlot
     )
 
-    let slotId = request.slotId(0.uint64)
     without collateral =? await marketplace.slotCollateral(request.id, 0.uint64), error:
       fail()
 
     check collateral == request.ask.collateralPerSlot
 
   test "calculates correctly the collateral when the slot is being repaired":
-    # Ensure that the config is loaded and repairRewardPercentage is available
-    discard await marketplace.repairRewardPercentage()
-
     await marketplace.requestStorage(request)
     await marketplace.reserveSlot(request.id, 0.uint64)
     await marketplace.fillSlot(
       request.id, 0.uint64, proof, request.ask.collateralPerSlot
     )
     await marketplace.freeSlot(slotId(request.id, 0.uint64))
-
-    let slotId = request.slotId(0.uint64)
 
     without collateral =? await marketplace.slotCollateral(request.id, 0.uint64), error:
       fail()

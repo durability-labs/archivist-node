@@ -65,17 +65,17 @@ proc proveLoop(
     slotIndex
     slotId = slot.id
 
-  proc getCurrentPeriod(): Future[Period] {.async.} =
-    let periodicity = await marketplace.periodicity()
+  proc getCurrentPeriod(): Period =
+    let periodicity = marketplace.periodicity()
     return periodicity.periodOf(clock.now().Timestamp)
 
   proc waitUntilPeriod(period: Period) {.async.} =
-    let periodicity = await marketplace.periodicity()
+    let periodicity = marketplace.periodicity()
     # Ensure that we're past the period boundary by waiting an additional second
     await clock.waitUntil((periodicity.periodStart(period) + 1).toSecondsSince1970)
 
   while true:
-    let provingPeriod = await getCurrentPeriod()
+    let provingPeriod = getCurrentPeriod()
     let slotState = await marketplace.slotState(slot.id)
 
     case slotState
@@ -86,7 +86,7 @@ proc proveLoop(
         let challenge = await marketplace.getChallenge(slotId)
         info "Generating required proof", challenge = challenge
         await state.prove(slot, challenge, context, provingPeriod)
-        let periodAtFinish = await getCurrentPeriod()
+        let periodAtFinish = getCurrentPeriod()
         if periodAtFinish != provingPeriod:
           warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
     of SlotState.Cancelled:

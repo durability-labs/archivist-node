@@ -83,7 +83,7 @@ suite "Command line interface":
     discard await testbed.node
     .persistence()
     .marketplaceAddress("0xDEADDEADDEADDEADDEADDEADDEADDEADDEADDEAD")
-    .waitForOutput("Unable to start marketplace")
+    .waitForOutput("Unable to connect to marketplace")
     .start()
 
   test "automatically uses local config.toml":

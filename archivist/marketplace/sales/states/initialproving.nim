@@ -38,7 +38,7 @@ proc waitForStableChallenge(
     periodicity: Periodicity,
     slotId: SlotId,
 ) {.async.} =
-  let downtime = await marketplace.proofDowntime()
+  let downtime = marketplace.proofDowntime()
   await clock.waitUntilNextPeriod(periodicity)
   while (await marketplace.getPointer(slotId)) > (256 - downtime):
     await clock.waitUntilNextPeriod(periodicity)
@@ -56,7 +56,7 @@ method run*(
     raiseAssert "no sale request"
 
   try:
-    let periodicity = await marketplace.periodicity()
+    let periodicity = marketplace.periodicity()
 
     debug "Waiting for a proof challenge that is valid for the entire period"
     let slot = Slot(request: request, slotIndex: data.slotIndex)
