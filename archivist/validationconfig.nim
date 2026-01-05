@@ -3,7 +3,7 @@ import pkg/questionable
 import pkg/questionable/results
 
 type
-  ValidationGroups* = range[2 .. 65535]
+  ValidationGroups* = int
   MaxSlots* = int
   ValidationConfig* = object
     maxSlots: MaxSlots
@@ -19,9 +19,13 @@ func init*(
   if maxSlots < 0:
     return failure "The value of maxSlots must be greater than " &
       fmt"or equal to 0! (got: {maxSlots})"
-  if validationGroups =? groups and groupIndex >= uint16(validationGroups):
-    return failure "The value of the group index must be less than " &
-      fmt"validation groups! (got: {groupIndex = }, " & fmt"groups = {validationGroups})"
+  if validationGroups =? groups:
+    if validationGroups < 2:
+      return failure "number of validation groups should be at least 2"
+    if groupIndex >= uint16(validationGroups):
+      return failure "The value of the group index must be less than " &
+        fmt"validation groups! (got: {groupIndex = }, " &
+        fmt"groups = {validationGroups})"
 
   success ValidationConfig(maxSlots: maxSlots, groups: groups, groupIndex: groupIndex)
 

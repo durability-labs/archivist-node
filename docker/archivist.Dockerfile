@@ -1,5 +1,5 @@
 # Variables
-ARG BUILDER=nimlang/nim:2.2.4-ubuntu-regular
+ARG BUILDER=nimlang/nim:2.2.6-ubuntu-regular
 ARG IMAGE=ubuntu:24.04
 ARG RUST_VERSION=${RUST_VERSION:-1.79.0}
 ARG BUILD_HOME=/src
