@@ -20,7 +20,7 @@ type
     contract: MarketplaceContract
     signer: Signer
     rewardRecipient: ?Address
-    configuration: ?MarketplaceConfig
+    configuration: MarketplaceConfig
     requestCache: LruCache[string, StorageRequest]
     allowanceLock: AsyncLock
 
@@ -29,23 +29,32 @@ type
   OnChainMarketSubscription = ref object of MarketSubscription
     eventSubscription: EventSubscription
 
-func new*(
+proc load(
+    marketplace: OnchainMarketplace
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  try:
+    marketplace.configuration = await marketplace.contract.configuration()
+    success()
+  except EthersError as error:
+    failure(error)
+
+proc load*(
     _: type OnChainMarketplace,
     contract: MarketplaceContract,
     rewardRecipient = Address.none,
     requestCacheSize: uint16 = DefaultRequestCacheSize,
-): OnChainMarketplace =
+): Future[?!OnChainMarketplace] {.async: (raises: [CancelledError]).} =
   without signer =? contract.signer:
     raiseAssert("Marketplace contract should have a signer")
-
-  var requestCache = newLruCache[string, StorageRequest](int(requestCacheSize))
-
-  OnChainMarketplace(
+  let requestCache = newLruCache[string, StorageRequest](int(requestCacheSize))
+  let marketplace = OnChainMarketplace(
     contract: contract,
     signer: signer,
     rewardRecipient: rewardRecipient,
     requestCache: requestCache,
   )
+  ?await marketplace.load()
+  success marketplace
 
 proc raiseMarketError(message: string) {.raises: [MarketplaceError].} =
   raise newException(MarketplaceError, message)
@@ -61,20 +70,6 @@ template convertEthersError(msg: string = "", body) =
     body
   except EthersError as error:
     raiseMarketError(error.msgDetail.prefixWith(msg))
-
-proc config(
-    marketplace: OnChainMarketplace
-): Future[MarketplaceConfig] {.async: (raises: [CancelledError, MarketplaceError]).} =
-  without resolvedConfig =? marketplace.configuration:
-    if err =? (await marketplace.loadConfig()).errorOption:
-      raiseMarketError(err.msg)
-
-    without config =? marketplace.configuration:
-      raiseMarketError("Failed to access to config from the Marketplace contract")
-
-    return config
-
-  return resolvedConfig
 
 template withAllowanceLock*(marketplace: OnChainMarketplace, body: untyped) =
   if marketplace.allowanceLock.isNil:
@@ -101,27 +96,8 @@ proc approveFunds(
       let allowance = await token.allowance(owner, spender)
       discard await token.approve(spender, allowance + amount).confirm(1)
 
-method loadConfig*(
-    marketplace: OnChainMarketplace
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  try:
-    without config =? marketplace.configuration:
-      let fetchedConfig = await marketplace.contract.configuration()
-
-      marketplace.configuration = some fetchedConfig
-
-    return success()
-  except EthersError as err:
-    return failure newException(
-      MarketplaceError,
-      "Failed to fetch the config from the Marketplace contract: " & err.msg,
-    )
-
-method getZkeyHash*(
-    marketplace: OnChainMarketplace
-): Future[?string] {.async: (raises: [CancelledError, MarketplaceError]).} =
-  let config = await marketplace.config()
-  return some config.proofs.zkeyHash
+method getZkeyHash*(marketplace: OnChainMarketplace): string =
+  marketplace.configuration.proofs.zkeyHash
 
 method getSigner*(
     marketplace: OnChainMarketplace
@@ -129,41 +105,21 @@ method getSigner*(
   convertEthersError("Failed to get signer address"):
     return await marketplace.signer.getAddress()
 
-method periodicity*(
-    marketplace: OnChainMarketplace
-): Future[Periodicity] {.async: (raises: [CancelledError, MarketplaceError]).} =
-  convertEthersError("Failed to get Marketplace config"):
-    let config = await marketplace.config()
-    let period = config.proofs.period
-    return Periodicity(seconds: period)
+method periodicity*(marketplace: OnChainMarketplace): Periodicity =
+  let period = marketplace.configuration.proofs.period
+  Periodicity(seconds: period)
 
-method proofTimeout*(
-    marketplace: OnChainMarketplace
-): Future[uint64] {.async: (raises: [CancelledError, MarketplaceError]).} =
-  convertEthersError("Failed to get Marketplace config"):
-    let config = await marketplace.config()
-    return config.proofs.timeout
+method proofTimeout*(marketplace: OnChainMarketplace): uint64 =
+  marketplace.configuration.proofs.timeout
 
-method repairRewardPercentage*(
-    marketplace: OnChainMarketplace
-): Future[uint8] {.async: (raises: [CancelledError, MarketplaceError]).} =
-  convertEthersError("Failed to get Marketplace config"):
-    let config = await marketplace.config()
-    return config.collateral.repairRewardPercentage
+method repairRewardPercentage*(marketplace: OnChainMarketplace): uint8 =
+  marketplace.configuration.collateral.repairRewardPercentage
 
-method requestDurationLimit*(
-    marketplace: OnChainMarketplace
-): Future[uint64] {.async.} =
-  convertEthersError("Failed to get Marketplace config"):
-    let config = await marketplace.config()
-    return config.requestDurationLimit
+method requestDurationLimit*(marketplace: OnChainMarketplace): uint64 =
+  marketplace.configuration.requestDurationLimit
 
-method proofDowntime*(
-    marketplace: OnChainMarketplace
-): Future[uint8] {.async: (raises: [CancelledError, MarketplaceError]).} =
-  convertEthersError("Failed to get Marketplace config"):
-    let config = await marketplace.config()
-    return config.proofs.downtime
+method proofDowntime*(marketplace: OnChainMarketplace): uint8 =
+  marketplace.configuration.proofs.downtime
 
 method getPointer*(
     marketplace: OnChainMarketplace, slotId: SlotId
@@ -630,26 +586,16 @@ method slotCollateral*(
         "Failure calculating the slotCollateral, cannot get the request",
       )
 
-    return marketplace.slotCollateral(request.ask.collateralPerSlot, slotState)
+    return success marketplace.slotCollateral(request.ask.collateralPerSlot, slotState)
   except MarketplaceError as error:
     error "Error when trying to calculate the slotCollateral", error = error.msg
     return failure error
 
 method slotCollateral*(
     marketplace: OnChainMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): ?!UInt256 {.raises: [].} =
+): UInt256 =
   if slotState == SlotState.Repair:
-    without repairRewardPercentage =?
-      marketplace.configuration .? collateral .? repairRewardPercentage:
-      return failure newException(
-        MarketplaceError,
-        "Failure calculating the slotCollateral, cannot get the reward percentage",
-      )
+    let percentage = marketplace.configuration.collateral.repairRewardPercentage
+    return collateralPerSlot - (collateralPerSlot * percentage.u256).div(100.u256)
 
-    return success (
-      collateralPerSlot - (collateralPerSlot * repairRewardPercentage.u256).div(
-        100.u256
-      )
-    )
-
-  return success(collateralPerSlot)
+  return collateralPerSlot

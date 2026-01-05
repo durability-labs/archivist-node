@@ -136,37 +136,24 @@ proc new*(_: type MockMarketplace, clock: Clock = MockClock.new()): MockMarketpl
     signer: Address.example, config: config, canReserveSlot: true, clock: clock
   )
 
-method loadConfig*(
-    marketplace: MockMarketplace
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  discard
-
 method getSigner*(
     marketplace: MockMarketplace
 ): Future[Address] {.async: (raises: [CancelledError, MarketplaceError]).} =
   return marketplace.signer
 
-method periodicity*(
-    mock: MockMarketplace
-): Future[Periodicity] {.async: (raises: [CancelledError, MarketplaceError]).} =
+method periodicity*(mock: MockMarketplace): Periodicity =
   return Periodicity(seconds: mock.config.proofs.period)
 
-method proofTimeout*(
-    marketplace: MockMarketplace
-): Future[uint64] {.async: (raises: [CancelledError, MarketplaceError]).} =
+method proofTimeout*(marketplace: MockMarketplace): uint64 =
   return marketplace.config.proofs.timeout
 
-method requestDurationLimit*(marketplace: MockMarketplace): Future[uint64] {.async.} =
+method requestDurationLimit*(marketplace: MockMarketplace): uint64 =
   return marketplace.config.requestDurationLimit
 
-method proofDowntime*(
-    marketplace: MockMarketplace
-): Future[uint8] {.async: (raises: [CancelledError, MarketplaceError]).} =
+method proofDowntime*(marketplace: MockMarketplace): uint8 =
   return marketplace.config.proofs.downtime
 
-method repairRewardPercentage*(
-    marketplace: MockMarketplace
-): Future[uint8] {.async: (raises: [CancelledError, MarketplaceError]).} =
+method repairRewardPercentage*(marketplace: MockMarketplace): uint8 =
   return marketplace.config.collateral.repairRewardPercentage
 
 method getPointer*(
@@ -624,20 +611,16 @@ method slotCollateral*(
         "Failure calculating the slotCollateral, cannot get the request",
       )
 
-    return marketplace.slotCollateral(request.ask.collateralPerSlot, state)
+    success marketplace.slotCollateral(request.ask.collateralPerSlot, state)
   except MarketplaceError as error:
     error "Error when trying to calculate the slotCollateral", error = error.msg
-    return failure error
+    failure error
 
 method slotCollateral*(
     marketplace: MockMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): ?!UInt256 {.raises: [].} =
+): UInt256 {.raises: [].} =
   if slotState == SlotState.Repair:
-    let repairRewardPercentage =
-      marketplace.config.collateral.repairRewardPercentage.u256
+    let percentage = marketplace.config.collateral.repairRewardPercentage.u256
+    return collateralPerSlot - (collateralPerSlot * percentage).div(100.u256)
 
-    return success (
-      collateralPerSlot - (collateralPerSlot * repairRewardPercentage).div(100.u256)
-    )
-
-  return success collateralPerSlot
+  return collateralPerSlot

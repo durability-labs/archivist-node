@@ -18,8 +18,6 @@ type Validation* = ref object
   marketplace: AbstractMarketplace
   subscriptions: seq[Subscription]
   running: Future[void]
-  periodicity: Periodicity
-  proofTimeout: uint64
   config: ValidationConfig
 
 logScope:
@@ -37,11 +35,13 @@ proc slots*(validation: Validation): seq[SlotId] =
   validation.slots.toSeq
 
 proc getCurrentPeriod(validation: Validation): Period =
-  return validation.periodicity.periodOf(validation.clock.now().Timestamp)
+  let periodicity = validation.marketplace.periodicity
+  return periodicity.periodOf(validation.clock.now().Timestamp)
 
 proc waitUntilNextPeriod(validation: Validation) {.async.} =
   let period = validation.getCurrentPeriod()
-  let periodEnd = validation.periodicity.periodEnd(period)
+  let periodicity = validation.marketplace.periodicity
+  let periodEnd = periodicity.periodEnd(period)
   trace "Waiting until next period", currentPeriod = period
   await validation.clock.waitUntil((periodEnd + 1).toSecondsSince1970)
 
@@ -122,7 +122,7 @@ proc findEpoch(validation: Validation, secondsAgo: uint64): SecondsSince1970 =
 
 proc restoreHistoricalState(validation: Validation) {.async.} =
   trace "Restoring historical state..."
-  let requestDurationLimit = await validation.marketplace.requestDurationLimit
+  let requestDurationLimit = validation.marketplace.requestDurationLimit
   let startTimeEpoch = validation.findEpoch(secondsAgo = requestDurationLimit)
   let slotFilledEvents =
     await validation.marketplace.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
@@ -142,8 +142,6 @@ proc start*(
   try:
     trace "Starting validator",
       groups = validation.config.groups, groupIndex = validation.config.groupIndex
-    validation.periodicity = await validation.marketplace.periodicity()
-    validation.proofTimeout = await validation.marketplace.proofTimeout()
     await validation.subscribeSlotFilled()
     await validation.restoreHistoricalState()
     validation.running = validation.run()
