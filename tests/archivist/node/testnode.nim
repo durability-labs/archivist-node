@@ -215,7 +215,7 @@ asyncchecksuite "Test Node - Basic":
   test "Setup purchase request - Protected manifest":
     let
       erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+        Erasure.new(localStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
       manifest = await storeDataGetManifest(localStore, chunker)
       protected = (await erasure.encode(manifest, 3, 2)).tryGet()
       protectedManifestBlock =
@@ -248,7 +248,7 @@ asyncchecksuite "Test Node - Basic":
   test "Setup purchase request - Verifiable manifest":
     let
       erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+        Erasure.new(localStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
       manifest = await storeDataGetManifest(localStore, chunker)
       protected = (await erasure.encode(manifest, 3, 2)).tryGet()
       builder = Poseidon2Builder.new(localStore, protected).tryGet()
@@ -278,7 +278,7 @@ asyncchecksuite "Test Node - Basic":
   test "Setup purchase request - Verifiable manifest fails when ec params mismatch":
     let
       erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+        Erasure.new(localStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
       manifest = await storeDataGetManifest(localStore, chunker)
       protected = (await erasure.encode(manifest, 3, 2)).tryGet()
       builder = Poseidon2Builder.new(localStore, protected).tryGet()
