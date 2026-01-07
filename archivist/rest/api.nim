@@ -229,7 +229,7 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
     let contentDisposition = request.headers.getString(ContentDispositionHeader)
     let path = getFilenameFromContentDisposition(contentDisposition)
 
-    if path.isSome and not isValidFilename(path.get()):
+    if path.isSome and not isValidVirtualPath(path.get()):
       return RestApiResponse.error(Http422, "The filename/path is not valid.")
 
     # Here we could check if the extension matches the filename if needed
