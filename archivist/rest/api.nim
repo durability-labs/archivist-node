@@ -36,6 +36,7 @@ import ../manifest
 import ../streams/asyncstreamwrapper
 import ../stores
 import ../marketplace
+import ../utils/fileutils
 
 import ./coders
 import ./json
@@ -256,6 +257,82 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       return RestApiResponse.error(Http500)
     finally:
       await reader.closeWait()
+
+  router.api(MethodOptions, "/api/archivist/v1/directory") do(
+    resp: HttpResponseRef
+  ) -> RestApiResponse:
+    if corsOrigin =? allowedOrigin:
+      resp.setCorsHeaders("POST", corsOrigin)
+      resp.setHeader("Access-Control-Allow-Headers", "content-type")
+
+    resp.status = Http204
+    await resp.sendBody("")
+
+  router.rawApi(MethodPost, "/api/archivist/v1/directory") do() -> RestApiResponse:
+    ## Create a directory manifest from existing file manifests
+    ##
+    ## Request body (JSON):
+    ## {
+    ##   "name": "MyDirectory",
+    ##   "entries": {
+    ##     "photos/img1.jpg": "bafy...",
+    ##     "docs/readme.md": "bafz..."
+    ##   }
+    ## }
+    ##
+    ## Response: { "cid": "bafk...", "totalSize": 12345, "fileCount": 2, "protected": false }
+    ##
+
+    trace "Handling directory creation"
+
+    var headers = buildCorsHeaders("POST", allowedOrigin)
+
+    var bodyReader = request.getBodyReader()
+    if bodyReader.isErr():
+      return RestApiResponse.error(Http500, msg = bodyReader.error(), headers = headers)
+
+    let reader = bodyReader.get()
+    var body: seq[byte]
+    try:
+      body = await reader.read()
+    except CatchableError as exc:
+      return RestApiResponse.error(Http500, exc.msg, headers = headers)
+    finally:
+      await reader.closeWait()
+
+    without dirRequest =? RestDirectoryRequest.fromJson(body), err:
+      return RestApiResponse.error(Http400, err.msg, headers = headers)
+
+    if dirRequest.name.len == 0:
+      return RestApiResponse.error(Http400, "Directory name cannot be empty", headers = headers)
+
+    if dirRequest.entries.len == 0:
+      return RestApiResponse.error(Http400, "Directory must have at least one entry", headers = headers)
+
+    # Convert string CIDs to Cid objects
+    var entryCids: seq[Cid]
+    for i, cidStr in dirRequest.entries:
+      let cidResult = Cid.init(cidStr)
+      if cidResult.isErr:
+        return RestApiResponse.error(Http400, "Invalid CID at index " & $i & ": " & $cidResult.error, headers = headers)
+      entryCids.add(cidResult.get)
+
+    without dirCid =? await node.storeDirectory(dirRequest.name, entryCids), err:
+      return RestApiResponse.error(Http500, err.msg, headers = headers)
+
+    # Get the created manifest to return details
+    without manifest =? await node.fetchManifest(dirCid), err:
+      return RestApiResponse.error(Http500, "Failed to fetch created directory: " & err.msg, headers = headers)
+
+    let response = RestDirectoryResponse.init(
+      cid = dirCid,
+      totalSize = manifest.datasetSize,
+      fileCount = manifest.fileCount,
+      protected = manifest.protected,
+    )
+
+    trace "Created directory", cid = dirCid, name = dirRequest.name, fileCount = entryCids.len
+    return RestApiResponse.response($(%response), contentType = "application/json", headers = headers)
 
   router.api(MethodGet, "/api/archivist/v1/data") do() -> RestApiResponse:
     let json = await formatManifestBlocks(node)

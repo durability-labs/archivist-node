@@ -13,6 +13,7 @@ import std/options
 import std/sequtils
 import std/strformat
 import std/sugar
+import std/tables
 import times
 
 import pkg/taskpools
@@ -49,6 +50,7 @@ import ./logutils
 import ./utils/asynciter
 import ./utils/trackedfutures
 import ./utils/poseidon2digest
+import ./utils/fileutils
 
 export logutils
 
@@ -498,6 +500,76 @@ proc store*(
     datasetSize = manifest.datasetSize,
     path = manifest.path,
     mimetype = manifest.mimetype
+
+  return manifestBlk.cid.success
+
+proc storeDirectory*(
+    self: ArchivistNodeRef,
+    name: string,
+    entryCids: seq[Cid],
+): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+  ## Create and store a directory manifest from existing file manifests.
+  ## All entry CIDs must exist in the store and be valid manifests.
+  ## Paths are extracted from each manifest's `path` field.
+  ## If a manifest has no path, its CID string is used as the filename.
+  ## Returns the CID of the directory manifest.
+  ##
+
+  if entryCids.len == 0:
+    return failure("Directory must have at least one entry")
+
+  # Fetch all manifests, extract paths, and build entries table
+  var entries: OrderedTable[string, Cid]
+  var totalSize: NBytes = 0.NBytes
+  var firstManifest: Manifest
+
+  for i, cid in entryCids:
+    without manifest =? await self.fetchManifest(cid), err:
+      return failure("Entry CID '" & $cid & "' not found or invalid: " & err.msg)
+
+    if i == 0:
+      firstManifest = manifest
+
+    # Extract path from manifest, or use CID string if no path
+    let path = if manifest.path.isSome and manifest.path.get.len > 0:
+      manifest.path.get
+    else:
+      $cid
+
+    # Validate the path
+    if not isValidVirtualPath(path):
+      return failure("Invalid path in manifest: " & path)
+
+    # Check for duplicate paths
+    if path in entries:
+      return failure("Duplicate path: " & path)
+
+    entries[path] = cid
+
+    # Accumulate the original dataset size (not protected size)
+    if manifest.protected:
+      totalSize = totalSize + manifest.originalDatasetSize
+    else:
+      totalSize = totalSize + manifest.datasetSize
+
+  # Create the directory manifest
+  let dirManifest = Manifest.new(
+    treeCid = firstManifest.treeCid, # Placeholder - directory doesn't have its own tree
+    blockSize = firstManifest.blockSize, # Use first entry's block size
+    datasetSize = totalSize,
+    name = name,
+    entries = entries,
+  )
+
+  without manifestBlk =? await self.storeManifest(dirManifest), err:
+    error "Unable to store directory manifest"
+    return failure(err)
+
+  info "Stored directory",
+    manifestCid = manifestBlk.cid,
+    name = name,
+    fileCount = entries.len,
+    totalSize = totalSize
 
   return manifestBlk.cid.success
 

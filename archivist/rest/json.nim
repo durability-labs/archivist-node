@@ -1,7 +1,7 @@
 import std/tables
 from std/json import
-  parseJson, JsonParsingError, hasKey, `[]`, `[]=`, kind, JString, JObject, getStr, pairs,
-  newJObject, newJString, newJInt, newJBool, newJArray, add
+  parseJson, JsonParsingError, hasKey, `[]`, `[]=`, kind, JString, JObject, JArray, getStr, pairs,
+  newJObject, newJString, newJInt, newJBool, newJArray, add, items, len
 
 import pkg/questionable
 import pkg/stew/byteutils
@@ -79,8 +79,8 @@ type
   RestDirectoryRequest* = object
     ## Request body for POST /api/archivist/v1/directory
     name* {.serialize.}: string
-    entries* {.serialize.}: OrderedTable[string, string]
-      # path -> CID string mapping
+    entries* {.serialize.}: seq[string]
+      # List of CID strings - paths are extracted from each manifest
 
   RestDirectoryResponse* = object
     ## Response body for directory creation
@@ -265,14 +265,16 @@ proc fromJson*(
       return failure("Field 'name' must be a string")
 
     let entriesNode = json["entries"]
-    if entriesNode.kind != JObject:
-      return failure("Field 'entries' must be an object")
+    if entriesNode.kind != JArray:
+      return failure("Field 'entries' must be an array of CID strings")
 
-    var entries: OrderedTable[string, string]
-    for path, cidNode in entriesNode.pairs:
+    var entries: seq[string]
+    var i = 0
+    for cidNode in entriesNode.items:
       if cidNode.kind != JString:
-        return failure("Entry value for path '" & path & "' must be a string CID")
-      entries[path] = cidNode.getStr()
+        return failure("Entry at index " & $i & " must be a string CID")
+      entries.add(cidNode.getStr())
+      inc i
 
     success RestDirectoryRequest(name: nameNode.getStr(), entries: entries)
   except JsonParsingError as e:
