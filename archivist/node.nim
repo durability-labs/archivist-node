@@ -51,6 +51,7 @@ import ./utils/asynciter
 import ./utils/trackedfutures
 import ./utils/poseidon2digest
 import ./utils/fileutils
+import ./utils/manifest as manifestutils
 
 export logutils
 
@@ -105,57 +106,25 @@ func `marketplace=`*(self: ArchivistNodeRef, marketplace: MarketplaceNode) =
 proc storeManifest*(
     self: ArchivistNodeRef, manifest: Manifest
 ): Future[?!bt.Block] {.async: (raises: [CancelledError]).} =
-  without encodedVerifiable =? manifest.encode(), err:
-    trace "Unable to encode manifest"
-    return failure(err)
-
-  without blk =? bt.Block.new(data = encodedVerifiable, codec = ManifestCodec), error:
-    trace "Unable to create block from manifest"
-    return failure(error)
-
-  if err =? (await self.networkStore.putBlock(blk)).errorOption:
-    trace "Unable to store manifest block", cid = blk.cid, err = err.msg
-    return failure(err)
-
-  success blk
+  ## Store a manifest to the network store
+  ##
+  await manifestutils.storeManifest(self.networkStore, manifest)
 
 proc fetchManifest*(
     self: ArchivistNodeRef, cid: Cid
 ): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
   ## Fetch and decode a manifest block
   ##
-
-  if err =? cid.isManifest.errorOption:
-    return failure "CID has invalid content type for manifest {$cid}"
-
-  trace "Retrieving manifest for cid", cid
-
-  without blk =? await self.networkStore.getBlock(BlockAddress.init(cid)), err:
-    trace "Error retrieve manifest block", cid, err = err.msg
-    return failure err
-
-  trace "Decoding manifest for cid", cid
-
-  without manifest =? Manifest.decode(blk), err:
-    trace "Unable to decode as manifest", err = err.msg
-    return failure("Unable to decode as manifest")
-
-  trace "Decoded manifest", cid
-
-  return manifest.success
+  await manifestutils.fetchManifest(self.networkStore, cid)
 
 proc fetchManifest*(
     self: ArchivistNodeRef, cid: Cid, expiry: SecondsSince1970
 ): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
-  without manifest =? await self.fetchManifest(cid), error:
-    trace "Unable to fetch manifest for cid", cid
-    return failure(error)
-
-  if err =? (await self.networkStore.ensureExpiry(cid, expiry)).errorOption:
-    error "Failed to update manifest block expiry", cid, expiry
-    return failure(err)
-
-  return success(manifest)
+  ## Fetch manifest and update its expiry
+  ##
+  let manifest = ?await self.fetchManifest(cid)
+  ?await self.networkStore.ensureExpiry(cid, expiry)
+  success(manifest)
 
 proc findPeer*(self: ArchivistNodeRef, peerId: PeerId): Future[?PeerRecord] {.async.} =
   ## Find peer using the discovery service from the given ArchivistNode

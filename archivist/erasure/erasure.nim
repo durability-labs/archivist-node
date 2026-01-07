@@ -9,7 +9,7 @@
 
 {.push raises: [].}
 
-import std/[sugar, atomics, sequtils]
+import std/[sugar, atomics, sequtils, strformat, tables]
 
 import pkg/chronos
 import pkg/chronos/threadsync
@@ -25,6 +25,7 @@ import ../stores
 import ../blocktype as bt
 import ../utils
 import ../utils/asynciter
+import ../utils/manifest as manifestutils
 import ../indexingstrategy
 import ../errors
 
@@ -445,14 +446,87 @@ proc encode*(
   ## `blocks`     - the number of blocks to be encoded - K
   ## `parity`     - the number of parity blocks to generate - M
   ##
+  ## For directory manifests, each entry is encoded recursively
+  ## and the directory merkletree is built from the protected
+  ## file manifest CIDs.
+  ##
 
-  without params =? EncodingParams.init(manifest, blocks.int, parity.int, strategy), err:
-    return failure(err)
+  # Reject already-protected manifests to avoid double-encoding
+  if manifest.protected:
+    return failure(
+      &"Cannot encode an already-protected manifest (K={manifest.ecK}, M={manifest.ecM}). " &
+      "To re-encode with different parameters, use the original unprotected manifest."
+    )
 
-  without encodedManifest =? await self.encodeData(manifest, params), err:
-    return failure(err)
+  # Handle directory manifests by encoding each entry recursively
+  if manifest.isDirectory:
+    trace "Encoding directory manifest", name = manifest.name, entries = manifest.entries.len
 
-  return success encodedManifest
+    var
+      protectedEntries: OrderedTable[string, Cid]
+      protectedCids: seq[Cid]
+      totalDatasetSize: NBytes = 0.NBytes
+
+    for path, entryCid in manifest.entries.pairs:
+      # Fetch the entry manifest
+      let entryManifest = ?await manifestutils.fetchManifest(self.store, entryCid)
+
+      # Check if already protected
+      let protectedManifest =
+        if entryManifest.protected:
+          if entryManifest.ecK == blocks.int and entryManifest.ecM == parity.int:
+            trace "Entry already protected with matching params", path
+            entryManifest
+          else:
+            return failure(
+              &"Directory entry '{path}' is already protected with different EC params " &
+              &"(has K={entryManifest.ecK}, M={entryManifest.ecM}, requested K={blocks}, M={parity}). " &
+              &"To include this file, either use matching EC params (K={entryManifest.ecK}, " &
+              &"M={entryManifest.ecM}) or use the original unprotected file."
+            )
+        else:
+          # Encode unprotected manifest
+          trace "Encoding entry", path, isDirectory = entryManifest.isDirectory
+          ?await self.encode(entryManifest, blocks, parity, strategy)
+
+      # Store the protected manifest and collect CID
+      let protectedBlk = ?await manifestutils.storeManifest(self.store, protectedManifest)
+
+      protectedEntries[path] = protectedBlk.cid
+      protectedCids.add(protectedManifest.treeCid)
+      totalDatasetSize = totalDatasetSize + protectedManifest.datasetSize
+
+    # Build directory merkletree from protected manifest treeCids
+    let tree = ?ArchivistTree.init(protectedCids)
+    let treeCid = ?tree.rootCid
+
+    # Note: We don't store proofs for directory trees because the leaves are
+    # manifest treeCids (computed hashes), not block CIDs. Directory proofs
+    # would need different handling if needed in the future.
+
+    # Create protected directory manifest
+    var encodedManifest = Manifest.new(
+      manifest = manifest,
+      treeCid = treeCid,
+      datasetSize = totalDatasetSize,
+      ecK = blocks.int,
+      ecM = parity.int,
+      strategy = strategy,
+    )
+
+    # Update entries to point to protected manifests
+    encodedManifest.entries = protectedEntries
+
+    trace "Encoded directory successfully",
+      treeCid, entries = protectedEntries.len, totalDatasetSize
+
+    return success(encodedManifest)
+
+  # Handle regular file manifests
+  let params = ?EncodingParams.init(manifest, blocks.int, parity.int, strategy)
+  let encodedManifest = ?await self.encodeData(manifest, params)
+
+  return success(encodedManifest)
 
 proc leopardDecodeTask(tp: Taskpool, task: ptr DecodeTask) {.gcsafe.} =
   # Task suitable for running in taskpools - look, no GC!

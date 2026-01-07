@@ -1,5 +1,6 @@
 import std/sequtils
 import std/sugar
+import std/tables
 
 import pkg/chronos
 import pkg/questionable/results
@@ -11,6 +12,8 @@ import pkg/archivist/blocktype as bt
 import pkg/archivist/rng
 import pkg/archivist/utils
 import pkg/archivist/indexingstrategy
+import pkg/archivist/archivisttypes
+import pkg/archivist/merkletree
 import pkg/taskpools
 
 import ../asynctest
@@ -282,6 +285,19 @@ suite "Erasure encode/decode":
       decoded.treeCid == verifiable.originalTreeCid
       decoded.blocksCount == verifiable.originalBlocksCount
 
+  test "Should reject encoding already-protected manifest":
+    const
+      ecK = 10
+      ecM = 5
+
+    let encoded = (await erasure.encode(manifest, ecK.Natural, ecM.Natural)).tryGet()
+
+    # Trying to encode an already-protected manifest should fail
+    let result = await erasure.encode(encoded, ecK.Natural, ecM.Natural)
+    check result.isErr
+    check "already-protected" in result.error.msg
+    check "original unprotected" in result.error.msg
+
   for i in 1 .. 5:
     test "Should encode/decode using various parameters " & $i & "/5":
       let
@@ -348,3 +364,248 @@ suite "Erasure encode/decode":
       check exc of CancelledError
     finally:
       check recovered[] == cancelledTaskRecovered[]
+
+suite "Erasure encode/decode - Directory manifests":
+  const BlockSize = 1024'nb
+  const FileSize = BlockSize * 10
+
+  var rng: Rng
+  var store: BlockStore
+  var erasure: Erasure
+  let repoTmp = TempLevelDb.new()
+  let metaTmp = TempLevelDb.new()
+  var taskpool: Taskpool
+
+  setup:
+    let
+      repoDs = repoTmp.newDb()
+      metaDs = metaTmp.newDb()
+    rng = Rng.instance()
+    store = RepoStore.new(repoDs, metaDs)
+    taskpool = Taskpool.new()
+    erasure = Erasure.new(store, leoEncoderProvider, leoDecoderProvider, taskpool)
+
+  teardown:
+    await repoTmp.destroyDb()
+    await metaTmp.destroyDb()
+    taskpool.shutdown()
+
+  proc createFileManifest(size: int = FileSize.int): Future[Manifest] {.async.} =
+    ## Helper to create and store a file manifest
+    let chunker = RandomChunker.new(rng, size = size, chunkSize = BlockSize)
+    return await storeDataGetManifest(store, chunker)
+
+  proc storeManifestBlk(manifest: Manifest): Future[Cid] {.async.} =
+    ## Helper to store a manifest and return its CID
+    let encoded = manifest.encode().tryGet()
+    let blk = bt.Block.new(data = encoded, codec = ManifestCodec).tryGet()
+    (await store.putBlock(blk)).tryGet()
+    return blk.cid
+
+  proc fetchManifest(cid: Cid): Future[Manifest] {.async.} =
+    ## Helper to fetch a manifest by CID
+    let blk = (await store.getBlock(cid)).tryGet()
+    return Manifest.decode(blk).tryGet()
+
+  proc createDirectoryManifest(
+      name: string,
+      entries: OrderedTable[string, Cid],
+  ): Future[Manifest] {.async.} =
+    ## Helper to create a directory manifest with a proper treeCid
+    # Build tree from entry CIDs (the manifest CIDs)
+    var entryCids: seq[Cid]
+    for path, cid in entries.pairs:
+      entryCids.add(cid)
+
+    let tree = ArchivistTree.init(entryCids).tryGet()
+    let treeCid = tree.rootCid.tryGet()
+
+    # Note: We don't store proofs here because directory entries are manifest CIDs,
+    # not block CIDs. The directory tree is just used to generate treeCid.
+
+    # Calculate total size from entries
+    var totalSize: NBytes = 0.NBytes
+    for path, cid in entries.pairs:
+      let manifest = await fetchManifest(cid)
+      totalSize = totalSize + manifest.datasetSize
+
+    return Manifest.new(
+      treeCid = treeCid,
+      blockSize = BlockSize,
+      datasetSize = totalSize,
+      name = name,
+      entries = entries,
+    )
+
+  test "Should encode directory with multiple files":
+    const
+      ecK = 3
+      ecM = 2
+
+    # Create file manifests
+    let
+      file1 = await createFileManifest()
+      file2 = await createFileManifest()
+      file3 = await createFileManifest()
+
+    # Store manifests and get CIDs
+    let
+      cid1 = await storeManifestBlk(file1)
+      cid2 = await storeManifestBlk(file2)
+      cid3 = await storeManifestBlk(file3)
+
+    # Create directory manifest
+    var entries: OrderedTable[string, Cid]
+    entries["photos/img1.jpg"] = cid1
+    entries["photos/img2.jpg"] = cid2
+    entries["docs/readme.md"] = cid3
+
+    let dirManifest = await createDirectoryManifest("TestAlbum", entries)
+
+    # Encode directory
+    let encoded = (await erasure.encode(dirManifest, ecK.Natural, ecM.Natural)).tryGet()
+
+    check:
+      encoded.isDirectory == true
+      encoded.protected == true
+      encoded.ecK == ecK
+      encoded.ecM == ecM
+      encoded.entries.len == 3
+
+    # Verify each entry points to a protected manifest
+    for path, entryCid in encoded.entries.pairs:
+      let entryManifest = await fetchManifest(entryCid)
+      check:
+        entryManifest.protected == true
+        entryManifest.ecK == ecK
+        entryManifest.ecM == ecM
+
+  test "Should reuse already protected files with matching params":
+    const
+      ecK = 3
+      ecM = 2
+
+    # Create and encode a file manifest first
+    let originalFile = await createFileManifest()
+    let protectedFile = (await erasure.encode(originalFile, ecK.Natural, ecM.Natural)).tryGet()
+    let protectedCid = await storeManifestBlk(protectedFile)
+
+    # Create directory with the already-protected file
+    var entries: OrderedTable[string, Cid]
+    entries["already_protected.dat"] = protectedCid
+
+    let dirManifest = await createDirectoryManifest("TestDir", entries)
+
+    # Encode directory
+    let encoded = (await erasure.encode(dirManifest, ecK.Natural, ecM.Natural)).tryGet()
+
+    # The entry CID should be the same (reused, not re-encoded)
+    check encoded.entries["already_protected.dat"] == protectedCid
+
+  test "Should reject directory with entries protected using different params":
+    const
+      ecK1 = 3
+      ecM1 = 2
+      ecK2 = 5
+      ecM2 = 3
+
+    # Create and encode a file with certain params
+    let originalFile = await createFileManifest()
+    let protectedFile = (await erasure.encode(originalFile, ecK1.Natural, ecM1.Natural)).tryGet()
+    let protectedCid = await storeManifestBlk(protectedFile)
+
+    # Create directory with the protected file
+    var entries: OrderedTable[string, Cid]
+    entries["file.dat"] = protectedCid
+
+    let dirManifest = await createDirectoryManifest("TestDir", entries)
+
+    # Trying to encode directory with different params should fail
+    let result = await erasure.encode(dirManifest, ecK2.Natural, ecM2.Natural)
+    check result.isErr
+    check "different EC params" in result.error.msg
+    check "original unprotected" in result.error.msg
+
+  test "Should encode single file directory":
+    const
+      ecK = 3
+      ecM = 2
+
+    let file1 = await createFileManifest()
+    let cid1 = await storeManifestBlk(file1)
+
+    var entries: OrderedTable[string, Cid]
+    entries["single.txt"] = cid1
+
+    let dirManifest = await createDirectoryManifest("SingleFileDir", entries)
+
+    let encoded = (await erasure.encode(dirManifest, ecK.Natural, ecM.Natural)).tryGet()
+
+    check:
+      encoded.isDirectory == true
+      encoded.protected == true
+      encoded.entries.len == 1
+
+  test "Directory encoding preserves entry order":
+    const
+      ecK = 3
+      ecM = 2
+
+    let
+      file1 = await createFileManifest()
+      file2 = await createFileManifest()
+      file3 = await createFileManifest()
+
+    let
+      cid1 = await storeManifestBlk(file1)
+      cid2 = await storeManifestBlk(file2)
+      cid3 = await storeManifestBlk(file3)
+
+    # Create entries in specific order
+    var entries: OrderedTable[string, Cid]
+    entries["z_last.txt"] = cid1
+    entries["a_first.txt"] = cid2
+    entries["m_middle.txt"] = cid3
+
+    let dirManifest = await createDirectoryManifest("OrderedDir", entries)
+
+    let encoded = (await erasure.encode(dirManifest, ecK.Natural, ecM.Natural)).tryGet()
+
+    # Verify order is preserved
+    var keys: seq[string]
+    for key in encoded.entries.keys:
+      keys.add(key)
+
+    check:
+      keys[0] == "z_last.txt"
+      keys[1] == "a_first.txt"
+      keys[2] == "m_middle.txt"
+
+  test "Directory encoding aggregates total dataset size":
+    const
+      ecK = 3
+      ecM = 2
+
+    let
+      file1 = await createFileManifest(FileSize.int)
+      file2 = await createFileManifest(FileSize.int * 2)
+
+    let
+      cid1 = await storeManifestBlk(file1)
+      cid2 = await storeManifestBlk(file2)
+
+    var entries: OrderedTable[string, Cid]
+    entries["small.dat"] = cid1
+    entries["large.dat"] = cid2
+
+    let dirManifest = await createDirectoryManifest("SizeTestDir", entries)
+
+    let encoded = (await erasure.encode(dirManifest, ecK.Natural, ecM.Natural)).tryGet()
+
+    # Get the protected file sizes
+    var totalExpectedSize: NBytes = 0.NBytes
+    for path, entryCid in encoded.entries.pairs:
+      let entryManifest = await fetchManifest(entryCid)
+      totalExpectedSize = totalExpectedSize + entryManifest.datasetSize
+
+    check encoded.datasetSize == totalExpectedSize

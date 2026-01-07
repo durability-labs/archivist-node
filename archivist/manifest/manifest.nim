@@ -150,6 +150,9 @@ func name*(self: Manifest): string =
 func entries*(self: Manifest): OrderedTable[string, Cid] =
   self.entries
 
+func `entries=`*(self: Manifest, entries: OrderedTable[string, Cid]) =
+  self.entries = entries
+
 func fileCount*(self: Manifest): int =
   ## Returns the number of files in a directory manifest
   if self.isDirectory:
