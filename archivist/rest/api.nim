@@ -352,8 +352,8 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
   ) -> RestApiResponse:
     var headers = buildCorsHeaders("GET", allowedOrigin)
 
-    ## Download a file from the local node in a streaming
-    ## manner
+    ## Download a file from the local node in a streaming manner,
+    ## or return JSON listing if CID is a directory manifest
     if cid.isErr:
       return RestApiResponse.error(Http400, $cid.error(), headers = headers)
 
@@ -361,7 +361,20 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       resp.setCorsHeaders("GET", corsOrigin)
       resp.setHeader("Access-Control-Headers", "X-Requested-With")
 
-    await node.retrieveCid(cid.get(), local = true, resp = resp)
+    # Check if this is a manifest CID
+    let cidVal = cid.get()
+    let isManifestResult = cidVal.isManifest
+    if isManifestResult.isOk and isManifestResult.get:
+      without manifest =? (await node.fetchManifest(cidVal)), err:
+        return RestApiResponse.error(Http404, err.msg, headers = headers)
+
+      # If it's a directory, return JSON listing
+      if manifest.isDirectory:
+        let listing = RestDirectoryListing.init(cidVal, manifest)
+        return RestApiResponse.response($(%listing), contentType = "application/json", headers = headers)
+
+    # Otherwise stream the file content
+    await node.retrieveCid(cidVal, local = true, resp = resp)
 
   router.api(MethodDelete, "/api/archivist/v1/data/{cid}") do(
     cid: Cid, resp: HttpResponseRef
