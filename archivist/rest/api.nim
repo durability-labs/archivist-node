@@ -13,6 +13,7 @@ import std/sequtils
 import std/mimetypes
 import std/os
 import std/tables
+import std/strutils
 
 import pkg/questionable
 import pkg/questionable/results
@@ -69,11 +70,84 @@ proc isPending(resp: HttpResponseRef): bool =
   ## sendBody(resp: HttpResponseRef, ...) twice, which is illegal.
   return resp.getResponseState() == HttpResponseState.Empty
 
+type
+  ByteRange* = object
+    ## Represents a byte range from an HTTP Range header
+    start*: int
+    finish*: int # -1 means "to end of file"
+
+proc parseRangeHeader*(rangeHeader: string, fileSize: int): ?ByteRange =
+  ## Parse HTTP Range header (e.g., "bytes=0-499", "bytes=500-", "bytes=-500")
+  ## Returns none if invalid or unsupported format
+  ## Only supports single ranges (not multiple ranges)
+  ##
+  if not rangeHeader.startsWith("bytes="):
+    return ByteRange.none
+
+  let rangeSpec = rangeHeader[6..^1] # Remove "bytes=" prefix
+
+  # Check for multiple ranges (not supported)
+  if ',' in rangeSpec:
+    return ByteRange.none
+
+  let parts = rangeSpec.split('-')
+  if parts.len != 2:
+    return ByteRange.none
+
+  let startStr = parts[0].strip()
+  let endStr = parts[1].strip()
+
+  var start, finish: int
+
+  if startStr.len == 0:
+    # Suffix range: "-500" means last 500 bytes
+    if endStr.len == 0:
+      return ByteRange.none
+    try:
+      let suffixLen = parseInt(endStr)
+      if suffixLen <= 0 or suffixLen > fileSize:
+        return ByteRange.none
+      start = fileSize - suffixLen
+      finish = fileSize - 1
+    except ValueError:
+      return ByteRange.none
+  else:
+    # Normal range: "0-499" or "500-"
+    try:
+      start = parseInt(startStr)
+    except ValueError:
+      return ByteRange.none
+
+    if start >= fileSize:
+      return ByteRange.none
+
+    if endStr.len == 0:
+      # Open-ended range: "500-" means from 500 to end
+      finish = fileSize - 1
+    else:
+      try:
+        finish = parseInt(endStr)
+      except ValueError:
+        return ByteRange.none
+
+      # Clamp to file size
+      if finish >= fileSize:
+        finish = fileSize - 1
+
+    if start > finish:
+      return ByteRange.none
+
+  return ByteRange(start: start, finish: finish).some
+
 proc retrieveCid(
-    node: ArchivistNodeRef, cid: Cid, local: bool = true, resp: HttpResponseRef
+    node: ArchivistNodeRef,
+    cid: Cid,
+    local: bool = true,
+    resp: HttpResponseRef,
+    byteRange: Option[ByteRange] = ByteRange.none,
 ): Future[void] {.async: (raises: [CancelledError, HttpWriteError]).} =
-  ## Download a file from the node in a streaming
-  ## manner
+  ## Download a file from the node in a streaming manner
+  ## Supports HTTP Range requests for partial content
   ##
 
   var lpStream: LPStream
@@ -121,15 +195,43 @@ proc retrieveCid(
     # For erasure-coded datasets, we need to return the _original_ length; i.e.,
     # the length of the non-erasure-coded dataset, as that's what we will be
     # returning to the client.
-    let contentLength =
-      if manifest.protected: manifest.originalDatasetSize else: manifest.datasetSize
-    resp.setHeader("Content-Length", $(contentLength.int))
+    let totalSize =
+      if manifest.protected: manifest.originalDatasetSize.int
+      else: manifest.datasetSize.int
+
+    # Always advertise that we accept range requests
+    resp.setHeader("Accept-Ranges", "bytes")
+
+    # Handle range request if present
+    var startPos = 0
+    var endPos = totalSize - 1
+    var contentLength = totalSize
+
+    if range =? byteRange:
+      startPos = range.start
+      endPos = range.finish
+      contentLength = endPos - startPos + 1
+
+      # Set partial content status and Content-Range header
+      resp.status = Http206
+      resp.setHeader(
+        "Content-Range", "bytes " & $startPos & "-" & $endPos & "/" & $totalSize
+      )
+
+      # Seek to the start position
+      stream.setPos(startPos)
+    else:
+      resp.status = Http200
+
+    resp.setHeader("Content-Length", $contentLength)
 
     await resp.prepare(HttpResponseStreamType.Plain)
 
-    while not stream.atEof:
+    var remaining = contentLength
+    while not stream.atEof and remaining > 0:
       var
-        buff = newSeqUninitialized[byte](DefaultBlockSize.int)
+        toRead = min(remaining, DefaultBlockSize.int)
+        buff = newSeqUninitialized[byte](toRead)
         len = await stream.readOnce(addr buff[0], buff.len)
 
       buff.setLen(len)
@@ -137,6 +239,7 @@ proc retrieveCid(
         break
 
       bytes += buff.len
+      remaining -= buff.len
 
       await resp.send(addr buff[0], buff.len)
     await resp.finish()
@@ -149,7 +252,7 @@ proc retrieveCid(
     if resp.isPending():
       await resp.sendBody(exc.msg)
   finally:
-    info "Sent bytes", cid = cid, bytes
+    info "Sent bytes", cid = cid, bytes, range = byteRange
     if not lpStream.isNil:
       await lpStream.close()
 
@@ -361,19 +464,21 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
     resp.status = Http204
     await resp.sendBody("")
 
-  router.api(MethodGet, "/api/archivist/v1/data/{cid}") do(
-    cid: Cid, resp: HttpResponseRef
+  router.rawApi(MethodGet, "/api/archivist/v1/data/{cid}") do(
+    cid: Cid
   ) -> RestApiResponse:
     var headers = buildCorsHeaders("GET", allowedOrigin)
 
     ## Download a file from the local node in a streaming manner,
-    ## or return JSON listing if CID is a directory manifest
+    ## or return JSON listing if CID is a directory manifest.
+    ## Supports HTTP Range requests for partial content retrieval.
     if cid.isErr:
       return RestApiResponse.error(Http400, $cid.error(), headers = headers)
 
     if corsOrigin =? allowedOrigin:
-      resp.setCorsHeaders("GET", corsOrigin)
-      resp.setHeader("Access-Control-Headers", "X-Requested-With")
+      response.setCorsHeaders("GET", corsOrigin)
+      response.setHeader("Access-Control-Headers", "X-Requested-With, Range")
+      response.setHeader("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges")
 
     # Check if this is a manifest CID
     let cidVal = cid.get()
@@ -382,15 +487,32 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       without manifest =? (await node.fetchManifest(cidVal)), err:
         return RestApiResponse.error(Http404, err.msg, headers = headers)
 
-      # If it's a directory, return JSON listing
+      # If it's a directory, return JSON listing (no range support for directories)
       if manifest.isDirectory:
         let listing = RestDirectoryListing.init(cidVal, manifest)
         return RestApiResponse.response(
           $(%listing), contentType = "application/json", headers = headers
         )
 
-    # Otherwise stream the file content
-    await node.retrieveCid(cidVal, local = true, resp = resp)
+      # Parse Range header if present
+      let rangeHeader = request.headers.getString("Range")
+      var byteRange: Option[ByteRange] = ByteRange.none
+
+      if rangeHeader.len > 0:
+        let totalSize =
+          if manifest.protected: manifest.originalDatasetSize.int
+          else: manifest.datasetSize.int
+        byteRange = parseRangeHeader(rangeHeader, totalSize)
+        # If range is invalid, return 416 Range Not Satisfiable
+        if byteRange.isNone:
+          response.setHeader("Content-Range", "bytes */" & $totalSize)
+          return RestApiResponse.error(Http416, "Range Not Satisfiable", headers = headers)
+
+      # Stream the file content with optional range
+      await node.retrieveCid(cidVal, local = true, resp = response, byteRange = byteRange)
+    else:
+      # Not a manifest, just retrieve the raw block
+      await node.retrieveCid(cidVal, local = true, resp = response)
 
   router.api(MethodDelete, "/api/archivist/v1/data/{cid}") do(
     cid: Cid, resp: HttpResponseRef
@@ -434,11 +556,11 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
     let json = %formatManifest(cid.get(), manifest)
     return RestApiResponse.response($json, contentType = "application/json")
 
-  router.api(MethodGet, "/api/archivist/v1/data/{cid}/network/stream") do(
-    cid: Cid, resp: HttpResponseRef
+  router.rawApi(MethodGet, "/api/archivist/v1/data/{cid}/network/stream") do(
+    cid: Cid
   ) -> RestApiResponse:
-    ## Download a file from the network in a streaming
-    ## manner
+    ## Download a file from the network in a streaming manner.
+    ## Supports HTTP Range requests for partial content retrieval.
     ##
 
     var headers = buildCorsHeaders("GET", allowedOrigin)
@@ -447,11 +569,29 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       return RestApiResponse.error(Http400, $cid.error(), headers = headers)
 
     if corsOrigin =? allowedOrigin:
-      resp.setCorsHeaders("GET", corsOrigin)
-      resp.setHeader("Access-Control-Headers", "X-Requested-With")
+      response.setCorsHeaders("GET", corsOrigin)
+      response.setHeader("Access-Control-Headers", "X-Requested-With, Range")
+      response.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Range, Accept-Ranges")
 
-    resp.setHeader("Access-Control-Expose-Headers", "Content-Disposition")
-    await node.retrieveCid(cid.get(), local = false, resp = resp)
+    # Parse Range header if present
+    let rangeHeader = request.headers.getString("Range")
+    var byteRange: Option[ByteRange] = ByteRange.none
+
+    if rangeHeader.len > 0:
+      # Need to fetch manifest to know file size for range validation
+      without manifest =? (await node.fetchManifest(cid.get())), err:
+        return RestApiResponse.error(Http404, err.msg, headers = headers)
+
+      let totalSize =
+        if manifest.protected: manifest.originalDatasetSize.int
+        else: manifest.datasetSize.int
+      byteRange = parseRangeHeader(rangeHeader, totalSize)
+      # If range is invalid, return 416 Range Not Satisfiable
+      if byteRange.isNone:
+        response.setHeader("Content-Range", "bytes */" & $totalSize)
+        return RestApiResponse.error(Http416, "Range Not Satisfiable", headers = headers)
+
+    await node.retrieveCid(cid.get(), local = false, resp = response, byteRange = byteRange)
 
   router.api(MethodGet, "/api/archivist/v1/data/{cid}/network/manifest") do(
     cid: Cid, resp: HttpResponseRef
