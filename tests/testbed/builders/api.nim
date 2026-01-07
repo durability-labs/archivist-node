@@ -146,3 +146,24 @@ proc delete*(builder: ApiBuilder, cid: string) {.async.} =
 
 proc setLogLevel*(builder: ApiBuilder, level: string) {.async.} =
   await Http.post(builder.url & "/debug/chronicles/loglevel?level=" & level).close()
+
+proc createDirectory*(
+    builder: RawBuilder, name: string, entries: seq[string]
+): Future[HttpResponse] {.async.} =
+  let body = %*{"name": name, "entries": entries}
+  await Http.post(builder.url & "/directory", body)
+
+proc createDirectory*(
+    builder: ApiBuilder, name: string, entries: seq[string]
+): Future[JsonNode] {.async.} =
+  await builder.raw.createDirectory(name, entries).readJson()
+
+proc getDirectoryListing*(
+    builder: RawBuilder, cid: string
+): Future[HttpResponse] {.async.} =
+  await Http.get(builder.url & "/data/" & cid)
+
+proc getDirectoryListing*(
+    builder: ApiBuilder, cid: string
+): Future[JsonNode] {.async.} =
+  await builder.raw.getDirectoryListing(cid).readJson()

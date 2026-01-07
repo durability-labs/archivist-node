@@ -130,6 +130,8 @@ export api.downloadManifest
 export api.downloadInBackground
 export api.delete
 export api.setLogLevel
+export api.createDirectory
+export api.getDirectoryListing
 
 import ./testbed/network/node
 

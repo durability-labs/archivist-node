@@ -274,11 +274,11 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
     ## Request body (JSON):
     ## {
     ##   "name": "MyDirectory",
-    ##   "entries": {
-    ##     "photos/img1.jpg": "bafy...",
-    ##     "docs/readme.md": "bafz..."
-    ##   }
+    ##   "entries": ["bafy...", "bafz..."]
     ## }
+    ##
+    ## Paths are extracted from each manifest's `path` field.
+    ## If a manifest has no path, its CID string is used as filename.
     ##
     ## Response: { "cid": "bafk...", "totalSize": 12345, "fileCount": 2, "protected": false }
     ##
