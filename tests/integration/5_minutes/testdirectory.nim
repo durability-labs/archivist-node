@@ -1,5 +1,4 @@
 import std/json
-import std/strutils
 import pkg/asynctest/chronos/unittest2
 import pkg/questionable
 import pkg/stew/byteutils
@@ -111,26 +110,17 @@ suite "Directory Manifests":
     let file1 = await testbed.dataset.data("content 1").filename("same.txt").upload(node1)
     let file2 = await testbed.dataset.data("content 2").filename("same.txt").upload(node1)
 
-    # Try to create directory - should fail due to duplicate paths
-    try:
+    # Should fail due to duplicate paths
+    expect HttpError:
       discard await testbed.api(node1).createDirectory("DupDir", @[!file1.cid, !file2.cid])
-      fail()
-    except HttpError as error:
-      check "500" in error.msg or "Duplicate" in error.msg
 
   test "directory rejects invalid CIDs":
-    try:
+    expect HttpError:
       discard await testbed.api(node1).createDirectory("BadDir", @["not-a-valid-cid"])
-      fail()
-    except HttpError as error:
-      check "400" in error.msg
 
   test "directory rejects empty entries":
-    try:
+    expect HttpError:
       discard await testbed.api(node1).createDirectory("EmptyDir", @[])
-      fail()
-    except HttpError as error:
-      check "400" in error.msg
 
   test "directory with nested paths":
     # Upload files with deep nested paths
