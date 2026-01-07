@@ -227,8 +227,17 @@ proc decode*(_: type Manifest, data: openArray[byte]): ?!Manifest =
   var pathOption = if path.len == 0: string.none else: path.some
   var mimetypeOption = if mimetype.len == 0: string.none else: mimetype.some
 
-  # Check if this is a directory manifest (has entries or directoryName)
-  let isDirectory = entryBuffers.len > 0 or directoryName.len > 0
+  # Directory validation: both name AND entries must be present (or neither)
+  let hasName = directoryName.len > 0
+  let hasEntries = entryBuffers.len > 0
+
+  if hasName and not hasEntries:
+    return failure("Directory manifest has name but no entries")
+
+  if hasEntries and not hasName:
+    return failure("Directory manifest has entries but no name")
+
+  let isDirectory = hasName and hasEntries
 
   # Parse directory entries
   var entries: OrderedTable[string, Cid]
