@@ -18,14 +18,22 @@ suite "Directory Manifests":
 
   test "can create directory from uploaded files":
     # Upload files with paths
-    let file1 = await testbed.dataset.data("file 1 content").filename("photos/img1.jpg").upload(node1)
-    let file2 = await testbed.dataset.data("file 2 content").filename("photos/img2.jpg").upload(node1)
-    let file3 = await testbed.dataset.data("readme content").filename("docs/readme.md").upload(node1)
+    let file1 = await testbed.dataset
+    .data("file 1 content")
+    .filename("photos/img1.jpg")
+    .upload(node1)
+    let file2 = await testbed.dataset
+    .data("file 2 content")
+    .filename("photos/img2.jpg")
+    .upload(node1)
+    let file3 = await testbed.dataset
+    .data("readme content")
+    .filename("docs/readme.md")
+    .upload(node1)
 
     # Create directory
     let dirResponse = await testbed.api(node1).createDirectory(
-      "MyAlbum",
-      @[!file1.cid, !file2.cid, !file3.cid]
+      "MyAlbum", @[!file1.cid, !file2.cid, !file3.cid]
     )
 
     check dirResponse{"cid"}.getStr().len > 0
@@ -38,10 +46,8 @@ suite "Directory Manifests":
     let file2 = await testbed.dataset.data("content 2").filename("b.txt").upload(node1)
 
     # Create directory
-    let dirResponse = await testbed.api(node1).createDirectory(
-      "TestDir",
-      @[!file1.cid, !file2.cid]
-    )
+    let dirResponse =
+      await testbed.api(node1).createDirectory("TestDir", @[!file1.cid, !file2.cid])
     let dirCid = dirResponse{"cid"}.getStr()
 
     # Browse directory
@@ -54,14 +60,16 @@ suite "Directory Manifests":
 
   test "directory preserves upload order":
     # Upload files in specific order
-    let file1 = await testbed.dataset.data("z content").filename("z_last.txt").upload(node1)
-    let file2 = await testbed.dataset.data("a content").filename("a_first.txt").upload(node1)
-    let file3 = await testbed.dataset.data("m content").filename("m_middle.txt").upload(node1)
+    let file1 =
+      await testbed.dataset.data("z content").filename("z_last.txt").upload(node1)
+    let file2 =
+      await testbed.dataset.data("a content").filename("a_first.txt").upload(node1)
+    let file3 =
+      await testbed.dataset.data("m content").filename("m_middle.txt").upload(node1)
 
     # Create directory with specific order
     let dirResponse = await testbed.api(node1).createDirectory(
-      "OrderedDir",
-      @[!file1.cid, !file2.cid, !file3.cid]
+      "OrderedDir", @[!file1.cid, !file2.cid, !file3.cid]
     )
     let dirCid = dirResponse{"cid"}.getStr()
 
@@ -80,7 +88,8 @@ suite "Directory Manifests":
   test "can access individual files from directory":
     # Upload file with path
     let fileData = "individual file content"
-    let file1 = await testbed.dataset.data(fileData).filename("folder/file.txt").upload(node1)
+    let file1 =
+      await testbed.dataset.data(fileData).filename("folder/file.txt").upload(node1)
 
     # Create directory
     discard await testbed.api(node1).createDirectory("TestDir", @[!file1.cid])
@@ -92,10 +101,12 @@ suite "Directory Manifests":
   test "file without path uses CID as filename":
     # Upload file without filename header
     let headers = @{"Content-Disposition": "attachment"}
-    let file1 = await testbed.dataset.data("no path content").upload(node1, headers = headers)
+    let file1 =
+      await testbed.dataset.data("no path content").upload(node1, headers = headers)
 
     # Create directory
-    let dirResponse = await testbed.api(node1).createDirectory("NoPathDir", @[!file1.cid])
+    let dirResponse =
+      await testbed.api(node1).createDirectory("NoPathDir", @[!file1.cid])
     let dirCid = dirResponse{"cid"}.getStr()
 
     # Browse directory - file should use CID as path
@@ -107,12 +118,15 @@ suite "Directory Manifests":
 
   test "directory rejects duplicate paths":
     # Upload two files with same path
-    let file1 = await testbed.dataset.data("content 1").filename("same.txt").upload(node1)
-    let file2 = await testbed.dataset.data("content 2").filename("same.txt").upload(node1)
+    let file1 =
+      await testbed.dataset.data("content 1").filename("same.txt").upload(node1)
+    let file2 =
+      await testbed.dataset.data("content 2").filename("same.txt").upload(node1)
 
     # Should fail due to duplicate paths
     expect HttpError:
-      discard await testbed.api(node1).createDirectory("DupDir", @[!file1.cid, !file2.cid])
+      discard
+        await testbed.api(node1).createDirectory("DupDir", @[!file1.cid, !file2.cid])
 
   test "directory rejects invalid CIDs":
     expect HttpError:
@@ -124,7 +138,10 @@ suite "Directory Manifests":
 
   test "directory with nested paths":
     # Upload files with deep nested paths
-    let file1 = await testbed.dataset.data("deep content").filename("a/b/c/d/file.txt").upload(node1)
+    let file1 = await testbed.dataset
+    .data("deep content")
+    .filename("a/b/c/d/file.txt")
+    .upload(node1)
 
     let dirResponse = await testbed.api(node1).createDirectory("DeepDir", @[!file1.cid])
     let dirCid = dirResponse{"cid"}.getStr()
@@ -133,8 +150,10 @@ suite "Directory Manifests":
     check listing{"entries"}{"a/b/c/d/file.txt"}.getStr() == !file1.cid
 
   test "single file directory":
-    let file1 = await testbed.dataset.data("single file").filename("only.txt").upload(node1)
+    let file1 =
+      await testbed.dataset.data("single file").filename("only.txt").upload(node1)
 
-    let dirResponse = await testbed.api(node1).createDirectory("SingleDir", @[!file1.cid])
+    let dirResponse =
+      await testbed.api(node1).createDirectory("SingleDir", @[!file1.cid])
 
     check dirResponse{"fileCount"}.getInt() == 1

@@ -408,8 +408,7 @@ suite "Erasure encode/decode - Directory manifests":
     return Manifest.decode(blk).tryGet()
 
   proc createDirectoryManifest(
-      name: string,
-      entries: OrderedTable[string, Cid],
+      name: string, entries: OrderedTable[string, Cid]
   ): Future[Manifest] {.async.} =
     ## Helper to create a directory manifest with a proper treeCid
     # Build tree from entry CIDs (the manifest CIDs)
@@ -487,7 +486,8 @@ suite "Erasure encode/decode - Directory manifests":
 
     # Create and encode a file manifest first
     let originalFile = await createFileManifest()
-    let protectedFile = (await erasure.encode(originalFile, ecK.Natural, ecM.Natural)).tryGet()
+    let protectedFile =
+      (await erasure.encode(originalFile, ecK.Natural, ecM.Natural)).tryGet()
     let protectedCid = await storeManifestBlk(protectedFile)
 
     # Create directory with the already-protected file
@@ -511,7 +511,8 @@ suite "Erasure encode/decode - Directory manifests":
 
     # Create and encode a file with certain params
     let originalFile = await createFileManifest()
-    let protectedFile = (await erasure.encode(originalFile, ecK1.Natural, ecM1.Natural)).tryGet()
+    let protectedFile =
+      (await erasure.encode(originalFile, ecK1.Natural, ecM1.Natural)).tryGet()
     let protectedCid = await storeManifestBlk(protectedFile)
 
     # Create directory with the protected file

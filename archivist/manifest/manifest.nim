@@ -155,10 +155,7 @@ func `entries=`*(self: Manifest, entries: OrderedTable[string, Cid]) =
 
 func fileCount*(self: Manifest): int =
   ## Returns the number of files in a directory manifest
-  if self.isDirectory:
-    self.entries.len
-  else:
-    0
+  if self.isDirectory: self.entries.len else: 0
 
 ############################################################
 # Operations on block list
@@ -239,8 +236,8 @@ func `$`*(self: Manifest): string =
   result =
     "treeCid: " & $self.treeCid & ", datasetSize: " & $self.datasetSize & ", blockSize: " &
     $self.blockSize & ", version: " & $self.version & ", hcodec: " & $self.hcodec &
-    ", codec: " & $self.codec & ", protected: " & $self.protected &
-    ", isDirectory: " & $self.isDirectory
+    ", codec: " & $self.codec & ", protected: " & $self.protected & ", isDirectory: " &
+    $self.isDirectory
 
   if self.path.isSome:
     result &= ", path: " & $self.path

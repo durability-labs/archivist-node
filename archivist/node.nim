@@ -473,9 +473,7 @@ proc store*(
   return manifestBlk.cid.success
 
 proc storeDirectory*(
-    self: ArchivistNodeRef,
-    name: string,
-    entryCids: seq[Cid],
+    self: ArchivistNodeRef, name: string, entryCids: seq[Cid]
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
   ## Create and store a directory manifest from existing file manifests.
   ## All entry CIDs must exist in the store and be valid manifests.
@@ -500,10 +498,11 @@ proc storeDirectory*(
       firstManifest = manifest
 
     # Extract path from manifest, or use CID string if no path
-    let path = if manifest.path.isSome and manifest.path.get.len > 0:
-      manifest.path.get
-    else:
-      $cid
+    let path =
+      if manifest.path.isSome and manifest.path.get.len > 0:
+        manifest.path.get
+      else:
+        $cid
 
     # Validate the path
     if not isValidVirtualPath(path):

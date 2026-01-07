@@ -1,7 +1,7 @@
 import std/tables
 from std/json import
-  parseJson, JsonParsingError, hasKey, `[]`, `[]=`, kind, JString, JObject, JArray, getStr, pairs,
-  newJObject, newJString, newJInt, newJBool, newJArray, add, items, len
+  parseJson, JsonParsingError, hasKey, `[]`, `[]=`, kind, JString, JObject, JArray,
+  getStr, pairs, newJObject, newJString, newJInt, newJBool, newJArray, add, items, len
 
 import pkg/questionable
 import pkg/stew/byteutils
@@ -76,14 +76,12 @@ type
     quotaUsedBytes* {.serialize.}: NBytes
     quotaReservedBytes* {.serialize.}: NBytes
 
-  RestDirectoryRequest* = object
-    ## Request body for POST /api/archivist/v1/directory
+  RestDirectoryRequest* = object ## Request body for POST /api/archivist/v1/directory
     name* {.serialize.}: string
     entries* {.serialize.}: seq[string]
       # List of CID strings - paths are extracted from each manifest
 
-  RestDirectoryResponse* = object
-    ## Response body for directory creation
+  RestDirectoryResponse* = object ## Response body for directory creation
     cid* {.serialize.}: string
     totalSize* {.serialize.}: uint64
     fileCount* {.serialize.}: int
@@ -96,8 +94,7 @@ type
     totalSize* {.serialize.}: uint64
     fileCount* {.serialize.}: int
     protected* {.serialize.}: bool
-    entries* {.serialize.}: OrderedTable[string, string]
-      # path -> CID string mapping
+    entries* {.serialize.}: OrderedTable[string, string] # path -> CID string mapping
 
 proc init*(_: type RestContentList, content: seq[RestContent]): RestContentList =
   RestContentList(content: content)
@@ -198,16 +195,11 @@ proc init*(
     protected: bool,
 ): RestDirectoryResponse =
   RestDirectoryResponse(
-    cid: $cid,
-    totalSize: totalSize.uint64,
-    fileCount: fileCount,
-    protected: protected,
+    cid: $cid, totalSize: totalSize.uint64, fileCount: fileCount, protected: protected
   )
 
 proc init*(
-    _: type RestDirectoryListing,
-    cid: Cid,
-    manifest: Manifest,
+    _: type RestDirectoryListing, cid: Cid, manifest: Manifest
 ): RestDirectoryListing =
   var entries: OrderedTable[string, string]
   if manifest.isDirectory:
@@ -247,9 +239,7 @@ proc `%`*(obj: RestDirectoryListing): JsonNode =
 
   return jsonObj
 
-proc fromJson*(
-    _: type RestDirectoryRequest, bytes: seq[byte]
-): ?!RestDirectoryRequest =
+proc fromJson*(_: type RestDirectoryRequest, bytes: seq[byte]): ?!RestDirectoryRequest =
   ## Parse a RestDirectoryRequest from JSON bytes
   try:
     let json = parseJson(string.fromBytes(bytes))

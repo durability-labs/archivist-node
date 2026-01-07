@@ -455,12 +455,13 @@ proc encode*(
   if manifest.protected:
     return failure(
       &"Cannot encode an already-protected manifest (K={manifest.ecK}, M={manifest.ecM}). " &
-      "To re-encode with different parameters, use the original unprotected manifest."
+        "To re-encode with different parameters, use the original unprotected manifest."
     )
 
   # Handle directory manifests by encoding each entry recursively
   if manifest.isDirectory:
-    trace "Encoding directory manifest", name = manifest.name, entries = manifest.entries.len
+    trace "Encoding directory manifest",
+      name = manifest.name, entries = manifest.entries.len
 
     var
       protectedEntries: OrderedTable[string, Cid]
@@ -480,9 +481,9 @@ proc encode*(
           else:
             return failure(
               &"Directory entry '{path}' is already protected with different EC params " &
-              &"(has K={entryManifest.ecK}, M={entryManifest.ecM}, requested K={blocks}, M={parity}). " &
-              &"To include this file, either use matching EC params (K={entryManifest.ecK}, " &
-              &"M={entryManifest.ecM}) or use the original unprotected file."
+                &"(has K={entryManifest.ecK}, M={entryManifest.ecM}, requested K={blocks}, M={parity}). " &
+                &"To include this file, either use matching EC params (K={entryManifest.ecK}, " &
+                &"M={entryManifest.ecM}) or use the original unprotected file."
             )
         else:
           # Encode unprotected manifest
@@ -490,7 +491,8 @@ proc encode*(
           ?await self.encode(entryManifest, blocks, parity, strategy)
 
       # Store the protected manifest and collect CID
-      let protectedBlk = ?await manifestutils.storeManifest(self.store, protectedManifest)
+      let protectedBlk =
+        ?await manifestutils.storeManifest(self.store, protectedManifest)
 
       protectedEntries[path] = protectedBlk.cid
       protectedCids.add(protectedManifest.treeCid)

@@ -417,11 +417,8 @@ suite "Manifest - Directory Support":
       path = "readme.txt".some,
     )
 
-    let noPath = Manifest.new(
-      treeCid = Cid.example,
-      blockSize = 1.MiBs,
-      datasetSize = 5.MiBs,
-    )
+    let noPath =
+      Manifest.new(treeCid = Cid.example, blockSize = 1.MiBs, datasetSize = 5.MiBs)
 
     check:
       withPath.filename.isSome == true
@@ -450,9 +447,7 @@ suite "Manifest - Directory Support":
 
 suite "Directory Decoder Validation":
   # Helper to create raw protobuf for testing decoder validation
-  proc makeRawManifest(
-      withName: bool, withEntries: bool
-  ): seq[byte] =
+  proc makeRawManifest(withName: bool, withEntries: bool): seq[byte] =
     # Create a basic manifest with optional directory fields
     var header = initProtoBuffer()
     let treeCidBytes = Cid.example.data.buffer

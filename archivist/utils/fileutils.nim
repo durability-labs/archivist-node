@@ -22,8 +22,7 @@ export logutils
 const
   MaxPathDepth* = 20
     ## Maximum allowed nesting depth for virtual paths (e.g., a/b/c/d/...)
-  MaxPathLength* = 4096
-    ## Maximum allowed path length in bytes
+  MaxPathLength* = 4096 ## Maximum allowed path length in bytes
 
 proc isValidVirtualPath*(path: string): bool =
   ## Validates a virtual path for use in directory manifests.

@@ -109,11 +109,12 @@ proc retrieveCid(
     if manifest.path.isSome:
       # Extract just the filename from the path for Content-Disposition
       let pathStr = manifest.path.get()
-      let filename = if pathStr.contains('/'): pathStr.rsplit('/')[^1] else: pathStr
-      resp.setHeader(
-        "Content-Disposition",
-        "attachment; filename=\"" & filename & "\"",
-      )
+      let filename =
+        if pathStr.contains('/'):
+          pathStr.rsplit('/')[^1]
+        else:
+          pathStr
+      resp.setHeader("Content-Disposition", "attachment; filename=\"" & filename & "\"")
     else:
       resp.setHeader("Content-Disposition", "attachment")
 
@@ -304,17 +305,25 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       return RestApiResponse.error(Http400, err.msg, headers = headers)
 
     if dirRequest.name.len == 0:
-      return RestApiResponse.error(Http400, "Directory name cannot be empty", headers = headers)
+      return RestApiResponse.error(
+        Http400, "Directory name cannot be empty", headers = headers
+      )
 
     if dirRequest.entries.len == 0:
-      return RestApiResponse.error(Http400, "Directory must have at least one entry", headers = headers)
+      return RestApiResponse.error(
+        Http400, "Directory must have at least one entry", headers = headers
+      )
 
     # Convert string CIDs to Cid objects
     var entryCids: seq[Cid]
     for i, cidStr in dirRequest.entries:
       let cidResult = Cid.init(cidStr)
       if cidResult.isErr:
-        return RestApiResponse.error(Http400, "Invalid CID at index " & $i & ": " & $cidResult.error, headers = headers)
+        return RestApiResponse.error(
+          Http400,
+          "Invalid CID at index " & $i & ": " & $cidResult.error,
+          headers = headers,
+        )
       entryCids.add(cidResult.get)
 
     without dirCid =? await node.storeDirectory(dirRequest.name, entryCids), err:
@@ -322,7 +331,9 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
 
     # Get the created manifest to return details
     without manifest =? await node.fetchManifest(dirCid), err:
-      return RestApiResponse.error(Http500, "Failed to fetch created directory: " & err.msg, headers = headers)
+      return RestApiResponse.error(
+        Http500, "Failed to fetch created directory: " & err.msg, headers = headers
+      )
 
     let response = RestDirectoryResponse.init(
       cid = dirCid,
@@ -331,8 +342,11 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       protected = manifest.protected,
     )
 
-    trace "Created directory", cid = dirCid, name = dirRequest.name, fileCount = entryCids.len
-    return RestApiResponse.response($(%response), contentType = "application/json", headers = headers)
+    trace "Created directory",
+      cid = dirCid, name = dirRequest.name, fileCount = entryCids.len
+    return RestApiResponse.response(
+      $(%response), contentType = "application/json", headers = headers
+    )
 
   router.api(MethodGet, "/api/archivist/v1/data") do() -> RestApiResponse:
     let json = await formatManifestBlocks(node)
@@ -371,7 +385,9 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       # If it's a directory, return JSON listing
       if manifest.isDirectory:
         let listing = RestDirectoryListing.init(cidVal, manifest)
-        return RestApiResponse.response($(%listing), contentType = "application/json", headers = headers)
+        return RestApiResponse.response(
+          $(%listing), contentType = "application/json", headers = headers
+        )
 
     # Otherwise stream the file content
     await node.retrieveCid(cidVal, local = true, resp = resp)
