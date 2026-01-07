@@ -2,6 +2,7 @@ import std/tables
 import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
+import pkg/libp2p
 import pkg/archivist/chunker
 import pkg/archivist/blocktype as bt
 import pkg/archivist/manifest
@@ -401,6 +402,34 @@ suite "Manifest - Directory Support":
       fail()
     check decodedMimetype == "image/jpeg"
 
+  test "filename() should extract filename from path":
+    let withPath = Manifest.new(
+      treeCid = Cid.example,
+      blockSize = 1.MiBs,
+      datasetSize = 5.MiBs,
+      path = "photos/vacation/beach.jpg".some,
+    )
+
+    let simpleFile = Manifest.new(
+      treeCid = Cid.example,
+      blockSize = 1.MiBs,
+      datasetSize = 5.MiBs,
+      path = "readme.txt".some,
+    )
+
+    let noPath = Manifest.new(
+      treeCid = Cid.example,
+      blockSize = 1.MiBs,
+      datasetSize = 5.MiBs,
+    )
+
+    check:
+      withPath.filename.isSome == true
+      withPath.filename.get() == "beach.jpg"
+      simpleFile.filename.isSome == true
+      simpleFile.filename.get() == "readme.txt"
+      noPath.filename.isNone == true
+
   test "Directory manifest string representation includes directory info":
     var entries: OrderedTable[string, Cid]
     entries["test.txt"] = Cid.example
@@ -418,6 +447,72 @@ suite "Manifest - Directory Support":
       "isDirectory: true" in str
       "name: StringTest" in str
       "fileCount: 1" in str
+
+suite "Directory Decoder Validation":
+  # Helper to create raw protobuf for testing decoder validation
+  proc makeRawManifest(
+      withName: bool, withEntries: bool
+  ): seq[byte] =
+    # Create a basic manifest with optional directory fields
+    var header = initProtoBuffer()
+    let treeCidBytes = Cid.example.data.buffer
+
+    header.write(1, treeCidBytes) # treeCid
+    header.write(2, uint32(1024 * 1024)) # blockSize (1 MiB)
+    header.write(3, uint64(5 * 1024 * 1024)) # datasetSize (5 MiB)
+    header.write(4, uint32(multiCodec("raw"))) # codec
+    header.write(5, uint32(Sha256HashCodec)) # hcodec
+    header.write(6, uint32(CIDv1)) # version
+
+    if withName:
+      header.write(10, "TestDirectory") # directoryName
+
+    if withEntries:
+      var entryBuf = initProtoBuffer()
+      entryBuf.write(1, "file.txt") # entry path
+      entryBuf.write(2, treeCidBytes) # entry CID (reuse treeCid for simplicity)
+      entryBuf.finish()
+      header.write(11, entryBuf) # entries
+
+    header.finish()
+
+    var pbNode = initProtoBuffer()
+    pbNode.write(1, header)
+    pbNode.finish()
+
+    return pbNode.buffer
+
+  test "Decoder should fail when directory has name but no entries":
+    let rawData = makeRawManifest(withName = true, withEntries = false)
+    let result = Manifest.decode(rawData)
+
+    check result.isErr
+    check "name but no entries" in result.error.msg
+
+  test "Decoder should fail when directory has entries but no name":
+    let rawData = makeRawManifest(withName = false, withEntries = true)
+    let result = Manifest.decode(rawData)
+
+    check result.isErr
+    check "entries but no name" in result.error.msg
+
+  test "Decoder should succeed when directory has both name and entries":
+    let rawData = makeRawManifest(withName = true, withEntries = true)
+    let result = Manifest.decode(rawData)
+
+    check result.isOk
+    let manifest = result.tryGet()
+    check manifest.isDirectory == true
+    check manifest.name == "TestDirectory"
+    check manifest.entries.len == 1
+
+  test "Decoder should succeed when manifest has neither name nor entries":
+    let rawData = makeRawManifest(withName = false, withEntries = false)
+    let result = Manifest.decode(rawData)
+
+    check result.isOk
+    let manifest = result.tryGet()
+    check manifest.isDirectory == false
 
 suite "Path Validation":
   test "Empty path is valid (file goes in root using CID as name)":

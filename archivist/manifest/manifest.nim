@@ -12,6 +12,7 @@
 {.push raises: [].}
 
 import std/tables
+import std/os
 
 import pkg/libp2p/protobuf/minprotobuf
 import pkg/libp2p/[cid, multihash, multicodec]
@@ -129,6 +130,13 @@ func numSlotBlocks*(self: Manifest): int =
 
 func path*(self: Manifest): ?string =
   self.path
+
+func filename*(self: Manifest): ?string =
+  ## Returns just the filename from the path (without directory components)
+  ## e.g., "photos/vacation/beach.jpg" -> "beach.jpg"
+  if path =? self.path:
+    return path.extractFilename().some
+  string.none
 
 func mimetype*(self: Manifest): ?string =
   self.mimetype
