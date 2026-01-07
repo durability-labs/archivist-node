@@ -546,11 +546,8 @@ proc storeDirectory*(
 
     entries[path] = cid
 
-    # Accumulate the original dataset size (not protected size)
-    if manifest.protected:
-      totalSize = totalSize + manifest.originalDatasetSize
-    else:
-      totalSize = totalSize + manifest.datasetSize
+    # Accumulate the dataset size (actual stored size)
+    totalSize = totalSize + manifest.datasetSize
 
   # Create the directory manifest
   let dirManifest = Manifest.new(
