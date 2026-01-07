@@ -11,6 +11,8 @@
 
 {.push raises: [].}
 
+import std/tables
+
 import pkg/libp2p/protobuf/minprotobuf
 import pkg/libp2p/[cid, multihash, multicodec]
 import pkg/questionable/results
@@ -23,8 +25,6 @@ import ../blocktype
 import ../indexingstrategy
 import ../logutils
 
-# TODO: Manifest should be reworked to more concrete types,
-# perhaps using inheritance
 type Manifest* = ref object of RootObj
   treeCid {.serialize.}: Cid # Root of the merkle tree
   datasetSize {.serialize.}: NBytes # Total size of all blocks
@@ -33,8 +33,14 @@ type Manifest* = ref object of RootObj
   codec: MultiCodec # Dataset codec
   hcodec: MultiCodec # Multihash codec
   version: CidVersion # Cid version
-  filename {.serialize.}: ?string # The filename of the content uploaded (optional)
+  path {.serialize.}: ?string # Virtual path of the file within directory (optional)
   mimetype {.serialize.}: ?string # The mimetype of the content uploaded (optional)
+  case isDirectory* {.serialize.}: bool # Directory manifests contain file entries
+  of true:
+    name {.serialize.}: string # Directory name
+    entries {.serialize.}: OrderedTable[string, Cid] # Path -> Manifest CID mapping
+  else:
+    discard
   case protected {.serialize.}: bool # Protected datasets have erasure coded info
   of true:
     ecK: int # Number of blocks to encode
@@ -121,11 +127,27 @@ func verifiableStrategy*(self: Manifest): StrategyType =
 func numSlotBlocks*(self: Manifest): int =
   divUp(self.blocksCount, self.numSlots)
 
-func filename*(self: Manifest): ?string =
-  self.filename
+func path*(self: Manifest): ?string =
+  self.path
 
 func mimetype*(self: Manifest): ?string =
   self.mimetype
+
+func isDirectory*(self: Manifest): bool =
+  self.isDirectory
+
+func name*(self: Manifest): string =
+  self.name
+
+func entries*(self: Manifest): OrderedTable[string, Cid] =
+  self.entries
+
+func fileCount*(self: Manifest): int =
+  ## Returns the number of files in a directory manifest
+  if self.isDirectory:
+    self.entries.len
+  else:
+    0
 
 ############################################################
 # Operations on block list
@@ -178,8 +200,13 @@ func verify*(self: Manifest): ?!void =
 func `==`*(a, b: Manifest): bool =
   (a.treeCid == b.treeCid) and (a.datasetSize == b.datasetSize) and
     (a.blockSize == b.blockSize) and (a.version == b.version) and (a.hcodec == b.hcodec) and
-    (a.codec == b.codec) and (a.protected == b.protected) and (a.filename == b.filename) and
-    (a.mimetype == b.mimetype) and (
+    (a.codec == b.codec) and (a.protected == b.protected) and (a.path == b.path) and
+    (a.mimetype == b.mimetype) and (a.isDirectory == b.isDirectory) and (
+    if a.isDirectory:
+      (a.name == b.name) and (a.entries == b.entries)
+    else:
+      true
+  ) and (
     if a.protected:
       (a.ecK == b.ecK) and (a.ecM == b.ecM) and (a.originalTreeCid == b.originalTreeCid) and
         (a.originalDatasetSize == b.originalDatasetSize) and
@@ -201,13 +228,17 @@ func `$`*(self: Manifest): string =
   result =
     "treeCid: " & $self.treeCid & ", datasetSize: " & $self.datasetSize & ", blockSize: " &
     $self.blockSize & ", version: " & $self.version & ", hcodec: " & $self.hcodec &
-    ", codec: " & $self.codec & ", protected: " & $self.protected
+    ", codec: " & $self.codec & ", protected: " & $self.protected &
+    ", isDirectory: " & $self.isDirectory
 
-  if self.filename.isSome:
-    result &= ", filename: " & $self.filename
+  if self.path.isSome:
+    result &= ", path: " & $self.path
 
   if self.mimetype.isSome:
     result &= ", mimetype: " & $self.mimetype
+
+  if self.isDirectory:
+    result &= ", name: " & self.name & ", fileCount: " & $self.entries.len
 
   result &= (
     if self.protected:
@@ -238,9 +269,10 @@ func new*(
     hcodec = Sha256HashCodec,
     codec = BlockCodec,
     protected = false,
-    filename: ?string = string.none,
+    path: ?string = string.none,
     mimetype: ?string = string.none,
 ): Manifest =
+  ## Create a new file manifest (non-directory)
   T(
     treeCid: treeCid,
     blockSize: blockSize,
@@ -249,8 +281,9 @@ func new*(
     codec: codec,
     hcodec: hcodec,
     protected: protected,
-    filename: filename,
+    path: path,
     mimetype: mimetype,
+    isDirectory: false,
   )
 
 func new*(
@@ -265,7 +298,7 @@ func new*(
   ## unprotected one
   ##
 
-  Manifest(
+  var self = Manifest(
     treeCid: treeCid,
     datasetSize: datasetSize,
     version: manifest.version,
@@ -278,16 +311,23 @@ func new*(
     originalTreeCid: manifest.treeCid,
     originalDatasetSize: manifest.datasetSize,
     protectedStrategy: strategy,
-    filename: manifest.filename,
+    path: manifest.path,
     mimetype: manifest.mimetype,
+    isDirectory: manifest.isDirectory,
   )
+
+  if manifest.isDirectory:
+    self.name = manifest.name
+    self.entries = manifest.entries
+
+  self
 
 func new*(T: type Manifest, manifest: Manifest): Manifest =
   ## Create an unprotected dataset from an
   ## erasure protected one
   ##
 
-  Manifest(
+  var self = Manifest(
     treeCid: manifest.originalTreeCid,
     datasetSize: manifest.originalDatasetSize,
     version: manifest.version,
@@ -295,9 +335,16 @@ func new*(T: type Manifest, manifest: Manifest): Manifest =
     hcodec: manifest.hcodec,
     blockSize: manifest.blockSize,
     protected: false,
-    filename: manifest.filename,
+    path: manifest.path,
     mimetype: manifest.mimetype,
+    isDirectory: manifest.isDirectory,
   )
+
+  if manifest.isDirectory:
+    self.name = manifest.name
+    self.entries = manifest.entries
+
+  self
 
 func new*(
     T: type Manifest,
@@ -312,9 +359,10 @@ func new*(
     originalTreeCid: Cid,
     originalDatasetSize: NBytes,
     strategy = SteppedStrategy,
-    filename: ?string = string.none,
+    path: ?string = string.none,
     mimetype: ?string = string.none,
 ): Manifest =
+  ## Create a protected file manifest (non-directory)
   Manifest(
     treeCid: treeCid,
     datasetSize: datasetSize,
@@ -328,8 +376,48 @@ func new*(
     originalTreeCid: originalTreeCid,
     originalDatasetSize: originalDatasetSize,
     protectedStrategy: strategy,
-    filename: filename,
+    path: path,
     mimetype: mimetype,
+    isDirectory: false,
+  )
+
+func new*(
+    T: type Manifest,
+    treeCid: Cid,
+    datasetSize: NBytes,
+    blockSize: NBytes,
+    version: CidVersion,
+    hcodec: MultiCodec,
+    codec: MultiCodec,
+    ecK: int,
+    ecM: int,
+    originalTreeCid: Cid,
+    originalDatasetSize: NBytes,
+    name: string,
+    entries: OrderedTable[string, Cid],
+    strategy = SteppedStrategy,
+    path: ?string = string.none,
+    mimetype: ?string = string.none,
+): Manifest =
+  ## Create a protected directory manifest
+  Manifest(
+    treeCid: treeCid,
+    datasetSize: datasetSize,
+    blockSize: blockSize,
+    version: version,
+    hcodec: hcodec,
+    codec: codec,
+    protected: true,
+    ecK: ecK,
+    ecM: ecM,
+    originalTreeCid: originalTreeCid,
+    originalDatasetSize: originalDatasetSize,
+    protectedStrategy: strategy,
+    path: path,
+    mimetype: mimetype,
+    isDirectory: true,
+    name: name,
+    entries: entries,
   )
 
 func new*(
@@ -352,7 +440,7 @@ func new*(
   if slotRoots.len != manifest.numSlots:
     return failure newException(ArchivistError, "Wrong number of slot roots.")
 
-  success Manifest(
+  var self = Manifest(
     treeCid: manifest.treeCid,
     datasetSize: manifest.datasetSize,
     version: manifest.version,
@@ -370,8 +458,42 @@ func new*(
     slotRoots: @slotRoots,
     cellSize: cellSize,
     verifiableStrategy: strategy,
-    filename: manifest.filename,
+    path: manifest.path,
     mimetype: manifest.mimetype,
+    isDirectory: manifest.isDirectory,
+  )
+
+  if manifest.isDirectory:
+    self.name = manifest.name
+    self.entries = manifest.entries
+
+  success self
+
+func new*(
+    T: type Manifest,
+    treeCid: Cid,
+    blockSize: NBytes,
+    datasetSize: NBytes,
+    name: string,
+    entries: OrderedTable[string, Cid],
+    version: CidVersion = CIDv1,
+    hcodec = Sha256HashCodec,
+    codec = BlockCodec,
+): Manifest =
+  ## Create a new directory manifest
+  T(
+    treeCid: treeCid,
+    blockSize: blockSize,
+    datasetSize: datasetSize,
+    version: version,
+    codec: codec,
+    hcodec: hcodec,
+    protected: false,
+    path: string.none,
+    mimetype: string.none,
+    isDirectory: true,
+    name: name,
+    entries: entries,
   )
 
 func new*(T: type Manifest, data: openArray[byte]): ?!Manifest =

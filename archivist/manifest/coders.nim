@@ -50,6 +50,11 @@ proc encode*(manifest: Manifest): ?!seq[byte] =
   #     optional VerificationInformation verification = 5;  # verification information
   #   }
   #
+  #   Message DirectoryEntry {
+  #     string path = 1;                  # File path within directory
+  #     bytes cid = 2;                    # Manifest CID for the file
+  #   }
+  #
   #   Message Header {
   #     optional bytes treeCid = 1;       # cid (root) of the tree
   #     optional uint32 blockSize = 2;    # size of a single block
@@ -58,8 +63,10 @@ proc encode*(manifest: Manifest): ?!seq[byte] =
   #     optional hcodec: MultiCodec = 5   # Multihash codec
   #     optional version: CidVersion = 6; # Cid version
   #     optional ErasureInfo erasure = 7; # erasure coding info
-  #     optional filename: ?string = 8;    # original filename
-  #     optional mimetype: ?string = 9;    # original mimetype
+  #     optional path: ?string = 8;       # virtual path within directory
+  #     optional mimetype: ?string = 9;   # original mimetype
+  #     optional name: string = 10;       # directory name (if isDirectory)
+  #     repeated DirectoryEntry entries = 11; # directory entries (if isDirectory)
   #   }
   # ```
   #
@@ -92,11 +99,21 @@ proc encode*(manifest: Manifest): ?!seq[byte] =
     erasureInfo.finish()
     header.write(7, erasureInfo)
 
-  if manifest.filename.isSome:
-    header.write(8, manifest.filename.get())
+  if manifest.path.isSome:
+    header.write(8, manifest.path.get())
 
   if manifest.mimetype.isSome:
     header.write(9, manifest.mimetype.get())
+
+  # Directory-specific fields
+  if manifest.isDirectory:
+    header.write(10, manifest.name)
+    for path, cid in manifest.entries.pairs:
+      var entryBuf = initProtoBuffer()
+      entryBuf.write(1, path)
+      entryBuf.write(2, cid.data.buffer)
+      entryBuf.finish()
+      header.write(11, entryBuf)
 
   pbNode.write(1, header) # set the treeCid as the data field
   pbNode.finish()
@@ -126,8 +143,10 @@ proc decode*(_: type Manifest, data: openArray[byte]): ?!Manifest =
     slotRoots: seq[seq[byte]]
     cellSize: uint32
     verifiableStrategy: uint32
-    filename: string
+    path: string
     mimetype: string
+    directoryName: string
+    entryBuffers: seq[seq[byte]]
 
   # Decode `Header` message
   if pbNode.getField(1, pbHeader).isErr:
@@ -155,11 +174,18 @@ proc decode*(_: type Manifest, data: openArray[byte]): ?!Manifest =
   if pbHeader.getField(7, pbErasureInfo).isErr:
     return failure("Unable to decode `erasureInfo` from manifest!")
 
-  if pbHeader.getField(8, filename).isErr:
-    return failure("Unable to decode `filename` from manifest!")
+  if pbHeader.getField(8, path).isErr:
+    return failure("Unable to decode `path` from manifest!")
 
   if pbHeader.getField(9, mimetype).isErr:
     return failure("Unable to decode `mimetype` from manifest!")
+
+  # Directory-specific fields
+  if pbHeader.getField(10, directoryName).isErr:
+    return failure("Unable to decode `name` from manifest!")
+
+  if pbHeader.getRepeatedField(11, entryBuffers).isErr:
+    return failure("Unable to decode `entries` from manifest!")
 
   let protected = pbErasureInfo.buffer.len > 0
   var verifiable = false
@@ -198,11 +224,33 @@ proc decode*(_: type Manifest, data: openArray[byte]): ?!Manifest =
 
   let treeCid = ?Cid.init(treeCidBuf).mapFailure
 
-  var filenameOption = if filename.len == 0: string.none else: filename.some
+  var pathOption = if path.len == 0: string.none else: path.some
   var mimetypeOption = if mimetype.len == 0: string.none else: mimetype.some
 
+  # Check if this is a directory manifest (has entries or directoryName)
+  let isDirectory = entryBuffers.len > 0 or directoryName.len > 0
+
+  # Parse directory entries
+  var entries: OrderedTable[string, Cid]
+  if isDirectory:
+    for entryBuf in entryBuffers:
+      var
+        pbEntry = initProtoBuffer(entryBuf)
+        entryPath: string
+        entryCidBuf: seq[byte]
+
+      if pbEntry.getField(1, entryPath).isErr:
+        return failure("Unable to decode entry path from manifest!")
+
+      if pbEntry.getField(2, entryCidBuf).isErr:
+        return failure("Unable to decode entry CID from manifest!")
+
+      let entryCid = ?Cid.init(entryCidBuf).mapFailure
+      entries[entryPath] = entryCid
+
   let self =
-    if protected:
+    if isDirectory and protected:
+      let origTreeCid = ?Cid.init(originalTreeCid).mapFailure
       Manifest.new(
         treeCid = treeCid,
         datasetSize = datasetSize.NBytes,
@@ -212,10 +260,40 @@ proc decode*(_: type Manifest, data: openArray[byte]): ?!Manifest =
         codec = codec.MultiCodec,
         ecK = ecK.int,
         ecM = ecM.int,
-        originalTreeCid = ?Cid.init(originalTreeCid).mapFailure,
+        originalTreeCid = origTreeCid,
         originalDatasetSize = originalDatasetSize.NBytes,
         strategy = StrategyType(protectedStrategy),
-        filename = filenameOption,
+        path = pathOption,
+        mimetype = mimetypeOption,
+        name = directoryName,
+        entries = entries,
+      )
+    elif isDirectory:
+      Manifest.new(
+        treeCid = treeCid,
+        datasetSize = datasetSize.NBytes,
+        blockSize = blockSize.NBytes,
+        name = directoryName,
+        entries = entries,
+        version = CidVersion(version),
+        hcodec = hcodec.MultiCodec,
+        codec = codec.MultiCodec,
+      )
+    elif protected:
+      let origTreeCid = ?Cid.init(originalTreeCid).mapFailure
+      Manifest.new(
+        treeCid = treeCid,
+        datasetSize = datasetSize.NBytes,
+        blockSize = blockSize.NBytes,
+        version = CidVersion(version),
+        hcodec = hcodec.MultiCodec,
+        codec = codec.MultiCodec,
+        ecK = ecK.int,
+        ecM = ecM.int,
+        originalTreeCid = origTreeCid,
+        originalDatasetSize = originalDatasetSize.NBytes,
+        strategy = StrategyType(protectedStrategy),
+        path = pathOption,
         mimetype = mimetypeOption,
       )
     else:
@@ -226,7 +304,7 @@ proc decode*(_: type Manifest, data: openArray[byte]): ?!Manifest =
         version = CidVersion(version),
         hcodec = hcodec.MultiCodec,
         codec = codec.MultiCodec,
-        filename = filenameOption,
+        path = pathOption,
         mimetype = mimetypeOption,
       )
 

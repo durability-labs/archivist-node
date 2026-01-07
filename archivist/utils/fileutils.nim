@@ -19,6 +19,78 @@ import ../logutils
 export io2
 export logutils
 
+const
+  MaxPathDepth* = 20
+    ## Maximum allowed nesting depth for virtual paths (e.g., a/b/c/d/...)
+  MaxPathLength* = 4096
+    ## Maximum allowed path length in bytes
+
+proc isValidVirtualPath*(path: string): bool =
+  ## Validates a virtual path for use in directory manifests.
+  ## 
+  ## Validation rules:
+  ## - No null bytes (injection prevention)
+  ## - No ".." segments (directory traversal)
+  ## - No leading "/" (path must be relative)
+  ## - No backslash characters (prevent Windows path injection)
+  ## - Path length must not exceed MaxPathLength
+  ## - Path depth must not exceed MaxPathDepth levels
+  ## 
+  ## Empty paths are valid (used for root-level files that will use CID as name).
+  ##
+  ## Examples:
+  ##   isValidVirtualPath("file.txt") == true
+  ##   isValidVirtualPath("photos/2024/img.jpg") == true
+  ##   isValidVirtualPath("../etc/passwd") == false
+  ##   isValidVirtualPath("/absolute/path") == false
+  ##   isValidVirtualPath("path\\with\\backslash") == false
+
+  # Empty path is valid - file goes in root directory using CID as name
+  if path.len == 0:
+    return true
+
+  # Check path length
+  if path.len > MaxPathLength:
+    return false
+
+  # No null bytes
+  if '\0' in path:
+    return false
+
+  # No backslash characters
+  if '\\' in path:
+    return false
+
+  # No leading slash (path must be relative)
+  if path.startsWith("/"):
+    return false
+
+  # No trailing slash
+  if path.endsWith("/"):
+    return false
+
+  # Check for ".." segments and count depth
+  let segments = path.split('/')
+  var depth = 0
+  for segment in segments:
+    # No empty segments (would mean consecutive slashes like "a//b")
+    if segment.len == 0:
+      return false
+
+    # No ".." segments (directory traversal)
+    if segment == "..":
+      return false
+
+    # Count non-"." segments for depth
+    if segment != ".":
+      inc depth
+
+  # Check depth limit
+  if depth > MaxPathDepth:
+    return false
+
+  return true
+
 when defined(windows):
   import stew/windows/acl
 

@@ -12,6 +12,7 @@
 import std/sequtils
 import std/mimetypes
 import std/os
+import std/tables
 
 import pkg/questionable
 import pkg/questionable/results
@@ -104,10 +105,13 @@ proc retrieveCid(
     else:
       resp.addHeader("Content-Type", "application/octet-stream")
 
-    if manifest.filename.isSome:
+    if manifest.path.isSome:
+      # Extract just the filename from the path for Content-Disposition
+      let pathStr = manifest.path.get()
+      let filename = if pathStr.contains('/'): pathStr.rsplit('/')[^1] else: pathStr
       resp.setHeader(
         "Content-Disposition",
-        "attachment; filename=\"" & manifest.filename.get() & "\"",
+        "attachment; filename=\"" & filename & "\"",
       )
     else:
       resp.setHeader("Content-Disposition", "attachment")
@@ -221,10 +225,10 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
 
     const ContentDispositionHeader = "Content-Disposition"
     let contentDisposition = request.headers.getString(ContentDispositionHeader)
-    let filename = getFilenameFromContentDisposition(contentDisposition)
+    let path = getFilenameFromContentDisposition(contentDisposition)
 
-    if filename.isSome and not isValidFilename(filename.get()):
-      return RestApiResponse.error(Http422, "The filename is not valid.")
+    if path.isSome and not isValidFilename(path.get()):
+      return RestApiResponse.error(Http422, "The filename/path is not valid.")
 
     # Here we could check if the extension matches the filename if needed
 
@@ -234,7 +238,7 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       without cid =? (
         await node.store(
           AsyncStreamWrapper.new(reader = AsyncStreamReader(reader)),
-          filename = filename,
+          path = path,
           mimetype = mimetype,
         )
       ), error:

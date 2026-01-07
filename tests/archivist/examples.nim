@@ -57,7 +57,7 @@ proc example*(_: type Manifest): Manifest =
     treeCid = Cid.example,
     blockSize = 256.NBytes,
     datasetSize = 4096.NBytes,
-    filename = "example.txt".some,
+    path = "example.txt".some,
     mimetype = "text/plain".some,
   )
 

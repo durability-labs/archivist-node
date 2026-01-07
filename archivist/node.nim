@@ -423,7 +423,7 @@ proc delete*(
 proc store*(
     self: ArchivistNodeRef,
     stream: LPStream,
-    filename: ?string = string.none,
+    path: ?string = string.none,
     mimetype: ?string = string.none,
     blockSize = DefaultBlockSize,
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
@@ -483,7 +483,7 @@ proc store*(
     version = CIDv1,
     hcodec = hcodec,
     codec = dataCodec,
-    filename = filename,
+    path = path,
     mimetype = mimetype,
   )
 
@@ -496,7 +496,7 @@ proc store*(
     treeCid = treeCid,
     blocks = manifest.blocksCount,
     datasetSize = manifest.datasetSize,
-    filename = manifest.filename,
+    path = manifest.path,
     mimetype = manifest.mimetype
 
   return manifestBlk.cid.success
