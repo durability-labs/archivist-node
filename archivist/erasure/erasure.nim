@@ -105,15 +105,24 @@ type
     blockSize: int
     signal: ThreadSignalPtr
 
-func indexToPos(steps, idx, step: int): int {.inline.} =
-  ## Convert an index to a position in the encoded
-  ##  dataset
-  ## `idx`  - the index to convert
-  ## `step` - the current step
-  ## `pos`  - the position in the encoded dataset
+func indexToPos(strategy: StrategyType, steps, idx, step, ecK: int): int {.inline.} =
+  ## Convert an index to a position in the encoded dataset
+  ## `strategy` - the indexing strategy (Linear or Stepped)
+  ## `steps`    - total number of encoding steps
+  ## `idx`      - the index to convert
+  ## `step`     - the current step
+  ## `ecK`      - number of data blocks per encoding group
+  ## Returns: position in the data array (0 to ecK-1)
   ##
-
-  (idx - step) div steps
+  case strategy
+  of LinearStrategy:
+    # For LinearStrategy, each step covers a contiguous range of K blocks
+    # Step 0: indices 0..K-1, Step 1: indices K..2K-1, etc.
+    idx - step * ecK
+  of SteppedStrategy:
+    # For SteppedStrategy, each step covers interleaved blocks
+    # Step 0: indices 0, steps, 2*steps, etc.
+    (idx - step) div steps
 
 proc getPendingBlocks(
     self: Erasure, manifest: Manifest, indices: seq[int]
@@ -178,14 +187,14 @@ proc prepareEncodingData(
       warn "Failed retrieving a block", treeCid = manifest.treeCid, idx, msg = err.msg
       return failure(err)
 
-    let pos = indexToPos(params.steps, idx, step)
+    let pos = indexToPos(params.strategy, params.steps, idx, step, params.ecK)
     data[pos] = if blk.isEmpty: emptyBlock else: blk.data
     cids[idx] = blk.cid
 
     resolved.inc()
 
   for idx in indices.filterIt(it >= manifest.blocksCount):
-    let pos = indexToPos(params.steps, idx, step)
+    let pos = indexToPos(params.strategy, params.steps, idx, step, params.ecK)
     trace "Padding with empty block", idx
     data[pos] = emptyBlock
     without emptyBlockCid =? emptyCid(manifest.version, manifest.hcodec, manifest.codec),
@@ -235,7 +244,7 @@ proc prepareDecodingData(
       trace "Failed retrieving a block", idx, treeCid = encoded.treeCid, msg = err.msg
       continue
 
-    let pos = indexToPos(encoded.steps, idx, step)
+    let pos = indexToPos(encoded.protectedStrategy, encoded.steps, idx, step, encoded.ecK)
 
     logScope:
       cid = blk.cid
@@ -459,9 +468,11 @@ proc encode*(
     )
 
   # Handle directory manifests by encoding each entry recursively
+  # Directories use LinearStrategy to keep files contiguous
   if manifest.isDirectory:
+    let dirStrategy = LinearStrategy
     trace "Encoding directory manifest",
-      name = manifest.name, entries = manifest.entries.len
+      name = manifest.name, entries = manifest.entries.len, strategy = dirStrategy
 
     var
       protectedEntries: OrderedTable[string, Cid]
@@ -486,9 +497,9 @@ proc encode*(
                 &"M={entryManifest.ecM}) or use the original unprotected file."
             )
         else:
-          # Encode unprotected manifest
+          # Encode unprotected manifest with same LinearStrategy
           trace "Encoding entry", path, isDirectory = entryManifest.isDirectory
-          ?await self.encode(entryManifest, blocks, parity, strategy)
+          ?await self.encode(entryManifest, blocks, parity, dirStrategy)
 
       # Store the protected manifest and collect CID
       let protectedBlk =
@@ -506,14 +517,14 @@ proc encode*(
     # manifest treeCids (computed hashes), not block CIDs. Directory proofs
     # would need different handling if needed in the future.
 
-    # Create protected directory manifest
+    # Create protected directory manifest with LinearStrategy
     var encodedManifest = Manifest.new(
       manifest = manifest,
       treeCid = treeCid,
       datasetSize = totalDatasetSize,
       ecK = blocks.int,
       ecM = parity.int,
-      strategy = strategy,
+      strategy = dirStrategy,
     )
 
     # Update entries to point to protected manifests

@@ -124,3 +124,13 @@ func init*(
     groupCount: groupCount,
     padBlockCount: padBlockCount,
   )
+
+func opposite*(strategy: StrategyType): StrategyType =
+  ## Returns the opposite strategy type.
+  ## Used for slot construction which should use the opposite strategy
+  ## from erasure coding.
+  case strategy
+  of LinearStrategy:
+    SteppedStrategy
+  of SteppedStrategy:
+    LinearStrategy

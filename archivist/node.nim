@@ -599,7 +599,9 @@ proc setupRequest(
     )
 
     encoded = ?await erasure.encode(manifest, ecK, ecM)
-    builder = ?Poseidon2Builder.new(self.networkStore.localStore, encoded)
+    # Slot construction uses opposite strategy from erasure coding
+    slotStrategy = encoded.protectedStrategy.opposite
+    builder = ?Poseidon2Builder.new(self.networkStore.localStore, encoded, slotStrategy)
     verifiable = ?await builder.buildManifest()
     manifestBlk = ?await self.storeManifest(verifiable)
 
