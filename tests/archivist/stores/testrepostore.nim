@@ -9,7 +9,6 @@ import pkg/chronos
 import pkg/stew/byteutils
 import pkg/datastore
 
-import pkg/archivist/stores/cachestore
 import pkg/archivist/chunker
 import pkg/archivist/stores
 import pkg/archivist/stores/repostore/operations
@@ -185,21 +184,11 @@ asyncchecksuite "RepoStore":
         res.add(be)
     res
 
-  test "Should store block expiration timestamp":
-    let
-      duration = 10.seconds
-      blk = createTestBlock(100)
+  # NOTE: Tests for ensureExpiry and putBlock with ttl parameter removed
+  # Expiry management has moved to overlay level (DatasetManager)
+  # See design doc v3.8 Section 12 "Overlay Lifecycle & Maintenance"
 
-    let expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-
-    (await repo.putBlock(blk, duration.some)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-  test "Should store block with default expiration timestamp when not provided":
+  test "Should store block with default expiration timestamp":
     let blk = createTestBlock(100)
 
     let expectedExpiration =
@@ -212,78 +201,10 @@ asyncchecksuite "RepoStore":
     check:
       expectedExpiration in expirations
 
-  test "Should refuse update expiry with negative timestamp":
-    let
-      blk = createTestBlock(100)
-      expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-
-    (await repo.putBlock(blk, some 10.seconds)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-    expect ValueError:
-      (await repo.ensureExpiry(blk.cid, -1)).tryGet
-
-    expect ValueError:
-      (await repo.ensureExpiry(blk.cid, 0)).tryGet
-
-  test "Should fail when updating expiry of non-existing block":
+  test "delBlock should remove expiration metadata":
     let blk = createTestBlock(100)
 
-    expect BlockNotFoundError:
-      (await repo.ensureExpiry(blk.cid, 10)).tryGet
-
-  test "Should update block expiration timestamp when new expiration is farther":
-    let
-      blk = createTestBlock(100)
-      expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-      updatedExpectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 20)
-
-    (await repo.putBlock(blk, some 10.seconds)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-    (await repo.ensureExpiry(blk.cid, now + 20)).tryGet
-
-    let updatedExpirations = await getExpirations()
-
-    check:
-      expectedExpiration notin updatedExpirations
-      updatedExpectedExpiration in updatedExpirations
-
-  test "Should not update block expiration timestamp when current expiration is farther then new one":
-    let
-      blk = createTestBlock(100)
-      expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-      updatedExpectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 5)
-
-    (await repo.putBlock(blk, some 10.seconds)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-    (await repo.ensureExpiry(blk.cid, now + 5)).tryGet
-
-    let updatedExpirations = await getExpirations()
-
-    check:
-      expectedExpiration in updatedExpirations
-      updatedExpectedExpiration notin updatedExpirations
-
-  test "delBlock should remove expiration metadata":
-    let
-      blk = createTestBlock(100)
-      expectedKey = Key.init("meta/ttl/" & $blk.cid).tryGet
-
-    (await repo.putBlock(blk, 10.seconds.some)).tryGet
+    (await repo.putBlock(blk)).tryGet
     (await repo.delBlock(blk.cid)).tryGet
 
     let expirations = await getExpirations()
@@ -304,21 +225,20 @@ asyncchecksuite "RepoStore":
       return expirations
 
     let
-      duration = 10.seconds
       blk1 = createTestBlock(10)
       blk2 = createTestBlock(11)
       blk3 = createTestBlock(12)
 
-    let expectedExpiration: SecondsSince1970 = now + 10
+    let expectedExpiration: SecondsSince1970 = now + DefaultBlockTtl.seconds
 
     proc assertExpiration(be: BlockExpiration, expectedBlock: bt.Block) =
       check:
         be.cid == expectedBlock.cid
         be.expiry == expectedExpiration
 
-    (await repo.putBlock(blk1, duration.some)).tryGet
-    (await repo.putBlock(blk2, duration.some)).tryGet
-    (await repo.putBlock(blk3, duration.some)).tryGet
+    (await repo.putBlock(blk1)).tryGet
+    (await repo.putBlock(blk2)).tryGet
+    (await repo.putBlock(blk3)).tryGet
 
     let
       blockExpirations1 =

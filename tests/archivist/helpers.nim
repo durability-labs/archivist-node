@@ -15,10 +15,13 @@ import ./helpers/nodeutils
 import ./helpers/randomchunker
 import ./helpers/mockchunker
 import ./helpers/mockdiscovery
+import ./helpers/mockblockstore
 import ./helpers/always
 import ../checktest
 
-export randomchunker, nodeutils, mockdiscovery, mockchunker, always, checktest, manifest
+export
+  randomchunker, nodeutils, mockdiscovery, mockchunker, mockblockstore, always,
+  checktest, manifest
 
 export libp2p except setup, eventually
 

@@ -33,7 +33,7 @@ asyncchecksuite "StoreStream":
     await stream.close()
 
   setup:
-    store = CacheStore.new()
+    store = MockBlockStore.new()
     manifest = await storeDataGetManifest(
       store, MockChunker.new(dataset = data, chunkSize = chunkSize)
     )
@@ -105,7 +105,7 @@ suite "StoreStream - Size Tests":
       treeCid = Cid.example, datasetSize = 80.NBytes, blockSize = 10.NBytes
     )
 
-    stream = StoreStream.new(CacheStore.new(), manifest)
+    stream = StoreStream.new(MockBlockStore.new(), manifest)
 
     check stream.size == 80
 
@@ -124,6 +124,6 @@ suite "StoreStream - Size Tests":
       strategy = StrategyType.SteppedStrategy,
     )
 
-    stream = StoreStream.new(CacheStore.new(), protectedManifest)
+    stream = StoreStream.new(MockBlockStore.new(), protectedManifest)
 
     check stream.size == 80

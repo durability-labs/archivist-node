@@ -18,6 +18,7 @@ import pkg/archivist/utils/asyncheapqueue
 
 import ../../../asynctest
 import ../../helpers
+import ../../helpers/mockblockstore
 import ../../examples
 
 const NopSendWantCancellationsProc = proc(
@@ -72,7 +73,7 @@ asyncchecksuite "NetworkStore engine basic":
 
     let
       network = BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
-      localStore = CacheStore.new(blocks.mapIt(it))
+      localStore = MockBlockStore.new(blocks.mapIt(it))
       discovery = DiscoveryEngine.new(
         localStore, peerStore, network, blockDiscovery, pendingBlocks
       )
@@ -99,7 +100,7 @@ asyncchecksuite "NetworkStore engine basic":
     let
       network = BlockExcNetwork(request: BlockExcRequest(sendAccount: sendAccount))
 
-      localStore = CacheStore.new()
+      localStore = MockBlockStore.new()
       discovery = DiscoveryEngine.new(
         localStore, peerStore, network, blockDiscovery, pendingBlocks
       )
@@ -151,7 +152,7 @@ asyncchecksuite "NetworkStore engine handlers":
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
-    localStore = CacheStore.new()
+    localStore = MockBlockStore.new()
     network = BlockExcNetwork()
 
     discovery =
@@ -397,7 +398,7 @@ asyncchecksuite "Block Download":
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
-    localStore = CacheStore.new()
+    localStore = MockBlockStore.new()
     network = BlockExcNetwork()
 
     discovery =
@@ -557,7 +558,7 @@ asyncchecksuite "Task Handler":
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
-    localStore = CacheStore.new()
+    localStore = MockBlockStore.new()
     network = BlockExcNetwork()
 
     discovery =

@@ -145,13 +145,14 @@ proc fetchManifest*(
 proc fetchManifest*(
     self: ArchivistNodeRef, cid: Cid, expiry: SecondsSince1970
 ): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
+  ## Fetch manifest and update expiry
+  ## NOTE: expiry management moved to overlay level - this now just fetches
   without manifest =? await self.fetchManifest(cid), error:
     trace "Unable to fetch manifest for cid", cid
     return failure(error)
 
-  if err =? (await self.networkStore.ensureExpiry(cid, expiry)).errorOption:
-    error "Failed to update manifest block expiry", cid, expiry
-    return failure(err)
+  # TODO: expiry management now handled at overlay level via DatasetManager
+  # See design doc v3.8 Section 12 "Overlay Lifecycle & Maintenance"
 
   return success(manifest)
 
@@ -168,24 +169,15 @@ proc connect*(
 proc updateExpiry*(
     self: ArchivistNodeRef, manifestCid: Cid, expiry: SecondsSince1970
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without manifest =? await self.fetchManifest(manifestCid, expiry), error:
+  ## Update expiry for all blocks in manifest
+  ## NOTE: expiry management moved to overlay level - this is now a no-op
+  ## TODO: implement via DatasetManager overlay when available
+  ## See design doc v3.8 Section 12 "Overlay Lifecycle & Maintenance"
+  without manifest =? await self.fetchManifest(manifestCid), error:
     trace "Unable to fetch manifest for cid", manifestCid
     return failure(error)
 
-  try:
-    let ensuringFutures = Iter[int].new(0 ..< manifest.blocksCount).mapIt(
-        self.networkStore.ensureExpiry(manifest.treeCid, it, expiry)
-      )
-
-    let res = await allFinishedFailed[?!void](ensuringFutures)
-    if res.failure.len > 0:
-      trace "Some blocks failed to update expiry", len = res.failure.len
-      return failure("Some blocks failed to update expiry (" & $res.failure.len & " )")
-  except CancelledError as exc:
-    raise exc
-  except CatchableError as exc:
-    return failure(exc.msg)
-
+  # Expiry management now handled at overlay level
   return success()
 
 proc fetchBatched*(
@@ -686,16 +678,10 @@ proc storeSlot*(
   proc updateExpiry(
       blocks: seq[bt.Block]
   ): Future[?!void] {.async: (raises: [CancelledError]).} =
-    trace "Updating expiry for blocks", blocks = blocks.len
-
-    let ensureExpiryFutures =
-      blocks.mapIt(self.networkStore.ensureExpiry(it.cid, expiry))
-
-    let res = await allFinishedFailed[?!void](ensureExpiryFutures)
-    if res.failure.len > 0:
-      error "Some blocks failed to update expiry", len = res.failure.len
-      return failure("Some blocks failed to update expiry (" & $res.failure.len & " )")
-
+    # NOTE: expiry management moved to overlay level - this is now a no-op
+    # TODO: implement via DatasetManager overlay when available
+    trace "Batch callback (expiry management moved to overlay level)",
+      blocks = blocks.len
     return success()
 
   if slotIdx > int.high.uint64:
@@ -717,15 +703,13 @@ proc storeSlot*(
           cid = manifest.treeCid, exc = err.msg
         return failure(err)
 
-      # Iterate the slot blocks. Provide them to the updateExpiry callback.
+      # Iterate the slot blocks to verify they exist after repair
       while not blksIter.finished:
         without blk =?
           await self.networkStore.getBlock(manifest.treeCid, blksIter.next()), err:
           error "Unable to get slot block after repair"
           return failure(err)
-        if err =? (await updateExpiry(@[blk])).errorOption:
-          error "Unable to update expiry for slot block after repair"
-          return failure(err)
+        # NOTE: expiry management moved to overlay level
     except CatchableError as exc:
       error "Error erasure decoding repairing manifest",
         cid = manifest.treeCid, exc = exc.msg

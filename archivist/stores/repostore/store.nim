@@ -95,30 +95,8 @@ method getBlock*(
   else:
     self.getBlock(address.cid)
 
-method ensureExpiry*(
-    self: RepoStore, cid: Cid, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Ensure that block's associated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
-  ##
-
-  if expiry <= 0:
-    return
-      failure(newException(ValueError, "Expiry timestamp must be larger then zero"))
-
-  await self.updateBlockMetadata(cid, minExpiry = expiry)
-
-method ensureExpiry*(
-    self: RepoStore, treeCid: Cid, index: Natural, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Ensure that block's associated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
-  ##
-
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    return failure(err)
-
-  await self.ensureExpiry(leafMd.blkCid, expiry)
+# NOTE: ensureExpiry methods removed - expiry is now managed at overlay level
+# See design doc v3.8 Section 12 "Overlay Lifecycle & Maintenance"
 
 method putCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
@@ -163,15 +141,17 @@ method getCid*(
   success(leafMd.blkCid)
 
 method putBlock*(
-    self: RepoStore, blk: Block, ttl = Duration.none
+    self: RepoStore, blk: Block
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Put a block to the blockstore
+  ## NOTE: ttl parameter removed - expiry is now managed at overlay level
   ##
 
   logScope:
     cid = blk.cid
 
-  let expiry = self.clock.now() + (ttl |? self.blockTtl).seconds
+  # Use default blockTtl for expiry calculation (Phase 3 will remove expiry entirely)
+  let expiry = self.clock.now() + self.blockTtl.seconds
 
   without res =? await self.storeBlock(blk, expiry), err:
     return failure(err)
@@ -375,6 +355,90 @@ method getBlockExpirations*(
   let blockExpIter =
     await mapFilter[KeyVal[BlockMetadata], BlockExpiration](filteredIter, mapping)
   success(blockExpIter)
+
+###########################################################
+# Batch operations (Phase 3 - kvstore implementation)
+# TODO: Implement with kvstore batch API in Phase 3
+###########################################################
+
+method putBlocks*(
+    self: RepoStore, blocks: seq[Block]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Put multiple blocks as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("putBlocks not implemented - Phase 3")
+
+method getBlocks*(
+    self: RepoStore, addresses: seq[BlockAddress]
+): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("getBlocks by addresses not implemented - Phase 3")
+
+method getBlocks*(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks by tree CID and indices as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("getBlocks by treeCid not implemented - Phase 3")
+
+method delBlocks*(
+    self: RepoStore, addresses: seq[BlockAddress]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Delete multiple blocks as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("delBlocks by addresses not implemented - Phase 3")
+
+method delBlocks*(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Delete multiple blocks by tree CID and indices as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("delBlocks by treeCid not implemented - Phase 3")
+
+method getBlockRange*(
+    self: RepoStore, treeCid: Cid, start: Natural, count: Natural
+): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
+  ## Get a contiguous range of blocks as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("getBlockRange not implemented - Phase 3")
+
+method getBlockAndProof*(
+    self: RepoStore, address: BlockAddress
+): Future[?!(Block, ArchivistProof)] {.async: (raises: [CancelledError]).} =
+  ## Get block and proof by BlockAddress
+  if not address.leaf:
+    return
+      failure(newException(BlockNotFoundError, "BlockAddress must be a leaf address"))
+  await self.getBlockAndProof(address.treeCid, address.index)
+
+method getBlocksAndProofs*(
+    self: RepoStore, addresses: seq[BlockAddress]
+): Future[?!seq[(Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks and proofs as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("getBlocksAndProofs by addresses not implemented - Phase 3")
+
+method getBlocksAndProofs*(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks and proofs by tree CID and indices as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("getBlocksAndProofs by treeCid not implemented - Phase 3")
+
+method putCidsAndProofs*(
+    self: RepoStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Put multiple CIDs and proofs as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("putCidsAndProofs not implemented - Phase 3")
+
+method getCidsAndProofs*(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Cid, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple CIDs and proofs as a batch
+  ## TODO: Implement with kvstore batch API in Phase 3
+  raiseAssert("getCidsAndProofs not implemented - Phase 3")
 
 method close*(self: RepoStore): Future[void] {.async: (raises: []).} =
   ## Close the blockstore, cleaning up resources managed by it.

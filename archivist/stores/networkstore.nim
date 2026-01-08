@@ -67,11 +67,12 @@ method completeBlock*(self: NetworkStore, address: BlockAddress, blk: Block) =
   self.engine.completeBlock(address, blk)
 
 method putBlock*(
-    self: NetworkStore, blk: Block, ttl = Duration.none
+    self: NetworkStore, blk: Block
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Store block locally and notify the network
+  ## NOTE: ttl parameter removed - expiry is now managed at overlay level
   ##
-  let res = await self.localStore.putBlock(blk, ttl)
+  let res = await self.localStore.putBlock(blk)
   if res.isErr:
     return res
 
@@ -95,39 +96,8 @@ method getCidAndProof*(
 
   self.localStore.getCidAndProof(treeCid, index)
 
-method ensureExpiry*(
-    self: NetworkStore, cid: Cid, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Ensure that block's assosicated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
-  ##
-
-  without blockCheck =? await self.localStore.hasBlock(cid), err:
-    return failure(err)
-
-  if blockCheck:
-    return await self.localStore.ensureExpiry(cid, expiry)
-  else:
-    trace "Updating expiry - block not in local store", cid
-
-  return success()
-
-method ensureExpiry*(
-    self: NetworkStore, treeCid: Cid, index: Natural, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Ensure that block's associated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
-  ##
-
-  without blockCheck =? await self.localStore.hasBlock(treeCid, index), err:
-    return failure(err)
-
-  if blockCheck:
-    return await self.localStore.ensureExpiry(treeCid, index, expiry)
-  else:
-    trace "Updating expiry - block not in local store", treeCid, index
-
-  return success()
+# NOTE: ensureExpiry methods removed - expiry is now managed at overlay level
+# See design doc v3.8 Section 12 "Overlay Lifecycle & Maintenance"
 
 method listBlocks*(
     self: NetworkStore, blockType = BlockType.Manifest
@@ -161,6 +131,83 @@ method hasBlock*(
   ##
   trace "Checking network store for block existence", tree, index
   return await self.localStore.hasBlock(tree, index)
+
+###########################################################
+# Batch operations (temporary - will be replaced by DatasetManager)
+###########################################################
+
+method putBlocks*(
+    self: NetworkStore, blocks: seq[Block]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Put multiple blocks - delegates to localStore
+  ?await self.localStore.putBlocks(blocks)
+  await self.engine.resolveBlocks(blocks)
+  success()
+
+method getBlocks*(
+    self: NetworkStore, addresses: seq[BlockAddress]
+): Future[?!seq[Block]] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get multiple blocks - delegates to localStore
+  ## TODO: Add network fallback for missing blocks
+  self.localStore.getBlocks(addresses)
+
+method getBlocks*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[Block]] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get multiple blocks by tree CID - delegates to localStore
+  self.localStore.getBlocks(treeCid, indices)
+
+method delBlocks*(
+    self: NetworkStore, addresses: seq[BlockAddress]
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Delete multiple blocks - delegates to localStore
+  self.localStore.delBlocks(addresses)
+
+method delBlocks*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Delete multiple blocks by tree CID - delegates to localStore
+  self.localStore.delBlocks(treeCid, indices)
+
+method getBlockRange*(
+    self: NetworkStore, treeCid: Cid, start: Natural, count: Natural
+): Future[?!seq[Block]] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get a range of blocks - delegates to localStore
+  self.localStore.getBlockRange(treeCid, start, count)
+
+method getBlockAndProof*(
+    self: NetworkStore, address: BlockAddress
+): Future[?!(Block, ArchivistProof)] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get block and proof by address - delegates to localStore
+  self.localStore.getBlockAndProof(address)
+
+method getBlocksAndProofs*(
+    self: NetworkStore, addresses: seq[BlockAddress]
+): Future[?!seq[(Block, ArchivistProof)]] {.
+    async: (raw: true, raises: [CancelledError])
+.} =
+  ## Get multiple blocks and proofs - delegates to localStore
+  self.localStore.getBlocksAndProofs(addresses)
+
+method getBlocksAndProofs*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Block, ArchivistProof)]] {.
+    async: (raw: true, raises: [CancelledError])
+.} =
+  ## Get multiple blocks and proofs by tree CID - delegates to localStore
+  self.localStore.getBlocksAndProofs(treeCid, indices)
+
+method putCidsAndProofs*(
+    self: NetworkStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Put multiple CIDs and proofs - delegates to localStore
+  self.localStore.putCidsAndProofs(treeCid, items)
+
+method getCidsAndProofs*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Cid, ArchivistProof)]] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get multiple CIDs and proofs - delegates to localStore
+  self.localStore.getCidsAndProofs(treeCid, indices)
 
 method close*(self: NetworkStore): Future[void] {.async: (raises: []).} =
   ## Close the underlying local blockstore

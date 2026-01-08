@@ -15,6 +15,7 @@ import pkg/archivist/merkletree
 import ../../../asynctest
 import ../../helpers
 import ../../helpers/mockdiscovery
+import ../../helpers/mockblockstore
 import ../../examples
 
 proc asBlock(m: Manifest): bt.Block =
@@ -55,7 +56,7 @@ asyncchecksuite "Test Discovery Engine":
 
   test "Should Query Wants":
     var
-      localStore = CacheStore.new()
+      localStore = MockBlockStore.new()
       discoveryEngine = DiscoveryEngine.new(
         localStore,
         peerStore,
@@ -81,7 +82,7 @@ asyncchecksuite "Test Discovery Engine":
 
   test "Should queue discovery request":
     var
-      localStore = CacheStore.new()
+      localStore = MockBlockStore.new()
       discoveryEngine = DiscoveryEngine.new(
         localStore,
         peerStore,
@@ -106,7 +107,7 @@ asyncchecksuite "Test Discovery Engine":
 
   test "Should not request more than minPeersPerBlock":
     var
-      localStore = CacheStore.new()
+      localStore = MockBlockStore.new()
       minPeers = 2
       discoveryEngine = DiscoveryEngine.new(
         localStore,
@@ -149,7 +150,7 @@ asyncchecksuite "Test Discovery Engine":
 
   test "Should not request if there is already an inflight discovery request":
     var
-      localStore = CacheStore.new()
+      localStore = MockBlockStore.new()
       discoveryEngine = DiscoveryEngine.new(
         localStore,
         peerStore,

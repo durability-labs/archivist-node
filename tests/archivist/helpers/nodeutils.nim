@@ -17,6 +17,7 @@ import pkg/archivist/slots
 import pkg/archivist/node
 
 import ../examples
+import ./mockblockstore
 import ../../helpers
 
 proc nextFreePort*(startPort: int): Future[int] {.async.} =
@@ -156,7 +157,7 @@ proc generateNodes*(
         (store.BlockStore, @[bdStore, repoStore, mdStore], discovery)
       else:
         let
-          store = CacheStore.new(blocks.mapIt(it))
+          store = MockBlockStore.new(blocks.mapIt(it))
           discovery =
             Discovery.new(switch.peerInfo.privateKey, announceAddrs = @[listenAddr])
         (store.BlockStore, newSeq[TempLevelDb](), discovery)

@@ -12,6 +12,7 @@ import pkg/archivist/manifest
 import ../../../asynctest
 import ../../helpers
 import ../../helpers/mockdiscovery
+import ../../helpers/mockblockstore
 import ../../examples
 
 asyncchecksuite "Advertiser":
@@ -29,7 +30,7 @@ asyncchecksuite "Advertiser":
 
   setup:
     blockDiscovery = MockDiscovery.new()
-    localStore = CacheStore.new()
+    localStore = MockBlockStore.new()
 
     advertised = newSeq[Cid]()
     blockDiscovery.publishBlockProvideHandler = proc(
@@ -84,7 +85,7 @@ asyncchecksuite "Advertiser":
     check manifest.treeCid in advertised
 
   test "Should advertise existing manifests and their trees":
-    let newStore = CacheStore.new([manifestBlk])
+    let newStore = MockBlockStore.new([manifestBlk])
 
     await advertiser.stop()
     advertiser = Advertiser.new(newStore, blockDiscovery)

@@ -17,6 +17,7 @@ import pkg/archivist/blocktype as bt
 import ../../../asynctest
 import ../../helpers
 import ../../helpers/mockdiscovery
+import ../../helpers/mockblockstore
 import ../../examples
 
 asyncchecksuite "Block Advertising and Discovery":
@@ -34,7 +35,7 @@ asyncchecksuite "Block Advertising and Discovery":
     advertiser: Advertiser
     wallet: WalletRef
     network: BlockExcNetwork
-    localStore: CacheStore
+    localStore: MockBlockStore
     engine: BlockExcEngine
     pendingBlocks: PendingBlocksManager
 
@@ -50,7 +51,7 @@ asyncchecksuite "Block Advertising and Discovery":
     blockDiscovery = MockDiscovery.new()
     wallet = WalletRef.example
     network = BlockExcNetwork.new(switch)
-    localStore = CacheStore.new(blocks.mapIt(it))
+    localStore = MockBlockStore.new(blocks.mapIt(it))
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
@@ -182,7 +183,7 @@ asyncchecksuite "E2E - Multiple Nodes Discovery":
         blockDiscovery = MockDiscovery.new()
         wallet = WalletRef.example
         network = BlockExcNetwork.new(s)
-        localStore = CacheStore.new()
+        localStore = MockBlockStore.new()
         peerStore = PeerCtxStore.new()
         pendingBlocks = PendingBlocksManager.new()
 
