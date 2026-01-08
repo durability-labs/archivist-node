@@ -213,7 +213,7 @@ proc new*(
           "Should create metadata store!"
         ),
       quotaMaxBytes = config.storageQuota,
-      blockTtl = config.blockTtl,
+      blockTtl = config.datasetTtl,
     )
 
     maintenance = BlockMaintainer.new(

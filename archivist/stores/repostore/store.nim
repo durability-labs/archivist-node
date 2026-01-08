@@ -9,10 +9,12 @@
 
 {.push raises: [].}
 
+import std/strutils
+
 import pkg/chronos
 import pkg/chronos/futures
-import pkg/datastore
-import pkg/datastore/typedds
+import pkg/kvstore
+import pkg/kvstore/kvstore as rawkvstore
 import pkg/libp2p/[cid, multicodec]
 import pkg/questionable
 import pkg/questionable/results
@@ -49,19 +51,19 @@ method getBlock*(
     trace "Empty block, ignoring"
     return cid.emptyBlock
 
-  without key =? makePrefixKey(self.postFixLen, cid), err:
+  without key =? makeBlockDataKey(cid), err:
     trace "Error getting key from provider", err = err.msg
     return failure(err)
 
-  without data =? await self.repoDs.get(key), err:
-    if not (err of DatastoreKeyNotFound):
+  without record =? await get[seq[byte]](self.blockStore, key), err:
+    if not (err of KVStoreKeyNotFound):
       trace "Error getting block from datastore", err = err.msg, key
       return failure(err)
 
     return failure(newException(BlockNotFoundError, err.msg))
 
   trace "Got block for cid", cid
-  return Block.new(cid, data, verify = true)
+  return Block.new(cid, record.val, verify = true)
 
 method getBlockAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
@@ -189,7 +191,7 @@ proc delBlockInternal(
 method delBlock*(
     self: RepoStore, cid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Delete a block from the blockstore when block refCount is 0 or block is expired
+  ## Delete a block from the blockstore when block refCount is 0
   ##
 
   logScope:
@@ -244,11 +246,11 @@ method hasBlock*(
     trace "Empty block, ignoring"
     return success true
 
-  without key =? makePrefixKey(self.postFixLen, cid), err:
+  without key =? makeBlockDataKey(cid), err:
     trace "Error getting key from provider", err = err.msg
     return failure(err)
 
-  return await self.repoDs.has(key)
+  return await self.blockStore.has(key)
 
 method hasBlock*(
     self: RepoStore, treeCid: Cid, index: Natural
@@ -274,18 +276,25 @@ method listBlocks*(
     of BlockType.Block: ArchivistBlocksKey
     of BlockType.Both: ArchivistRepoKey
 
-  let query = Query.init(key, value = false)
-  without queryIter =? (await self.repoDs.query(query)), err:
+  let q = Query.init(key, value = false)
+  # Use raw query method explicitly to avoid ambiguity
+  without queryIter =? (await rawkvstore.query(self.blockStore, q)), err:
     trace "Error querying cids in repo", blockType, err = err.msg
     return failure(err)
 
   proc next(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
     await idleAsync()
-    if pair =? (await queryIter.next()):
-      if cid =? pair.key:
-        doAssert pair.data.len == 0
-        trace "Retrieved record from repo", cid
-        return Cid.init(cid.value).mapFailure
+    without maybeRecord =? await queryIter.next():
+      return Cid.failure("No or invalid Cid")
+
+    if record =? maybeRecord:
+      trace "Retrieved record from repo", key = record.key
+      # Extract CID from key - the key format is /repo/blocks/{cid} or /repo/manifests/{cid}
+      let keyStr = record.key.id
+      let parts = keyStr.split('/')
+      if parts.len > 0:
+        return Cid.init(parts[^1]).mapFailure
+
     return Cid.failure("No or invalid Cid")
 
   proc isFinished(): bool =
@@ -294,13 +303,13 @@ method listBlocks*(
   return success SafeAsyncIter[Cid].new(next, isFinished)
 
 proc blockRefCount*(self: RepoStore, cid: Cid): Future[?!Natural] {.async.} =
-  without key =? createBlockExpirationMetadataKey(cid), err:
+  without key =? makeBlockMetadataKey(cid), err:
     return failure(err)
 
-  without md =? await get[BlockMetadata](self.metaDs, key), err:
+  without record =? await get[BlockMetadata](self.metaStore, key), err:
     return failure(err)
 
-  return success(md.refCount)
+  return success(record.val.refCount)
 
 method getBlockExpirations*(
     self: RepoStore, maxNumber: int, offset: int
@@ -414,14 +423,17 @@ method close*(self: RepoStore): Future[void] {.async: (raises: []).} =
 
   trace "Closing repostore"
 
-  if not self.metaDs.isNil:
+  if not self.metaStore.isNil:
     try:
-      (await noCancel self.metaDs.close()).expect("Should meta datastore")
+      (await noCancel self.metaStore.close()).expect("Should close meta store")
     except CatchableError as err:
-      error "Failed to close meta datastore", err = err.msg
+      error "Failed to close meta store", err = err.msg
 
-  if not self.repoDs.isNil:
-    (await noCancel self.repoDs.close()).expect("Should repo datastore")
+  if not self.blockStore.isNil:
+    try:
+      (await noCancel self.blockStore.close()).expect("Should close block store")
+    except CatchableError as err:
+      error "Failed to close block store", err = err.msg
 
 ###########################################################
 # RepoStore procs
@@ -457,7 +469,7 @@ proc start*(
     trace "Repo already started"
     return
 
-  trace "Starting rep"
+  trace "Starting repo"
   if err =? (await self.updateTotalBlocksCount()).errorOption:
     raise newException(ArchivistError, err.msg)
 

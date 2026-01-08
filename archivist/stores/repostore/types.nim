@@ -8,8 +8,7 @@
 ## those terms.
 
 import pkg/chronos
-import pkg/datastore
-import pkg/datastore/typedds
+import pkg/kvstore
 import pkg/libp2p/cid
 import pkg/questionable
 
@@ -20,22 +19,22 @@ import ../../merkletree
 import ../../systemclock
 import ../../units
 
+export kvstore
+
 const
-  DefaultBlockTtl* = 30.days
+  DefaultDatasetTtl* = 30.days
   DefaultQuotaBytes* = 20.GiBs
 
 type
   QuotaNotEnoughError* = object of ArchivistError
 
   RepoStore* = ref object of BlockStore
-    postFixLen*: int
-    repoDs*: Datastore
-    metaDs*: TypedDatastore
+    metaStore*: KVStore ## SQLiteKVStore for metadata (refcounts, quota, proofs)
+    blockStore*: KVStore ## FSKVStore for raw block data
     clock*: Clock
     quotaMaxBytes*: NBytes
-    quotaUsage*: QuotaUsage
-    totalBlocks*: Natural
-    blockTtl*: Duration
+    quotaUsage*: QuotaUsage ## Cached in-memory, persisted to metaStore
+    totalBlocks*: Natural ## Cached in-memory
     started*: bool
 
   QuotaUsage* {.serialize.} = object
@@ -88,21 +87,17 @@ func available*(self: RepoStore, bytes: NBytes): bool =
 
 func new*(
     T: type RepoStore,
-    repoDs: Datastore,
-    metaDs: Datastore,
+    metaStore: KVStore,
+    blockStore: KVStore,
     clock: Clock = SystemClock.new(),
-    postFixLen = 2,
     quotaMaxBytes = DefaultQuotaBytes,
-    blockTtl = DefaultBlockTtl,
 ): RepoStore =
   ## Create new instance of a RepoStore
   ##
   RepoStore(
-    repoDs: repoDs,
-    metaDs: TypedDatastore.init(metaDs),
+    metaStore: metaStore,
+    blockStore: blockStore,
     clock: clock,
-    postFixLen: postFixLen,
     quotaMaxBytes: quotaMaxBytes,
-    blockTtl: blockTtl,
     onBlockStored: CidCallback.none,
   )

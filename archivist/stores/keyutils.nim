@@ -9,7 +9,7 @@
 
 import std/sugar
 import pkg/questionable/results
-import pkg/datastore
+import pkg/kvstore
 import pkg/libp2p
 import ../namespaces
 import ../manifest
@@ -22,26 +22,24 @@ const
   ArchivistBlocksKey* = Key.init(ArchivistBlocksNamespace).tryGet
   ArchivistTotalBlocksKey* = Key.init(ArchivistBlockTotalNamespace).tryGet
   ArchivistManifestKey* = Key.init(ArchivistManifestNamespace).tryGet
-  BlocksTtlKey* = Key.init(ArchivistBlocksTtlNamespace).tryGet
+  BlocksMetaKey* = Key.init(ArchivistBlocksTtlNamespace).tryGet
+    ## Block metadata key (refcount, size). Namespace uses "ttl" for backward compat.
   BlockProofKey* = Key.init(ArchivistBlockProofNamespace).tryGet
   QuotaKey* = Key.init(ArchivistQuotaNamespace).tryGet
   QuotaUsedKey* = (QuotaKey / "used").tryGet
-  QuotaReservedKey* = (QuotaKey / "reserved").tryGet
 
-func makePrefixKey*(postFixLen: int, cid: Cid): ?!Key =
-  let cidKey = ?Key.init(($cid)[^postFixLen ..^ 1] & "/" & $cid)
-
+func makeBlockDataKey*(cid: Cid): ?!Key =
+  ## Create key for block data in blockStore
+  ## FSKVStore handles sharding internally
   if ?cid.isManifest:
-    success ArchivistManifestKey / cidKey
+    ArchivistManifestKey / $cid
   else:
-    success ArchivistBlocksKey / cidKey
+    ArchivistBlocksKey / $cid
 
-proc createBlockExpirationMetadataKey*(cid: Cid): ?!Key =
-  BlocksTtlKey / $cid
-
-proc createBlockExpirationMetadataQueryKey*(): ?!Key =
-  let queryString = ?(BlocksTtlKey / "*")
-  Key.init(queryString)
+func makeBlockMetadataKey*(cid: Cid): ?!Key =
+  ## Create key for block metadata (refcount, size) in metaStore
+  BlocksMetaKey / $cid
 
 proc createBlockCidAndProofMetadataKey*(treeCid: Cid, index: Natural): ?!Key =
+  ## Create key for leaf metadata (cid + proof) in metaStore
   (BlockProofKey / $treeCid).flatMap((k: Key) => k / $index)

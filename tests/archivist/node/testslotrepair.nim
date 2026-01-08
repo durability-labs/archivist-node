@@ -65,7 +65,7 @@ asyncchecksuite "Test Node - Slot Repair":
 
   test "repair slots (2,1)":
     let
-      expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+      expiry = (getTime() + DefaultDatasetTtl.toTimesDuration + 1.hours).toUnix
       numBlocks = 5
       datasetSize = numBlocks * DefaultBlockSize.int
       ecK = 2
@@ -143,7 +143,7 @@ asyncchecksuite "Test Node - Slot Repair":
 
   test "repair slots (3,2)":
     let
-      expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+      expiry = (getTime() + DefaultDatasetTtl.toTimesDuration + 1.hours).toUnix
       numBlocks = 40
       datasetSize = numBlocks * DefaultBlockSize.int
       ecK = 3

@@ -42,7 +42,7 @@ export node.provider
 export node.availability
 export node.failProofs
 export node.storageQuota
-export node.blockTtl
+export node.datasetTtl
 export node.blockMaintenanceInterval
 export node.waitForOutput
 export node.start

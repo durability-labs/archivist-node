@@ -9,7 +9,7 @@ suite "Block maintenance":
 
   setup:
     testbed = await Testbed.start()
-    node = await testbed.node.blockTtl(5).blockMaintenanceInterval(1).start()
+    node = await testbed.node.datasetTtl(5).blockMaintenanceInterval(1).start()
 
   teardown:
     await testbed.stop()

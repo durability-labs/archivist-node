@@ -46,8 +46,8 @@ export units, net, archivisttypes, logutils, completeCmdArg, parseCmdArg, NatCon
 export ValidationGroups, MaxSlots
 
 export
-  DefaultQuotaBytes, DefaultBlockTtl, DefaultBlockInterval, DefaultNumBlocksPerInterval,
-  DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
+  DefaultQuotaBytes, DefaultDatasetTtl, DefaultBlockInterval,
+  DefaultNumBlocksPerInterval, DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
 
 type ThreadCount* = range[0 .. 256]
 
@@ -234,11 +234,11 @@ type
       abbr: "q"
     .}: NBytes
 
-    blockTtl* {.
-      desc: "Default block timeout in seconds - 0 disables the ttl",
-      defaultValue: DefaultBlockTtl,
-      defaultValueDesc: $DefaultBlockTtl,
-      name: "block-ttl",
+    datasetTtl* {.
+      desc: "Default dataset/overlay timeout in seconds - 0 disables the ttl",
+      defaultValue: DefaultDatasetTtl,
+      defaultValueDesc: $DefaultDatasetTtl,
+      name: "dataset-ttl",
       abbr: "t"
     .}: Duration
 

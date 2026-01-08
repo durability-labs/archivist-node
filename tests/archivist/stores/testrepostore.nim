@@ -7,7 +7,7 @@ import pkg/questionable/results
 
 import pkg/chronos
 import pkg/stew/byteutils
-import pkg/datastore
+import pkg/kvstore
 
 import pkg/archivist/chunker
 import pkg/archivist/stores
@@ -25,40 +25,40 @@ import ./commonstoretests
 
 suite "Test RepoStore start/stop":
   var
-    repoDs: Datastore
-    metaDs: Datastore
+    blockStore: KVStore
+    metaStore: KVStore
 
   setup:
-    repoDs = SQLiteDatastore.new(Memory).tryGet()
-    metaDs = SQLiteDatastore.new(Memory).tryGet()
+    blockStore = SQLiteKVStore.new(Memory).tryGet()
+    metaStore = SQLiteKVStore.new(Memory).tryGet()
 
   test "Should set started flag once started":
-    let repo = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 200'nb)
+    let repo = RepoStore.new(metaStore, blockStore, quotaMaxBytes = 200'nb)
     await repo.start()
     check repo.started
 
   test "Should set started flag to false once stopped":
-    let repo = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 200'nb)
+    let repo = RepoStore.new(metaStore, blockStore, quotaMaxBytes = 200'nb)
     await repo.start()
     await repo.stop()
     check not repo.started
 
   test "Should allow start to be called multiple times":
-    let repo = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 200'nb)
+    let repo = RepoStore.new(metaStore, blockStore, quotaMaxBytes = 200'nb)
     await repo.start()
     await repo.start()
     check repo.started
 
   test "Should allow stop to be called multiple times":
-    let repo = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 200'nb)
+    let repo = RepoStore.new(metaStore, blockStore, quotaMaxBytes = 200'nb)
     await repo.stop()
     await repo.stop()
     check not repo.started
 
 asyncchecksuite "RepoStore":
   var
-    repoDs: Datastore
-    metaDs: Datastore
+    blockStore: KVStore
+    metaStore: KVStore
     mockClock: MockClock
 
     repo: RepoStore
@@ -66,16 +66,17 @@ asyncchecksuite "RepoStore":
   let now: SecondsSince1970 = 123
 
   setup:
-    repoDs = SQLiteDatastore.new(Memory).tryGet()
-    metaDs = SQLiteDatastore.new(Memory).tryGet()
+    blockStore = SQLiteKVStore.new(Memory).tryGet()
+    metaStore = SQLiteKVStore.new(Memory).tryGet()
     mockClock = MockClock.new()
     mockClock.set(now)
 
-    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 200'nb)
+    repo =
+      RepoStore.new(metaStore, blockStore, clock = mockClock, quotaMaxBytes = 200'nb)
 
   teardown:
-    (await repoDs.close()).tryGet
-    (await metaDs.close()).tryGet
+    (await blockStore.close()).tryGet
+    (await metaStore.close()).tryGet
 
   proc createTestBlock(size: int): bt.Block =
     bt.Block.new('a'.repeat(size).toBytes).tryGet()
@@ -204,8 +205,9 @@ asyncchecksuite "RepoStore":
 
   test "should not allow non-orphan blocks to be deleted directly":
     let
-      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-          1000'nb)
+      repo =
+        RepoStore.new(metaStore, blockStore, clock = mockClock, quotaMaxBytes =
+            1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
       (manifest, tree) = makeManifestAndTree(dataset).tryGet()
@@ -221,8 +223,9 @@ asyncchecksuite "RepoStore":
 
   test "should allow non-orphan blocks to be deleted by dataset reference":
     let
-      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-          1000'nb)
+      repo =
+        RepoStore.new(metaStore, blockStore, clock = mockClock, quotaMaxBytes =
+            1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
       (manifest, tree) = makeManifestAndTree(dataset).tryGet()
@@ -237,8 +240,9 @@ asyncchecksuite "RepoStore":
 
   test "should not delete a non-orphan block until it is deleted from all parent datasets":
     let
-      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-          1000'nb)
+      repo =
+        RepoStore.new(metaStore, blockStore, clock = mockClock, quotaMaxBytes =
+            1000'nb)
       blockPool = await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)
 
     let
@@ -275,8 +279,9 @@ asyncchecksuite "RepoStore":
 
   test "should clear leaf metadata when block is deleted from dataset":
     let
-      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-          1000'nb)
+      repo =
+        RepoStore.new(metaStore, blockStore, clock = mockClock, quotaMaxBytes =
+            1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
       (manifest, tree) = makeManifestAndTree(dataset).tryGet()
@@ -295,8 +300,9 @@ asyncchecksuite "RepoStore":
 
   test "should not fail when reinserting and deleting a previously deleted block (bug #1108)":
     let
-      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-          1000'nb)
+      repo =
+        RepoStore.new(metaStore, blockStore, clock = mockClock, quotaMaxBytes =
+            1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
       (manifest, tree) = makeManifestAndTree(dataset).tryGet()
@@ -315,8 +321,8 @@ commonBlockStoreTests(
   proc(): BlockStore =
     BlockStore(
       RepoStore.new(
-        SQLiteDatastore.new(Memory).tryGet(),
-        SQLiteDatastore.new(Memory).tryGet(),
+        SQLiteKVStore.new(Memory).tryGet(),
+        SQLiteKVStore.new(Memory).tryGet(),
         clock = MockClock.new(),
       )
     ),
@@ -337,8 +343,8 @@ commonBlockStoreTests(
   proc(): BlockStore =
     BlockStore(
       RepoStore.new(
-        FSDatastore.new(path, depth).tryGet(),
-        SQLiteDatastore.new(Memory).tryGet(),
+        SQLiteKVStore.new(Memory).tryGet(),
+        FSKVStore.new(path, depth).tryGet(),
         clock = MockClock.new(),
       )
     ),

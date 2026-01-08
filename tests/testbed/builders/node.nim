@@ -39,7 +39,7 @@ type NodeBuilder = ref object
   circomGraph: ? ?string
   failProofs: ?int
   storageQuota: ?int
-  blockTtl: ?int
+  datasetTtl: ?int
   blockMaintenanceInterval: ?int
   waitForOutput: ?string
   setInitialAvailability: bool
@@ -171,8 +171,8 @@ func storageQuota*(builder: NodeBuilder, quota: int): NodeBuilder =
   builder.storageQuota = some quota
   builder
 
-func blockTtl*(builder: NodeBuilder, ttl: int): NodeBuilder =
-  builder.blockTtl = some ttl
+func datasetTtl*(builder: NodeBuilder, ttl: int): NodeBuilder =
+  builder.datasetTtl = some ttl
   builder
 
 func blockMaintenanceInterval*(builder: NodeBuilder, interval: int): NodeBuilder =
@@ -273,8 +273,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--circom-graph=" & circomGraph)
   if quota =? builder.storageQuota:
     arguments.add("--storage-quota=" & $quota)
-  if blockTtl =? builder.blockTtl:
-    arguments.add("--block-ttl=" & $blockTtl)
+  if datasetTtl =? builder.datasetTtl:
+    arguments.add("--dataset-ttl=" & $datasetTtl)
   if blockMaintenanceInterval =? builder.blockMaintenanceInterval:
     arguments.add("--block-mi=" & $blockMaintenanceInterval)
   let dataDir = builder.dataDirResolved

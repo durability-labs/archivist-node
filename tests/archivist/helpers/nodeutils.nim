@@ -4,6 +4,7 @@ import pkg/chronos
 import pkg/taskpools
 import pkg/libp2p
 import pkg/libp2p/errors
+import pkg/kvstore
 
 import pkg/archivist/discovery
 import pkg/archivist/stores
@@ -141,10 +142,9 @@ proc generateNodes*(
       if config.useRepoStore:
         let
           bdStore = TempLevelDb.new()
-          repoStore = TempLevelDb.new()
-          mdStore = TempLevelDb.new()
-          store =
-            RepoStore.new(repoStore.newDb(), mdStore.newDb(), clock = SystemClock.new())
+          metaStore = SQLiteKVStore.new(":memory:").tryGet()
+          blockStore = SQLiteKVStore.new(":memory:").tryGet()
+          store = RepoStore.new(metaStore, blockStore, clock = SystemClock.new())
           blockDiscoveryStore = bdStore.newDb()
           discovery = Discovery.new(
             switch.peerInfo.privateKey,
@@ -154,7 +154,7 @@ proc generateNodes*(
             bootstrapNodes = bootstrapNodes,
           )
         waitFor store.start()
-        (store.BlockStore, @[bdStore, repoStore, mdStore], discovery)
+        (store.BlockStore, @[bdStore], discovery)
       else:
         let
           store = MockBlockStore.new(blocks.mapIt(it))
