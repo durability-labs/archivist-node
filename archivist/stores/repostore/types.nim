@@ -43,7 +43,6 @@ type
     reserved*: NBytes
 
   BlockMetadata* {.serialize.} = object
-    expiry*: SecondsSince1970
     size*: NBytes
     refCount*: Natural
 
@@ -51,7 +50,7 @@ type
     blkCid*: Cid
     proof*: ArchivistProof
 
-  BlockExpiration* {.serialize.} = object
+  BlockExpiration* {.serialize, deprecated.} = object
     cid*: Cid
     expiry*: SecondsSince1970
 

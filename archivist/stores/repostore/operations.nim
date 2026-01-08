@@ -21,7 +21,6 @@ import ./types
 import ../blockstore
 import ../keyutils
 import ../../blocktype
-import ../../clock
 import ../../logutils
 import ../../merkletree
 
@@ -134,11 +133,7 @@ proc updateQuotaUsage*(
   )
 
 proc updateBlockMetadata*(
-    self: RepoStore,
-    cid: Cid,
-    plusRefCount: Natural = 0,
-    minusRefCount: Natural = 0,
-    minExpiry: SecondsSince1970 = 0,
+    self: RepoStore, cid: Cid, plusRefCount: Natural = 0, minusRefCount: Natural = 0
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   if cid.isEmpty:
     return success()
@@ -152,7 +147,6 @@ proc updateBlockMetadata*(
       if currBlockMd =? maybeCurrBlockMd:
         BlockMetadata(
           size: currBlockMd.size,
-          expiry: max(currBlockMd.expiry, minExpiry),
           refCount: currBlockMd.refCount + plusRefCount - minusRefCount,
         ).some
       else:
@@ -162,7 +156,7 @@ proc updateBlockMetadata*(
   )
 
 proc storeBlock*(
-    self: RepoStore, blk: Block, minExpiry: SecondsSince1970
+    self: RepoStore, blk: Block
 ): Future[?!StoreResult] {.async: (raises: [CancelledError]).} =
   if blk.isEmpty:
     return success(StoreResult(kind: AlreadyInStore))
@@ -182,11 +176,7 @@ proc storeBlock*(
 
       if currMd =? maybeCurrMd:
         if currMd.size == blk.data.len.NBytes:
-          md = BlockMetadata(
-            size: currMd.size,
-            expiry: max(currMd.expiry, minExpiry),
-            refCount: currMd.refCount,
-          )
+          md = BlockMetadata(size: currMd.size, refCount: currMd.refCount)
           res = StoreResult(kind: AlreadyInStore)
 
           # making sure that the block actually is stored in the repoDs
@@ -205,7 +195,7 @@ proc storeBlock*(
               $blk.cid,
           )
       else:
-        md = BlockMetadata(size: blk.data.len.NBytes, expiry: minExpiry, refCount: 0)
+        md = BlockMetadata(size: blk.data.len.NBytes, refCount: 0)
         res = StoreResult(kind: Stored, used: blk.data.len.NBytes)
         if err =? (await self.repoDs.put(blkKey, blk.data)).errorOption:
           raise err
@@ -214,7 +204,7 @@ proc storeBlock*(
   )
 
 proc tryDeleteBlock*(
-    self: RepoStore, cid: Cid, expiryLimit = SecondsSince1970.low
+    self: RepoStore, cid: Cid
 ): Future[?!DeleteResult] {.async: (raises: [CancelledError]).} =
   without metaKey =? createBlockExpirationMetadataKey(cid), err:
     return failure(err)
@@ -232,7 +222,7 @@ proc tryDeleteBlock*(
         res: DeleteResult
 
       if currMd =? maybeCurrMd:
-        if currMd.refCount == 0 or currMd.expiry < expiryLimit:
+        if currMd.refCount == 0:
           maybeMeta = BlockMetadata.none
           res = DeleteResult(kind: Deleted, released: currMd.size)
 
@@ -245,7 +235,7 @@ proc tryDeleteBlock*(
         maybeMeta = BlockMetadata.none
         res = DeleteResult(kind: NotFound)
 
-        # making sure that the block acutally is removed from the repoDs
+        # making sure that the block actually is removed from the repoDs
         without hasBlock =? await self.repoDs.has(blkKey), err:
           raise err
 

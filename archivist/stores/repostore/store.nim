@@ -22,9 +22,7 @@ import ./types
 import ./operations
 import ../blockstore
 import ../keyutils
-import ../queryiterhelper
 import ../../blocktype
-import ../../clock
 import ../../logutils
 import ../../merkletree
 import ../../utils
@@ -95,9 +93,6 @@ method getBlock*(
   else:
     self.getBlock(address.cid)
 
-# NOTE: ensureExpiry methods removed - expiry is now managed at overlay level
-# See design doc v3.8 Section 12 "Overlay Lifecycle & Maintenance"
-
 method putCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
@@ -143,17 +138,10 @@ method getCid*(
 method putBlock*(
     self: RepoStore, blk: Block
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Put a block to the blockstore
-  ## NOTE: ttl parameter removed - expiry is now managed at overlay level
-  ##
-
   logScope:
     cid = blk.cid
 
-  # Use default blockTtl for expiry calculation (Phase 3 will remove expiry entirely)
-  let expiry = self.clock.now() + self.blockTtl.seconds
-
-  without res =? await self.storeBlock(blk, expiry), err:
+  without res =? await self.storeBlock(blk), err:
     return failure(err)
 
   if res.kind == Stored:
@@ -185,7 +173,7 @@ proc delBlockInternal(
 
   trace "Attempting to delete a block"
 
-  without res =? await self.tryDeleteBlock(cid, self.clock.now()), err:
+  without res =? await self.tryDeleteBlock(cid), err:
     return failure(err)
 
   if res.kind == Deleted:
@@ -305,14 +293,7 @@ method listBlocks*(
 
   return success SafeAsyncIter[Cid].new(next, isFinished)
 
-proc createBlockExpirationQuery(maxNumber: int, offset: int): ?!Query =
-  let queryKey = ?createBlockExpirationMetadataQueryKey()
-  success Query.init(queryKey, offset = offset, limit = maxNumber)
-
 proc blockRefCount*(self: RepoStore, cid: Cid): Future[?!Natural] {.async.} =
-  ## Returns the reference count for a block. If the count is zero;
-  ## this means the block is eligible for garbage collection.
-  ##
   without key =? createBlockExpirationMetadataKey(cid), err:
     return failure(err)
 
@@ -324,89 +305,72 @@ proc blockRefCount*(self: RepoStore, cid: Cid): Future[?!Natural] {.async.} =
 method getBlockExpirations*(
     self: RepoStore, maxNumber: int, offset: int
 ): Future[?!SafeAsyncIter[BlockExpiration]] {.
-    async: (raises: [CancelledError]), base, gcsafe
+    async: (raises: [CancelledError]), base, gcsafe, deprecated
 .} =
-  ## Get iterator with block expirations
-  ##
+  ## Deprecated: block-level expiry removed, use OverlayMaintainer instead
+  proc next(): Future[?!BlockExpiration] {.async: (raises: [CancelledError]).} =
+    failure(newException(CatchableError, "No more items"))
 
-  without beQuery =? createBlockExpirationQuery(maxNumber, offset), err:
-    error "Unable to format block expirations query", err = err.msg
-    return failure(err)
+  proc isFinished(): bool =
+    true
 
-  without queryIter =? await query[BlockMetadata](self.metaDs, beQuery), err:
-    error "Unable to execute block expirations query", err = err.msg
-    return failure(err)
-
-  let filteredIter: SafeAsyncIter[KeyVal[BlockMetadata]] =
-    await queryIter.toSafeAsyncIter().filterSuccess()
-
-  proc mapping(
-      kvRes: ?!KeyVal[BlockMetadata]
-  ): Future[Option[?!BlockExpiration]] {.async: (raises: [CancelledError]).} =
-    without kv =? kvRes, err:
-      error "Error occurred when getting KeyVal", err = err.msg
-      return Result[BlockExpiration, ref CatchableError].none
-    without cid =? Cid.init(kv.key.value).mapFailure, err:
-      error "Failed decoding cid", err = err.msg
-      return Result[BlockExpiration, ref CatchableError].none
-
-    some(success(BlockExpiration(cid: cid, expiry: kv.value.expiry)))
-
-  let blockExpIter =
-    await mapFilter[KeyVal[BlockMetadata], BlockExpiration](filteredIter, mapping)
-  success(blockExpIter)
+  success SafeAsyncIter[BlockExpiration].new(next, isFinished)
 
 ###########################################################
-# Batch operations (Phase 3 - kvstore implementation)
-# TODO: Implement with kvstore batch API in Phase 3
+# Batch operations
 ###########################################################
 
 method putBlocks*(
     self: RepoStore, blocks: seq[Block]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Put multiple blocks as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("putBlocks not implemented - Phase 3")
+  for blk in blocks:
+    ?await self.putBlock(blk)
+  success()
 
 method getBlocks*(
     self: RepoStore, addresses: seq[BlockAddress]
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
-  ## Get multiple blocks as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("getBlocks by addresses not implemented - Phase 3")
+  var blocks = newSeq[Block](addresses.len)
+  for i, address in addresses:
+    blocks[i] = ?await self.getBlock(address)
+  success(blocks)
 
 method getBlocks*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
-  ## Get multiple blocks by tree CID and indices as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("getBlocks by treeCid not implemented - Phase 3")
+  var blocks = newSeq[Block](indices.len)
+  for i, index in indices:
+    blocks[i] = ?await self.getBlock(treeCid, index)
+  success(blocks)
 
 method delBlocks*(
     self: RepoStore, addresses: seq[BlockAddress]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Delete multiple blocks as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("delBlocks by addresses not implemented - Phase 3")
+  for address in addresses:
+    if address.leaf:
+      ?await self.delBlock(address.treeCid, address.index)
+    else:
+      ?await self.delBlock(address.cid)
+  success()
 
 method delBlocks*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Delete multiple blocks by tree CID and indices as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("delBlocks by treeCid not implemented - Phase 3")
+  for index in indices:
+    ?await self.delBlock(treeCid, index)
+  success()
 
 method getBlockRange*(
     self: RepoStore, treeCid: Cid, start: Natural, count: Natural
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
-  ## Get a contiguous range of blocks as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("getBlockRange not implemented - Phase 3")
+  var blocks = newSeq[Block](count)
+  for i in 0 ..< count:
+    blocks[i] = ?await self.getBlock(treeCid, start + i)
+  success(blocks)
 
 method getBlockAndProof*(
     self: RepoStore, address: BlockAddress
 ): Future[?!(Block, ArchivistProof)] {.async: (raises: [CancelledError]).} =
-  ## Get block and proof by BlockAddress
   if not address.leaf:
     return
       failure(newException(BlockNotFoundError, "BlockAddress must be a leaf address"))
@@ -415,30 +379,33 @@ method getBlockAndProof*(
 method getBlocksAndProofs*(
     self: RepoStore, addresses: seq[BlockAddress]
 ): Future[?!seq[(Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
-  ## Get multiple blocks and proofs as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("getBlocksAndProofs by addresses not implemented - Phase 3")
+  var pairs = newSeq[(Block, ArchivistProof)](addresses.len)
+  for i, address in addresses:
+    pairs[i] = ?await self.getBlockAndProof(address)
+  success(pairs)
 
 method getBlocksAndProofs*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!seq[(Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
-  ## Get multiple blocks and proofs by tree CID and indices as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("getBlocksAndProofs by treeCid not implemented - Phase 3")
+  var pairs = newSeq[(Block, ArchivistProof)](indices.len)
+  for i, index in indices:
+    pairs[i] = ?await self.getBlockAndProof(treeCid, index)
+  success(pairs)
 
 method putCidsAndProofs*(
     self: RepoStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Put multiple CIDs and proofs as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("putCidsAndProofs not implemented - Phase 3")
+  for (index, blkCid, proof) in items:
+    ?await self.putCidAndProof(treeCid, index, blkCid, proof)
+  success()
 
 method getCidsAndProofs*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!seq[(Cid, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
-  ## Get multiple CIDs and proofs as a batch
-  ## TODO: Implement with kvstore batch API in Phase 3
-  raiseAssert("getCidsAndProofs not implemented - Phase 3")
+  var pairs = newSeq[(Cid, ArchivistProof)](indices.len)
+  for i, index in indices:
+    pairs[i] = ?await self.getCidAndProof(treeCid, index)
+  success(pairs)
 
 method close*(self: RepoStore): Future[void] {.async: (raises: []).} =
   ## Close the blockstore, cleaning up resources managed by it.
