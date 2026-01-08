@@ -1,0 +1,69 @@
+## Copyright (c) 2025 Archivist Authors
+## Licensed under either of
+##  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE))
+##  * MIT license ([LICENSE-MIT](LICENSE-MIT))
+## at your option.
+## This file may not be copied, modified, or distributed except according to
+## those terms.
+
+{.push raises: [].}
+
+import pkg/chronos
+import pkg/libp2p/cid
+import pkg/questionable
+import pkg/serde
+
+import ../clock
+import ../stores/blockstore
+import ../blockexchange/engine
+
+export cid, chronos
+
+type
+  DatasetStatus* {.serialize.} = enum
+    ## Status of a dataset in its lifecycle
+    Pending ## Initial state, not yet started
+    Downloading ## Download in progress
+    Completed ## All blocks received/stored
+    Deleting ## Deletion in progress
+    Error ## Unrecoverable error occurred
+
+  CleanupMode* {.serialize.} = enum
+    ## Mode for cleaning up after storage request
+    SlotsOnly ## Delete slot overlays, keep dataset
+    Full ## Delete both slots and dataset
+    None ## Keep everything
+
+  OverlayKind* {.serialize.} = enum
+    ## Type of overlay - 1:1 correspondence with manifest type
+    DatasetOverlay ## Original or protected dataset (distinguished by manifest.protected)
+    SlotOverlay ## Slot within a protected dataset
+
+  OverlayMetadata* {.serialize.} = object
+    ## Metadata for an overlay - 1:1 correspondence with a manifest
+    ## Every manifest (original, protected, slot) has exactly one overlay
+    status*: DatasetStatus
+    manifestCid*: Cid
+    totalBlocks*: uint32
+    totalSize*: uint64
+    expiry*: SecondsSince1970
+    kind*: OverlayKind
+    # For SlotOverlay: reference to parent protected dataset
+    parentTreeCid*: ?Cid
+
+  # Note: presentBlocks is runtime-only, derived on startup from leaf mappings
+  # It is NOT stored in OverlayMetadata to avoid serialization
+  OverlayState* = object ## Runtime state for an overlay (not persisted)
+    metadata*: OverlayMetadata
+    presentBlocks*: uint32 ## Derived from leaf mappings on startup
+
+  DatasetManager* = ref object of BlockStore
+    ## Orchestrates dataset lifecycle - implements BlockStore interface
+    ## Delegates all storage operations to RepoStore
+    repoStore*: BlockStore
+    engine*: BlockExcEngine
+    clock*: Clock
+    overlays*: Table[Cid, OverlayState] ## In-memory overlay state cache
+
+import std/tables
+export tables

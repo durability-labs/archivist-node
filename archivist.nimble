@@ -7,6 +7,7 @@ binDir = "build"
 
 requires "https://github.com/durability-labs/nim-libp2p#multihash-poseidon2"
 requires "https://github.com/durability-labs/archivist-dht >= 0.7.1"
+requires "https://github.com/durability-labs/nim-kvstore >= 0.1.0"  # CAS-enabled kvstore for DatasetManager
 requires "https://github.com/durability-labs/nim-ethers >= 3.1.0"
 requires "https://github.com/status-im/nim-toml-serialization >= 0.2.14"
 requires "https://github.com/status-im/lrucache.nim >= 1.2.2"
