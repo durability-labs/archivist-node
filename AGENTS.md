@@ -117,6 +117,47 @@ without data =? await fetchData(), err:
 
 ## Nim Idioms
 
+### Prefer Functional Methods
+
+Use `filter`, `filterIt`, `map`, `mapIt`, `foldl`, etc. over explicit for/while loops where possible:
+
+```nim
+# GOOD: Functional style - concise and consistent
+let keys = cids.mapIt(makeBlockKey(it))
+let nonEmpty = blocks.filterIt(not it.isEmpty)
+let total = sizes.foldl(a + b, 0.NBytes)
+
+# ACCEPTABLE: Loop when complex logic or early exit needed
+var results: seq[Block]
+for cid in cids:
+  let blk = ?await getBlock(cid)
+  if blk.isSpecial:
+    break
+  results.add(blk)
+
+# AVOID: Loop when functional equivalent is cleaner
+var keys: seq[Key]
+for cid in cids:
+  keys.add(makeBlockKey(cid))  # Use mapIt instead
+```
+
+### Be Judicious with Comments
+
+Don't add comments for every change or obvious code. Comments should explain **why**, not **what**:
+
+```nim
+# GOOD: Explains non-obvious reasoning
+# Metadata is source of truth - commit it last to ensure consistency
+?await self.metaStore.put(records)
+
+# BAD: States the obvious
+# Increment the counter
+counter.inc
+
+# BAD: Documents breaking changes inline (use changelog instead)
+# BREAKING: Removed expiry field
+```
+
 ### Avoid Explicit `result`
 
 Do not use the implicit `result` variable explicitly:
