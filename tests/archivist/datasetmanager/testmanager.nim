@@ -8,6 +8,7 @@ import pkg/questionable/results
 import pkg/archivist/blocktype as bt
 import pkg/archivist/clock
 import pkg/archivist/datasetmanager/manager
+import pkg/archivist/datasetmanager/store
 import pkg/archivist/datasetmanager/types
 
 import ../../asynctest
@@ -19,6 +20,7 @@ import ../examples
 suite "DatasetManager State Management":
   var
     metaStore: SQLiteKVStore
+    datasetStore: DatasetStore
     mockClock: MockClock
     mockStore: MockBlockStore
     dm: DatasetManager
@@ -27,14 +29,15 @@ suite "DatasetManager State Management":
 
   setup:
     metaStore = SQLiteKVStore.new(Memory).tryGet()
+    datasetStore = DatasetStore.new(metaStore)
     mockClock = MockClock.new()
     mockClock.set(now)
     mockStore = MockBlockStore.new()
     # Note: engine is nil for these tests since we're only testing state management
-    dm = DatasetManager.new(mockStore, metaStore, nil, mockClock)
+    dm = DatasetManager.new(mockStore, datasetStore, nil, mockClock)
 
   teardown:
-    (await metaStore.close()).tryGet()
+    (await datasetStore.close()).tryGet()
 
   test "Should store and retrieve overlay metadata":
     let

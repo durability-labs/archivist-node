@@ -6,19 +6,21 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+## Core types for DatasetManager
+##
+## This module defines the data structures used throughout the dataset
+## management system. Types are kept separate to avoid circular dependencies.
+
 {.push raises: [].}
 
 import pkg/chronos
-import pkg/kvstore/kvstore
 import pkg/libp2p/cid
 import pkg/questionable
 import pkg/serde
 
 import ../clock
-import ../stores/blockstore
-import ../blockexchange/engine
 
-export cid, chronos, kvstore
+export cid, chronos
 
 type
   DatasetStatus* {.serialize.} = enum
@@ -57,15 +59,3 @@ type
   OverlayState* = object ## Runtime state for an overlay (not persisted)
     metadata*: OverlayMetadata
     presentBlocks*: uint32 ## Derived from leaf mappings on startup
-
-  DatasetManager* = ref object of BlockStore
-    ## Orchestrates dataset lifecycle - implements BlockStore interface
-    ## Delegates all storage operations to RepoStore
-    repoStore*: BlockStore
-    metaStore*: KVStore
-    engine*: BlockExcEngine
-    clock*: Clock
-    overlays*: Table[Cid, OverlayState] ## In-memory overlay state cache
-
-import std/tables
-export tables

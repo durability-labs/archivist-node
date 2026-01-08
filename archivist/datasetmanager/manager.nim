@@ -6,17 +6,20 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+## DatasetManager - Orchestrates dataset lifecycle
+##
+## Implements BlockStore interface, delegating storage to RepoStore while
+## adding network retrieval via BlockExcEngine. Uses DatasetStore for
+## persistent dataset metadata.
+
 {.push raises: [].}
 
 import pkg/chronos
-import pkg/kvstore/kvstore
-import pkg/kvstore/query
 import pkg/libp2p/cid
 import pkg/questionable
 import pkg/questionable/results
 
-import ./coders
-import ./keys
+import ./store
 import ./types
 import ../stores/blockstore
 import ../blockexchange/engine
@@ -26,154 +29,58 @@ import ../logutils
 import ../merkletree
 import ../utils/safeasynciter
 
-export types
+export store, types
 
 logScope:
   topics = "archivist datasetmanager"
 
+type DatasetManager* = ref object of BlockStore
+  ## Orchestrates dataset lifecycle - implements BlockStore interface
+  ## Delegates block storage to RepoStore, metadata to DatasetStore
+  repoStore*: BlockStore
+  datasetStore*: DatasetStore
+  engine*: BlockExcEngine
+  clock*: Clock
+
 func new*(
     T: type DatasetManager,
     repoStore: BlockStore,
-    metaStore: KVStore,
+    datasetStore: DatasetStore,
     engine: BlockExcEngine,
     clock: Clock,
 ): DatasetManager =
   DatasetManager(
-    repoStore: repoStore,
-    metaStore: metaStore,
-    engine: engine,
-    clock: clock,
-    overlays: initTable[Cid, OverlayState](),
+    repoStore: repoStore, datasetStore: datasetStore, engine: engine, clock: clock
   )
 
 ###########################################################
-# Dataset State Management
+# Dataset State Management - Delegate to DatasetStore
 ###########################################################
 
 proc getOverlayMetadata*(
     self: DatasetManager, manifestCid: Cid
-): Future[?!OverlayMetadata] {.async: (raises: [CancelledError]).} =
-  logScope:
-    manifestCid = manifestCid
-
-  # Check in-memory cache first
-  if self.overlays.hasKey(manifestCid):
-    trace "Overlay metadata found in cache"
-    return success(self.overlays.getOrDefault(manifestCid).metadata)
-
-  # Load from kvstore
-  without key =? datasetOverlayKey(manifestCid), err:
-    return failure(err)
-
-  without record =? await self.metaStore.get(key), err:
-    trace "Overlay metadata not found", err = err.msg
-    return failure(err)
-
-  without meta =? OverlayMetadata.decode(record.val), err:
-    return failure(err)
-
-  trace "Overlay metadata loaded from store"
-  success(meta)
+): Future[?!OverlayMetadata] {.async: (raw: true, raises: [CancelledError]).} =
+  self.datasetStore.getOverlayMetadata(manifestCid)
 
 proc setOverlayMetadata*(
     self: DatasetManager, manifestCid: Cid, meta: OverlayMetadata
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  logScope:
-    manifestCid = manifestCid
-    status = meta.status
-
-  without key =? datasetOverlayKey(manifestCid), err:
-    return failure(err)
-
-  # Get existing record to obtain its token (for CAS), or use 0 for new record
-  var token: uint64 = 0
-  if existingRecord =? await self.metaStore.get(key):
-    token = existingRecord.token
-
-  let record = RawRecord.init(key, meta.encode(), token)
-  ?await self.metaStore.put(record)
-
-  # Update in-memory cache - always overwrite with new state
-  self.overlays[manifestCid] = OverlayState(metadata: meta, presentBlocks: 0)
-
-  trace "Overlay metadata stored"
-  success()
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  self.datasetStore.setOverlayMetadata(manifestCid, meta)
 
 proc deleteOverlayMetadata*(
     self: DatasetManager, manifestCid: Cid
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  logScope:
-    manifestCid = manifestCid
-
-  without key =? datasetOverlayKey(manifestCid), err:
-    return failure(err)
-
-  # Get existing record to obtain its token (for CAS)
-  without existingRecord =? await self.metaStore.get(key), err:
-    # If not found, that's fine - nothing to delete
-    trace "Overlay metadata not found for deletion"
-    return success()
-
-  ?await self.metaStore.delete(KeyRecord.init(key, existingRecord.token))
-
-  # Remove from cache
-  self.overlays.del(manifestCid)
-
-  trace "Overlay metadata deleted"
-  success()
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  self.datasetStore.deleteOverlayMetadata(manifestCid)
 
 proc listDatasets*(
     self: DatasetManager
-): Future[?!seq[Cid]] {.async: (raises: [CancelledError]).} =
-  without queryKey =? datasetsQueryKey(), err:
-    return failure(err)
-
-  without iter =? await self.metaStore.query(Query.init(queryKey)), err:
-    return failure(err)
-
-  var datasets = newSeq[Cid]()
-  while not iter.finished:
-    without recordOpt =? await iter.next(), err:
-      warn "Error iterating datasets", err = err.msg
-      continue
-    without record =? recordOpt:
-      continue # End of iteration
-    without cid =? Cid.init(record.key.value).mapFailure, err:
-      warn "Failed to parse CID from key", key = record.key, err = err.msg
-      continue
-    datasets.add(cid)
-
-  iter.dispose()
-  success(datasets)
+): Future[?!seq[Cid]] {.async: (raw: true, raises: [CancelledError]).} =
+  self.datasetStore.listDatasets()
 
 proc listDatasetsInState*(
     self: DatasetManager, status: DatasetStatus
-): Future[?!seq[Cid]] {.async: (raises: [CancelledError]).} =
-  without queryKey =? datasetsQueryKey(), err:
-    return failure(err)
-
-  without iter =? await self.metaStore.query(Query.init(queryKey)), err:
-    return failure(err)
-
-  var datasets = newSeq[Cid]()
-  while not iter.finished:
-    without recordOpt =? await iter.next(), err:
-      warn "Error iterating datasets", err = err.msg
-      continue
-    without record =? recordOpt:
-      continue # End of iteration
-    without meta =? OverlayMetadata.decode(record.val), err:
-      warn "Failed to decode metadata", err = err.msg
-      continue
-    if meta.status != status:
-      continue
-    without cid =? Cid.init(record.key.value).mapFailure, err:
-      warn "Failed to parse CID from key", key = record.key, err = err.msg
-      continue
-    datasets.add(cid)
-
-  iter.dispose()
-  success(datasets)
+): Future[?!seq[Cid]] {.async: (raw: true, raises: [CancelledError]).} =
+  self.datasetStore.listDatasetsInState(status)
 
 ###########################################################
 # BlockStore Interface - Single Block Operations
