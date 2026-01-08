@@ -227,13 +227,13 @@ asyncchecksuite "Test Node - Purchase request":
       erasure =
         Erasure.new(localStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
 
-    builder = Poseidon2Builder.new(localStore, protected).tryGet()
     manifest = await storeDataGetManifest(localStore, chunker)
     manifestBlock =
       bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
     protected = (await erasure.encode(manifest, 3, 2)).tryGet()
     protectedManifestBlock =
       bt.Block.new(protected.encode().tryGet(), codec = ManifestCodec).tryGet()
+    builder = Poseidon2Builder.new(localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
     verifiableBlock =
       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
