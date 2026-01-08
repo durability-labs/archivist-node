@@ -9,6 +9,7 @@
 {.push raises: [].}
 
 import pkg/chronos
+import pkg/kvstore/kvstore
 import pkg/libp2p/cid
 import pkg/questionable
 import pkg/serde
@@ -17,7 +18,7 @@ import ../clock
 import ../stores/blockstore
 import ../blockexchange/engine
 
-export cid, chronos
+export cid, chronos, kvstore
 
 type
   DatasetStatus* {.serialize.} = enum
@@ -61,6 +62,7 @@ type
     ## Orchestrates dataset lifecycle - implements BlockStore interface
     ## Delegates all storage operations to RepoStore
     repoStore*: BlockStore
+    metaStore*: KVStore
     engine*: BlockExcEngine
     clock*: Clock
     overlays*: Table[Cid, OverlayState] ## In-memory overlay state cache

@@ -79,11 +79,10 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
   discard pb.getField(7, parentTreeCidBuf) # Optional field
 
   let manifestCid = ?Cid.init(manifestCidBuf).mapFailure
-  let parentTreeCid =
-    if parentTreeCidBuf.len > 0:
-      Cid.init(parentTreeCidBuf).mapFailure.option
-    else:
-      Cid.none
+  var parentTreeCid = Cid.none
+  if parentTreeCidBuf.len > 0:
+    let cid = ?Cid.init(parentTreeCidBuf).mapFailure
+    parentTreeCid = cid.some
 
   success(
     OverlayMetadata(

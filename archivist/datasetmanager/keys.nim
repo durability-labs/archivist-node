@@ -27,9 +27,11 @@
 
 {.push raises: [].}
 
-import pkg/datastore
+import pkg/kvstore/key
 import pkg/libp2p/cid
 import pkg/questionable/results
+
+export key
 
 # Namespace constants
 const
