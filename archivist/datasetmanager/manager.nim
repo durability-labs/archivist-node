@@ -14,6 +14,8 @@
 
 {.push raises: [].}
 
+import std/tables
+
 import pkg/chronos
 import pkg/libp2p/cid
 import pkg/questionable
@@ -25,22 +27,30 @@ import ../stores/blockstore
 import ../blockexchange/engine
 import ../blocktype
 import ../clock
+import ../errors
 import ../logutils
+import ../manifest
 import ../merkletree
 import ../utils/safeasynciter
+import ../utils/trackedfutures
 
 export store, types
 
 logScope:
   topics = "archivist datasetmanager"
 
-type DatasetManager* = ref object of BlockStore
-  ## Orchestrates dataset lifecycle - implements BlockStore interface
-  ## Delegates block storage to RepoStore, metadata to DatasetStore
-  repoStore*: BlockStore
-  datasetStore*: DatasetStore
-  engine*: BlockExcEngine
-  clock*: Clock
+type
+  DownloadHandle* = Future[void].Raising([])
+
+  DatasetManager* = ref object of BlockStore
+    ## Orchestrates dataset lifecycle - implements BlockStore interface
+    ## Delegates block storage to RepoStore, metadata to DatasetStore
+    repoStore*: BlockStore
+    datasetStore*: DatasetStore
+    engine*: BlockExcEngine
+    clock*: Clock
+    trackedFutures*: TrackedFutures
+    downloads*: Table[Cid, DownloadHandle] ## Active downloads by manifest CID
 
 func new*(
     T: type DatasetManager,
@@ -50,7 +60,12 @@ func new*(
     clock: Clock,
 ): DatasetManager =
   DatasetManager(
-    repoStore: repoStore, datasetStore: datasetStore, engine: engine, clock: clock
+    repoStore: repoStore,
+    datasetStore: datasetStore,
+    engine: engine,
+    clock: clock,
+    trackedFutures: TrackedFutures(),
+    downloads: initTable[Cid, DownloadHandle](),
   )
 
 ###########################################################
@@ -81,6 +96,224 @@ proc listDatasetsInState*(
     self: DatasetManager, status: DatasetStatus
 ): Future[?!seq[Cid]] {.async: (raw: true, raises: [CancelledError]).} =
   self.datasetStore.listDatasetsInState(status)
+
+###########################################################
+# Dataset Lifecycle Operations
+###########################################################
+
+proc downloadInternal(
+    self: DatasetManager, manifestCid: Cid, manifest: Manifest
+) {.async: (raises: []).} =
+  ## Internal download procedure - requests all blocks from network
+  ## Runs in the background and updates overlay state
+
+  logScope:
+    manifestCid = manifestCid
+    treeCid = manifest.treeCid
+    blocksCount = manifest.blocksCount
+
+  trace "Starting dataset download"
+
+  let treeCid = manifest.treeCid
+  let totalBlocks = manifest.blocksCount
+
+  try:
+    # Request each block
+    for index in 0 ..< totalBlocks:
+      logScope:
+        index = index
+
+      # Check if already local
+      if hasBlk =? await self.repoStore.hasBlock(treeCid, index):
+        if hasBlk:
+          trace "Block already local, skipping"
+          continue
+
+      # Request from network
+      trace "Requesting block from network"
+      if blk =? await self.engine.requestBlock(BlockAddress.init(treeCid, index)):
+        # Store block (putBlock handles the storage and notifies engine)
+        if err =? (await self.putBlock(blk)).errorOption:
+          warn "Failed to store downloaded block", err = err.msg
+          # Continue to next block - partial downloads are OK
+      else:
+        trace "Failed to retrieve block from network"
+        # Continue to next block - partial downloads are OK
+
+    # Update state to Completed
+    if meta =? await self.getOverlayMetadata(manifestCid):
+      var updatedMeta = meta
+      updatedMeta.status = Completed
+      if err =? (await self.setOverlayMetadata(manifestCid, updatedMeta)).errorOption:
+        warn "Failed to update overlay status to Completed", err = err.msg
+
+    trace "Dataset download completed"
+  except CancelledError:
+    trace "Dataset download cancelled"
+
+proc downloadDataset*(
+    self: DatasetManager, manifestCid: Cid, expiry: SecondsSince1970 = 0
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Start downloading a dataset
+  ##
+  ## 1. Check if already downloading (return error if so)
+  ## 2. Set state to Downloading
+  ## 3. Fetch manifest via getBlock
+  ## 4. Extract block list from manifest
+  ## 5. Request blocks via engine
+  ## 6. Track progress as blocks arrive
+  ## 7. On completion: state = Completed
+
+  logScope:
+    manifestCid = manifestCid
+
+  # Check if already downloading
+  if manifestCid in self.downloads:
+    trace "Dataset already downloading"
+    return failure(newException(ArchivistError, "Dataset already downloading"))
+
+  # Check if already exists and completed
+  if meta =? await self.getOverlayMetadata(manifestCid):
+    if meta.status == Completed:
+      trace "Dataset already completed"
+      return success()
+    if meta.status == Downloading:
+      trace "Dataset marked as downloading but no active download"
+      # Continue - may be resuming after crash
+
+  # Fetch manifest block
+  trace "Fetching manifest"
+  let manifestBlk = ?await self.getBlock(manifestCid)
+
+  # Decode manifest
+  without manifest =? Manifest.decode(manifestBlk), err:
+    return
+      failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
+
+  # Create overlay metadata
+  let meta = OverlayMetadata(
+    status: Downloading,
+    manifestCid: manifestCid,
+    totalBlocks: manifest.blocksCount.uint32,
+    totalSize: manifest.datasetSize.uint64,
+    expiry: expiry,
+    kind: DatasetOverlay,
+    parentTreeCid: Cid.none,
+  )
+  ?await self.setOverlayMetadata(manifestCid, meta)
+
+  trace "Starting download", totalBlocks = manifest.blocksCount
+
+  # Create download future and track it
+  let downloadFut = self.downloadInternal(manifestCid, manifest)
+
+  # Store handle for cancellation
+  self.downloads[manifestCid] = downloadFut
+
+  # Track and cleanup when done
+  proc cleanup(data: pointer) {.raises: [].} =
+    self.downloads.del(manifestCid)
+
+  downloadFut.addCallback(cleanup)
+  self.trackedFutures.track(downloadFut)
+
+  success()
+
+proc getProgress*(
+    self: DatasetManager, manifestCid: Cid
+): Future[?!(uint32, uint32)] {.async: (raises: [CancelledError]).} =
+  ## Get download progress for a dataset
+  ## Returns (presentBlocks, totalBlocks)
+
+  logScope:
+    manifestCid = manifestCid
+
+  # Get overlay metadata for total blocks
+  without meta =? await self.getOverlayMetadata(manifestCid), err:
+    return failure(err)
+
+  let totalBlocks = meta.totalBlocks
+
+  # Get manifest to find treeCid
+  let manifestBlk = ?await self.getBlock(manifestCid)
+  without manifest =? Manifest.decode(manifestBlk), err:
+    return
+      failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
+
+  # Count present blocks
+  var presentBlocks: uint32 = 0
+  for index in 0 ..< totalBlocks.int:
+    if hasBlk =? await self.repoStore.hasBlock(manifest.treeCid, index):
+      if hasBlk:
+        presentBlocks.inc
+
+  trace "Progress", presentBlocks = presentBlocks, totalBlocks = totalBlocks
+  success((presentBlocks, totalBlocks))
+
+proc cancelDownload*(
+    self: DatasetManager, manifestCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Cancel an active download
+
+  logScope:
+    manifestCid = manifestCid
+
+  # Check if downloading and get the future
+  var downloadFut: DownloadHandle
+  self.downloads.withValue(manifestCid, fut):
+    downloadFut = fut[]
+  do:
+    trace "No active download to cancel"
+    return failure(newException(ArchivistError, "No active download for this manifest"))
+
+  trace "Cancelling download"
+
+  # Cancel the download future
+  await downloadFut.cancelAndWait()
+
+  # Update state
+  if meta =? await self.getOverlayMetadata(manifestCid):
+    var updatedMeta = meta
+    updatedMeta.status = Pending # Reset to pending since not complete
+    if err =? (await self.setOverlayMetadata(manifestCid, updatedMeta)).errorOption:
+      warn "Failed to update overlay status", err = err.msg
+
+  success()
+
+proc deleteOverlay*(
+    self: DatasetManager, manifestCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Delete a dataset overlay and its metadata
+  ##
+  ## Note: This does NOT delete blocks - block deletion with refcount
+  ## management will be implemented when RepoStore has refcount support
+
+  logScope:
+    manifestCid = manifestCid
+
+  # Check if downloading and cancel first
+  if manifestCid in self.downloads:
+    trace "Cancelling active download before delete"
+    ?await self.cancelDownload(manifestCid)
+
+  # Get metadata to set state to Deleting
+  if meta =? await self.getOverlayMetadata(manifestCid):
+    var updatedMeta = meta
+    updatedMeta.status = Deleting
+    ?await self.setOverlayMetadata(manifestCid, updatedMeta)
+
+  # Delete the overlay metadata
+  ?await self.deleteOverlayMetadata(manifestCid)
+
+  trace "Overlay deleted"
+  success()
+
+# Alias for clarity
+proc deleteDataset*(
+    self: DatasetManager, manifestCid: Cid
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Delete a dataset - alias for deleteOverlay
+  self.deleteOverlay(manifestCid)
 
 ###########################################################
 # BlockStore Interface - Single Block Operations
@@ -272,4 +505,11 @@ method getCidsAndProofs*(
 
 method close*(self: DatasetManager): Future[void] {.async: (raises: []).} =
   trace "Closing DatasetManager"
+
+  # Cancel all tracked futures (including active downloads)
+  await self.trackedFutures.cancelTracked()
+
+  # Clear downloads table
+  self.downloads.clear()
+
   await self.repoStore.close()

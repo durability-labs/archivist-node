@@ -15,6 +15,7 @@ import pkg/archivist/blocktype
 import pkg/archivist/stores/blockstore
 import pkg/archivist/merkletree
 import pkg/archivist/logutils
+import pkg/archivist/utils/safeasynciter
 
 export blockstore
 
