@@ -72,9 +72,7 @@ proc validateQuotaLimit*(usage: QuotaUsage, limit: NBytes): ?!void =
 
 proc buildKeyLookup*(records: seq[RawRecord]): Table[Key, RawRecord] =
   ## Convert batch get results to key -> record lookup
-  result = initTable[Key, RawRecord]()
-  for rec in records:
-    result[rec.key] = rec
+  records.mapIt((it.key, it)).toTable
 
 proc updateMetrics*(self: RepoStore) =
   ## Update prometheus metrics from in-memory cache
@@ -86,34 +84,45 @@ type CounterMiddleware* = proc(failed: seq[RawRecord]): Future[?!seq[RawRecord]]
   async: (raises: [CancelledError])
 .}
 
+proc refreshQuotaRecord(
+    self: RepoStore, key: Key, usedDelta: int64, reservedDelta: int64 = 0
+): Future[?!RawRecord] {.async: (raises: [CancelledError]).} =
+  ## Refresh quota record with new token and apply deltas
+  let (fresh, token) =
+    ?await getWithDefault[QuotaUsage](
+      self.metaStore, key, QuotaUsage(used: 0.NBytes, reserved: 0.NBytes)
+    )
+  let updated = QuotaUsage(
+    used: max(0'i64, fresh.used.int64 + usedDelta).NBytes,
+    reserved: max(0'i64, fresh.reserved.int64 + reservedDelta).NBytes,
+  )
+  ?validateQuotaLimit(updated, self.quotaMaxBytes)
+  success(RawRecord.init(key, encode(updated), token))
+
+proc refreshTotalBlocksRecord(
+    self: RepoStore, key: Key, totalDelta: int
+): Future[?!RawRecord] {.async: (raises: [CancelledError]).} =
+  ## Refresh total blocks record with new token and apply delta
+  let (fresh, token) = ?await getWithDefault[Natural](self.metaStore, key, 0.Natural)
+  let updatedTotal = max(0, fresh.int + totalDelta).Natural
+  success(RawRecord.init(key, encode(updatedTotal), token))
+
 proc makeCounterMiddleware*(
     self: RepoStore, quotaDeltaBytes: int64, totalDelta: int
 ): CounterMiddleware =
   ## Factory for CAS middleware that handles counter updates on conflict.
   ## Handles QuotaUsedKey and ArchivistTotalBlocksKey, passes through other records unchanged.
-  ## quotaDeltaBytes can be positive (add) or negative (subtract).
   proc middleware(
       failed: seq[RawRecord]
   ): Future[?!seq[RawRecord]] {.async: (raises: [CancelledError]).} =
     var refreshed: seq[RawRecord]
     for r in failed:
       if r.key == QuotaUsedKey:
-        let (fresh, token) =
-          ?await getWithDefault[QuotaUsage](
-            self.metaStore, r.key, QuotaUsage(used: 0.NBytes, reserved: 0.NBytes)
-          )
-        let newUsed = max(0'i64, fresh.used.int64 + quotaDeltaBytes).NBytes
-        let updated = QuotaUsage(used: newUsed, reserved: fresh.reserved)
-        ?validateQuotaLimit(updated, self.quotaMaxBytes)
-        refreshed.add(RawRecord.init(r.key, encode(updated), token))
+        refreshed.add(?await self.refreshQuotaRecord(r.key, quotaDeltaBytes))
       elif r.key == ArchivistTotalBlocksKey:
-        let (fresh, token) =
-          ?await getWithDefault[Natural](self.metaStore, r.key, 0.Natural)
-        let updatedTotal = max(0, fresh.int + totalDelta).Natural
-        refreshed.add(RawRecord.init(r.key, encode(updatedTotal), token))
+        refreshed.add(?await self.refreshTotalBlocksRecord(r.key, totalDelta))
       else:
-        # Block metadata or other records - idempotent, just retry with same data
-        refreshed.add(r)
+        refreshed.add(r) # Idempotent records - retry with same data
     success(refreshed)
 
   middleware
@@ -132,11 +141,8 @@ proc updateCountersAtomic*(
   let (currentTotal, totalToken) =
     ?await getWithDefault[Natural](self.metaStore, ArchivistTotalBlocksKey, 0.Natural)
 
-  # Validate that deltas don't make values negative (preserve RangeDefect behavior)
-  let newUsedRaw = currentQuota.used.int64 + delta.quotaUsedDelta
+  # Validate reserved delta - cannot go negative
   let newReservedRaw = currentQuota.reserved.int64 + delta.quotaReservedDelta
-  let newTotalRaw = currentTotal.int + delta.totalBlocksDelta
-
   if newReservedRaw < 0:
     raise newException(
       RangeDefect,
@@ -145,46 +151,41 @@ proc updateCountersAtomic*(
     )
 
   # Calculate new values (used and total can be clamped safely)
-  let newQuota =
-    QuotaUsage(used: max(0'i64, newUsedRaw).NBytes, reserved: newReservedRaw.NBytes)
-  let newTotal = max(0, newTotalRaw).Natural
+  let newQuota = QuotaUsage(
+    used: max(0'i64, currentQuota.used.int64 + delta.quotaUsedDelta).NBytes,
+    reserved: newReservedRaw.NBytes,
+  )
+  let newTotal = max(0, currentTotal.int + delta.totalBlocksDelta).Natural
 
-  # Validate quota limit
   ?validateQuotaLimit(newQuota, self.quotaMaxBytes)
 
   # Build records for atomic batch
-  var records: seq[RawRecord]
-  records.add(RawRecord.init(QuotaUsedKey, encode(newQuota), quotaToken))
-  records.add(RawRecord.init(ArchivistTotalBlocksKey, encode(newTotal), totalToken))
+  let records =
+    @[
+      RawRecord.init(QuotaUsedKey, encode(newQuota), quotaToken),
+      RawRecord.init(ArchivistTotalBlocksKey, encode(newTotal), totalToken),
+    ]
 
-  # CAS middleware for retry on conflict
+  # CAS middleware using extracted helpers
   proc middleware(
       failed: seq[RawRecord]
   ): Future[?!seq[RawRecord]] {.async: (raises: [CancelledError]).} =
     var refreshed: seq[RawRecord]
     for r in failed:
       if r.key == QuotaUsedKey:
-        let (fresh, token) =
-          ?await getWithDefault[QuotaUsage](
-            self.metaStore, r.key, QuotaUsage(used: 0.NBytes, reserved: 0.NBytes)
+        refreshed.add(
+          ?await self.refreshQuotaRecord(
+            r.key, delta.quotaUsedDelta, delta.quotaReservedDelta
           )
-        let updated = QuotaUsage(
-          used: max(0'i64, fresh.used.int64 + delta.quotaUsedDelta).NBytes,
-          reserved: max(0'i64, fresh.reserved.int64 + delta.quotaReservedDelta).NBytes,
         )
-        ?validateQuotaLimit(updated, self.quotaMaxBytes)
-        refreshed.add(RawRecord.init(r.key, encode(updated), token))
       elif r.key == ArchivistTotalBlocksKey:
-        let (fresh, token) =
-          ?await getWithDefault[Natural](self.metaStore, r.key, 0.Natural)
-        let updatedTotal = max(0, fresh.int + delta.totalBlocksDelta).Natural
-        refreshed.add(RawRecord.init(r.key, encode(updatedTotal), token))
+        refreshed.add(
+          ?await self.refreshTotalBlocksRecord(r.key, delta.totalBlocksDelta)
+        )
     success(refreshed)
 
-  let failedResult = await self.metaStore.tryPut(records, middleware = middleware)
-  if failedResult.isErr:
-    return failure(failedResult.error)
-  if failedResult.get.len > 0:
+  let failedRecords = ?await self.metaStore.tryPut(records, middleware = middleware)
+  if failedRecords.len > 0:
     return failure("Failed to update counters atomically")
 
   # Update in-memory cache
@@ -355,24 +356,17 @@ proc getBlocksBatch*(
   if cids.len == 0:
     return success(newSeq[Block]())
 
-  # Build keys and track cid->key mapping
+  # Build keys for non-empty cids
   var keys: seq[Key]
-  var cidKeyPairs: seq[(Cid, Key)] # Track which key belongs to which cid
   for cid in cids:
-    if cid.isEmpty:
-      continue
-    without key =? makeBlockDataKey(cid), err:
-      return failure(err)
-    cidKeyPairs.add((cid, key))
-    keys.add(key)
+    if not cid.isEmpty:
+      without key =? makeBlockDataKey(cid), err:
+        return failure(err)
+      keys.add(key)
 
-  # Batch get (returns only records for existing keys)
+  # Batch get and build lookup
   let records = ?await rawkvstore.get(self.blockStore, keys)
-
-  # Build key->data lookup from returned records
-  var keyToData: Table[Key, seq[byte]]
-  for rec in records:
-    keyToData[rec.key] = rec.val
+  let keyToData = records.mapIt((it.key, it.val)).toTable
 
   # Build blocks in original order
   var blocks: seq[Block]
@@ -458,11 +452,11 @@ proc delBlocksBatch*(
   if actualDeleted == 0:
     return success(newSeq[Cid]())
 
-  # Calculate actual bytes released
-  var actualBytesReleased = bytesReleased
+  # Calculate actual bytes released by subtracting failed deletions
   let failedKeys = failedDeletes.mapIt(it.key).toHashSet
-  for (_, key) in cidToKey:
-    if key in failedKeys and keyToMeta.hasKey(key):
+  var actualBytesReleased = bytesReleased
+  for key in failedKeys:
+    if keyToMeta.hasKey(key):
       actualBytesReleased -= keyToMeta.getOrDefault(key).size
 
   # 6. Atomic update of quota + totalBlocks
@@ -479,11 +473,11 @@ proc delBlocksBatch*(
   )
   let newTotal = max(0, currentTotal.int - actualDeleted).Natural
 
-  var updateRecords: seq[RawRecord]
-  updateRecords.add(RawRecord.init(QuotaUsedKey, encode(newQuota), quotaToken))
-  updateRecords.add(
-    RawRecord.init(ArchivistTotalBlocksKey, encode(newTotal), totalToken)
-  )
+  let updateRecords =
+    @[
+      RawRecord.init(QuotaUsedKey, encode(newQuota), quotaToken),
+      RawRecord.init(ArchivistTotalBlocksKey, encode(newTotal), totalToken),
+    ]
 
   let middleware =
     self.makeCounterMiddleware(-actualBytesReleased.int64, -actualDeleted)
@@ -528,16 +522,19 @@ proc batchUpdateRefcounts*(
   if updates.len == 0:
     return success(newSeq[Cid]())
 
-  # 1. NORMALIZE: Build keys and mapping
+  # 1. NORMALIZE: Build keys and delta lookup
   var metaKeys: seq[Key]
-  var cidDeltas: seq[(Cid, int, Key)]
+  var keyToDelta: Table[Key, int]
+  var keyCidPairs: seq[(Key, Cid)]
+
   for (cid, delta) in updates:
     if cid.isEmpty:
       continue
     without key =? makeBlockMetadataKey(cid), err:
       return failure(err)
-    cidDeltas.add((cid, delta, key))
     metaKeys.add(key)
+    keyToDelta[key] = delta
+    keyCidPairs.add((key, cid))
 
   if metaKeys.len == 0:
     return success(newSeq[Cid]())
@@ -550,11 +547,12 @@ proc batchUpdateRefcounts*(
   var toUpdate: seq[RawRecord]
   var zeroRefCids: seq[Cid]
 
-  for (cid, delta, key) in cidDeltas:
+  for (key, cid) in keyCidPairs:
     if keyToRecord.hasKey(key):
       let rec = keyToRecord.getOrDefault(key)
       without meta =? BlockMetadata.decode(rec.val), err:
         return failure(err)
+      let delta = keyToDelta.getOrDefault(key, 0)
       let newRefCount = max(0, meta.refCount.int + delta).Natural
       let newMeta = BlockMetadata(size: meta.size, refCount: newRefCount)
       toUpdate.add(RawRecord.init(key, encode(newMeta), rec.token))
@@ -570,18 +568,12 @@ proc batchUpdateRefcounts*(
   ): Future[?!seq[RawRecord]] {.async: (raises: [CancelledError]).} =
     var refreshed: seq[RawRecord]
     for r in failed:
-      # Find the delta for this key
-      var delta = 0
-      for (_, d, key) in cidDeltas:
-        if key == r.key:
-          delta = d
-          break
-
-      let fresh = await get[BlockMetadata](self.metaStore, r.key)
-      if fresh.isOk:
-        let newRefCount = max(0, fresh.get.val.refCount.int + delta).Natural
-        let newMeta = BlockMetadata(size: fresh.get.val.size, refCount: newRefCount)
-        refreshed.add(RawRecord.init(r.key, encode(newMeta), fresh.get.token))
+      let delta = keyToDelta.getOrDefault(r.key, 0)
+      without fresh =? await get[BlockMetadata](self.metaStore, r.key):
+        continue
+      let newRefCount = max(0, fresh.val.refCount.int + delta).Natural
+      let newMeta = BlockMetadata(size: fresh.val.size, refCount: newRefCount)
+      refreshed.add(RawRecord.init(r.key, encode(newMeta), fresh.token))
     success(refreshed)
 
   # 5. COMMIT
