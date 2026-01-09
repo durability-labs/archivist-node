@@ -9,6 +9,8 @@
 
 {.push raises: [].}
 
+import std/sequtils
+import std/sets
 import std/strutils
 
 import pkg/chronos
@@ -140,29 +142,19 @@ method getCid*(
 method putBlock*(
     self: RepoStore, blk: Block
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Put a single block - wraps batch operation
   logScope:
     cid = blk.cid
 
-  without res =? await self.storeBlock(blk), err:
-    return failure(err)
+  let failed = ?await self.putBlocksBatch(@[blk])
+  if failed.len > 0:
+    return failure("Failed to store block: " & $blk.cid)
 
-  if res.kind == Stored:
-    trace "Block Stored"
-    if err =? (await self.updateQuotaUsage(plusUsed = res.used)).errorOption:
-      # rollback changes
-      without delRes =? await self.tryDeleteBlock(blk.cid), err:
-        return failure(err)
-      return failure(err)
+  if onBlock =? self.onBlockStored:
+    await onBlock(blk.cid)
 
-    if err =? (await self.updateTotalBlocksCount(plusCount = 1)).errorOption:
-      return failure(err)
-
-    if onBlock =? self.onBlockStored:
-      await onBlock(blk.cid)
-  else:
-    trace "Block already exists"
-
-  return success()
+  trace "Block stored"
+  success()
 
 proc delBlockInternal(
     self: RepoStore, cid: Cid
@@ -326,27 +318,61 @@ method getBlockExpirations*(
   success SafeAsyncIter[BlockExpiration].new(next, isFinished)
 
 ###########################################################
-# Batch operations
+# Batch operations (use batch-centric implementations)
 ###########################################################
 
 method putBlocks*(
     self: RepoStore, blocks: seq[Block]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  for blk in blocks:
-    ?await self.putBlock(blk)
+  ## Put multiple blocks with atomic metadata commit
+  let failed = ?await self.putBlocksBatch(blocks)
+  if failed.len > 0:
+    return failure("Failed to store " & $failed.len & " blocks")
+
+  # Fire callbacks for successfully stored blocks
+  if onBlock =? self.onBlockStored:
+    let failedSet = failed.toHashSet
+    for blk in blocks:
+      if blk.cid notin failedSet:
+        await onBlock(blk.cid)
+
   success()
 
 method getBlocks*(
     self: RepoStore, addresses: seq[BlockAddress]
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
-  var blocks = newSeq[Block](addresses.len)
+  ## Get multiple blocks - separates leaf and direct addresses
+  # Separate leaf addresses (need metadata lookup) from direct CID addresses
+  var directCids: seq[Cid]
+  var leafAddresses: seq[(int, Cid, Natural)] # (originalIdx, treeCid, index)
+
   for i, address in addresses:
-    blocks[i] = ?await self.getBlock(address)
+    if address.leaf:
+      leafAddresses.add((i, address.treeCid, address.index))
+    else:
+      directCids.add(address.cid)
+
+  # Get direct blocks via batch
+  var blocks = newSeq[Block](addresses.len)
+
+  if directCids.len > 0:
+    let directBlocks = ?await self.getBlocksBatch(directCids)
+    var directIdx = 0
+    for i, address in addresses:
+      if not address.leaf:
+        blocks[i] = directBlocks[directIdx]
+        directIdx.inc
+
+  # Get leaf blocks (need metadata lookup first)
+  for (origIdx, treeCid, index) in leafAddresses:
+    blocks[origIdx] = ?await self.getBlock(treeCid, index)
+
   success(blocks)
 
 method getBlocks*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks by tree + indices
   var blocks = newSeq[Block](indices.len)
   for i, index in indices:
     blocks[i] = ?await self.getBlock(treeCid, index)
@@ -355,16 +381,20 @@ method getBlocks*(
 method delBlocks*(
     self: RepoStore, addresses: seq[BlockAddress]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Delete multiple blocks
+  # Handle leaf addresses separately (need refcount decrement)
   for address in addresses:
     if address.leaf:
       ?await self.delBlock(address.treeCid, address.index)
     else:
-      ?await self.delBlock(address.cid)
+      # Direct CID deletes can be batched
+      discard await self.delBlocksBatch(@[address.cid])
   success()
 
 method delBlocks*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Delete multiple blocks by tree + indices
   for index in indices:
     ?await self.delBlock(treeCid, index)
   success()
@@ -372,10 +402,11 @@ method delBlocks*(
 method getBlockRange*(
     self: RepoStore, treeCid: Cid, start: Natural, count: Natural
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
-  var blocks = newSeq[Block](count)
-  for i in 0 ..< count:
-    blocks[i] = ?await self.getBlock(treeCid, start + i)
-  success(blocks)
+  ## Get a range of blocks - uses batch internally
+  var indices: seq[Natural]
+  for i in start ..< start + count:
+    indices.add(i.Natural)
+  await self.getBlocks(treeCid, indices)
 
 method getBlockAndProof*(
     self: RepoStore, address: BlockAddress
