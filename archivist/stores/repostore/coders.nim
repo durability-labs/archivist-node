@@ -12,13 +12,16 @@
 
 {.push raises: [].}
 
-import pkg/libp2p/cid
+import pkg/libp2p/multicodec
 import pkg/libp2p/protobuf/minprotobuf
 import pkg/questionable/results
 import pkg/stew/endians2
 
 import ./types
-import ../../merkletree
+
+type TreeMetadata* = object
+  nleaves*: Natural
+  mcodec*: MultiCodec
 
 ## QuotaUsage protobuf encoding
 ## Field 1: used (uint64)
@@ -66,35 +69,28 @@ proc decode*(T: type BlockMetadata, bytes: openArray[byte]): ?!T =
 
   success BlockMetadata(size: size.NBytes, refCount: refCount.Natural)
 
-## LeafMetadata protobuf encoding
-## Field 1: blkCid (bytes)
-## Field 2: proof (bytes - serialized ArchivistProof)
+## TreeMetadata protobuf encoding
+## Field 1: nleaves (uint64)
+## Field 2: mcodec (uint64)
 
-proc encode*(t: LeafMetadata): seq[byte] =
+proc encode*(t: TreeMetadata): seq[byte] =
   var pb = initProtoBuffer()
-  pb.write(1, t.blkCid.data.buffer)
-  pb.write(2, t.proof.encode())
+  pb.write(1, t.nleaves.uint64)
+  pb.write(2, t.mcodec.uint64)
   pb.finish()
   pb.buffer
 
-proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
+proc decode*(T: type TreeMetadata, bytes: openArray[byte]): ?!T =
   var
     pb = initProtoBuffer(bytes)
-    cidBytes: seq[byte]
-    proofBytes: seq[byte]
+    nleaves, mcodec: uint64
 
-  if pb.getField(1, cidBytes).isErr:
-    return failure("Unable to decode LeafMetadata.blkCid")
-  if pb.getField(2, proofBytes).isErr:
-    return failure("Unable to decode LeafMetadata.proof")
+  if pb.getField(1, nleaves).isErr:
+    return failure("Unable to decode TreeMetadata.nleaves")
+  if pb.getField(2, mcodec).isErr:
+    return failure("Unable to decode TreeMetadata.mcodec")
 
-  without blkCid =? Cid.init(cidBytes).mapFailure, err:
-    return failure("Unable to decode LeafMetadata.blkCid: " & err.msg)
-
-  without proof =? ArchivistProof.decode(proofBytes), err:
-    return failure("Unable to decode LeafMetadata.proof: " & err.msg)
-
-  success LeafMetadata(blkCid: blkCid, proof: proof)
+  success TreeMetadata(nleaves: nleaves.Natural, mcodec: mcodec.MultiCodec)
 
 ## Simple type encoders for kvstore typed API
 

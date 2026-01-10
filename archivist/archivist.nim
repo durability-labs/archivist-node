@@ -64,7 +64,7 @@ proc connectMarketplace(s: NodeServer) {.async.} =
     let marketplaceResult = await MarketplaceNode.connect(
       ethProviderUrl = config.ethProvider,
       ethPrivateKeyFile = ethPrivateKeyFile,
-      datastore = s.repoStore.metaDs,
+      metaStore = s.repoStore.metaStore,
       storage = MarketplaceStorage.new(s.archivistNode, s.repoStore),
       options = MarketplaceOptions(
         marketplaceAddress: config.marketplaceAddress,

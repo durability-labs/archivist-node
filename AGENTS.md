@@ -42,6 +42,14 @@ logScope:
 
 ## Error Handling
 
+**CRITICAL**: This is a complex P2P application with cryptographic proofs, distributed storage, and economic incentives (blockchain-based marketplace). Errors can lead to:
+- Data loss or corruption
+- Failed proof generation/verification
+- Economic losses (slashed stakes, missed rewards)
+- Network partitioning issues
+
+**Never silently discard errors.** Every error must be either handled explicitly or propagated up the call stack.
+
 ### Prefer Result Types Over Exceptions
 
 Use `?!T` (Result type from questionable/results) instead of raising exceptions:
@@ -114,6 +122,22 @@ proc process(): Future[?!Result] {.async: (raises: [CancelledError]).} =
 without data =? await fetchData(), err:
   return failure(newException(ProcessError, "fetch failed: " & err.msg))
 ```
+
+### Discarding Success Values (Not Errors)
+
+When wrapping a function that returns `?!T` but you only need `?!void`, use `discard ?`:
+
+```nim
+# CORRECT: ? propagates error, discard only applies to success value
+proc wrapper(): Future[?!void] {.async: (raises: [CancelledError]).} =
+  discard ?await innerOp()  # Error propagated, only success value discarded
+
+# WRONG: This silently ignores errors!
+proc wrapper(): Future[?!void] {.async: (raises: [CancelledError]).} =
+  discard await innerOp()  # Error lost! Never do this.
+```
+
+The `?` operator ensures the error is propagated. The `discard` only affects the unwrapped success value.
 
 ## Nim Idioms
 

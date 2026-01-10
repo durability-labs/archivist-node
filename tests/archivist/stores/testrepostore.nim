@@ -291,11 +291,11 @@ asyncchecksuite "RepoStore":
     (await repo.putBlock(blk)).tryGet()
     (await repo.putCidAndProof(treeCid, 0.Natural, blk.cid, proof)).tryGet()
 
-    discard (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+    discard (await repo.getLeafCid(treeCid, 0.Natural)).tryGet()
 
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
 
-    let err = (await repo.getLeafMetadata(treeCid, 0.Natural)).error()
+    let err = (await repo.getLeafCid(treeCid, 0.Natural)).error()
     check err of BlockNotFoundError
 
   test "should not fail when reinserting and deleting a previously deleted block (bug #1108)":

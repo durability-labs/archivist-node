@@ -1,7 +1,7 @@
 import pkg/chronos
 import pkg/questionable/results
 import pkg/kvstore
-import ../../stores/keyutils
+import ../../keys
 import ./terms
 import ./encoding
 
@@ -9,7 +9,7 @@ type AvailabilityStore* = ref object
   store: KVStore
 
 const DatastoreKey = (
-  (ArchivistMetaKey / "sales").flatMap(
+  (MetaBaseKey / "sales").flatMap(
     proc(k: Key): ?!Key =
       k / "availability"
   )

@@ -10,7 +10,7 @@ import pkg/questionable/results
 import pkg/libp2p
 import pkg/unittest2
 
-import pkg/archivist/datasetmanager/keys
+import pkg/archivist/keys
 
 # Use hardcoded CID strings to avoid MultiHash.digest compilation issues
 const

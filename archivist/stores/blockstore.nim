@@ -90,10 +90,18 @@ method putBlock*(
 method putCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
-  ## Put a block proof to the blockstore
-  ##
+  ## Store leaf CID mapping and incrementally build tree from proof nodes.
+  ## Tree nodes are extracted from the proof and stored for on-demand proof computation.
 
   raiseAssert("putCidAndProof not implemented!")
+
+method putTree*(
+    self: BlockStore, treeCid: Cid, tree: ArchivistTree
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Store merkle tree nodes for on-demand proof computation
+  ##
+
+  raiseAssert("putTree not implemented!")
 
 method getCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural

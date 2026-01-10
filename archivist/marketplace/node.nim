@@ -1,7 +1,7 @@
 import pkg/ethers
 import pkg/chronos
+import pkg/kvstore
 import pkg/questionable/results
-import pkg/datastore/typedds
 import ./purchasing
 import ./sales
 import ./validation
@@ -30,7 +30,7 @@ proc connect*(
     ethProviderUrl: string,
     ethPrivateKeyFile: string,
     storage: StorageInterface,
-    datastore: TypedDatastore,
+    metaStore: KVStore,
     options = MarketplaceOptions(),
 ): Future[?!MarketplaceNode] {.async: (raises: [CancelledError]).} =
   let provider = ?await Provider.connect(ethProviderUrl, options)
@@ -41,7 +41,7 @@ proc connect*(
   let marketplace = ?await OnchainMarketplace.load(contract, options)
   let clock = ?await Clock.start(provider, options)
   let purchasing = Purchasing.new(marketplace, clock)
-  let availability = AvailabilityStore.new(datastore)
+  let availability = AvailabilityStore.new(metaStore)
   let sales = Sales.new(marketplace, clock, availability, storage)
   var validation: ?Validation
   if options.validationEnabled:

@@ -25,7 +25,7 @@ import ./coders
 import ./types
 import ./operations
 import ../blockstore
-import ../keyutils
+import ../../keys
 import ../../blocktype
 import ../../logutils
 import ../../merkletree
@@ -53,7 +53,7 @@ method getBlock*(
     trace "Empty block, ignoring"
     return cid.emptyBlock
 
-  without key =? makeBlockDataKey(cid), err:
+  without key =? blockKey(cid), err:
     trace "Error getting key from provider", err = err.msg
     return failure(err)
 
@@ -70,21 +70,25 @@ method getBlock*(
 method getBlockAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!(Block, ArchivistProof)] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
+  ## Get block and compute proof on-demand from stored tree nodes.
+  without blkCid =? await self.getLeafCid(treeCid, index), err:
     return failure(err)
 
-  without blk =? await self.getBlock(leafMd.blkCid), err:
+  without blk =? await self.getBlock(blkCid), err:
     return failure(err)
 
-  success((blk, leafMd.proof))
+  without proof =? await self.computeProof(treeCid, index), err:
+    return failure(err)
+
+  success((blk, proof))
 
 method getBlock*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
+  without blkCid =? await self.getLeafCid(treeCid, index), err:
     return failure(err)
 
-  await self.getBlock(leafMd.blkCid)
+  await self.getBlock(blkCid)
 
 method getBlock*(
     self: RepoStore, address: BlockAddress
@@ -100,7 +104,8 @@ method getBlock*(
 method putCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Put a block to the blockstore
+  ## Store leaf CID mapping and incrementally build tree from proof data.
+  ## Extracts sibling nodes from proof and stores them for on-demand proof computation.
   ##
 
   logScope:
@@ -108,36 +113,62 @@ method putCidAndProof*(
     index = index
     blkCid = blkCid
 
-  trace "Storing LeafMetadata"
+  trace "Storing leaf metadata and tree nodes from proof"
 
-  without res =? await self.putLeafMetadata(treeCid, index, blkCid, proof), err:
+  # Check if already exists (for refcount tracking)
+  without key =? datasetLeafKey(treeCid, index), err:
     return failure(err)
+  let alreadyExists = (await get[seq[byte]](self.metaStore, key)).isOk
 
+  # Store leaf mapping and extract/store tree nodes from proof
+  ?await self.putCidAndProofInternal(treeCid, index, blkCid, proof)
+
+  # Update block refcount if newly stored
   if blkCid.mcodec == BlockCodec:
-    if res == Stored:
+    if not alreadyExists:
       if err =? (await self.updateBlockMetadata(blkCid, plusRefCount = 1)).errorOption:
         return failure(err)
       trace "Leaf metadata stored, block refCount incremented"
     else:
       trace "Leaf metadata already exists"
 
-  return success()
+  success()
 
 method getCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!(Cid, ArchivistProof)] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
+  ## Get CID from leaf mapping, compute proof on-demand from stored tree.
+  without blkCid =? await self.getLeafCid(treeCid, index), err:
     return failure(err)
 
-  success((leafMd.blkCid, leafMd.proof))
+  without proof =? await self.computeProof(treeCid, index), err:
+    return failure(err)
+
+  success((blkCid, proof))
 
 method getCid*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    return failure(err)
+  await self.getLeafCid(treeCid, index)
 
-  success(leafMd.blkCid)
+method putTree*(
+    self: RepoStore, treeCid: Cid, tree: ArchivistTree
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store entire tree nodes (leaves and internal nodes).
+  ## Tree nodes are used for on-demand proof computation.
+
+  logScope:
+    treeCid = treeCid
+    nleaves = tree.leavesCount
+
+  trace "Storing tree nodes"
+
+  let nodes = toSeq(tree.nodes)
+  ?await self.putTreeNodes(treeCid, nodes, tree.leavesCount.Natural, tree.mcodec)
+
+  trace "Tree nodes stored", nodeCount = nodes.len
+
+  success()
 
 method putBlock*(
     self: RepoStore, blk: Block
@@ -205,22 +236,21 @@ method delBlock*(
 method delBlock*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
+  without blkCid =? await self.getLeafCid(treeCid, index), err:
     if err of BlockNotFoundError:
       return success()
     else:
       return failure(err)
 
-  if err =? (await self.delLeafMetadata(treeCid, index)).errorOption:
+  if err =? (await self.delLeafCid(treeCid, index)).errorOption:
     error "Failed to delete leaf metadata, block will remain on disk.", err = err.msg
     return failure(err)
 
-  if err =?
-      (await self.updateBlockMetadata(leafMd.blkCid, minusRefCount = 1)).errorOption:
+  if err =? (await self.updateBlockMetadata(blkCid, minusRefCount = 1)).errorOption:
     if not (err of BlockNotFoundError):
       return failure(err)
 
-  without _ =? await self.delBlockInternal(leafMd.blkCid), err:
+  without _ =? await self.delBlockInternal(blkCid), err:
     return failure(err)
 
   success()
@@ -238,7 +268,7 @@ method hasBlock*(
     trace "Empty block, ignoring"
     return success true
 
-  without key =? makeBlockDataKey(cid), err:
+  without key =? blockKey(cid), err:
     trace "Error getting key from provider", err = err.msg
     return failure(err)
 
@@ -247,13 +277,13 @@ method hasBlock*(
 method hasBlock*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!bool] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
+  without blkCid =? await self.getLeafCid(treeCid, index), err:
     if err of BlockNotFoundError:
       return success(false)
     else:
       return failure(err)
 
-  await self.hasBlock(leafMd.blkCid)
+  await self.hasBlock(blkCid)
 
 method listBlocks*(
     self: RepoStore, blockType = BlockType.Manifest
@@ -262,11 +292,7 @@ method listBlocks*(
   ## This is an intensive operation
   ##
 
-  let key =
-    case blockType
-    of BlockType.Manifest: ArchivistManifestKey
-    of BlockType.Block: ArchivistBlocksKey
-    of BlockType.Both: ArchivistRepoKey
+  let key = BlockBaseKey
 
   let q = Query.init(key, value = false)
   # Use raw query method explicitly to avoid ambiguity
@@ -295,7 +321,7 @@ method listBlocks*(
   return success SafeAsyncIter[Cid].new(next, isFinished)
 
 proc blockRefCount*(self: RepoStore, cid: Cid): Future[?!Natural] {.async.} =
-  without key =? makeBlockMetadataKey(cid), err:
+  without key =? blockMetaKey(cid), err:
     return failure(err)
 
   without record =? await get[BlockMetadata](self.metaStore, key), err:
@@ -435,8 +461,38 @@ method getBlocksAndProofs*(
 method putCidsAndProofs*(
     self: RepoStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  for (index, blkCid, proof) in items:
-    ?await self.putCidAndProof(treeCid, index, blkCid, proof)
+  ## Batch store leaf CID mappings and tree nodes from proofs.
+  ## Deduplicates tree nodes across multiple proofs (multiproof optimization).
+
+  logScope:
+    treeCid = treeCid
+    count = items.len
+
+  trace "Batch storing leaf metadata and tree nodes from proofs"
+
+  if items.len == 0:
+    return success()
+
+  # Check which items already exist (for refcount tracking)
+  var existingKeys: HashSet[Key]
+  for (index, _, _) in items:
+    without key =? datasetLeafKey(treeCid, index), err:
+      return failure(err)
+    if (await get[seq[byte]](self.metaStore, key)).isOk:
+      existingKeys.incl(key)
+
+  # Store all leaf mappings and tree nodes in batch (deduplicates nodes)
+  ?await self.putCidsAndProofsInternal(treeCid, items)
+
+  # Update block refcounts for newly stored items
+  for (index, blkCid, _) in items:
+    without key =? datasetLeafKey(treeCid, index), err:
+      return failure(err)
+    if blkCid.mcodec == BlockCodec and key notin existingKeys:
+      if err =? (await self.updateBlockMetadata(blkCid, plusRefCount = 1)).errorOption:
+        return failure(err)
+
+  trace "Batch stored", newItems = items.len - existingKeys.len
   success()
 
 method getCidsAndProofs*(

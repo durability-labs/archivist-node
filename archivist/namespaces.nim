@@ -21,6 +21,8 @@ const
     ArchivistMetaNamespace & "/ttl"
   ArchivistBlockProofNamespace* = # Cid and Proof
     ArchivistMetaNamespace & "/proof"
+  ArchivistTreeNamespace* = # Merkle tree nodes
+    ArchivistMetaNamespace & "/tree"
   ArchivistDhtNamespace* = "dht" # Dht namespace
   ArchivistDhtProvidersNamespace* = # Dht providers namespace
     ArchivistDhtNamespace & "/providers"

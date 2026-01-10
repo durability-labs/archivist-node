@@ -18,6 +18,7 @@ import pkg/chronos/futures
 import pkg/kvstore
 import pkg/kvstore/kvstore as rawkvstore
 import pkg/libp2p/cid
+import pkg/libp2p/multicodec
 import pkg/metrics
 import pkg/questionable
 import pkg/questionable/results
@@ -25,10 +26,11 @@ import pkg/questionable/results
 import ./coders
 import ./types
 import ../blockstore
-import ../keyutils
+import ../../keys
 import ../../blocktype
 import ../../logutils
 import ../../merkletree
+import ../../utils/digest
 
 logScope:
   topics = "archivist repostore"
@@ -111,7 +113,7 @@ proc makeCounterMiddleware*(
     self: RepoStore, quotaDeltaBytes: int64, totalDelta: int
 ): CounterMiddleware =
   ## Factory for CAS middleware that handles counter updates on conflict.
-  ## Handles QuotaUsedKey and ArchivistTotalBlocksKey, passes through other records unchanged.
+  ## Handles QuotaUsedKey and TotalBlocksKey, passes through other records unchanged.
   proc middleware(
       failed: seq[RawRecord]
   ): Future[?!seq[RawRecord]] {.async: (raises: [CancelledError]).} =
@@ -119,7 +121,7 @@ proc makeCounterMiddleware*(
     for r in failed:
       if r.key == QuotaUsedKey:
         refreshed.add(?await self.refreshQuotaRecord(r.key, quotaDeltaBytes))
-      elif r.key == ArchivistTotalBlocksKey:
+      elif r.key == TotalBlocksKey:
         refreshed.add(?await self.refreshTotalBlocksRecord(r.key, totalDelta))
       else:
         refreshed.add(r) # Idempotent records - retry with same data
@@ -139,7 +141,7 @@ proc updateCountersAtomic*(
       self.metaStore, QuotaUsedKey, QuotaUsage(used: 0.NBytes, reserved: 0.NBytes)
     )
   let (currentTotal, totalToken) =
-    ?await getWithDefault[Natural](self.metaStore, ArchivistTotalBlocksKey, 0.Natural)
+    ?await getWithDefault[Natural](self.metaStore, TotalBlocksKey, 0.Natural)
 
   # Validate reserved delta - cannot go negative
   let newReservedRaw = currentQuota.reserved.int64 + delta.quotaReservedDelta
@@ -163,7 +165,7 @@ proc updateCountersAtomic*(
   let records =
     @[
       RawRecord.init(QuotaUsedKey, encode(newQuota), quotaToken),
-      RawRecord.init(ArchivistTotalBlocksKey, encode(newTotal), totalToken),
+      RawRecord.init(TotalBlocksKey, encode(newTotal), totalToken),
     ]
 
   # CAS middleware using extracted helpers
@@ -178,7 +180,7 @@ proc updateCountersAtomic*(
             r.key, delta.quotaUsedDelta, delta.quotaReservedDelta
           )
         )
-      elif r.key == ArchivistTotalBlocksKey:
+      elif r.key == TotalBlocksKey:
         refreshed.add(
           ?await self.refreshTotalBlocksRecord(r.key, delta.totalBlocksDelta)
         )
@@ -196,50 +198,369 @@ proc updateCountersAtomic*(
   success()
 
 ###########################################################
-# Leaf Metadata Operations
+# Leaf CID Operations (raw CID bytes storage)
 ###########################################################
 
-proc putLeafMetadata*(
-    self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
+proc putLeafCid*(
+    self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid
 ): Future[?!StoreResultKind] {.async: (raises: [CancelledError]).} =
-  without key =? createBlockCidAndProofMetadataKey(treeCid, index), err:
+  ## Store leaf index -> block CID mapping as raw bytes.
+  without key =? datasetLeafKey(treeCid, index), err:
     return failure(err)
 
   # Check if already exists
-  if record =? await get[LeafMetadata](self.metaStore, key):
+  if record =? await get[seq[byte]](self.metaStore, key):
     return success(AlreadyInStore)
 
-  # Create new leaf metadata
-  let md = LeafMetadata(blkCid: blkCid, proof: proof)
-  ?await self.metaStore.put(key, md)
+  # Store raw CID bytes
+  ?await self.metaStore.put(key, blkCid.data.buffer)
   success(Stored)
 
-proc delLeafMetadata*(
+proc delLeafCid*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without key =? createBlockCidAndProofMetadataKey(treeCid, index), err:
+  without key =? datasetLeafKey(treeCid, index), err:
     return failure(err)
 
-  # Get the record first to have the token for CAS delete
-  without record =? await get[LeafMetadata](self.metaStore, key):
+  without record =? await get[seq[byte]](self.metaStore, key):
     return success() # Already deleted
 
   ?await self.metaStore.delete(record)
   success()
 
-proc getLeafMetadata*(
+proc getLeafCid*(
     self: RepoStore, treeCid: Cid, index: Natural
-): Future[?!LeafMetadata] {.async: (raises: [CancelledError]).} =
-  without key =? createBlockCidAndProofMetadataKey(treeCid, index), err:
+): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+  ## Get block CID for leaf index.
+  without key =? datasetLeafKey(treeCid, index), err:
     return failure(err)
 
-  without record =? await get[LeafMetadata](self.metaStore, key), err:
+  without record =? await get[seq[byte]](self.metaStore, key), err:
     if err of KVStoreKeyNotFound:
       return failure(newException(BlockNotFoundError, err.msg))
     else:
       return failure(err)
 
+  without cid =? Cid.init(record.val).mapFailure, err:
+    return failure(err)
+
+  success(cid)
+
+proc putLeafCidsBatch*(
+    self: RepoStore, treeCid: Cid, items: seq[(Natural, Cid)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Batch store leaf CID mappings as raw bytes.
+  if items.len == 0:
+    return success()
+
+  var records: seq[RawRecord]
+  for (index, blkCid) in items:
+    without key =? datasetLeafKey(treeCid, index), err:
+      return failure(err)
+    records.add(RawRecord.init(key, blkCid.data.buffer, 0))
+
+  let failed = ?await self.metaStore.put(records)
+  if failed.len > 0:
+    return failure("Failed to store leaf CID mappings")
+
+  success()
+
+###########################################################
+# Tree Storage Operations
+###########################################################
+
+proc putTreeMetadata*(
+    self: RepoStore, treeCid: Cid, nleaves: Natural, mcodec: MultiCodec
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store tree metadata (idempotent - same tree always has same metadata).
+  ## Used for reconstructing proofs and validating tree structure.
+  without metaKey =? treeMetadataKey(treeCid), err:
+    return failure(err)
+
+  # Check if already exists (idempotent)
+  if record =? await get[TreeMetadata](self.metaStore, metaKey):
+    let existing = record.val
+    if existing.nleaves != nleaves or existing.mcodec != mcodec:
+      return failure(
+        "Tree metadata mismatch: existing nleaves=" & $existing.nleaves & ", mcodec=" &
+          $existing.mcodec & "; new nleaves=" & $nleaves & ", mcodec=" & $mcodec
+      )
+    return success() # Already stored with matching values
+
+  let meta = TreeMetadata(nleaves: nleaves, mcodec: mcodec)
+  ?await self.metaStore.put(metaKey, encode(meta))
+  success()
+
+proc getTreeMetadata*(
+    self: RepoStore, treeCid: Cid
+): Future[?!TreeMetadata] {.async: (raises: [CancelledError]).} =
+  ## Get tree metadata for proof computation.
+  without metaKey =? treeMetadataKey(treeCid), err:
+    return failure(err)
+  without record =? await get[TreeMetadata](self.metaStore, metaKey), err:
+    return failure(err)
   success(record.val)
+
+proc putTreeNode*(
+    self: RepoStore, treeCid: Cid, nodeIndex: Natural, hash: ByteHash
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store a single tree node (idempotent).
+  ## Nodes are indexed in flat array order: [leaves..., level1..., level2..., root]
+  without nodeKey =? treeNodeKey(treeCid, nodeIndex), err:
+    return failure(err)
+
+  # Idempotent - just overwrite (same hash for same position)
+  ?await self.metaStore.put(nodeKey, hash)
+  success()
+
+proc putTreeNodesBatch*(
+    self: RepoStore, treeCid: Cid, nodes: seq[(Natural, ByteHash)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Batch store tree nodes (idempotent).
+  if nodes.len == 0:
+    return success()
+
+  var records: seq[RawRecord]
+  for (nodeIndex, hash) in nodes:
+    without nodeKey =? treeNodeKey(treeCid, nodeIndex), err:
+      return failure(err)
+    records.add(RawRecord.init(nodeKey, hash, 0))
+
+  let failed = ?await self.metaStore.put(records)
+  if failed.len > 0:
+    return failure("Failed to store tree nodes")
+  success()
+
+proc getTreeNode*(
+    self: RepoStore, treeCid: Cid, nodeIndex: Natural
+): Future[?!ByteHash] {.async: (raises: [CancelledError]).} =
+  ## Get a single tree node.
+  without nodeKey =? treeNodeKey(treeCid, nodeIndex), err:
+    return failure(err)
+  without record =? await get[seq[byte]](self.metaStore, nodeKey), err:
+    return failure(err)
+  success(record.val)
+
+proc putTreeNodes*(
+    self: RepoStore,
+    treeCid: Cid,
+    nodes: seq[ByteHash],
+    nleaves: Natural,
+    mcodec: MultiCodec = Sha256HashCodec,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store tree nodes as flat array + metadata.
+  ## Nodes ordered: [leaves..., parents..., root]
+  ## Proofs are computed on-demand from stored nodes.
+
+  if nodes.len == 0:
+    return failure("Cannot store empty tree nodes")
+
+  # Store metadata first
+  ?await self.putTreeMetadata(treeCid, nleaves, mcodec)
+
+  # Store nodes in batch using indexed pairs
+  var nodePairs: seq[(Natural, ByteHash)]
+  for i, node in nodes:
+    nodePairs.add((i.Natural, node))
+  ?await self.putTreeNodesBatch(treeCid, nodePairs)
+  success()
+
+proc getTreeNodes*(
+    self: RepoStore, treeCid: Cid
+): Future[?!(seq[ByteHash], TreeMetadata)] {.async: (raises: [CancelledError]).} =
+  ## Retrieve all tree nodes + metadata.
+  ## Returns nodes as flat array in layer order.
+
+  # Get metadata first
+  without metaKey =? treeMetadataKey(treeCid), err:
+    return failure(err)
+  without metaRec =? await get[TreeMetadata](self.metaStore, metaKey), err:
+    return failure(err)
+  let meta = metaRec.val
+
+  # Calculate total nodes: sum of layer sizes
+  var totalNodes = 0
+  var layerSize = meta.nleaves
+  while layerSize > 0:
+    totalNodes += layerSize
+    if layerSize == 1:
+      break
+    layerSize = (layerSize + 1) div 2 # divUp
+
+  # Batch get all nodes
+  var keys: seq[Key]
+  for i in 0 ..< totalNodes:
+    without nodeKey =? treeNodeKey(treeCid, i.Natural), err:
+      return failure(err)
+    keys.add(nodeKey)
+
+  let records = ?await rawkvstore.get(self.metaStore, keys)
+  if records.len != totalNodes:
+    return
+      failure("Missing tree nodes: expected " & $totalNodes & ", got " & $records.len)
+
+  # Build key to record lookup for ordering
+  let keyLookup = buildKeyLookup(records)
+
+  # Extract nodes in correct order
+  var nodes: seq[ByteHash]
+  for i in 0 ..< totalNodes:
+    without nodeKey =? treeNodeKey(treeCid, i.Natural), err:
+      return failure(err)
+    if not keyLookup.hasKey(nodeKey):
+      return failure("Missing tree node at index " & $i)
+    nodes.add(keyLookup.getOrDefault(nodeKey).val)
+
+  success((nodes, meta))
+
+proc computeProof*(
+    self: RepoStore, treeCid: Cid, leafIndex: Natural
+): Future[?!ArchivistProof] {.async: (raises: [CancelledError]).} =
+  ## Compute proof on-demand from stored tree nodes.
+  ## Only fetches the sibling nodes needed for the proof path (supports partial trees).
+
+  let meta = ?await self.getTreeMetadata(treeCid)
+
+  if leafIndex >= meta.nleaves:
+    return failure(
+      "Leaf index " & $leafIndex & " out of bounds (nleaves=" & $meta.nleaves & ")"
+    )
+
+  # Calculate depth
+  var depth = 0
+  var layerSize = meta.nleaves
+  while layerSize > 1:
+    depth.inc
+    layerSize = (layerSize + 1) div 2
+
+  # Get the zero hash for padding odd trees
+  without mhash =? meta.mcodec.mhash(), err:
+    return failure(err)
+  let zero: ByteHash = newSeq[byte](mhash.size)
+
+  # Collect sibling hashes by walking the proof path
+  # Flat array layout: [leaves (layer 0), layer 1, layer 2, ..., root]
+  var path: seq[ByteHash]
+  var k = leafIndex.int # Position within current layer
+  var m = meta.nleaves.int # Size of current layer
+  var layerOffset = 0 # Flat array offset for current layer
+
+  for i in 0 ..< depth:
+    let siblingIdxInLayer = k xor 1 # Sibling position within layer
+
+    if siblingIdxInLayer < m:
+      # Sibling exists - fetch it from store
+      let flatIdx = (layerOffset + siblingIdxInLayer).Natural
+      without siblingHash =? await self.getTreeNode(treeCid, flatIdx), err:
+        return failure("Missing tree node at index " & $flatIdx & ": " & err.msg)
+      path.add(siblingHash)
+    else:
+      # Sibling doesn't exist (odd tree) - use zero hash
+      path.add(zero)
+
+    # Move to next layer
+    layerOffset += m
+    k = k shr 1
+    m = (m + 1) shr 1
+
+  # Build ArchivistProof using the path
+  ArchivistProof.init(
+    mcodec = meta.mcodec,
+    index = leafIndex.int,
+    nleaves = meta.nleaves.int,
+    nodes = path,
+  )
+
+proc extractTreeNodesFromProof*(
+    proof: ArchivistProof, leafIndex: Natural, leafHash: ByteHash
+): seq[(Natural, ByteHash)] =
+  ## Extract tree node (flatIndex, hash) pairs from a proof.
+  ## Includes the leaf hash and all sibling hashes along the path.
+  ## Used by putCidAndProof to incrementally build the tree.
+
+  var nodes: seq[(Natural, ByteHash)]
+
+  # Store the leaf hash itself
+  nodes.add((leafIndex, leafHash))
+
+  # Extract sibling nodes from proof path
+  var k = leafIndex.int # Position within current layer
+  var m = proof.nleaves # Size of current layer
+  var layerOffset = 0 # Flat array offset for current layer
+
+  for siblingHash in proof.path:
+    let siblingIdxInLayer = k xor 1
+    if siblingIdxInLayer < m:
+      # This sibling exists (not padding) - store it
+      let flatIdx = (layerOffset + siblingIdxInLayer).Natural
+      nodes.add((flatIdx, siblingHash))
+
+    # Move to next layer
+    layerOffset += m
+    k = k shr 1
+    m = (m + 1) shr 1
+
+  nodes
+
+proc putCidAndProofInternal*(
+    self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store leaf CID mapping and incrementally store tree nodes from proof.
+  ## This builds the tree piece-by-piece as proofs are stored.
+
+  # 1. Store leaf CID mapping
+  discard ?await self.putLeafCid(treeCid, index, blkCid)
+
+  # 2. Store tree metadata (idempotent - same tree always has same metadata)
+  ?await self.putTreeMetadata(treeCid, proof.nleaves.Natural, proof.mcodec)
+
+  # 3. Extract leaf hash from blkCid
+  without mhash =? blkCid.mhash.mapFailure, err:
+    return failure(err)
+  let leafHash = mhash.digestBytes
+
+  # 4. Extract and store tree nodes from proof (leaf + siblings)
+  let nodes = extractTreeNodesFromProof(proof, index, leafHash)
+  ?await self.putTreeNodesBatch(treeCid, nodes)
+
+  success()
+
+proc putCidsAndProofsInternal*(
+    self: RepoStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Batch store leaf CID mappings and tree nodes from proofs.
+  ## Deduplicates tree nodes across multiple proofs (multiproof optimization).
+
+  if items.len == 0:
+    return success()
+
+  # 1. Get metadata from first proof (all proofs should have same metadata)
+  let firstProof = items[0][2]
+  ?await self.putTreeMetadata(treeCid, firstProof.nleaves.Natural, firstProof.mcodec)
+
+  # 2. Batch store leaf CID mappings
+  var leafItems: seq[(Natural, Cid)]
+  for (index, blkCid, _) in items:
+    leafItems.add((index, blkCid))
+  ?await self.putLeafCidsBatch(treeCid, leafItems)
+
+  # 3. Extract all tree nodes from proofs, deduplicating by flat index
+  var nodeMap: Table[Natural, ByteHash] # flatIndex -> hash (deduplicates)
+  for (index, blkCid, proof) in items:
+    without mhash =? blkCid.mhash.mapFailure, err:
+      return failure(err)
+    let leafHash = mhash.digestBytes
+    let nodes = extractTreeNodesFromProof(proof, index, leafHash)
+    for (flatIdx, hash) in nodes:
+      nodeMap[flatIdx] = hash # Overwrites duplicates (same hash for same index)
+
+  # 4. Batch store unique tree nodes
+  var nodePairs: seq[(Natural, ByteHash)]
+  for flatIdx, hash in nodeMap:
+    nodePairs.add((flatIdx, hash))
+  ?await self.putTreeNodesBatch(treeCid, nodePairs)
+
+  success()
 
 ###########################################################
 # Batch Operations (Primary Implementation)
@@ -258,7 +579,7 @@ proc putBlocksBatch*(
 
   var metaKeys: seq[Key]
   for blk in nonEmpty:
-    without key =? makeBlockMetadataKey(blk.cid), err:
+    without key =? blockMetaKey(blk.cid), err:
       return failure(err)
     metaKeys.add(key)
 
@@ -289,7 +610,7 @@ proc putBlocksBatch*(
   # 5. COMMIT: Write block data (can be orphaned - not source of truth)
   var blockRecords: seq[RawRecord]
   for blk in newBlocks:
-    without key =? makeBlockDataKey(blk.cid), err:
+    without key =? blockKey(blk.cid), err:
       return failure(err)
     blockRecords.add(RawRecord.init(key, blk.data, 0))
 
@@ -301,10 +622,10 @@ proc putBlocksBatch*(
   var actualNewCount = 0
 
   for blk in newBlocks:
-    without blkKey =? makeBlockDataKey(blk.cid), err:
+    without blkKey =? blockKey(blk.cid), err:
       return failure(err)
     if blkKey notin failedBlockKeys:
-      without metaKey =? makeBlockMetadataKey(blk.cid), err:
+      without metaKey =? blockMetaKey(blk.cid), err:
         return failure(err)
       let meta = BlockMetadata(size: blk.data.len.NBytes, refCount: 0)
       metaRecords.add(RawRecord.init(metaKey, encode(meta), 0))
@@ -321,11 +642,9 @@ proc putBlocksBatch*(
   metaRecords.add(RawRecord.init(QuotaUsedKey, encode(finalQuota), quotaToken))
 
   let (currentTotal, totalToken) =
-    ?await getWithDefault[Natural](self.metaStore, ArchivistTotalBlocksKey, 0.Natural)
+    ?await getWithDefault[Natural](self.metaStore, TotalBlocksKey, 0.Natural)
   metaRecords.add(
-    RawRecord.init(
-      ArchivistTotalBlocksKey, encode(currentTotal + actualNewCount), totalToken
-    )
+    RawRecord.init(TotalBlocksKey, encode(currentTotal + actualNewCount), totalToken)
   )
 
   # 8. Atomic commit with CAS middleware
@@ -342,7 +661,7 @@ proc putBlocksBatch*(
   # 10. Return failed CIDs
   var failedCids: seq[Cid]
   for blk in newBlocks:
-    without blkKey =? makeBlockDataKey(blk.cid), err:
+    without blkKey =? blockKey(blk.cid), err:
       return failure(err)
     if blkKey in failedBlockKeys:
       failedCids.add(blk.cid)
@@ -360,7 +679,7 @@ proc getBlocksBatch*(
   var keys: seq[Key]
   for cid in cids:
     if not cid.isEmpty:
-      without key =? makeBlockDataKey(cid), err:
+      without key =? blockKey(cid), err:
         return failure(err)
       keys.add(key)
 
@@ -376,7 +695,7 @@ proc getBlocksBatch*(
         return failure(err)
       blocks.add(emptyBlk)
     else:
-      without key =? makeBlockDataKey(cid), err:
+      without key =? blockKey(cid), err:
         return failure(err)
       if not keyToData.hasKey(key):
         return failure(newException(BlockNotFoundError, "Block not found: " & $cid))
@@ -401,7 +720,7 @@ proc delBlocksBatch*(
   for cid in cids:
     if cid.isEmpty:
       continue
-    without key =? makeBlockMetadataKey(cid), err:
+    without key =? blockMetaKey(cid), err:
       return failure(err)
     cidToKey.add((cid, key))
     metaKeys.add(key)
@@ -465,7 +784,7 @@ proc delBlocksBatch*(
       self.metaStore, QuotaUsedKey, QuotaUsage(used: 0.NBytes, reserved: 0.NBytes)
     )
   let (currentTotal, totalToken) =
-    ?await getWithDefault[Natural](self.metaStore, ArchivistTotalBlocksKey, 0.Natural)
+    ?await getWithDefault[Natural](self.metaStore, TotalBlocksKey, 0.Natural)
 
   let newQuota = QuotaUsage(
     used: max(0'i64, currentQuota.used.int64 - actualBytesReleased.int64).NBytes,
@@ -476,7 +795,7 @@ proc delBlocksBatch*(
   let updateRecords =
     @[
       RawRecord.init(QuotaUsedKey, encode(newQuota), quotaToken),
-      RawRecord.init(ArchivistTotalBlocksKey, encode(newTotal), totalToken),
+      RawRecord.init(TotalBlocksKey, encode(newTotal), totalToken),
     ]
 
   let middleware =
@@ -491,10 +810,10 @@ proc delBlocksBatch*(
   # 8. Batch delete block data (best effort - orphan cleanup handles failures)
   var blockKeys: seq[Key]
   for cid in cidsToDelete:
-    without metaKey =? makeBlockMetadataKey(cid), err:
+    without metaKey =? blockMetaKey(cid), err:
       continue
     if metaKey notin failedKeys:
-      without blkKey =? makeBlockDataKey(cid), err:
+      without blkKey =? blockKey(cid), err:
         continue
       blockKeys.add(blkKey)
 
@@ -508,7 +827,7 @@ proc delBlocksBatch*(
   # 9. Return CIDs that were actually deleted
   var deletedCids: seq[Cid]
   for cid in cidsToDelete:
-    if metaKey =? makeBlockMetadataKey(cid):
+    if metaKey =? blockMetaKey(cid):
       if metaKey notin failedKeys:
         deletedCids.add(cid)
   success(deletedCids)
@@ -530,7 +849,7 @@ proc batchUpdateRefcounts*(
   for (cid, delta) in updates:
     if cid.isEmpty:
       continue
-    without key =? makeBlockMetadataKey(cid), err:
+    without key =? blockMetaKey(cid), err:
       return failure(err)
     metaKeys.add(key)
     keyToDelta[key] = delta
@@ -628,14 +947,14 @@ proc storeBlock*(
     return success(StoreResult(kind: AlreadyInStore))
 
   # Check if already exists (for proper return value)
-  without metaKey =? makeBlockMetadataKey(blk.cid), err:
+  without metaKey =? blockMetaKey(blk.cid), err:
     return failure(err)
 
   if record =? await get[BlockMetadata](self.metaStore, metaKey):
     let currMd = record.val
     if currMd.size == blk.data.len.NBytes:
       # Block exists - verify data exists (orphan recovery)
-      without blkKey =? makeBlockDataKey(blk.cid), err:
+      without blkKey =? blockKey(blk.cid), err:
         return failure(err)
       let hasBlock = (await self.blockStore.has(blkKey)) |? false
       if not hasBlock:
@@ -662,10 +981,10 @@ proc tryDeleteBlock*(
     self: RepoStore, cid: Cid
 ): Future[?!DeleteResult] {.async: (raises: [CancelledError]).} =
   ## Delete block if refcount is 0 - with proper return type
-  without metaKey =? makeBlockMetadataKey(cid), err:
+  without metaKey =? blockMetaKey(cid), err:
     return failure(err)
 
-  without blkKey =? makeBlockDataKey(cid), err:
+  without blkKey =? blockKey(cid), err:
     return failure(err)
 
   # Check metadata for proper return value

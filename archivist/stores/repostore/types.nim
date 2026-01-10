@@ -10,6 +10,7 @@
 import pkg/chronos
 import pkg/kvstore
 import pkg/libp2p/cid
+import pkg/libp2p/multicodec
 import pkg/questionable
 
 import ../blockstore
@@ -44,10 +45,6 @@ type
   BlockMetadata* {.serialize.} = object
     size*: NBytes
     refCount*: Natural
-
-  LeafMetadata* {.serialize.} = object
-    blkCid*: Cid
-    proof*: ArchivistProof
 
   BlockExpiration* {.serialize, deprecated.} = object
     cid*: Cid

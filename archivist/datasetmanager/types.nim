@@ -15,12 +15,13 @@
 
 import pkg/chronos
 import pkg/libp2p/cid
+import pkg/libp2p/multicodec
 import pkg/questionable
 import pkg/serde
 
 import ../clock
 
-export cid, chronos
+export cid, chronos, multicodec
 
 type
   DatasetStatus* {.serialize.} = enum
@@ -47,12 +48,12 @@ type
     ## Every manifest (original, protected, slot) has exactly one overlay
     status*: DatasetStatus
     manifestCid*: Cid
+    merkleCodec*: MultiCodec
     totalBlocks*: uint32
     totalSize*: uint64
     expiry*: SecondsSince1970
     kind*: OverlayKind
-    # For SlotOverlay: reference to parent protected dataset
-    parentTreeCid*: ?Cid
+    parentTreeCid*: ?Cid ## For SlotOverlay: parent protected dataset tree root
 
   # Note: presentBlocks is runtime-only, derived on startup from leaf mappings
   # It is NOT stored in OverlayMetadata to avoid serialization

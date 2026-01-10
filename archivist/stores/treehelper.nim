@@ -21,10 +21,18 @@ import ../utils/asynciter
 import ../merkletree
 
 proc putSomeProofs*(
-    store: BlockStore, tree: ArchivistTree, iter: Iter[int]
+    store: BlockStore, tree: ArchivistTree, iter: Iter[int], storeTree: bool = true
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store leaf CID mappings for selected indices.
+  ## If storeTree is true (default), also stores tree nodes for on-demand proof computation.
+  ## Set storeTree=false if tree was already stored via putTree or putAllProofs.
+
   without treeCid =? tree.rootCid, err:
     return failure(err)
+
+  # Store tree nodes for on-demand proof computation
+  if storeTree:
+    ?await store.putTree(treeCid, tree)
 
   for i in iter:
     if i notin 0 ..< tree.leavesCount:
@@ -47,11 +55,13 @@ proc putSomeProofs*(
   success()
 
 proc putSomeProofs*(
-    store: BlockStore, tree: ArchivistTree, iter: Iter[Natural]
+    store: BlockStore, tree: ArchivistTree, iter: Iter[Natural], storeTree: bool = true
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
-  store.putSomeProofs(tree, iter.map((i: Natural) => i.ord))
+  store.putSomeProofs(tree, iter.map((i: Natural) => i.ord), storeTree)
 
 proc putAllProofs*(
     store: BlockStore, tree: ArchivistTree
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
-  store.putSomeProofs(tree, Iter[int].new(0 ..< tree.leavesCount))
+  ## Store tree nodes and all leaf CID mappings.
+  ## Tree is stored once, then leaf mappings are stored for on-demand proof computation.
+  store.putSomeProofs(tree, Iter[int].new(0 ..< tree.leavesCount), storeTree = true)
