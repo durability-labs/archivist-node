@@ -6,6 +6,7 @@ import pkg/chronos
 import pkg/poseidon2
 import pkg/serde/json
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 
 import pkg/archivist/slots {.all.}
 import pkg/archivist/slots/types {.all.}
@@ -77,8 +78,8 @@ suite "Test Circom Compat Backend":
     blockStore: KVStore
 
   setup:
-    metaStore = SQLiteKVStore.new(":memory:").tryGet()
-    blockStore = SQLiteKVStore.new(":memory:").tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+    blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
 
     store = RepoStore.new(metaStore, blockStore)
 

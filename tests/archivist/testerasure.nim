@@ -4,6 +4,7 @@ import std/sugar
 import pkg/chronos
 import pkg/questionable/results
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 
 import pkg/archivist/erasure
 import pkg/archivist/manifest
@@ -32,8 +33,8 @@ suite "Erasure encode/decode":
   var taskpool: Taskpool
 
   setup:
-    metaStore = SQLiteKVStore.new(":memory:").tryGet()
-    blockStore = SQLiteKVStore.new(":memory:").tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+    blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     rng = Rng.instance()
     chunker = RandomChunker.new(rng, size = dataSetSize, chunkSize = BlockSize)
     store = RepoStore.new(metaStore, blockStore)

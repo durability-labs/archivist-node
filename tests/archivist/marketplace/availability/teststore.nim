@@ -1,5 +1,6 @@
 import pkg/questionable/results
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 import archivist/marketplace/availability/store
 import archivist/marketplace/availability/terms
 import ../../../asynctest
@@ -10,7 +11,7 @@ suite "availability store":
   var kvStore: KVStore
 
   setup:
-    kvStore = SQLiteKVStore.new(Memory).tryGet()
+    kvStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     store = AvailabilityStore.new(kvStore)
 
   teardown:

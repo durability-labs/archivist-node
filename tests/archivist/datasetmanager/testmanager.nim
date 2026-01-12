@@ -2,6 +2,7 @@ import std/sequtils
 
 import pkg/chronos
 import pkg/kvstore/sql
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 import pkg/questionable
 import pkg/questionable/results
 
@@ -31,7 +32,7 @@ suite "DatasetManager State Management":
   let now: SecondsSince1970 = 1000
 
   setup:
-    metaStore = SQLiteKVStore.new(Memory).tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     datasetStore = DatasetStore.new(metaStore)
     mockClock = MockClock.new()
     mockClock.set(now)
@@ -220,7 +221,7 @@ suite "DatasetManager Lifecycle Operations":
   let now: SecondsSince1970 = 1000
 
   setup:
-    metaStore = SQLiteKVStore.new(Memory).tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     datasetStore = DatasetStore.new(metaStore)
     mockClock = MockClock.new()
     mockClock.set(now)

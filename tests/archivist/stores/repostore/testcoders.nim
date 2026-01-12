@@ -24,6 +24,12 @@ suite "Test coders":
   proc rand(T: type BlockMetadata): T =
     BlockMetadata(size: rand(NBytes), refCount: rand(Natural))
 
+  proc rand(T: type DeleteResult): T =
+    DeleteResult(kind: rand(DeleteResultKind), released: rand(NBytes))
+
+  proc rand(T: type StoreResult): T =
+    StoreResult(kind: rand(StoreResultKind), used: rand(NBytes))
+
   test "Natural encode/decode":
     for val in newSeqWith(100, rand(Natural)) & @[Natural.low, Natural.high]:
       check:
@@ -38,3 +44,13 @@ suite "Test coders":
     for val in newSeqWith(100, rand(BlockMetadata)):
       check:
         success(val) == BlockMetadata.decode(encode(val))
+
+  test "DeleteResult encode/decode":
+    for val in newSeqWith(100, rand(DeleteResult)):
+      check:
+        success(val) == DeleteResult.decode(encode(val))
+
+  test "StoreResult encode/decode":
+    for val in newSeqWith(100, rand(StoreResult)):
+      check:
+        success(val) == StoreResult.decode(encode(val))

@@ -8,6 +8,7 @@ import pkg/questionable/results
 import pkg/chronos
 import pkg/stew/byteutils
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 
 import pkg/archivist/chunker
 import pkg/archivist/stores
@@ -29,8 +30,8 @@ suite "Test RepoStore start/stop":
     metaStore: KVStore
 
   setup:
-    blockStore = SQLiteKVStore.new(Memory).tryGet()
-    metaStore = SQLiteKVStore.new(Memory).tryGet()
+    blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
 
   test "Should set started flag once started":
     let repo = RepoStore.new(metaStore, blockStore, quotaMaxBytes = 200'nb)
@@ -66,8 +67,8 @@ asyncchecksuite "RepoStore":
   let now: SecondsSince1970 = 123
 
   setup:
-    blockStore = SQLiteKVStore.new(Memory).tryGet()
-    metaStore = SQLiteKVStore.new(Memory).tryGet()
+    blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     mockClock = MockClock.new()
     mockClock.set(now)
 
@@ -321,8 +322,8 @@ commonBlockStoreTests(
   proc(): BlockStore =
     BlockStore(
       RepoStore.new(
-        SQLiteKVStore.new(Memory).tryGet(),
-        SQLiteKVStore.new(Memory).tryGet(),
+        SQLiteKVStore.new(SqliteMemory).tryGet(),
+        SQLiteKVStore.new(SqliteMemory).tryGet(),
         clock = MockClock.new(),
       )
     ),
@@ -343,7 +344,7 @@ commonBlockStoreTests(
   proc(): BlockStore =
     BlockStore(
       RepoStore.new(
-        SQLiteKVStore.new(Memory).tryGet(),
+        SQLiteKVStore.new(SqliteMemory).tryGet(),
         FSKVStore.new(path, depth).tryGet(),
         clock = MockClock.new(),
       )

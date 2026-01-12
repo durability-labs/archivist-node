@@ -5,6 +5,7 @@ import ../../../asynctest
 
 import pkg/questionable/results
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 
 import pkg/archivist/stores
 import pkg/archivist/merkletree
@@ -90,8 +91,8 @@ suite "Test Sampler":
     blockStore: KVStore
 
   setup:
-    metaStore = SQLiteKVStore.new(":memory:").tryGet()
-    blockStore = SQLiteKVStore.new(":memory:").tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+    blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
 
     store = RepoStore.new(metaStore, blockStore)
 

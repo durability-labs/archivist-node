@@ -3,6 +3,7 @@ import std/sugar
 import std/times
 import pkg/chronos
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 import pkg/questionable
 import pkg/questionable/results
 import pkg/archivist/marketplace/sales
@@ -52,7 +53,7 @@ asyncchecksuite "Sales - start":
 
     marketplace = MockMarketplace.new()
     clock = MockClock.new()
-    metaStore = SQLiteKVStore.new(Memory).tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     let availability = AvailabilityStore.new(metaStore)
     storage = MockStorage.new()
     sales = Sales.new(marketplace, clock, availability, storage)
@@ -135,7 +136,7 @@ asyncchecksuite "Sales":
     marketplace.activeSlots[me] = @[]
 
     clock = MockClock.new()
-    metaStore = SQLiteKVStore.new(Memory).tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     let availability = AvailabilityStore.new(metaStore)
     sales = Sales.new(marketplace, clock, availability, storage)
     queue = sales.context.slotQueue

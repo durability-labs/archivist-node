@@ -5,6 +5,7 @@ import pkg/taskpools
 import pkg/libp2p
 import pkg/libp2p/errors
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 
 import pkg/archivist/discovery
 import pkg/archivist/stores
@@ -142,8 +143,8 @@ proc generateNodes*(
       if config.useRepoStore:
         let
           bdStore = TempLevelDb.new()
-          metaStore = SQLiteKVStore.new(":memory:").tryGet()
-          blockStore = SQLiteKVStore.new(":memory:").tryGet()
+          metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+          blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
           store = RepoStore.new(metaStore, blockStore, clock = SystemClock.new())
           blockDiscoveryStore = bdStore.newDb()
           discovery = Discovery.new(

@@ -92,6 +92,52 @@ proc decode*(T: type TreeMetadata, bytes: openArray[byte]): ?!T =
 
   success TreeMetadata(nleaves: nleaves.Natural, mcodec: mcodec.MultiCodec)
 
+## DeleteResult protobuf encoding
+## Field 1: kind (uint64 - enum ordinal)
+## Field 2: released (uint64)
+
+proc encode*(t: DeleteResult): seq[byte] =
+  var pb = initProtoBuffer()
+  pb.write(1, t.kind.uint64)
+  pb.write(2, t.released.uint64)
+  pb.finish()
+  pb.buffer
+
+proc decode*(T: type DeleteResult, bytes: openArray[byte]): ?!T =
+  var
+    pb = initProtoBuffer(bytes)
+    kind, released: uint64
+
+  if pb.getField(1, kind).isErr:
+    return failure("Unable to decode DeleteResult.kind")
+  if pb.getField(2, released).isErr:
+    return failure("Unable to decode DeleteResult.released")
+
+  success DeleteResult(kind: DeleteResultKind(kind), released: released.NBytes)
+
+## StoreResult protobuf encoding
+## Field 1: kind (uint64 - enum ordinal)
+## Field 2: used (uint64)
+
+proc encode*(t: StoreResult): seq[byte] =
+  var pb = initProtoBuffer()
+  pb.write(1, t.kind.uint64)
+  pb.write(2, t.used.uint64)
+  pb.finish()
+  pb.buffer
+
+proc decode*(T: type StoreResult, bytes: openArray[byte]): ?!T =
+  var
+    pb = initProtoBuffer(bytes)
+    kind, used: uint64
+
+  if pb.getField(1, kind).isErr:
+    return failure("Unable to decode StoreResult.kind")
+  if pb.getField(2, used).isErr:
+    return failure("Unable to decode StoreResult.used")
+
+  success StoreResult(kind: StoreResultKind(kind), used: used.NBytes)
+
 ## Simple type encoders for kvstore typed API
 
 proc encode*(i: uint64): seq[byte] =

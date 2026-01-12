@@ -3,6 +3,7 @@ import ../../asynctest
 import pkg/chronos
 import pkg/libp2p/cid
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 
 import pkg/archivist/merkletree
 import pkg/archivist/chunker
@@ -34,8 +35,8 @@ suite "Test CircomCompat Prover":
     blockStore: KVStore
 
   setup:
-    metaStore = SQLiteKVStore.new(":memory:").tryGet()
-    blockStore = SQLiteKVStore.new(":memory:").tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+    blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
     let
       backend = CircomCompatBackendRef.new(
         r1csPath = "tests/circuits/fixtures/proof_main.r1cs",
@@ -110,8 +111,8 @@ suite "Test NimGroth16 Prover":
     blockStore2: KVStore
 
   setup:
-    metaStore2 = SQLiteKVStore.new(":memory:").tryGet()
-    blockStore2 = SQLiteKVStore.new(":memory:").tryGet()
+    metaStore2 = SQLiteKVStore.new(SqliteMemory).tryGet()
+    blockStore2 = SQLiteKVStore.new(SqliteMemory).tryGet()
     let
       tp = Taskpool.new()
       backend = NimGroth16BackendRef.new(

@@ -6,6 +6,7 @@ import ../../asynctest
 import pkg/chronos
 import pkg/questionable/results
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 import pkg/archivist/blocktype as bt
 import pkg/archivist/rng
 import pkg/archivist/stores
@@ -75,8 +76,8 @@ suite "Slot builder":
     blockStore: KVStore
 
   setup:
-    metaStore = SQLiteKVStore.new(":memory:").tryGet()
-    blockStore = SQLiteKVStore.new(":memory:").tryGet()
+    metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+    blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
 
     localStore = RepoStore.new(metaStore, blockStore)
     chunker =

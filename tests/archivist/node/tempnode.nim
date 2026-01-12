@@ -4,6 +4,7 @@ import pkg/libp2p/builders
 import pkg/nitro/wallet
 import pkg/taskpools
 import pkg/kvstore
+from pkg/kvstore/sql/sqlitedsdb import SqliteMemory
 import pkg/archivist/discovery
 import pkg/archivist/stores
 import pkg/archivist/blockexchange
@@ -24,8 +25,8 @@ type TemporaryNode* = ref object
   node: ArchivistNodeRef
 
 proc initializeLocalStore(temporary: TemporaryNode) =
-  temporary.metaStore = SQLiteKVStore.new(":memory:").tryGet()
-  temporary.blockStore = SQLiteKVStore.new(":memory:").tryGet()
+  temporary.metaStore = SQLiteKVStore.new(SqliteMemory).tryGet()
+  temporary.blockStore = SQLiteKVStore.new(SqliteMemory).tryGet()
   temporary.localStore = RepoStore.new(temporary.metaStore, temporary.blockStore)
 
 proc initializeNetwork(temporary: TemporaryNode) =
