@@ -45,6 +45,7 @@ suite "DatasetManager State Management":
 
   test "Should store and retrieve overlay metadata":
     let
+      treeCid = Cid.example
       manifestCid = Cid.example
       meta = OverlayMetadata(
         status: Downloading,
@@ -56,9 +57,9 @@ suite "DatasetManager State Management":
         parentTreeCid: Cid.none,
       )
 
-    (await dm.setOverlayMetadata(manifestCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
-    let retrieved = (await dm.getOverlayMetadata(manifestCid)).tryGet()
+    let retrieved = (await datasetStore.getOverlayMetadata(treeCid)).tryGet()
 
     check:
       retrieved.status == Downloading
@@ -71,9 +72,10 @@ suite "DatasetManager State Management":
 
   test "Should update overlay metadata status":
     let
+      treeCid = Cid.example
       manifestCid = Cid.example
       meta1 = OverlayMetadata(
-        status: Pending,
+        status: Downloading,
         manifestCid: manifestCid,
         totalBlocks: 50,
         totalSize: 512,
@@ -81,18 +83,19 @@ suite "DatasetManager State Management":
         kind: DatasetOverlay,
       )
 
-    (await dm.setOverlayMetadata(manifestCid, meta1)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta1)).tryGet()
 
     var meta2 = meta1
     meta2.status = Completed
 
-    (await dm.setOverlayMetadata(manifestCid, meta2)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta2)).tryGet()
 
-    let retrieved = (await dm.getOverlayMetadata(manifestCid)).tryGet()
+    let retrieved = (await datasetStore.getOverlayMetadata(treeCid)).tryGet()
     check retrieved.status == Completed
 
   test "Should delete overlay metadata":
     let
+      treeCid = Cid.example
       manifestCid = Cid.example
       meta = OverlayMetadata(
         status: Completed,
@@ -103,44 +106,44 @@ suite "DatasetManager State Management":
         kind: DatasetOverlay,
       )
 
-    (await dm.setOverlayMetadata(manifestCid, meta)).tryGet()
-    (await dm.deleteOverlayMetadata(manifestCid)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
+    (await datasetStore.deleteOverlayMetadata(treeCid)).tryGet()
 
-    let result = await dm.getOverlayMetadata(manifestCid)
+    let result = await datasetStore.getOverlayMetadata(treeCid)
     check result.isErr
 
   test "Should list all datasets":
     let
-      cid1 = Cid.example
-      cid2 = Cid.example
-      cid3 = Cid.example
+      treeCid1 = Cid.example
+      treeCid2 = Cid.example
+      treeCid3 = Cid.example
 
-    for cid in [cid1, cid2, cid3]:
+    for treeCid in [treeCid1, treeCid2, treeCid3]:
       let meta = OverlayMetadata(
         status: Completed,
-        manifestCid: cid,
+        manifestCid: Cid.example,
         totalBlocks: 10,
         totalSize: 100,
         expiry: now + 3600,
         kind: DatasetOverlay,
       )
-      (await dm.setOverlayMetadata(cid, meta)).tryGet()
+      (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
-    let datasets = (await dm.listDatasets()).tryGet()
+    let datasets = (await datasetStore.listDatasets()).tryGet()
     check datasets.len == 3
 
   test "Should list datasets filtered by state":
     let
-      cidCompleted1 = Cid.example
-      cidCompleted2 = Cid.example
-      cidDownloading = Cid.example
+      treeCidCompleted1 = Cid.example
+      treeCidCompleted2 = Cid.example
+      treeCidDownloading = Cid.example
 
     (
-      await dm.setOverlayMetadata(
-        cidCompleted1,
+      await datasetStore.setOverlayMetadata(
+        treeCidCompleted1,
         OverlayMetadata(
           status: Completed,
-          manifestCid: cidCompleted1,
+          manifestCid: Cid.example,
           totalBlocks: 10,
           totalSize: 100,
           expiry: now + 3600,
@@ -150,11 +153,11 @@ suite "DatasetManager State Management":
     ).tryGet()
 
     (
-      await dm.setOverlayMetadata(
-        cidCompleted2,
+      await datasetStore.setOverlayMetadata(
+        treeCidCompleted2,
         OverlayMetadata(
           status: Completed,
-          manifestCid: cidCompleted2,
+          manifestCid: Cid.example,
           totalBlocks: 20,
           totalSize: 200,
           expiry: now + 3600,
@@ -164,11 +167,11 @@ suite "DatasetManager State Management":
     ).tryGet()
 
     (
-      await dm.setOverlayMetadata(
-        cidDownloading,
+      await datasetStore.setOverlayMetadata(
+        treeCidDownloading,
         OverlayMetadata(
           status: Downloading,
-          manifestCid: cidDownloading,
+          manifestCid: Cid.example,
           totalBlocks: 30,
           totalSize: 300,
           expiry: now + 3600,
@@ -178,18 +181,19 @@ suite "DatasetManager State Management":
     ).tryGet()
 
     let
-      completedDatasets = (await dm.listDatasetsInState(Completed)).tryGet()
-      downloadingDatasets = (await dm.listDatasetsInState(Downloading)).tryGet()
-      pendingDatasets = (await dm.listDatasetsInState(Pending)).tryGet()
+      completedDatasets = (await datasetStore.listDatasetsInState(Completed)).tryGet()
+      downloadingDatasets = (await datasetStore.listDatasetsInState(Downloading)).tryGet()
+      deletingDatasets = (await datasetStore.listDatasetsInState(Deleting)).tryGet()
 
     check:
       completedDatasets.len == 2
       downloadingDatasets.len == 1
-      pendingDatasets.len == 0
+      deletingDatasets.len == 0
 
   test "Should store slot overlay with parent reference":
     let
-      parentCid = Cid.example
+      parentTreeCid = Cid.example
+      slotTreeCid = Cid.example
       slotManifestCid = Cid.example
       meta = OverlayMetadata(
         status: Completed,
@@ -198,17 +202,17 @@ suite "DatasetManager State Management":
         totalSize: 50,
         expiry: now + 3600,
         kind: SlotOverlay,
-        parentTreeCid: parentCid.some,
+        parentTreeCid: parentTreeCid.some,
       )
 
-    (await dm.setOverlayMetadata(slotManifestCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(slotTreeCid, meta)).tryGet()
 
-    let retrieved = (await dm.getOverlayMetadata(slotManifestCid)).tryGet()
+    let retrieved = (await datasetStore.getOverlayMetadata(slotTreeCid)).tryGet()
 
     check:
       retrieved.kind == SlotOverlay
       retrieved.parentTreeCid.isSome
-      retrieved.parentTreeCid.get == parentCid
+      retrieved.parentTreeCid.get == parentTreeCid
 
 suite "DatasetManager Lifecycle Operations":
   var
@@ -248,7 +252,6 @@ suite "DatasetManager Lifecycle Operations":
       manifestBlk = createManifestBlock(treeCid, blocksCount = 2, blockSize = 256)
       manifestCid = manifestBlk.cid
 
-    # Pre-set overlay as completed
     let meta = OverlayMetadata(
       status: Completed,
       manifestCid: manifestCid,
@@ -257,15 +260,13 @@ suite "DatasetManager Lifecycle Operations":
       expiry: now + 3600,
       kind: DatasetOverlay,
     )
-    (await dm.setOverlayMetadata(manifestCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
     (await mockStore.putBlock(manifestBlk)).tryGet()
 
-    # Should succeed immediately without starting download
     let result = await dm.downloadDataset(manifestCid)
     check result.isOk
 
-    # Status should still be Completed
-    let retrieved = (await dm.getOverlayMetadata(manifestCid)).tryGet()
+    let retrieved = (await datasetStore.getOverlayMetadata(treeCid)).tryGet()
     check retrieved.status == Completed
 
   test "getProgress should return correct counts":
@@ -274,19 +275,15 @@ suite "DatasetManager Lifecycle Operations":
       manifestBlk = createManifestBlock(treeCid, blocksCount = 4, blockSize = 256)
       manifestCid = manifestBlk.cid
 
-    # Create blocks
     var blocks: seq[bt.Block] = @[]
     for i in 0 ..< 4:
       blocks.add(bt.Block.example(size = 256))
 
-    # Add manifest and some blocks to store
     (await mockStore.putBlock(manifestBlk)).tryGet()
     for i, blk in blocks:
       (await mockStore.putBlock(blk)).tryGet()
-      # Link block to tree position
       (await mockStore.putCidAndProof(treeCid, i, blk.cid, ArchivistProof())).tryGet()
 
-    # Set overlay metadata
     let meta = OverlayMetadata(
       status: Completed,
       manifestCid: manifestCid,
@@ -295,9 +292,8 @@ suite "DatasetManager Lifecycle Operations":
       expiry: now + 3600,
       kind: DatasetOverlay,
     )
-    (await dm.setOverlayMetadata(manifestCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
-    # Check progress
     let (present, total) = (await dm.getProgress(manifestCid)).tryGet()
     check:
       total == 4
@@ -309,19 +305,15 @@ suite "DatasetManager Lifecycle Operations":
       manifestBlk = createManifestBlock(treeCid, blocksCount = 4, blockSize = 256)
       manifestCid = manifestBlk.cid
 
-    # Create only 2 of 4 blocks
     var blocks: seq[bt.Block] = @[]
     for i in 0 ..< 2:
       blocks.add(bt.Block.example(size = 256))
 
-    # Add manifest and partial blocks to store
     (await mockStore.putBlock(manifestBlk)).tryGet()
     for i, blk in blocks:
       (await mockStore.putBlock(blk)).tryGet()
-      # Link block to tree position (indices 0 and 1)
       (await mockStore.putCidAndProof(treeCid, i, blk.cid, ArchivistProof())).tryGet()
 
-    # Set overlay metadata
     let meta = OverlayMetadata(
       status: Downloading,
       manifestCid: manifestCid,
@@ -330,9 +322,8 @@ suite "DatasetManager Lifecycle Operations":
       expiry: now + 3600,
       kind: DatasetOverlay,
     )
-    (await dm.setOverlayMetadata(manifestCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
-    # Check progress - should be 2/4
     let (present, total) = (await dm.getProgress(manifestCid)).tryGet()
     check:
       total == 4
@@ -344,7 +335,6 @@ suite "DatasetManager Lifecycle Operations":
       manifestBlk = createManifestBlock(treeCid, blocksCount = 2, blockSize = 256)
       manifestCid = manifestBlk.cid
 
-    # Setup
     (await mockStore.putBlock(manifestBlk)).tryGet()
     let meta = OverlayMetadata(
       status: Completed,
@@ -354,13 +344,11 @@ suite "DatasetManager Lifecycle Operations":
       expiry: now + 3600,
       kind: DatasetOverlay,
     )
-    (await dm.setOverlayMetadata(manifestCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
-    # Delete
     (await dm.deleteOverlay(manifestCid)).tryGet()
 
-    # Verify deleted
-    let result = await dm.getOverlayMetadata(manifestCid)
+    let result = await datasetStore.getOverlayMetadata(treeCid)
     check result.isErr
 
   test "deleteDataset should be alias for deleteOverlay":
@@ -369,7 +357,6 @@ suite "DatasetManager Lifecycle Operations":
       manifestBlk = createManifestBlock(treeCid, blocksCount = 2, blockSize = 256)
       manifestCid = manifestBlk.cid
 
-    # Setup
     (await mockStore.putBlock(manifestBlk)).tryGet()
     let meta = OverlayMetadata(
       status: Completed,
@@ -379,23 +366,31 @@ suite "DatasetManager Lifecycle Operations":
       expiry: now + 3600,
       kind: DatasetOverlay,
     )
-    (await dm.setOverlayMetadata(manifestCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
-    # Delete using alias
     (await dm.deleteDataset(manifestCid)).tryGet()
 
-    # Verify deleted
-    let result = await dm.getOverlayMetadata(manifestCid)
+    let result = await datasetStore.getOverlayMetadata(treeCid)
     check result.isErr
 
   test "cancelDownload should fail when no active download":
-    let manifestCid = Cid.example
+    let
+      treeCid = Cid.example
+      manifestBlk = createManifestBlock(treeCid, blocksCount = 2, blockSize = 256)
+      manifestCid = manifestBlk.cid
+
+    (await mockStore.putBlock(manifestBlk)).tryGet()
 
     let result = await dm.cancelDownload(manifestCid)
     check result.isErr
 
   test "getProgress should fail when overlay not found":
-    let manifestCid = Cid.example
+    let
+      treeCid = Cid.example
+      manifestBlk = createManifestBlock(treeCid, blocksCount = 2, blockSize = 256)
+      manifestCid = manifestBlk.cid
+
+    (await mockStore.putBlock(manifestBlk)).tryGet()
 
     let result = await dm.getProgress(manifestCid)
     check result.isErr

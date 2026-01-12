@@ -9,6 +9,7 @@
 
 {.push raises: [].}
 
+import std/options
 import std/sequtils
 import std/sets
 import std/tables
@@ -17,6 +18,7 @@ import pkg/chronos
 import pkg/chronos/futures
 import pkg/kvstore
 import pkg/kvstore/kvstore as rawkvstore
+import pkg/kvstore/query
 import pkg/libp2p/cid
 import pkg/libp2p/multicodec
 import pkg/metrics
@@ -31,6 +33,7 @@ import ../../blocktype
 import ../../logutils
 import ../../merkletree
 import ../../utils/digest
+import ../../utils/safeasynciter
 
 logScope:
   topics = "archivist repostore"
@@ -1007,3 +1010,122 @@ proc tryDeleteBlock*(
     success(DeleteResult(kind: Deleted, released: currMd.size))
   else:
     success(DeleteResult(kind: InUse)) # Refcount changed concurrently
+
+###########################################################
+# Tree and Leaf Cleanup Operations (for overlay deletion)
+###########################################################
+
+const DefaultDeleteBatchSize* = 1000
+  ## Default batch size for delete operations to avoid loading too much into memory
+
+proc delLeafCidsBatched*(
+    self: RepoStore, treeCid: Cid, batchSize: Natural = DefaultDeleteBatchSize
+): Future[?!Natural] {.async: (raises: [CancelledError]).} =
+  ## Delete all leaf CID mappings for a tree using batched iteration.
+  ## Processes records in chunks to avoid loading millions of entries into memory.
+  ## Returns the total number of leaf mappings deleted.
+
+  without queryKey =? datasetLeavesQueryKey(treeCid), err:
+    return failure(err)
+
+  without iter =? await rawkvstore.query(self.metaStore, Query.init(queryKey)), err:
+    return failure(err)
+
+  var totalDeleted: Natural = 0
+  var done = false
+
+  while not done:
+    # Collect a batch of records
+    var batch: seq[KeyRecord]
+    while batch.len < batchSize:
+      without recordOpt =? await iter.next(), err:
+        warn "Error iterating leaf mappings", err = err.msg
+        continue
+      if recordOpt.isNone:
+        done = true
+        break
+      let record = recordOpt.get
+      batch.add(KeyRecord(key: record.key, token: record.token))
+
+    # Delete this batch
+    if batch.len > 0:
+      let failed = ?await self.metaStore.delete(batch)
+      totalDeleted += (batch.len - failed.len).Natural
+
+  iter.dispose()
+  success(totalDeleted)
+
+proc delTreeNodesBatched*(
+    self: RepoStore, treeCid: Cid, batchSize: Natural = DefaultDeleteBatchSize
+): Future[?!Natural] {.async: (raises: [CancelledError]).} =
+  ## Delete all tree nodes for a tree (including metadata) using batched iteration.
+  ## Processes records in chunks to avoid loading millions of entries into memory.
+  ## Returns the total number of nodes deleted.
+
+  without queryKey =? treeQueryKey(treeCid), err:
+    return failure(err)
+
+  without iter =? await rawkvstore.query(self.metaStore, Query.init(queryKey)), err:
+    return failure(err)
+
+  var totalDeleted: Natural = 0
+  var done = false
+
+  while not done:
+    # Collect a batch of records
+    var batch: seq[KeyRecord]
+    while batch.len < batchSize:
+      without recordOpt =? await iter.next(), err:
+        warn "Error iterating tree nodes", err = err.msg
+        continue
+      if recordOpt.isNone:
+        done = true
+        break
+      let record = recordOpt.get
+      batch.add(KeyRecord(key: record.key, token: record.token))
+
+    # Delete this batch
+    if batch.len > 0:
+      let failed = ?await self.metaStore.delete(batch)
+      totalDeleted += (batch.len - failed.len).Natural
+
+  iter.dispose()
+  success(totalDeleted)
+
+proc getAllLeafCidsIter*(
+    self: RepoStore, treeCid: Cid
+): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
+  ## Iterate over all block CIDs referenced by a tree's leaf mappings.
+  ## Used by DatasetManager for refcount updates during overlay deletion.
+  ## Returns an async iterator to handle large datasets efficiently.
+
+  without queryKey =? datasetLeavesQueryKey(treeCid), err:
+    return failure(err)
+
+  without kvIter =? await rawkvstore.query(self.metaStore, Query.init(queryKey)), err:
+    return failure(err)
+
+  var done = false
+
+  proc genNext(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+    while not done:
+      without recordOpt =? await kvIter.next(), err:
+        warn "Error iterating leaf mappings", err = err.msg
+        continue
+      if recordOpt.isNone:
+        done = true
+        kvIter.dispose()
+        return failure(newException(CatchableError, "Iterator exhausted"))
+      let record = recordOpt.get
+      # Value is raw CID bytes
+      without cid =? Cid.init(record.val).mapFailure, err:
+        warn "Failed to parse CID from leaf mapping", err = err.msg
+        continue
+      return success(cid)
+    # Already done
+    return failure(newException(CatchableError, "Iterator exhausted"))
+
+  proc isFinished(): bool =
+    done
+
+  success(SafeAsyncIter[Cid].new(genNext, isFinished))

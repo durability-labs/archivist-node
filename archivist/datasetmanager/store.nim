@@ -6,10 +6,10 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-## DatasetStore - Persistent storage for dataset overlay metadata
+## DatasetStore - Persistent storage for overlay metadata
 ##
-## Provides CRUD operations for OverlayMetadata using KVStore with
-## CAS (Compare-And-Swap) semantics for optimistic concurrency control.
+## Provides CRUD for OverlayMetadata using KVStore with CAS semantics.
+## Keys use treeCid as the canonical dataset identifier.
 
 {.push raises: [].}
 
@@ -41,18 +41,16 @@ func new*(T: type DatasetStore, metaStore: KVStore): DatasetStore =
   DatasetStore(metaStore: metaStore, overlays: initTable[Cid, OverlayState]())
 
 proc getOverlayMetadata*(
-    self: DatasetStore, manifestCid: Cid
+    self: DatasetStore, treeCid: Cid
 ): Future[?!OverlayMetadata] {.async: (raises: [CancelledError]).} =
   logScope:
-    manifestCid = manifestCid
+    treeCid = treeCid
 
-  # Check in-memory cache first
-  if self.overlays.hasKey(manifestCid):
+  if self.overlays.hasKey(treeCid):
     trace "Overlay metadata found in cache"
-    return success(self.overlays.getOrDefault(manifestCid).metadata)
+    return success(self.overlays.getOrDefault(treeCid).metadata)
 
-  # Load from kvstore
-  without key =? datasetOverlayKey(manifestCid), err:
+  without key =? datasetOverlayKey(treeCid), err:
     return failure(err)
 
   without record =? await self.metaStore.get(key), err:
@@ -66,16 +64,15 @@ proc getOverlayMetadata*(
   success(meta)
 
 proc setOverlayMetadata*(
-    self: DatasetStore, manifestCid: Cid, meta: OverlayMetadata
+    self: DatasetStore, treeCid: Cid, meta: OverlayMetadata
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   logScope:
-    manifestCid = manifestCid
+    treeCid = treeCid
     status = meta.status
 
-  without key =? datasetOverlayKey(manifestCid), err:
+  without key =? datasetOverlayKey(treeCid), err:
     return failure(err)
 
-  # Get existing record to obtain its token (for CAS), or use 0 for new record
   var token: uint64 = 0
   if existingRecord =? await self.metaStore.get(key):
     token = existingRecord.token
@@ -83,31 +80,27 @@ proc setOverlayMetadata*(
   let record = RawRecord.init(key, meta.encode(), token)
   ?await self.metaStore.put(record)
 
-  # Update in-memory cache - always overwrite with new state
-  self.overlays[manifestCid] = OverlayState(metadata: meta, presentBlocks: 0)
+  self.overlays[treeCid] = OverlayState(metadata: meta, presentBlocks: 0)
 
   trace "Overlay metadata stored"
   success()
 
 proc deleteOverlayMetadata*(
-    self: DatasetStore, manifestCid: Cid
+    self: DatasetStore, treeCid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   logScope:
-    manifestCid = manifestCid
+    treeCid = treeCid
 
-  without key =? datasetOverlayKey(manifestCid), err:
+  without key =? datasetOverlayKey(treeCid), err:
     return failure(err)
 
-  # Get existing record to obtain its token (for CAS)
   without existingRecord =? await self.metaStore.get(key), err:
-    # If not found, that's fine - nothing to delete
     trace "Overlay metadata not found for deletion"
     return success()
 
   ?await self.metaStore.delete(KeyRecord.init(key, existingRecord.token))
 
-  # Remove from cache
-  self.overlays.del(manifestCid)
+  self.overlays.del(treeCid)
 
   trace "Overlay metadata deleted"
   success()

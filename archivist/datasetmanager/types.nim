@@ -25,12 +25,10 @@ export cid, chronos, multicodec
 
 type
   DatasetStatus* {.serialize.} = enum
-    ## Status of a dataset in its lifecycle
-    Pending ## Initial state, not yet started
-    Downloading ## Download in progress
+    Downloading ## Download in progress (includes paused/partial)
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
-    Error ## Unrecoverable error occurred
+    Error ## Unrecoverable error
 
   CleanupMode* {.serialize.} = enum
     ## Mode for cleaning up after storage request
