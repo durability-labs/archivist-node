@@ -5,6 +5,7 @@ import ../../asynctest
 
 import pkg/chronos
 import pkg/questionable/results
+import pkg/kvstore
 import pkg/archivist/blocktype as bt
 import pkg/archivist/rng
 import pkg/archivist/stores
@@ -62,8 +63,6 @@ suite "Slot builder":
 
     # empty digest
     emptyDigest = SpongeMerkle.digest(newSeq[byte](blockSize.int), cellSize.int)
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
 
   var
     datasetBlocks: seq[bt.Block]
@@ -72,13 +71,14 @@ suite "Slot builder":
     protectedManifest: Manifest
     builder: Poseidon2Builder
     chunker: Chunker
+    metaStore: KVStore
+    blockStore: KVStore
 
   setup:
-    let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+    metaStore = SQLiteKVStore.new(":memory:").tryGet()
+    blockStore = SQLiteKVStore.new(":memory:").tryGet()
 
-    localStore = RepoStore.new(repoDs, metaDs)
+    localStore = RepoStore.new(metaStore, blockStore)
     chunker =
       RandomChunker.new(Rng.instance(), size = totalDatasetSize, chunkSize = blockSize)
     datasetBlocks = await chunker.createBlocks(localStore)
@@ -90,8 +90,8 @@ suite "Slot builder":
 
   teardown:
     await localStore.close()
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    discard await metaStore.close()
+    discard await blockStore.close()
 
     # TODO: THIS IS A BUG IN asynctest, because it doesn't release the
     #       objects after the test is done, so we need to do it manually

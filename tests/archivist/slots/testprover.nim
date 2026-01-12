@@ -2,6 +2,7 @@ import ../../asynctest
 
 import pkg/chronos
 import pkg/libp2p/cid
+import pkg/kvstore
 
 import pkg/archivist/merkletree
 import pkg/archivist/chunker
@@ -23,19 +24,19 @@ suite "Test CircomCompat Prover":
     samples = 5
     blockSize = DefaultBlockSize
     cellSize = DefaultCellSize
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
     tp = Taskpool.new()
     challenge = 1234567.toF.toBytes.toArray32
 
   var
     store: BlockStore
     prover: Prover
+    metaStore: KVStore
+    blockStore: KVStore
 
   setup:
+    metaStore = SQLiteKVStore.new(":memory:").tryGet()
+    blockStore = SQLiteKVStore.new(":memory:").tryGet()
     let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
       backend = CircomCompatBackendRef.new(
         r1csPath = "tests/circuits/fixtures/proof_main.r1cs",
         wasmPath = "tests/circuits/fixtures/proof_main.wasm",
@@ -43,12 +44,12 @@ suite "Test CircomCompat Prover":
       ).tryGet
       tp = Taskpool.new()
 
-    store = RepoStore.new(repoDs, metaDs)
+    store = RepoStore.new(metaStore, blockStore)
     prover = Prover.new(backend, samples, tp)
 
   teardown:
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    discard await metaStore.close()
+    discard await blockStore.close()
 
   test "Should sample and prove a slot":
     let
@@ -99,20 +100,20 @@ suite "Test NimGroth16 Prover":
     samples = 5
     blockSize = DefaultBlockSize
     cellSize = DefaultCellSize
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
     tp = Taskpool.new()
     challenge = 1234567.toF.toBytes.toArray32
 
   var
     store: BlockStore
     prover: Prover
+    metaStore2: KVStore
+    blockStore2: KVStore
 
   setup:
+    metaStore2 = SQLiteKVStore.new(":memory:").tryGet()
+    blockStore2 = SQLiteKVStore.new(":memory:").tryGet()
     let
       tp = Taskpool.new()
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
       backend = NimGroth16BackendRef.new(
         r1csPath = "tests/circuits/fixtures/proof_main.r1cs",
         graphPath = "tests/circuits/fixtures/proof_main.bin",
@@ -120,12 +121,12 @@ suite "Test NimGroth16 Prover":
         tp = tp,
       ).tryGet
 
-    store = RepoStore.new(repoDs, metaDs)
+    store = RepoStore.new(metaStore2, blockStore2)
     prover = Prover.new(backend, samples, tp)
 
   teardown:
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    discard await metaStore2.close()
+    discard await blockStore2.close()
 
   test "Should sample and prove a slot":
     let

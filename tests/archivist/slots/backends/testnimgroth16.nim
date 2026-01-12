@@ -7,6 +7,7 @@ import pkg/chronos
 import pkg/poseidon2
 import pkg/serde/json
 import pkg/taskpools
+import pkg/kvstore
 
 import pkg/archivist/slots {.all.}
 import pkg/archivist/slots/types {.all.}
@@ -70,9 +71,6 @@ suite "Test NimGoth16 Backend":
     r1cs = "tests/circuits/fixtures/proof_main.r1cs"
     zkey = "tests/circuits/fixtures/proof_main.zkey"
 
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
-
   var
     store: BlockStore
     manifest: Manifest
@@ -83,13 +81,14 @@ suite "Test NimGoth16 Backend":
     challenge: array[32, byte]
     builder: Poseidon2Builder
     sampler: Poseidon2Sampler
+    metaStore: KVStore
+    blockStore: KVStore
 
   setup:
-    let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+    metaStore = SQLiteKVStore.new(":memory:").tryGet()
+    blockStore = SQLiteKVStore.new(":memory:").tryGet()
 
-    store = RepoStore.new(repoDs, metaDs)
+    store = RepoStore.new(metaStore, blockStore)
 
     (manifest, protected, verifiable) = await createVerifiableManifest(
       store, numDatasetBlocks, ecK, ecM, blockSize, cellSize
@@ -105,8 +104,8 @@ suite "Test NimGoth16 Backend":
 
   teardown:
     nimGroth16.release()
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    discard await metaStore.close()
+    discard await blockStore.close()
 
   test "Should verify with correct input":
     var proof = (await nimGroth16.prove(proofInputs)).tryGet

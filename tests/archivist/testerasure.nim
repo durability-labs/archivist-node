@@ -3,6 +3,7 @@ import std/sugar
 
 import pkg/chronos
 import pkg/questionable/results
+import pkg/kvstore
 
 import pkg/archivist/erasure
 import pkg/archivist/manifest
@@ -26,24 +27,23 @@ suite "Erasure encode/decode":
   var manifest: Manifest
   var store: BlockStore
   var erasure: Erasure
-  let repoTmp = TempLevelDb.new()
-  let metaTmp = TempLevelDb.new()
+  var metaStore: KVStore
+  var blockStore: KVStore
   var taskpool: Taskpool
 
   setup:
-    let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+    metaStore = SQLiteKVStore.new(":memory:").tryGet()
+    blockStore = SQLiteKVStore.new(":memory:").tryGet()
     rng = Rng.instance()
     chunker = RandomChunker.new(rng, size = dataSetSize, chunkSize = BlockSize)
-    store = RepoStore.new(repoDs, metaDs)
+    store = RepoStore.new(metaStore, blockStore)
     taskpool = Taskpool.new()
     erasure = Erasure.new(store, leoEncoderProvider, leoDecoderProvider, taskpool)
     manifest = await storeDataGetManifest(store, chunker)
 
   teardown:
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    discard await metaStore.close()
+    discard await blockStore.close()
     taskpool.shutdown()
 
   proc encode(buffers, parity: int): Future[Manifest] {.async.} =

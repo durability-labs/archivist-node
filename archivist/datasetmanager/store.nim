@@ -23,9 +23,9 @@ import pkg/questionable
 import pkg/questionable/results
 
 import ./coders
-import ./keys
 import ./types
 import ../errors
+import ../keys
 import ../logutils
 
 export types

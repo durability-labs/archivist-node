@@ -20,6 +20,7 @@ import pkg/confutils/defs
 import pkg/nitro
 import pkg/stew/io2
 import pkg/datastore
+import pkg/kvstore
 import pkg/ethers except Rng
 
 import ./node
@@ -186,34 +187,17 @@ proc new*(
     wallet = WalletRef.new(EthPrivateKey.random())
     network = BlockExcNetwork.new(switch)
 
-    repoData =
-      case config.repoKind
-      of repoFS:
-        Datastore(
-          FSDatastore.new($config.dataDir, depth = 5).expect(
-            "Should create repo file data store!"
-          )
-        )
-      of repoSQLite:
-        Datastore(
-          SQLiteDatastore.new($config.dataDir).expect(
-            "Should create repo SQLite data store!"
-          )
-        )
-      of repoLevelDb:
-        Datastore(
-          LevelDbDatastore.new($config.dataDir).expect(
-            "Should create repo LevelDB data store!"
-          )
-        )
+    metaStore = SQLiteKVStore.new(config.dataDir / ArchivistMetaNamespace).expect(
+        "Should create metadata store!"
+      )
+
+    blockStore =
+      FSKVStore.new($config.dataDir, depth = 5).expect("Should create block store!")
 
     repoStore = RepoStore.new(
-      repoDs = repoData,
-      metaDs = LevelDbDatastore.new(config.dataDir / ArchivistMetaNamespace).expect(
-          "Should create metadata store!"
-        ),
+      metaStore = metaStore,
+      blockStore = blockStore,
       quotaMaxBytes = config.storageQuota,
-      blockTtl = config.datasetTtl,
     )
 
     maintenance = BlockMaintainer.new(

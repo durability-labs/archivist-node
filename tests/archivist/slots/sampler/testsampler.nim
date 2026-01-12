@@ -4,6 +4,7 @@ import std/options
 import ../../../asynctest
 
 import pkg/questionable/results
+import pkg/kvstore
 
 import pkg/archivist/stores
 import pkg/archivist/merkletree
@@ -78,8 +79,6 @@ suite "Test Sampler":
     entropy = 1234567.toF
     blockSize = DefaultBlockSize
     cellSize = DefaultCellSize
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
 
   var
     store: RepoStore
@@ -87,13 +86,14 @@ suite "Test Sampler":
     manifest: Manifest
     protected: Manifest
     verifiable: Manifest
+    metaStore: KVStore
+    blockStore: KVStore
 
   setup:
-    let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+    metaStore = SQLiteKVStore.new(":memory:").tryGet()
+    blockStore = SQLiteKVStore.new(":memory:").tryGet()
 
-    store = RepoStore.new(repoDs, metaDs)
+    store = RepoStore.new(metaStore, blockStore)
 
     (manifest, protected, verifiable) = await createVerifiableManifest(
       store, datasetBlocks, ecK, ecM, blockSize, cellSize
@@ -104,8 +104,8 @@ suite "Test Sampler":
 
   teardown:
     await store.close()
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    discard await metaStore.close()
+    discard await blockStore.close()
 
   test "Should fail instantiating for invalid slot index":
     let sampler = Poseidon2Sampler.new(builder.slotRoots.len, store, builder)
