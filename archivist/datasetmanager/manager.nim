@@ -155,7 +155,8 @@ proc downloadDataset*(
   let manifestBlk = ?await self.getBlock(manifestCid)
 
   without manifest =? Manifest.decode(manifestBlk), err:
-    return failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
+    return
+      failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
 
   let treeCid = manifest.treeCid
 
@@ -174,13 +175,7 @@ proc downloadDataset*(
       trace "Dataset marked as downloading but no active download, resuming"
 
   let meta = OverlayMetadata(
-    status: Downloading,
-    manifestCid: manifestCid,
-    totalBlocks: manifest.blocksCount.uint32,
-    totalSize: manifest.datasetSize.uint64,
-    expiry: expiry,
-    kind: DatasetOverlay,
-    parentTreeCid: Cid.none,
+    status: Downloading, manifestCid: manifestCid, expiry: expiry, downloadedBlocks: @[]
   )
   ?await self.setOverlayMetadata(treeCid, meta)
 
@@ -206,14 +201,15 @@ proc getProgress*(
 
   let manifestBlk = ?await self.getBlock(manifestCid)
   without manifest =? Manifest.decode(manifestBlk), err:
-    return failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
+    return
+      failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
 
   let treeCid = manifest.treeCid
 
   without meta =? await self.getOverlayMetadata(treeCid), err:
     return failure(err)
 
-  let totalBlocks = meta.totalBlocks
+  let totalBlocks = manifest.blocksCount.uint32
 
   var presentBlocks: uint32 = 0
   for index in 0 ..< totalBlocks.int:
@@ -232,7 +228,8 @@ proc cancelDownload*(
 
   let manifestBlk = ?await self.getBlock(manifestCid)
   without manifest =? Manifest.decode(manifestBlk), err:
-    return failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
+    return
+      failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
 
   let treeCid = manifest.treeCid
 
@@ -259,7 +256,8 @@ proc deleteOverlay*(
     return failure(err)
 
   without manifest =? Manifest.decode(manifestBlk), err:
-    return failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
+    return
+      failure(newException(ArchivistError, "Failed to decode manifest: " & err.msg))
 
   let treeCid = manifest.treeCid
 
@@ -368,7 +366,6 @@ proc storeDataset*(
     if blocks.len > 0:
       ?await self.putBlocks(blocks)
       blocks.setLen(0)
-
   except CancelledError as exc:
     raise exc
   except CatchableError as exc:
@@ -414,13 +411,7 @@ proc storeDataset*(
   let manifestCid = manifestBlk.cid
 
   let meta = OverlayMetadata(
-    status: Completed,
-    manifestCid: manifestCid,
-    totalBlocks: cids.len.uint32,
-    totalSize: manifest.datasetSize.uint64,
-    expiry: expiry,
-    kind: DatasetOverlay,
-    parentTreeCid: Cid.none,
+    status: Completed, manifestCid: manifestCid, expiry: expiry, downloadedBlocks: @[]
   )
   ?await self.setOverlayMetadata(treeCid, meta)
 

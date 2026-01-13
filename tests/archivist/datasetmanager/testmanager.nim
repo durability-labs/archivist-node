@@ -50,11 +50,8 @@ suite "DatasetManager State Management":
       meta = OverlayMetadata(
         status: Downloading,
         manifestCid: manifestCid,
-        totalBlocks: 100,
-        totalSize: 1024'u64 * 1024,
         expiry: now + 3600,
-        kind: DatasetOverlay,
-        parentTreeCid: Cid.none,
+        downloadedBlocks: @[],
       )
 
     (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
@@ -64,11 +61,8 @@ suite "DatasetManager State Management":
     check:
       retrieved.status == Downloading
       retrieved.manifestCid == manifestCid
-      retrieved.totalBlocks == 100'u32
-      retrieved.totalSize == 1024'u64 * 1024
       retrieved.expiry == now + 3600
-      retrieved.kind == DatasetOverlay
-      retrieved.parentTreeCid.isNone
+      retrieved.downloadedBlocks.len == 0
 
   test "Should update overlay metadata status":
     let
@@ -77,10 +71,8 @@ suite "DatasetManager State Management":
       meta1 = OverlayMetadata(
         status: Downloading,
         manifestCid: manifestCid,
-        totalBlocks: 50,
-        totalSize: 512,
         expiry: now + 1800,
-        kind: DatasetOverlay,
+        downloadedBlocks: @[],
       )
 
     (await datasetStore.setOverlayMetadata(treeCid, meta1)).tryGet()
@@ -100,10 +92,8 @@ suite "DatasetManager State Management":
       meta = OverlayMetadata(
         status: Completed,
         manifestCid: manifestCid,
-        totalBlocks: 10,
-        totalSize: 100,
         expiry: now + 7200,
-        kind: DatasetOverlay,
+        downloadedBlocks: @[],
       )
 
     (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
@@ -122,10 +112,8 @@ suite "DatasetManager State Management":
       let meta = OverlayMetadata(
         status: Completed,
         manifestCid: Cid.example,
-        totalBlocks: 10,
-        totalSize: 100,
         expiry: now + 3600,
-        kind: DatasetOverlay,
+        downloadedBlocks: @[],
       )
       (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
@@ -144,10 +132,8 @@ suite "DatasetManager State Management":
         OverlayMetadata(
           status: Completed,
           manifestCid: Cid.example,
-          totalBlocks: 10,
-          totalSize: 100,
           expiry: now + 3600,
-          kind: DatasetOverlay,
+          downloadedBlocks: @[],
         ),
       )
     ).tryGet()
@@ -158,10 +144,8 @@ suite "DatasetManager State Management":
         OverlayMetadata(
           status: Completed,
           manifestCid: Cid.example,
-          totalBlocks: 20,
-          totalSize: 200,
           expiry: now + 3600,
-          kind: DatasetOverlay,
+          downloadedBlocks: @[],
         ),
       )
     ).tryGet()
@@ -172,17 +156,16 @@ suite "DatasetManager State Management":
         OverlayMetadata(
           status: Downloading,
           manifestCid: Cid.example,
-          totalBlocks: 30,
-          totalSize: 300,
           expiry: now + 3600,
-          kind: DatasetOverlay,
+          downloadedBlocks: @[],
         ),
       )
     ).tryGet()
 
     let
       completedDatasets = (await datasetStore.listDatasetsInState(Completed)).tryGet()
-      downloadingDatasets = (await datasetStore.listDatasetsInState(Downloading)).tryGet()
+      downloadingDatasets =
+        (await datasetStore.listDatasetsInState(Downloading)).tryGet()
       deletingDatasets = (await datasetStore.listDatasetsInState(Deleting)).tryGet()
 
     check:
@@ -190,29 +173,25 @@ suite "DatasetManager State Management":
       downloadingDatasets.len == 1
       deletingDatasets.len == 0
 
-  test "Should store slot overlay with parent reference":
+  test "Should store overlay with Storing status":
+    # Overlay type is now implicit (determined by manifest.protected/verifiable)
     let
-      parentTreeCid = Cid.example
-      slotTreeCid = Cid.example
-      slotManifestCid = Cid.example
+      treeCid = Cid.example
+      manifestCid = Cid.example
       meta = OverlayMetadata(
-        status: Completed,
-        manifestCid: slotManifestCid,
-        totalBlocks: 5,
-        totalSize: 50,
+        status: Storing,
+        manifestCid: manifestCid,
         expiry: now + 3600,
-        kind: SlotOverlay,
-        parentTreeCid: parentTreeCid.some,
+        downloadedBlocks: @[],
       )
 
-    (await datasetStore.setOverlayMetadata(slotTreeCid, meta)).tryGet()
+    (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
-    let retrieved = (await datasetStore.getOverlayMetadata(slotTreeCid)).tryGet()
+    let retrieved = (await datasetStore.getOverlayMetadata(treeCid)).tryGet()
 
     check:
-      retrieved.kind == SlotOverlay
-      retrieved.parentTreeCid.isSome
-      retrieved.parentTreeCid.get == parentTreeCid
+      retrieved.status == Storing
+      retrieved.manifestCid == manifestCid
 
 suite "DatasetManager Lifecycle Operations":
   var
@@ -255,10 +234,8 @@ suite "DatasetManager Lifecycle Operations":
     let meta = OverlayMetadata(
       status: Completed,
       manifestCid: manifestCid,
-      totalBlocks: 2,
-      totalSize: 512,
       expiry: now + 3600,
-      kind: DatasetOverlay,
+      downloadedBlocks: @[],
     )
     (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
     (await mockStore.putBlock(manifestBlk)).tryGet()
@@ -287,10 +264,8 @@ suite "DatasetManager Lifecycle Operations":
     let meta = OverlayMetadata(
       status: Completed,
       manifestCid: manifestCid,
-      totalBlocks: 4,
-      totalSize: 1024,
       expiry: now + 3600,
-      kind: DatasetOverlay,
+      downloadedBlocks: @[],
     )
     (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
@@ -317,10 +292,8 @@ suite "DatasetManager Lifecycle Operations":
     let meta = OverlayMetadata(
       status: Downloading,
       manifestCid: manifestCid,
-      totalBlocks: 4,
-      totalSize: 1024,
       expiry: now + 3600,
-      kind: DatasetOverlay,
+      downloadedBlocks: @[],
     )
     (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
@@ -339,10 +312,8 @@ suite "DatasetManager Lifecycle Operations":
     let meta = OverlayMetadata(
       status: Completed,
       manifestCid: manifestCid,
-      totalBlocks: 2,
-      totalSize: 512,
       expiry: now + 3600,
-      kind: DatasetOverlay,
+      downloadedBlocks: @[],
     )
     (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
@@ -361,10 +332,8 @@ suite "DatasetManager Lifecycle Operations":
     let meta = OverlayMetadata(
       status: Completed,
       manifestCid: manifestCid,
-      totalBlocks: 2,
-      totalSize: 512,
       expiry: now + 3600,
-      kind: DatasetOverlay,
+      downloadedBlocks: @[],
     )
     (await datasetStore.setOverlayMetadata(treeCid, meta)).tryGet()
 
