@@ -3,6 +3,7 @@ import std/times
 import pkg/chronos
 import pkg/taskpools
 import pkg/datastore/typedds
+import pkg/archivist/marketplace
 import pkg/archivist/marketplacestorage
 import pkg/archivist/node
 import pkg/archivist/chunker
@@ -76,11 +77,25 @@ suite "Marketplace storage interface implementation":
   test "storing a slot updates the expiry of the slot blocks":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    !await storage.storeSlot(cid, 0, expiry, repair = false)
+    let ask = StoreSlotAsk(
+      cid: cid,
+      slotIndex: 0,
+      slotSize: 0,
+      expiry: expiry,
+      repair: false
+    )    
+    !await storage.storeSlot(ask)
     await checkSlotExpiry(cid, 0, expiry)
 
   test "storing a slot updates the expiry of the dataset manifest":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    !await storage.storeSlot(cid, 0, expiry, repair = false)
+    let ask = StoreSlotAsk(
+      cid: cid,
+      slotIndex: 0,
+      slotSize: 0,
+      expiry: expiry,
+      repair: false
+    )    
+    !await storage.storeSlot(ask)
     await checkBlockExpiry(cid, expiry)

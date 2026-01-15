@@ -64,9 +64,15 @@ method run*(
       expiry = await marketplace.requestExpiresAt(requestId)
 
     trace "Starting download"
-    let cid = request.content.cid
-    let slotIndex = data.slotIndex
-    if err =? (await storage.storeSlot(cid, slotIndex, expiry, repair)).errorOption:
+    let storeAsk = StoreSlotAsk(
+      cid: request.content.cid,
+      slotIndex: data.slotIndex,
+      slotSize: 0.uint64, # test this: data.ask.slotSize,
+      expiry: expiry,
+      repair: repair
+    )
+    
+    if err =? (await storage.storeSlot(storeAsk)).errorOption:
       return some State(SaleErrored(error: err, reprocessSlot: false))
 
     trace "Download complete"

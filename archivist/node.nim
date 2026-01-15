@@ -657,20 +657,18 @@ proc requestStorage*(
 
 proc storeSlot*(
     self: ArchivistNodeRef,
-    cid: Cid,
-    slotIdx: uint64,
-    expiry: SecondsSince1970,
-    repair: bool,
+    ask: StoreSlotAsk
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## store data in local storage
   ##
   logScope:
-    cid = $cid
-    slotIdx = slotIdx
+    cid = $ask.cid
+    slotIdx = ask.slotIndex
+    size = ask.slotSize
 
   trace "Received a request to store a slot"
 
-  without manifest =? (await self.fetchManifest(cid, expiry)), err:
+  without manifest =? (await self.fetchManifest(ask.cid, ask.expiry)), err:
     error "Unable to fetch manifest for cid", cid, err = err.msg
     return failure(err)
 
@@ -679,8 +677,8 @@ proc storeSlot*(
     error "Unable to create slots builder", err = err.msg
     return failure(err)
 
-  if slotIdx > manifest.slotRoots.high.uint64:
-    error "Slot index not in manifest", slotIdx
+  if ask.slotIndex > manifest.slotRoots.high.uint64:
+    error "Slot index not in manifest"
     return failure(newException(ArchivistError, "Slot index not in manifest"))
 
   proc updateExpiry(
@@ -689,7 +687,7 @@ proc storeSlot*(
     trace "Updating expiry for blocks", blocks = blocks.len
 
     let ensureExpiryFutures =
-      blocks.mapIt(self.networkStore.ensureExpiry(it.cid, expiry))
+      blocks.mapIt(self.networkStore.ensureExpiry(it.cid, ask.expiry))
 
     let res = await allFinishedFailed[?!void](ensureExpiryFutures)
     if res.failure.len > 0:
@@ -698,15 +696,15 @@ proc storeSlot*(
 
     return success()
 
-  if slotIdx > int.high.uint64:
-    error "Cannot cast slot index to int", slotIndex = slotIdx
+  if ask.slotIndex > int.high.uint64:
+    error "Cannot cast slot index to int", slotIndex = ask.slotIndex
     return failure(newException(ArchivistError, "Cannot cast slot index to int"))
 
-  without blksIter =? manifest.getSlotBlockIterator(slotIdx.int), err:
+  without blksIter =? manifest.getSlotBlockIterator(ask.slotIndex.int), err:
     error "Unable to get indices from strategy", err = err.msg
     return failure(err)
 
-  if repair:
+  if ask.repair:
     trace "start repairing slot", slotIdx
     try:
       let erasure = Erasure.new(
@@ -737,13 +735,13 @@ proc storeSlot*(
       error "Unable to fetch blocks", err = err.msg
       return failure(err)
 
-  without slotRoot =? (await builder.buildSlot(slotIdx.int)), err:
+  without slotRoot =? (await builder.buildSlot(ask.slotIndex.int)), err:
     error "Unable to build slot", err = err.msg
     return failure(err)
 
-  if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[slotIdx]:
+  if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[ask.slotIndex]:
     error "Slot root mismatch",
-      manifest = manifest.slotRoots[slotIdx.int], recovered = slotRoot.toSlotCid()
+      manifest = manifest.slotRoots[ask.slotIndex.int], recovered = slotRoot.toSlotCid()
     return failure(newException(ArchivistError, "Slot root mismatch"))
 
   trace "Slot successfully retrieved and reconstructed"

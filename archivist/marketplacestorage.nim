@@ -18,12 +18,9 @@ method available*(storage: MarketplaceStorage): uint64 {.gcsafe, raises: [].} =
 
 method storeSlot*(
     storage: MarketplaceStorage,
-    cid: Cid,
-    slotIndex: uint64,
-    expiry: SecondsSince1970,
-    repair: bool,
+    storeAsk: marketplace.StoreSlotAsk
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  await storage.node.storeSlot(cid, slotIndex, expiry, repair)
+  await storage.node.storeSlot(storeAsk)
 
 method proveSlot*(
     storage: MarketplaceStorage, cid: Cid, slotIndex: uint64, challenge: ProofChallenge

@@ -74,6 +74,7 @@ export terms.AvailabilityTerms
 import ./marketplace/storageinterface
 
 export storageinterface.StorageInterface
+export storageinterface.StoreSlotAsk
 export storageinterface.ProofChallenge
 export storageinterface.Groth16Proof
 export storageinterface.G1Point
