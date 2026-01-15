@@ -18,6 +18,7 @@ import ./helpers
 suite "Marketplace storage interface implementation":
   var storage: MarketplaceStorage
   var temporary: TemporaryNode
+  var slotSize: uint64
 
   setup:
     temporary = await TemporaryNode.create()
@@ -42,6 +43,7 @@ suite "Marketplace storage interface implementation":
     let protected = !await erasure.encode(manifest, 3, 2)
     let builder = !Poseidon2Builder.new(localStore, protected)
     let verifiable = !await builder.buildManifest()
+    slotSize = builder.slotBytes.uint64
     let cid = (!await node.storeManifest(verifiable)).cid
     file.close()
     cid
@@ -74,13 +76,26 @@ suite "Marketplace storage interface implementation":
     !await storage.updateSlotExpiry(cid, 0, expiry)
     await checkBlockExpiry(cid, expiry)
 
+  test "rejects slots with incorrect slotSize":
+    let cid = await storeVerifiableData()
+    let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
+    let ask = StoreSlotAsk(
+      cid: cid,
+      slotIndex: 0,
+      slotSize: slotSize - 1,
+      expiry: expiry,
+      repair: false
+    )    
+    let response = await storage.storeSlot(ask)
+    check response.isFailure
+
   test "storing a slot updates the expiry of the slot blocks":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
     let ask = StoreSlotAsk(
       cid: cid,
       slotIndex: 0,
-      slotSize: 0,
+      slotSize: slotSize,
       expiry: expiry,
       repair: false
     )    
@@ -93,7 +108,7 @@ suite "Marketplace storage interface implementation":
     let ask = StoreSlotAsk(
       cid: cid,
       slotIndex: 0,
-      slotSize: 0,
+      slotSize: slotSize,
       expiry: expiry,
       repair: false
     )    

@@ -664,7 +664,7 @@ proc storeSlot*(
   logScope:
     cid = $ask.cid
     slotIdx = ask.slotIndex
-    size = ask.slotSize
+    slotSize = ask.slotSize
 
   trace "Received a request to store a slot"
 
