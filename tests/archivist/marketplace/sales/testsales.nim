@@ -287,6 +287,7 @@ asyncchecksuite "Sales":
     for ask in storage.storeSlotCalls:
       check ask.cid == request.content.cid
       check ask.slotIndex < request.ask.slots
+      check ask.slotSize == request.ask.slotSize
 
   test "generates proof of storage":
     await setAvailability()

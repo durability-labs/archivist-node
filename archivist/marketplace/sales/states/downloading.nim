@@ -67,7 +67,7 @@ method run*(
     let storeAsk = StoreSlotAsk(
       cid: request.content.cid,
       slotIndex: data.slotIndex,
-      slotSize: 0.uint64, # test this: data.ask.slotSize,
+      slotSize: request.ask.slotSize,
       expiry: expiry,
       repair: repair
     )
