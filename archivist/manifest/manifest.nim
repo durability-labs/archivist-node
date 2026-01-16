@@ -121,6 +121,9 @@ func verifiableStrategy*(self: Manifest): StrategyType =
 func numSlotBlocks*(self: Manifest): int =
   divUp(self.blocksCount, self.numSlots)
 
+func slotSize*(self: Manifest): NBytes = 
+  (self.blockSize.int * self.numSlotBlocks).NBytes
+
 func filename*(self: Manifest): ?string =
   self.filename
 

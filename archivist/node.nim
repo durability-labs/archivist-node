@@ -655,6 +655,13 @@ proc requestStorage*(
   let purchase = ?await purchasing.purchase(request)
   success purchase.id
 
+proc validateVerifiableManifest(manifest: Manifest, ask: StoreSlotAsk): ?!void =
+  if not manifest.verifiable:
+    return failure("Received manifest type is not verifiable")
+  if manifest.slotSize.uint64 != ask.slotSize:
+    return failure("Received manifest slotSize does not match storeSlotAsk slotSize")
+  return success()
+
 proc storeSlot*(
     self: ArchivistNodeRef,
     ask: StoreSlotAsk
@@ -670,6 +677,10 @@ proc storeSlot*(
 
   without manifest =? (await self.fetchManifest(ask.cid, ask.expiry)), err:
     error "Unable to fetch manifest for cid", cid, err = err.msg
+    return failure(err)
+
+  if err =? validateVerifiableManifest(manifest, ask).errorOption:
+    error "Validation of verifiable manifest failed", err = err.msg
     return failure(err)
 
   without builder =?

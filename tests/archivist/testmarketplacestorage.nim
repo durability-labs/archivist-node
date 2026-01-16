@@ -76,7 +76,7 @@ suite "Marketplace storage interface implementation":
     !await storage.updateSlotExpiry(cid, 0, expiry)
     await checkBlockExpiry(cid, expiry)
 
-  test "rejects slots with incorrect slotSize":
+  test "rejects manifest with incorrect slotSize":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
     let ask = StoreSlotAsk(
