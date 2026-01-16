@@ -24,8 +24,7 @@ method available*(storage: StorageInterface): uint64 {.base, gcsafe, raises: [].
   raiseAssert "not implemented"
 
 method storeSlot*(
-    storage: StorageInterface,
-    storeAsk: StoreSlotAsk
+    storage: StorageInterface, storeAsk: StoreSlotAsk
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =
   raiseAssert "not implemented"
 

@@ -69,9 +69,9 @@ method run*(
       slotIndex: data.slotIndex,
       slotSize: request.ask.slotSize,
       expiry: expiry,
-      repair: repair
+      repair: repair,
     )
-    
+
     if err =? (await storage.storeSlot(storeAsk)).errorOption:
       return some State(SaleErrored(error: err, reprocessSlot: false))
 

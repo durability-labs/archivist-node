@@ -104,14 +104,16 @@ asyncchecksuite "Test Node - Slot Repair":
 
     let cid = verifiableBlock.cid
 
-    proc storeSlot(node: ArchivistNodeRef, slotIndex: uint64, repair: bool): Future[?!void] =
+    proc storeSlot(
+        node: ArchivistNodeRef, slotIndex: uint64, repair: bool
+    ): Future[?!void] =
       let ask = StoreSlotAsk(
         cid: cid,
         slotIndex: slotIndex,
         slotSize: verifiable.slotSize.uint64,
         expiry: expiry,
-        repair: repair
-      ) 
+        repair: repair,
+      )
       return node.storeSlot(ask)
 
     for i in 0 ..< protected.numSlots.uint64:
@@ -192,14 +194,16 @@ asyncchecksuite "Test Node - Slot Repair":
 
     let cid = verifiableBlock.cid
 
-    proc storeSlot(node: ArchivistNodeRef, slotIndex: uint64, repair: bool): Future[?!void] =
+    proc storeSlot(
+        node: ArchivistNodeRef, slotIndex: uint64, repair: bool
+    ): Future[?!void] =
       let ask = StoreSlotAsk(
         cid: cid,
         slotIndex: slotIndex,
         slotSize: verifiable.slotSize.uint64,
         expiry: expiry,
-        repair: repair
-      ) 
+        repair: repair,
+      )
       return node.storeSlot(ask)
 
     for i in 0 ..< protected.numSlots.uint64:

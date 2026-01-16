@@ -47,8 +47,7 @@ method available*(mock: MockStorage): uint64 {.gcsafe, raises: [].} =
   mock.available
 
 method storeSlot*(
-    mock: MockStorage,
-    storeAsk: StoreSlotAsk
+    mock: MockStorage, storeAsk: StoreSlotAsk
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   mock.storeSlotCalls.add(storeAsk)
   mock.storeSlotResult

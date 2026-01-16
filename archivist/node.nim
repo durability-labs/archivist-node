@@ -663,8 +663,7 @@ proc validateVerifiableManifest(manifest: Manifest, ask: StoreSlotAsk): ?!void =
   return success()
 
 proc storeSlot*(
-    self: ArchivistNodeRef,
-    ask: StoreSlotAsk
+    self: ArchivistNodeRef, ask: StoreSlotAsk
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## store data in local storage
   ##

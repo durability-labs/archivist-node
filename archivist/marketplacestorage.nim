@@ -17,8 +17,7 @@ method available*(storage: MarketplaceStorage): uint64 {.gcsafe, raises: [].} =
   storage.repoStore.available.uint64
 
 method storeSlot*(
-    storage: MarketplaceStorage,
-    storeAsk: marketplace.StoreSlotAsk
+    storage: MarketplaceStorage, storeAsk: marketplace.StoreSlotAsk
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   await storage.node.storeSlot(storeAsk)
 

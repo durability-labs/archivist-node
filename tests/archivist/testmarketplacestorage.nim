@@ -83,8 +83,8 @@ suite "Marketplace storage interface implementation":
       slotIndex: 0,
       slotSize: verifiable.slotSize.uint64 - 1,
       expiry: expiry,
-      repair: false
-    )    
+      repair: false,
+    )
     let response = await storage.storeSlot(ask)
     check response.isFailure
 
@@ -96,8 +96,8 @@ suite "Marketplace storage interface implementation":
       slotIndex: 0,
       slotSize: verifiable.slotSize.uint64,
       expiry: expiry,
-      repair: false
-    )    
+      repair: false,
+    )
     !await storage.storeSlot(ask)
     await checkSlotExpiry(cid, 0, expiry)
 
@@ -109,7 +109,7 @@ suite "Marketplace storage interface implementation":
       slotIndex: 0,
       slotSize: verifiable.slotSize.uint64,
       expiry: expiry,
-      repair: false
-    )    
+      repair: false,
+    )
     !await storage.storeSlot(ask)
     await checkBlockExpiry(cid, expiry)
