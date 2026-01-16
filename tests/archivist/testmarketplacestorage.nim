@@ -18,7 +18,7 @@ import ./helpers
 suite "Marketplace storage interface implementation":
   var storage: MarketplaceStorage
   var temporary: TemporaryNode
-  var slotSize: uint64
+  var verifiable: Manifest
 
   setup:
     temporary = await TemporaryNode.create()
@@ -42,8 +42,7 @@ suite "Marketplace storage interface implementation":
     let manifest = await storeDataGetManifest(localStore, chunker)
     let protected = !await erasure.encode(manifest, 3, 2)
     let builder = !Poseidon2Builder.new(localStore, protected)
-    let verifiable = !await builder.buildManifest()
-    slotSize = builder.slotBytes.uint64
+    verifiable = !await builder.buildManifest()
     let cid = (!await node.storeManifest(verifiable)).cid
     file.close()
     cid
@@ -82,7 +81,7 @@ suite "Marketplace storage interface implementation":
     let ask = StoreSlotAsk(
       cid: cid,
       slotIndex: 0,
-      slotSize: slotSize - 1,
+      slotSize: verifiable.slotSize.uint64 - 1,
       expiry: expiry,
       repair: false
     )    
@@ -95,7 +94,7 @@ suite "Marketplace storage interface implementation":
     let ask = StoreSlotAsk(
       cid: cid,
       slotIndex: 0,
-      slotSize: slotSize,
+      slotSize: verifiable.slotSize.uint64,
       expiry: expiry,
       repair: false
     )    
@@ -108,7 +107,7 @@ suite "Marketplace storage interface implementation":
     let ask = StoreSlotAsk(
       cid: cid,
       slotIndex: 0,
-      slotSize: slotSize,
+      slotSize: verifiable.slotSize.uint64,
       expiry: expiry,
       repair: false
     )    

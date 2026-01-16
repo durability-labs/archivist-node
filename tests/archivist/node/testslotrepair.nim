@@ -96,7 +96,6 @@ asyncchecksuite "Test Node - Slot Repair":
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
     builder = Poseidon2Builder.new(localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
-    let slotSize = builder.slotBytes
     verifiableBlock =
       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
 
@@ -109,7 +108,7 @@ asyncchecksuite "Test Node - Slot Repair":
       let ask = StoreSlotAsk(
         cid: cid,
         slotIndex: slotIndex,
-        slotSize: slotSize.uint64,
+        slotSize: verifiable.slotSize.uint64,
         expiry: expiry,
         repair: repair
       ) 
@@ -185,7 +184,6 @@ asyncchecksuite "Test Node - Slot Repair":
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
     builder = Poseidon2Builder.new(localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
-    let slotSize = builder.slotBytes
     verifiableBlock =
       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
 
@@ -198,7 +196,7 @@ asyncchecksuite "Test Node - Slot Repair":
       let ask = StoreSlotAsk(
         cid: cid,
         slotIndex: slotIndex,
-        slotSize: slotSize.uint64,
+        slotSize: verifiable.slotSize.uint64,
         expiry: expiry,
         repair: repair
       ) 
