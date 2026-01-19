@@ -87,6 +87,7 @@ suite "Marketplace storage interface implementation":
     )
     let response = await storage.storeSlot(ask)
     check response.isFailure
+    check response.error.msg == "Received manifest slotSize does not match storeSlotAsk slotSize"
 
   test "storing a slot updates the expiry of the slot blocks":
     let cid = await storeVerifiableData()
