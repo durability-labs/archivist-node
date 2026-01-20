@@ -78,40 +78,20 @@ suite "Marketplace storage interface implementation":
   test "rejects manifest with incorrect slotSize":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    let ask = StoreSlotAsk(
-      cid: cid,
-      slotIndex: 0,
-      slotSize: verifiable.slotSize.uint64 - 1,
-      expiry: expiry,
-      repair: false,
-    )
-    let response = await storage.storeSlot(ask)
+    let response =
+      await storage.storeSlot(cid, 0, verifiable.slotSize.uint64 - 1, expiry, false)
     check response.isFailure
     check response.error.msg ==
-      "Received manifest slotSize does not match storeSlotAsk slotSize"
+      "Received manifest slotSize does not match storage request slotSize"
 
   test "storing a slot updates the expiry of the slot blocks":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    let ask = StoreSlotAsk(
-      cid: cid,
-      slotIndex: 0,
-      slotSize: verifiable.slotSize.uint64,
-      expiry: expiry,
-      repair: false,
-    )
-    !await storage.storeSlot(ask)
+    !await storage.storeSlot(cid, 0, verifiable.slotSize.uint64, expiry, false)
     await checkSlotExpiry(cid, 0, expiry)
 
   test "storing a slot updates the expiry of the dataset manifest":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    let ask = StoreSlotAsk(
-      cid: cid,
-      slotIndex: 0,
-      slotSize: verifiable.slotSize.uint64,
-      expiry: expiry,
-      repair: false,
-    )
-    !await storage.storeSlot(ask)
+    !await storage.storeSlot(cid, 0, verifiable.slotSize.uint64, expiry, false)
     await checkBlockExpiry(cid, expiry)

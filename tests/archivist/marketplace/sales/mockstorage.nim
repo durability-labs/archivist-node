@@ -11,7 +11,7 @@ type MockStorage* = ref object of StorageInterface
   storeSlotResult: ?!void
   proveSlotResult: ?!Groth16Proof
   updateSlotExpiryResult: ?!void
-  storeSlotCalls: seq[StoreSlotAsk]
+  storeSlotCalls: seq[(Cid, uint64, uint64, SecondsSince1970, bool)]
   proveSlotCalls: seq[(Cid, uint64, ProofChallenge)]
   updateSlotExpiryCalls: seq[(Cid, uint64, SecondsSince1970)]
 
@@ -34,7 +34,9 @@ func `proveSlotResult=`*(mock: MockStorage, value: ?!Groth16Proof) =
 func `updateSlotExpiryResult=`*(mock: MockStorage, value: ?!void) =
   mock.updateSlotExpiryResult = value
 
-func storeSlotCalls*(mock: MockStorage): seq[StoreSlotAsk] =
+func storeSlotCalls*(
+    mock: MockStorage
+): seq[(Cid, uint64, uint64, SecondsSince1970, bool)] =
   mock.storeSlotCalls
 
 func proveSlotCalls*(mock: MockStorage): seq[(Cid, uint64, ProofChallenge)] =
@@ -47,9 +49,14 @@ method available*(mock: MockStorage): uint64 {.gcsafe, raises: [].} =
   mock.available
 
 method storeSlot*(
-    mock: MockStorage, storeAsk: StoreSlotAsk
+    mock: MockStorage,
+    cid: Cid,
+    slotIndex: uint64,
+    slotSize: uint64,
+    expiry: SecondsSince1970,
+    repair: bool,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  mock.storeSlotCalls.add(storeAsk)
+  mock.storeSlotCalls.add((cid, slotIndex, slotSize, expiry, repair))
   mock.storeSlotResult
 
 method proveSlot*(

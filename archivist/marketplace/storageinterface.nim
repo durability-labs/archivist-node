@@ -13,18 +13,16 @@ export proofs.Fp2Element
 
 type StorageInterface* = ref object of RootObj
 
-type StoreSlotAsk* = object
-  cid*: Cid
-  slotIndex*: uint64
-  slotSize*: uint64
-  expiry*: SecondsSince1970
-  repair*: bool
-
 method available*(storage: StorageInterface): uint64 {.base, gcsafe, raises: [].} =
   raiseAssert "not implemented"
 
 method storeSlot*(
-    storage: StorageInterface, storeAsk: StoreSlotAsk
+    storage: StorageInterface,
+    cid: Cid,
+    slotIndex: uint64,
+    slotSize: uint64,
+    expiry: SecondsSince1970,
+    repair: bool,
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =
   raiseAssert "not implemented"
 

@@ -655,30 +655,35 @@ proc requestStorage*(
   let purchase = ?await purchasing.purchase(request)
   success purchase.id
 
-proc validateVerifiableManifest(manifest: Manifest, ask: StoreSlotAsk): ?!void =
+proc validateVerifiableManifest(manifest: Manifest, slotSize: uint64): ?!void =
   if not manifest.verifiable:
     return failure("Received manifest type is not verifiable")
-  if manifest.slotSize.uint64 != ask.slotSize:
-    return failure("Received manifest slotSize does not match storeSlotAsk slotSize")
+  if manifest.slotSize.uint64 != slotSize:
+    return failure("Received manifest slotSize does not match storage request slotSize")
   return success()
 
 proc storeSlot*(
-    self: ArchivistNodeRef, ask: StoreSlotAsk
+    self: ArchivistNodeRef,
+    cid: Cid,
+    slotIndex: uint64,
+    slotSize: uint64,
+    expiry: SecondsSince1970,
+    repair: bool,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## store data in local storage
   ##
   logScope:
-    cid = $ask.cid
-    slotIdx = ask.slotIndex
-    slotSize = ask.slotSize
+    cid = $cid
+    slotIdx = slotIndex
+    slotSize = slotSize
 
   trace "Received a request to store a slot"
 
-  without manifest =? (await self.fetchManifest(ask.cid, ask.expiry)), err:
+  without manifest =? (await self.fetchManifest(cid, expiry)), err:
     error "Unable to fetch manifest for cid", cid, err = err.msg
     return failure(err)
 
-  if err =? validateVerifiableManifest(manifest, ask).errorOption:
+  if err =? validateVerifiableManifest(manifest, slotSize).errorOption:
     error "Validation of verifiable manifest failed", err = err.msg
     return failure(err)
 
@@ -687,7 +692,7 @@ proc storeSlot*(
     error "Unable to create slots builder", err = err.msg
     return failure(err)
 
-  if ask.slotIndex > manifest.slotRoots.high.uint64:
+  if slotIndex > manifest.slotRoots.high.uint64:
     error "Slot index not in manifest"
     return failure(newException(ArchivistError, "Slot index not in manifest"))
 
@@ -697,7 +702,7 @@ proc storeSlot*(
     trace "Updating expiry for blocks", blocks = blocks.len
 
     let ensureExpiryFutures =
-      blocks.mapIt(self.networkStore.ensureExpiry(it.cid, ask.expiry))
+      blocks.mapIt(self.networkStore.ensureExpiry(it.cid, expiry))
 
     let res = await allFinishedFailed[?!void](ensureExpiryFutures)
     if res.failure.len > 0:
@@ -706,15 +711,15 @@ proc storeSlot*(
 
     return success()
 
-  if ask.slotIndex > int.high.uint64:
-    error "Cannot cast slot index to int", slotIndex = ask.slotIndex
+  if slotIndex > int.high.uint64:
+    error "Cannot cast slot index to int", slotIndex = slotIndex
     return failure(newException(ArchivistError, "Cannot cast slot index to int"))
 
-  without blksIter =? manifest.getSlotBlockIterator(ask.slotIndex.int), err:
+  without blksIter =? manifest.getSlotBlockIterator(slotIndex.int), err:
     error "Unable to get indices from strategy", err = err.msg
     return failure(err)
 
-  if ask.repair:
+  if repair:
     trace "start repairing slot", slotIdx
     try:
       let erasure = Erasure.new(
@@ -745,13 +750,13 @@ proc storeSlot*(
       error "Unable to fetch blocks", err = err.msg
       return failure(err)
 
-  without slotRoot =? (await builder.buildSlot(ask.slotIndex.int)), err:
+  without slotRoot =? (await builder.buildSlot(slotIndex.int)), err:
     error "Unable to build slot", err = err.msg
     return failure(err)
 
-  if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[ask.slotIndex]:
+  if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[slotIndex]:
     error "Slot root mismatch",
-      manifest = manifest.slotRoots[ask.slotIndex.int], recovered = slotRoot.toSlotCid()
+      manifest = manifest.slotRoots[slotIndex.int], recovered = slotRoot.toSlotCid()
     return failure(newException(ArchivistError, "Slot root mismatch"))
 
   trace "Slot successfully retrieved and reconstructed"

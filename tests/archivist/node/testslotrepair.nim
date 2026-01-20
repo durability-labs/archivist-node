@@ -107,14 +107,7 @@ asyncchecksuite "Test Node - Slot Repair":
     proc storeSlot(
         node: ArchivistNodeRef, slotIndex: uint64, repair: bool
     ): Future[?!void] =
-      let ask = StoreSlotAsk(
-        cid: cid,
-        slotIndex: slotIndex,
-        slotSize: verifiable.slotSize.uint64,
-        expiry: expiry,
-        repair: repair,
-      )
-      return node.storeSlot(ask)
+      return node.storeSlot(cid, slotIndex, verifiable.slotSize.uint64, expiry, repair)
 
     for i in 0 ..< protected.numSlots.uint64:
       (await nodes[i + 1].storeSlot(i, repair = false)).tryGet()
@@ -197,14 +190,7 @@ asyncchecksuite "Test Node - Slot Repair":
     proc storeSlot(
         node: ArchivistNodeRef, slotIndex: uint64, repair: bool
     ): Future[?!void] =
-      let ask = StoreSlotAsk(
-        cid: cid,
-        slotIndex: slotIndex,
-        slotSize: verifiable.slotSize.uint64,
-        expiry: expiry,
-        repair: repair,
-      )
-      return node.storeSlot(ask)
+      return node.storeSlot(cid, slotIndex, verifiable.slotSize.uint64, expiry, repair)
 
     for i in 0 ..< protected.numSlots.uint64:
       (await nodes[i + 1].storeSlot(i, repair = false)).tryGet()
