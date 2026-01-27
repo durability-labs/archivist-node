@@ -29,10 +29,10 @@ suite "Availability":
     .availableUntil(until)
     .update(provider)
     let updated = await testbed.api(provider).getAvailability()
-    check updated{"maximumDuration"} == %100
+    check updated{"maximumDuration"} == %"100"
     check updated{"minimumPricePerBytePerSecond"} == %"2"
     check updated{"maximumCollateralPerByte"} == %"200"
-    check updated{"availableUntil"} == %until
+    check updated{"availableUntil"} == %($until)
 
 suite "Availability validation":
   var testbed: Testbed
@@ -82,5 +82,5 @@ suite "Availability validation":
       await testbed.api(provider).updateAvailability(availability)
       fail()
     except HttpError as error:
-      check "422" in error.msg
-      check "availableUntil must not be negative" in error.msg
+      check "400" in error.msg
+      check "[-] is not a decimal character" in error.msg

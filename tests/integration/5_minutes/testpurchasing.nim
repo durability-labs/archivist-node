@@ -32,8 +32,8 @@ suite "Purchasing":
     .submit(node)
     let purchase = await testbed.api(node).getPurchase(request.id)
     check purchase["request"]["content"]["cid"].getStr().len > 0
-    check purchase["request"]["expiry"] == %30
-    check purchase["request"]["ask"]["duration"] == %100
+    check purchase["request"]["expiry"] == %"30"
+    check purchase["request"]["ask"]["duration"] == %"100"
     check purchase["request"]["ask"]["pricePerBytePerSecond"] == %"4"
     check purchase["request"]["ask"]["proofProbability"] == %"6"
     check purchase["request"]["ask"]["collateralPerByte"] == %"2"
@@ -47,8 +47,8 @@ suite "Purchasing":
       eventually:
         let purchase = await testbed.api(node).getPurchase(request.id)
         purchase["state"] == %"submitted" and
-          purchase["request"]["expiry"] == %request.expiry and
-          purchase["request"]["ask"]["duration"] == %request.duration
+          purchase["request"]["expiry"] == %($request.expiry) and
+          purchase["request"]["ask"]["duration"] == %($request.duration)
 
 suite "Purchasing storage request validation":
   var testbed: Testbed
