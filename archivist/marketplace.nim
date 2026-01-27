@@ -46,6 +46,8 @@ export requests.Slot
 export requests.SlotId
 export requests.`==`
 export requests.`$`
+export requests.`%`
+export requests.fromJson
 
 import ./marketplace/timestamps
 
