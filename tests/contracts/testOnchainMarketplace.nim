@@ -44,7 +44,9 @@ suite "On-Chain Marketplace":
   var host: Signer
   var otherHost: Signer
 
-  proc expectedPayout(request: StorageRequest, start, finish: StorageTimestamp): Tokens =
+  proc expectedPayout(
+      request: StorageRequest, start, finish: StorageTimestamp
+  ): Tokens =
     return request.ask.pricePerSlotPerSecond * start.until(finish)
 
   proc switchAccount(account: Signer) {.async.} =
@@ -638,7 +640,8 @@ suite "On-Chain Marketplace":
     let endBalance = await token.balanceOf(address)
 
     let expectedPayout = request.expectedPayout(filledAt, requestEnd)
-    check (endBalance - startBalance) == (expectedPayout + request.ask.collateralPerSlot).u256
+    check (endBalance - startBalance) ==
+      (expectedPayout + request.ask.collateralPerSlot).u256
 
   test "the request is added to cache after the first access":
     await marketplace.requestStorage(request)

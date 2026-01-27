@@ -41,7 +41,8 @@ asyncchecksuite "Sales agent":
 
   setup:
     marketplace = MockMarketplace.new()
-    marketplace.requestExpiry[request.id] = StorageTimestamp.init(getTime().toUnix()) + request.expiry
+    marketplace.requestExpiry[request.id] =
+      StorageTimestamp.init(getTime().toUnix()) + request.expiry
     clock = MockClock.new()
     context = SalesContext(marketplace: marketplace, clock: clock)
     slotIndex = 0.uint64

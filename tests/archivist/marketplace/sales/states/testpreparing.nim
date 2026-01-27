@@ -91,7 +91,8 @@ asyncchecksuite "sales state 'preparing'":
     check next of SaleIgnored
 
   test "switches to ignored state when reward is too low":
-    terms.minimumPricePerBytePerSecond = request.ask.pricePerBytePerSecond + 1'TokensPerSecond
+    terms.minimumPricePerBytePerSecond =
+      request.ask.pricePerBytePerSecond + 1'TokensPerSecond
     context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored

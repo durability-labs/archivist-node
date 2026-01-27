@@ -9,8 +9,10 @@ from ../clock import SecondsSince1970
 type
   StorageTimestamp* = object
     value: StUint[40]
+
   StorageDuration* = object
     value: StUint[40]
+
   ProofPeriod* = object
     value: StUint[40]
 
@@ -46,11 +48,11 @@ func `'StorageDuration`*(value: static string): StorageDuration =
   StorageDuration(value: parsed)
 
 func `'StorageTimestamp`*(value: static string): StorageTimestamp =
-  const parsed =parse(value, StUint[40])
+  const parsed = parse(value, StUint[40])
   StorageTimestamp(value: parsed)
 
 func `'ProofPeriod`*(value: static string): ProofPeriod =
-  const parsed =parse(value, StUint[40])
+  const parsed = parse(value, StUint[40])
   ProofPeriod(value: parsed)
 
 func init*(_: type StorageDuration, value: StUint[40]): StorageDuration =
@@ -165,11 +167,10 @@ func `%`*(value: StorageDuration | StorageTimestamp | ProofPeriod): JsonNode =
   %($value.value)
 
 func fromJson*(_: type StorageDuration, json: JsonNode): ?!StorageDuration =
-  success StorageDuration(value: ? StUint[40].fromJson(json))
+  success StorageDuration(value: ?StUint[40].fromJson(json))
 
 func fromJson*(_: type StorageTimestamp, json: JsonNode): ?!StorageTimestamp =
-  success StorageTimestamp(value: ? StUint[40].fromJson(json))
+  success StorageTimestamp(value: ?StUint[40].fromJson(json))
 
 func fromJson*(_: type ProofPeriod, json: JsonNode): ?!ProofPeriod =
-  success ProofPeriod(value: ? StUint[40].fromJson(json))
-
+  success ProofPeriod(value: ?StUint[40].fromJson(json))

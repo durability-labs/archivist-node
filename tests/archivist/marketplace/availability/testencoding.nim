@@ -22,7 +22,8 @@ suite "availability terms encoding":
     let terms = AvailabilityTerms.example
     let encoded = terms.encode()
     let json = parseJson(string.fromBytes(encoded))
-    check json{"minimumPricePerBytePerSecond"} == %($terms.minimumPricePerBytePerSecond.u256)
+    check json{"minimumPricePerBytePerSecond"} ==
+      %($terms.minimumPricePerBytePerSecond.u256)
     check json{"maximumCollateralPerByte"} == %($terms.maximumCollateralPerByte.u256)
     check json{"maximumDuration"} == %($terms.maximumDuration.u256)
 
@@ -46,19 +47,20 @@ suite "availability terms encoding":
     check AvailabilityTerms.decode(encoded) == success terms
 
   test "decodes version 1 encoded terms":
-    let json = %*{
-      "version": 1,
-      "minimumPricePerBytePerSecond": "12",
-      "maximumCollateralPerByte": "34",
-      "maximumDuration": "56",
-      "availableUntil": 78
-    }
+    let json =
+      %*{
+        "version": 1,
+        "minimumPricePerBytePerSecond": "12",
+        "maximumCollateralPerByte": "34",
+        "maximumDuration": "56",
+        "availableUntil": 78,
+      }
     let encoded = ($json).toBytes
     let terms = AvailabilityTerms.decode(encoded)
-    check terms.?minimumPricePerBytePerSecond == success TokensPerSecond.init(12)
-    check terms.?maximumCollateralPerByte == success Tokens.init(34)
-    check terms.?maximumDuration == success StorageDuration.init(56)
-    check terms.?availableUntil == success some StorageTimestamp.init(78)
+    check terms .? minimumPricePerBytePerSecond == success TokensPerSecond.init(12)
+    check terms .? maximumCollateralPerByte == success Tokens.init(34)
+    check terms .? maximumDuration == success StorageDuration.init(56)
+    check terms .? availableUntil == success some StorageTimestamp.init(78)
 
   test "decoding fails when version is not set":
     let terms = AvailabilityTerms.example

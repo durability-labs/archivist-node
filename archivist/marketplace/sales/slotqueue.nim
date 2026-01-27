@@ -155,7 +155,13 @@ proc init*(
     availabilitiesVersion = 0'u64,
 ): SlotQueueItem =
   SlotQueueItem.init(
-    requestId, slotIndex, ask, some expiry, collateral, repairReward, availabilitiesVersion
+    requestId,
+    slotIndex,
+    ask,
+    some expiry,
+    collateral,
+    repairReward,
+    availabilitiesVersion,
   )
 
 proc init*(
@@ -171,7 +177,7 @@ proc init*(
     slotSize: request.ask.slotSize,
     duration: request.ask.duration,
     pricePerBytePerSecond: request.ask.pricePerBytePerSecond,
-    collateral: collateral
+    collateral: collateral,
   )
 
 proc init(

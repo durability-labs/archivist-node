@@ -45,11 +45,8 @@ proc load*(
   without signer =? contract.signer:
     raiseAssert("Marketplace contract should have a signer")
   let requestCache = newLruCache[string, StorageRequest](int(requestCacheSize))
-  let marketplace = OnChainMarketplace(
-    contract: contract,
-    signer: signer,
-    requestCache: requestCache,
-  )
+  let marketplace =
+    OnChainMarketplace(contract: contract, signer: signer, requestCache: requestCache)
   ?await marketplace.load()
   success marketplace
 

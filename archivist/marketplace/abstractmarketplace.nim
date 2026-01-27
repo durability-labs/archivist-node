@@ -21,8 +21,9 @@ type
   SlotReservationNotAllowedError* = object of MarketplaceError
   ProofInvalidError* = object of MarketplaceError
   Subscription* = ref object of RootObj
-  OnRequest* =
-    proc(id: RequestId, ask: StorageAsk, expiry: StorageTimestamp) {.gcsafe, raises: [].}
+  OnRequest* = proc(id: RequestId, ask: StorageAsk, expiry: StorageTimestamp) {.
+    gcsafe, raises: []
+  .}
   OnFulfillment* = proc(requestId: RequestId) {.gcsafe, raises: [].}
   OnSlotFilled* = proc(requestId: RequestId, slotIndex: uint64) {.gcsafe, raises: [].}
   OnSlotFreed* = proc(requestId: RequestId, slotIndex: uint64) {.gcsafe, raises: [].}

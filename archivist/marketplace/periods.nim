@@ -2,9 +2,8 @@ import pkg/stint
 import ../clock
 import ./timestamps
 
-type
-  Periodicity* = object
-    seconds*: StorageDuration
+type Periodicity* = object
+  seconds*: StorageDuration
 
 func periodOf*(periodicity: Periodicity, timestamp: StorageTimestamp): ProofPeriod =
   ProofPeriod.init(timestamp.u40 div periodicity.seconds.u40)

@@ -229,16 +229,14 @@ asyncchecksuite "Sales":
     let request1 = await addRequestToSaturatedQueue()
     marketplace.emitSlotFilled(request1.id, 1.uint64)
     let collateral = request1.ask.collateralPerSlot
-    let expected =
-      SlotQueueItem.init(request1, 1'u16, collateral)
+    let expected = SlotQueueItem.init(request1, 1'u16, collateral)
     check always (not itemsProcessed.contains(expected))
 
   test "removes slot index from slot queue once SlotReservationsFull emitted":
     let request1 = await addRequestToSaturatedQueue()
     marketplace.emitSlotReservationsFull(request1.id, 1.uint64)
     let collateral = request1.ask.collateralPerSlot
-    let expected =
-      SlotQueueItem.init(request1, 1'u16, collateral)
+    let expected = SlotQueueItem.init(request1, 1'u16, collateral)
     check always (not itemsProcessed.contains(expected))
 
   test "adds slot index to slot queue once SlotFreed emitted":
@@ -253,8 +251,7 @@ asyncchecksuite "Sales":
     marketplace.emitSlotFreed(request.id, 2.uint64)
 
     let collateral = request.ask.collateralPerSlot
-    let expected =
-      SlotQueueItem.init(request, 2.uint16, collateral)
+    let expected = SlotQueueItem.init(request, 2.uint16, collateral)
 
     check eventually itemsProcessed.contains(expected)
 
@@ -311,7 +308,8 @@ asyncchecksuite "Sales":
     request.ask.slots = 2
     marketplace.requested = @[request]
     marketplace.requestState[request.id] = RequestState.New
-    marketplace.requestEnds[request.id] = StorageTimestamp.init(clock.now()) + request.expiry
+    marketplace.requestEnds[request.id] =
+      StorageTimestamp.init(clock.now()) + request.expiry
 
     proc fillSlot(slotIdx: uint64 = 0) {.async.} =
       let address = await marketplace.getSigner()

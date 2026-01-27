@@ -88,11 +88,15 @@ suite "Marketplace storage interface implementation":
   test "storing a slot updates the expiry of the slot blocks":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    !await storage.storeSlot(cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false)
+    !await storage.storeSlot(
+      cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
+    )
     await checkSlotExpiry(cid, 0, expiry)
 
   test "storing a slot updates the expiry of the dataset manifest":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    !await storage.storeSlot(cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false)
+    !await storage.storeSlot(
+      cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
+    )
     await checkBlockExpiry(cid, expiry)
