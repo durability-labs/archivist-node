@@ -544,6 +544,18 @@ proc initPurchasingApi(node: ArchivistNodeRef, router: var RestRouter) =
           Http422, "Proof probability must be greater than zero", headers = headers
         )
 
+      if params.collateralPerByte.u256 == 0:
+        return RestApiResponse.error(
+          Http422, "Collateral per byte must be greater than zero", headers = headers
+        )
+
+      if params.pricePerBytePerSecond.u256 == 0:
+        return RestApiResponse.error(
+          Http422,
+          "Price per byte per second must be greater than zero",
+          headers = headers,
+        )
+
       let durationLimit = marketplace.purchasing.durationLimit
       if params.duration > durationLimit:
         return RestApiResponse.error(
