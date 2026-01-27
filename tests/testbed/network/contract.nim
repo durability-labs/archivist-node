@@ -31,3 +31,4 @@ type SlotFreed* = object of Event
   slotIndex*: uint64
 
 proc token*(marketplace: MarketplaceContract): Address {.contract, view.}
+proc vault*(marketplace: MarketplaceContract): Address {.contract, view.}
