@@ -99,12 +99,6 @@ func numBlocks*[SomeTree, SomeHash](self: SlotsBuilder[SomeTree, SomeHash]): Nat
 
   self.numSlotBlocks * self.manifest.numSlots
 
-func slotBytes*[SomeTree, SomeHash](self: SlotsBuilder[SomeTree, SomeHash]): NBytes =
-  ## Number of bytes per slot.
-  ##
-
-  (self.manifest.blockSize.int * self.numSlotBlocks).NBytes
-
 func numBlockCells*[SomeTree, SomeHash](
     self: SlotsBuilder[SomeTree, SomeHash]
 ): Natural =

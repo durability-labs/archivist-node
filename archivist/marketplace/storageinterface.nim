@@ -20,6 +20,7 @@ method storeSlot*(
     storage: StorageInterface,
     cid: Cid,
     slotIndex: uint64,
+    slotSize: uint64,
     expiry: SecondsSince1970,
     repair: bool,
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =

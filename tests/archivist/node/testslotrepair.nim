@@ -7,6 +7,7 @@ import pkg/questionable/results
 import pkg/stint
 
 import pkg/archivist/stores
+import pkg/archivist/marketplace
 import pkg/archivist/marketplace/contracts
 import pkg/archivist/slots
 import pkg/archivist/manifest
@@ -103,37 +104,42 @@ asyncchecksuite "Test Node - Slot Repair":
 
     let cid = verifiableBlock.cid
 
+    proc storeSlot(
+        node: ArchivistNodeRef, slotIndex: uint64, repair: bool
+    ): Future[?!void] =
+      return node.storeSlot(cid, slotIndex, verifiable.slotSize.uint64, expiry, repair)
+
     for i in 0 ..< protected.numSlots.uint64:
-      (await nodes[i + 1].storeSlot(cid, i, expiry, repair = false)).tryGet()
+      (await nodes[i + 1].storeSlot(i, repair = false)).tryGet()
 
     await nodes[0].switch.stop() # acts as client
     await nodes[1].switch.stop() # slot 0 missing now
 
     # repair missing slot
-    (await nodes[4].storeSlot(cid, 0.uint64, expiry, repair = true)).tryGet()
+    (await nodes[4].storeSlot(0.uint64, repair = true)).tryGet()
 
     await nodes[2].switch.stop() # slot 1 missing now
 
-    (await nodes[5].storeSlot(cid, 1.uint64, expiry, repair = true)).tryGet()
+    (await nodes[5].storeSlot(1.uint64, repair = true)).tryGet()
 
     await nodes[3].switch.stop() # slot 2 missing now
 
-    (await nodes[6].storeSlot(cid, 2.uint64, expiry, repair = true)).tryGet()
+    (await nodes[6].storeSlot(2.uint64, repair = true)).tryGet()
 
     await nodes[4].switch.stop() # slot 0 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[7].storeSlot(cid, 0.uint64, expiry, repair = true)).tryGet()
+    (await nodes[7].storeSlot(0.uint64, repair = true)).tryGet()
 
     await nodes[5].switch.stop() # slot 1 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[8].storeSlot(cid, 1.uint64, expiry, repair = true)).tryGet()
+    (await nodes[8].storeSlot(1.uint64, repair = true)).tryGet()
 
     await nodes[6].switch.stop() # slot 2 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[9].storeSlot(cid, 2.uint64, expiry, repair = true)).tryGet()
+    (await nodes[9].storeSlot(2.uint64, repair = true)).tryGet()
 
     let
       stream = (await nodes[10].retrieve(verifiableBlock.cid, local = false)).tryGet()
@@ -181,28 +187,33 @@ asyncchecksuite "Test Node - Slot Repair":
 
     let cid = verifiableBlock.cid
 
+    proc storeSlot(
+        node: ArchivistNodeRef, slotIndex: uint64, repair: bool
+    ): Future[?!void] =
+      return node.storeSlot(cid, slotIndex, verifiable.slotSize.uint64, expiry, repair)
+
     for i in 0 ..< protected.numSlots.uint64:
-      (await nodes[i + 1].storeSlot(cid, i, expiry, repair = false)).tryGet()
+      (await nodes[i + 1].storeSlot(i, repair = false)).tryGet()
 
     await nodes[0].switch.stop() # acts as client
     await nodes[1].switch.stop() # slot 0 missing now
     await nodes[3].switch.stop() # slot 2 missing now
 
     # repair missing slots
-    (await nodes[6].storeSlot(cid, 0.uint64, expiry, repair = true)).tryGet()
-    (await nodes[7].storeSlot(cid, 2.uint64, expiry, repair = true)).tryGet()
+    (await nodes[6].storeSlot(0.uint64, repair = true)).tryGet()
+    (await nodes[7].storeSlot(2.uint64, repair = true)).tryGet()
 
     await nodes[2].switch.stop() # slot 1 missing now
     await nodes[4].switch.stop() # slot 3 missing now
 
     # repair missing slots from repaired slots
-    (await nodes[8].storeSlot(cid, 1.uint64, expiry, repair = true)).tryGet()
-    (await nodes[9].storeSlot(cid, 3.uint64, expiry, repair = true)).tryGet()
+    (await nodes[8].storeSlot(1.uint64, repair = true)).tryGet()
+    (await nodes[9].storeSlot(3.uint64, repair = true)).tryGet()
 
     await nodes[5].switch.stop() # slot 4 missing now
 
     # repair missing slot from repaired slots
-    (await nodes[10].storeSlot(cid, 4.uint64, expiry, repair = true)).tryGet()
+    (await nodes[10].storeSlot(4.uint64, repair = true)).tryGet()
 
     let
       stream = (await nodes[11].retrieve(verifiableBlock.cid, local = false)).tryGet()

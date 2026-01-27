@@ -655,10 +655,18 @@ proc requestStorage*(
   let purchase = ?await purchasing.purchase(request)
   success purchase.id
 
+proc validateVerifiableManifest(manifest: Manifest, slotSize: uint64): ?!void =
+  if not manifest.verifiable:
+    return failure("Received manifest type is not verifiable")
+  if manifest.slotSize.uint64 != slotSize:
+    return failure("Received manifest slotSize does not match storage request slotSize")
+  return success()
+
 proc storeSlot*(
     self: ArchivistNodeRef,
     cid: Cid,
-    slotIdx: uint64,
+    slotIndex: uint64,
+    slotSize: uint64,
     expiry: SecondsSince1970,
     repair: bool,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
@@ -666,7 +674,8 @@ proc storeSlot*(
   ##
   logScope:
     cid = $cid
-    slotIdx = slotIdx
+    slotIdx = slotIndex
+    slotSize = slotSize
 
   trace "Received a request to store a slot"
 
@@ -674,13 +683,17 @@ proc storeSlot*(
     error "Unable to fetch manifest for cid", cid, err = err.msg
     return failure(err)
 
+  if err =? validateVerifiableManifest(manifest, slotSize).errorOption:
+    error "Validation of verifiable manifest failed", err = err.msg
+    return failure(err)
+
   without builder =?
     Poseidon2Builder.new(self.networkStore, manifest, manifest.verifiableStrategy), err:
     error "Unable to create slots builder", err = err.msg
     return failure(err)
 
-  if slotIdx > manifest.slotRoots.high.uint64:
-    error "Slot index not in manifest", slotIdx
+  if slotIndex > manifest.slotRoots.high.uint64:
+    error "Slot index not in manifest"
     return failure(newException(ArchivistError, "Slot index not in manifest"))
 
   proc updateExpiry(
@@ -698,11 +711,11 @@ proc storeSlot*(
 
     return success()
 
-  if slotIdx > int.high.uint64:
-    error "Cannot cast slot index to int", slotIndex = slotIdx
+  if slotIndex > int.high.uint64:
+    error "Cannot cast slot index to int", slotIndex = slotIndex
     return failure(newException(ArchivistError, "Cannot cast slot index to int"))
 
-  without blksIter =? manifest.getSlotBlockIterator(slotIdx.int), err:
+  without blksIter =? manifest.getSlotBlockIterator(slotIndex.int), err:
     error "Unable to get indices from strategy", err = err.msg
     return failure(err)
 
@@ -737,13 +750,13 @@ proc storeSlot*(
       error "Unable to fetch blocks", err = err.msg
       return failure(err)
 
-  without slotRoot =? (await builder.buildSlot(slotIdx.int)), err:
+  without slotRoot =? (await builder.buildSlot(slotIndex.int)), err:
     error "Unable to build slot", err = err.msg
     return failure(err)
 
-  if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[slotIdx]:
+  if cid =? slotRoot.toSlotCid() and cid != manifest.slotRoots[slotIndex]:
     error "Slot root mismatch",
-      manifest = manifest.slotRoots[slotIdx.int], recovered = slotRoot.toSlotCid()
+      manifest = manifest.slotRoots[slotIndex.int], recovered = slotRoot.toSlotCid()
     return failure(newException(ArchivistError, "Slot root mismatch"))
 
   trace "Slot successfully retrieved and reconstructed"

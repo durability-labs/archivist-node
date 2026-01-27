@@ -20,10 +20,11 @@ method storeSlot*(
     storage: MarketplaceStorage,
     cid: Cid,
     slotIndex: uint64,
+    slotSize: uint64,
     expiry: SecondsSince1970,
     repair: bool,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  await storage.node.storeSlot(cid, slotIndex, expiry, repair)
+  await storage.node.storeSlot(cid, slotIndex, slotSize, expiry, repair)
 
 method proveSlot*(
     storage: MarketplaceStorage, cid: Cid, slotIndex: uint64, challenge: ProofChallenge

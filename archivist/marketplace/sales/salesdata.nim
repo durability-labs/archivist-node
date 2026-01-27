@@ -5,7 +5,6 @@ import ./slotqueue
 
 type SalesData* = ref object
   requestId*: RequestId
-  ask*: StorageAsk
   request*: ?StorageRequest
   slotIndex*: uint64
   cancelled*: Future[void]

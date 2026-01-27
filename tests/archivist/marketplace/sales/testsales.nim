@@ -284,9 +284,10 @@ asyncchecksuite "Sales":
     await setAvailability()
     await marketplace.requestStorage(request)
     check eventually storage.storeSlotCalls.len > 0
-    for (cid, index, _, _) in storage.storeSlotCalls:
+    for (cid, slotIndex, slotSize, _, _) in storage.storeSlotCalls:
       check cid == request.content.cid
-      check index < request.ask.slots
+      check slotIndex < request.ask.slots
+      check slotSize == request.ask.slotSize
 
   test "generates proof of storage":
     await setAvailability()

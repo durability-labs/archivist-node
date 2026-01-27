@@ -3,6 +3,7 @@ import std/times
 import pkg/chronos
 import pkg/taskpools
 import pkg/datastore/typedds
+import pkg/archivist/marketplace
 import pkg/archivist/marketplacestorage
 import pkg/archivist/node
 import pkg/archivist/chunker
@@ -17,6 +18,7 @@ import ./helpers
 suite "Marketplace storage interface implementation":
   var storage: MarketplaceStorage
   var temporary: TemporaryNode
+  var verifiable: Manifest
 
   setup:
     temporary = await TemporaryNode.create()
@@ -40,7 +42,7 @@ suite "Marketplace storage interface implementation":
     let manifest = await storeDataGetManifest(localStore, chunker)
     let protected = !await erasure.encode(manifest, 3, 2)
     let builder = !Poseidon2Builder.new(localStore, protected)
-    let verifiable = !await builder.buildManifest()
+    verifiable = !await builder.buildManifest()
     let cid = (!await node.storeManifest(verifiable)).cid
     file.close()
     cid
@@ -73,14 +75,23 @@ suite "Marketplace storage interface implementation":
     !await storage.updateSlotExpiry(cid, 0, expiry)
     await checkBlockExpiry(cid, expiry)
 
+  test "rejects manifest with incorrect slotSize":
+    let cid = await storeVerifiableData()
+    let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
+    let response =
+      await storage.storeSlot(cid, 0, verifiable.slotSize.uint64 - 1, expiry, false)
+    check response.isFailure
+    check response.error.msg ==
+      "Received manifest slotSize does not match storage request slotSize"
+
   test "storing a slot updates the expiry of the slot blocks":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    !await storage.storeSlot(cid, 0, expiry, repair = false)
+    !await storage.storeSlot(cid, 0, verifiable.slotSize.uint64, expiry, false)
     await checkSlotExpiry(cid, 0, expiry)
 
   test "storing a slot updates the expiry of the dataset manifest":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    !await storage.storeSlot(cid, 0, expiry, repair = false)
+    !await storage.storeSlot(cid, 0, verifiable.slotSize.uint64, expiry, false)
     await checkBlockExpiry(cid, expiry)
