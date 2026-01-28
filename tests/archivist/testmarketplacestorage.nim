@@ -79,8 +79,9 @@ suite "Marketplace storage interface implementation":
   test "rejects manifest with incorrect slotSize":
     let cid = await storeVerifiableData()
     let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
-    let response =
-      await storage.storeSlot(cid, 0, verifiable.slotSize.uint64 - 1, expiry, false)
+    let response = await storage.storeSlot(
+      cid, 0, verifiable.slotSize.uint64 - 1, StorageTimestamp.init(expiry), false
+    )
     check response.isFailure
     check response.error.msg ==
       "Received manifest slotSize does not match storage request slotSize"
