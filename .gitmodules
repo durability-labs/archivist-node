@@ -6,3 +6,156 @@
 	url = https://github.com/durability-labs/archivist-storage-proofs-circuits.git
 	ignore = untracked
 	branch = main
+[submodule "vendor/nimble/results"]
+	path = vendor/nimble/results
+	url = https://github.com/arnetheduck/nim-results
+[submodule "vendor/nimble/unittest2"]
+	path = vendor/nimble/unittest2
+	url = https://github.com/status-im/nim-unittest2
+[submodule "vendor/nimble/stew"]
+	path = vendor/nimble/stew
+	url = https://github.com/status-im/nim-stew
+[submodule "vendor/nimble/nimcrypto"]
+	path = vendor/nimble/nimcrypto
+	url = https://github.com/cheatfate/nimcrypto
+[submodule "vendor/nimble/secp256k1"]
+	path = vendor/nimble/secp256k1
+	url = https://github.com/status-im/nim-secp256k1
+[submodule "vendor/nimble/faststreams"]
+	path = vendor/nimble/faststreams
+	url = https://github.com/status-im/nim-faststreams
+[submodule "vendor/nimble/serialization"]
+	path = vendor/nimble/serialization
+	url = https://github.com/status-im/nim-serialization
+[submodule "vendor/nimble/npeg"]
+	path = vendor/nimble/npeg
+	url = https://github.com/zevv/npeg
+[submodule "vendor/nimble/protobuf_serialization"]
+	path = vendor/nimble/protobuf_serialization
+	url = https://github.com/status-im/nim-protobuf-serialization
+[submodule "vendor/nimble/bearssl"]
+	path = vendor/nimble/bearssl
+	url = https://github.com/status-im/nim-bearssl
+[submodule "vendor/nimble/json_serialization"]
+	path = vendor/nimble/json_serialization
+	url = https://github.com/status-im/nim-json-serialization
+[submodule "vendor/nimble/testutils"]
+	path = vendor/nimble/testutils
+	url = https://github.com/status-im/nim-testutils
+[submodule "vendor/nimble/chronicles"]
+	path = vendor/nimble/chronicles
+	url = https://github.com/durability-labs/nim-chronicles
+[submodule "vendor/nimble/httputils"]
+	path = vendor/nimble/httputils
+	url = https://github.com/status-im/nim-http-utils
+[submodule "vendor/nimble/chronos"]
+	path = vendor/nimble/chronos
+	url = https://github.com/status-im/nim-chronos
+[submodule "vendor/nimble/dnsclient"]
+	path = vendor/nimble/dnsclient
+	url = https://github.com/ba0f3/dnsclient.nim
+[submodule "vendor/nimble/taskpools"]
+	path = vendor/nimble/taskpools
+	url = https://github.com/status-im/nim-taskpools
+[submodule "vendor/nimble/blscurve"]
+	path = vendor/nimble/blscurve
+	url = https://github.com/status-im/nim-blscurve
+[submodule "vendor/nimble/metrics"]
+	path = vendor/nimble/metrics
+	url = https://github.com/status-im/nim-metrics
+[submodule "vendor/nimble/zlib"]
+	path = vendor/nimble/zlib
+	url = https://github.com/status-im/nim-zlib
+[submodule "vendor/nimble/websock"]
+	path = vendor/nimble/websock
+	url = https://github.com/status-im/nim-websock
+[submodule "vendor/nimble/bearssl_pkey_decoder"]
+	path = vendor/nimble/bearssl_pkey_decoder
+	url = https://github.com/vacp2p/bearssl_pkey_decoder
+[submodule "vendor/nimble/jwt"]
+	path = vendor/nimble/jwt
+	url = https://github.com/vacp2p/nim-jwt.git
+[submodule "vendor/nimble/constantine"]
+	path = vendor/nimble/constantine
+	url = https://github.com/durability-labs/constantine
+[submodule "vendor/nimble/poseidon2"]
+	path = vendor/nimble/poseidon2
+	url = https://github.com/durability-labs/nim-poseidon2
+[submodule "vendor/nimble/libp2p"]
+	path = vendor/nimble/libp2p
+	url = https://github.com/durability-labs/nim-libp2p
+[submodule "vendor/nimble/stint"]
+	path = vendor/nimble/stint
+	url = https://github.com/durability-labs/nim-stint
+[submodule "vendor/nimble/asynctest"]
+	path = vendor/nimble/asynctest
+	url = https://github.com/markspanbroek/asynctest
+[submodule "vendor/nimble/questionable"]
+	path = vendor/nimble/questionable
+	url = https://github.com/codex-storage/questionable
+[submodule "vendor/nimble/sqlite3_abi"]
+	path = vendor/nimble/sqlite3_abi
+	url = https://github.com/arnetheduck/nim-sqlite3-abi
+[submodule "vendor/nimble/leveldbstatic"]
+	path = vendor/nimble/leveldbstatic
+	url = https://github.com/durability-labs/nim-leveldbstatic
+[submodule "vendor/nimble/datastore"]
+	path = vendor/nimble/datastore
+	url = https://github.com/durability-labs/nim-datastore
+[submodule "vendor/nimble/archivistdht"]
+	path = vendor/nimble/archivistdht
+	url = https://github.com/durability-labs/archivist-dht
+[submodule "vendor/nimble/circom_witnessgen"]
+	path = vendor/nimble/circom_witnessgen
+	url = https://github.com/durability-labs/circom-witnessgen
+[submodule "vendor/nimble/circomcompat"]
+	path = vendor/nimble/circomcompat
+	url = https://github.com/durability-labs/nim-circom-compat
+[submodule "vendor/nimble/confutils"]
+	path = vendor/nimble/confutils
+	url = https://github.com/status-im/nim-confutils
+[submodule "vendor/nimble/contractabi"]
+	path = vendor/nimble/contractabi
+	url = https://github.com/durability-labs/nim-contract-abi
+[submodule "vendor/nimble/nat_traversal"]
+	path = vendor/nimble/nat_traversal
+	url = https://github.com/status-im/nim-nat-traversal
+[submodule "vendor/nimble/minilru"]
+	path = vendor/nimble/minilru
+	url = https://github.com/status-im/nim-minilru
+[submodule "vendor/nimble/snappy"]
+	path = vendor/nimble/snappy
+	url = https://github.com/status-im/nim-snappy
+[submodule "vendor/nimble/eth"]
+	path = vendor/nimble/eth
+	url = https://github.com/status-im/nim-eth
+[submodule "vendor/nimble/json_rpc"]
+	path = vendor/nimble/json_rpc
+	url = https://github.com/status-im/nim-json-rpc
+[submodule "vendor/nimble/serde"]
+	path = vendor/nimble/serde
+	url = https://github.com/durability-labs/nim-serde
+[submodule "vendor/nimble/ethers"]
+	path = vendor/nimble/ethers
+	url = https://github.com/durability-labs/nim-ethers
+[submodule "vendor/nimble/groth16"]
+	path = vendor/nimble/groth16
+	url = https://github.com/durability-labs/nim-groth16
+[submodule "vendor/nimble/leopard"]
+	path = vendor/nimble/leopard
+	url = https://github.com/durability-labs/nim-leopard
+[submodule "vendor/nimble/lrucache"]
+	path = vendor/nimble/lrucache
+	url = https://github.com/status-im/lrucache.nim
+[submodule "vendor/nimble/nitro"]
+	path = vendor/nimble/nitro
+	url = https://github.com/durability-labs/nim-nitro
+[submodule "vendor/nimble/presto"]
+	path = vendor/nimble/presto
+	url = https://github.com/status-im/nim-presto
+[submodule "vendor/nimble/toml_serialization"]
+	path = vendor/nimble/toml_serialization
+	url = https://github.com/status-im/nim-toml-serialization
+[submodule "vendor/nimble/zippy"]
+	path = vendor/nimble/zippy
+	url = https://github.com/guzba/zippy

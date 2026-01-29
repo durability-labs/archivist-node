@@ -49,9 +49,7 @@ jobs:
           node-version: ${{ inputs.node_version }}
 
       - name: Build
-        run: nimble install -y
-        env:
-          TMP: ${{ runner.temp }}
+        run: nimble build
 
       - name: Unit tests
         if: matrix.tests == 'unittest'
