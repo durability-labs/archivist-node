@@ -159,3 +159,6 @@
 [submodule "vendor/nimble/zippy"]
 	path = vendor/nimble/zippy
 	url = https://github.com/guzba/zippy
+[submodule "vendor/nimble/nim-kvstore"]
+	path = vendor/nimble/nim-kvstore
+	url = git@github.com:durability-labs/nim-kvstore.git
