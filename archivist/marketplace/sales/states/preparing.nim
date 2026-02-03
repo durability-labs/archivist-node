@@ -60,6 +60,7 @@ method run*(
     # due to the [sliding window mechanism](https://github.com/logos-storage/codex-research/blob/master/design/marketplace.md#dispersal)
 
     logScope:
+      requestId = data.requestId
       slotIndex = data.slotIndex
       slotSize = request.ask.slotSize
       duration = request.ask.duration
@@ -69,15 +70,33 @@ method run*(
     let requestEnd = await marketplace.getRequestEnd(data.requestId)
     let ask = request.ask
 
-    var match = true
-    match = match and terms =? context.availabilityTerms
-    match = match and ask.slotSize <= context.storage.available
-    match = match and ask.duration <= terms.maximumDuration
-    match = match and ask.pricePerBytePerSecond >= terms.minimumPricePerBytePerSecond
-    match = match and ask.collateralPerByte <= terms.maximumCollateralPerByte
-    match = match and (not (until =? terms.availableUntil) or requestEnd <= until)
-    if not match:
-      debug "No availability found for request, ignoring"
+    without terms =? context.availabilityTerms:
+      debug "No availability terms set"
+      return some State(SaleIgnored(reprocessSlot: true))
+
+    var rejected = false
+    if (ask.slotSize > context.storage.available):
+      info "SlotSize larger than available storage"
+      rejected = true
+
+    if (ask.duration > terms.maximumDuration):
+      info "Request duration longer than terms maximum"
+      rejected = true
+
+    if (ask.pricePerBytePerSecond < terms.minimumPricePerBytePerSecond):
+      info "Request price lower than terms minimum"
+      rejected = true
+
+    if (ask.collateralPerByte > terms.maximumCollateralPerByte):
+      info "Request collateral larger than terms maximum"
+      rejected = true
+
+    if (until =? terms.availableUntil and requestEnd > until):
+      info "Request end time is after terms availableUntil"
+      rejected = true
+
+    if rejected:
+      info "Slot sale rejected"
       return some State(SaleIgnored(reprocessSlot: true))
 
     return some State(SaleSlotReserving())
