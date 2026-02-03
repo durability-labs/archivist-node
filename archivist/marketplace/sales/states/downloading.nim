@@ -63,7 +63,7 @@ method run*(
     else:
       expiry = await marketplace.requestExpiresAt(requestId)
 
-    trace "Starting download"
+    debug "Starting download"
     if err =? (
       await storage.storeSlot(
         request.content.cid, data.slotIndex, request.ask.slotSize, expiry, repair
@@ -71,7 +71,7 @@ method run*(
     ).errorOption:
       return some State(SaleErrored(error: err, reprocessSlot: false))
 
-    trace "Download complete"
+    debug "Download complete"
     return some State(SaleInitialProving())
   except CancelledError as e:
     trace "SaleDownloading.run was cancelled", error = e.msgDetail
