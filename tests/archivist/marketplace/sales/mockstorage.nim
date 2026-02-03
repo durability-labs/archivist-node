@@ -3,7 +3,6 @@ import pkg/questionable/results
 import pkg/libp2p/cid
 import pkg/archivist/marketplace/storageinterface
 import pkg/archivist/marketplace/abstractmarketplace
-import pkg/archivist/clock
 import ../../../examples
 
 type MockStorage* = ref object of StorageInterface
@@ -11,9 +10,9 @@ type MockStorage* = ref object of StorageInterface
   storeSlotResult: ?!void
   proveSlotResult: ?!Groth16Proof
   updateSlotExpiryResult: ?!void
-  storeSlotCalls: seq[(Cid, uint64, uint64, SecondsSince1970, bool)]
+  storeSlotCalls: seq[(Cid, uint64, uint64, StorageTimestamp, bool)]
   proveSlotCalls: seq[(Cid, uint64, ProofChallenge)]
-  updateSlotExpiryCalls: seq[(Cid, uint64, SecondsSince1970)]
+  updateSlotExpiryCalls: seq[(Cid, uint64, StorageTimestamp)]
 
 proc new*(_: type MockStorage): MockStorage =
   MockStorage(
@@ -36,13 +35,13 @@ func `updateSlotExpiryResult=`*(mock: MockStorage, value: ?!void) =
 
 func storeSlotCalls*(
     mock: MockStorage
-): seq[(Cid, uint64, uint64, SecondsSince1970, bool)] =
+): seq[(Cid, uint64, uint64, StorageTimestamp, bool)] =
   mock.storeSlotCalls
 
 func proveSlotCalls*(mock: MockStorage): seq[(Cid, uint64, ProofChallenge)] =
   mock.proveSlotCalls
 
-func updateSlotExpiryCalls*(mock: MockStorage): seq[(Cid, uint64, SecondsSince1970)] =
+func updateSlotExpiryCalls*(mock: MockStorage): seq[(Cid, uint64, StorageTimestamp)] =
   mock.updateSlotExpiryCalls
 
 method available*(mock: MockStorage): uint64 {.gcsafe, raises: [].} =
@@ -53,7 +52,7 @@ method storeSlot*(
     cid: Cid,
     slotIndex: uint64,
     slotSize: uint64,
-    expiry: SecondsSince1970,
+    expiry: StorageTimestamp,
     repair: bool,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   mock.storeSlotCalls.add((cid, slotIndex, slotSize, expiry, repair))
@@ -66,7 +65,7 @@ method proveSlot*(
   mock.proveSlotResult
 
 method updateSlotExpiry*(
-    mock: MockStorage, cid: Cid, slotIndex: uint64, expiry: SecondsSince1970
+    mock: MockStorage, cid: Cid, slotIndex: uint64, expiry: StorageTimestamp
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   mock.updateSlotExpiryCalls.add((cid, slotIndex, expiry))
   mock.updateSlotExpiryResult

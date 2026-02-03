@@ -19,7 +19,6 @@ type
   OnChainMarketplace* = ref object of AbstractMarketplace
     contract: MarketplaceContract
     signer: Signer
-    rewardRecipient: ?Address
     configuration: MarketplaceConfig
     requestCache: LruCache[string, StorageRequest]
     allowanceLock: AsyncLock
@@ -41,18 +40,13 @@ proc load(
 proc load*(
     _: type OnChainMarketplace,
     contract: MarketplaceContract,
-    rewardRecipient = Address.none,
     requestCacheSize: uint16 = DefaultRequestCacheSize,
 ): Future[?!OnChainMarketplace] {.async: (raises: [CancelledError]).} =
   without signer =? contract.signer:
     raiseAssert("Marketplace contract should have a signer")
   let requestCache = newLruCache[string, StorageRequest](int(requestCacheSize))
-  let marketplace = OnChainMarketplace(
-    contract: contract,
-    signer: signer,
-    rewardRecipient: rewardRecipient,
-    requestCache: requestCache,
-  )
+  let marketplace =
+    OnChainMarketplace(contract: contract, signer: signer, requestCache: requestCache)
   ?await marketplace.load()
   success marketplace
 
@@ -84,7 +78,7 @@ template withAllowanceLock*(marketplace: OnChainMarketplace, body: untyped) =
       raise newException(Defect, error.msg, error)
 
 proc approveFunds(
-    marketplace: OnChainMarketplace, amount: UInt256
+    marketplace: OnChainMarketplace, amount: Tokens
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   debug "Approving tokens", amount
   convertEthersError("Failed to approve funds"):
@@ -94,7 +88,7 @@ proc approveFunds(
     let spender = marketplace.contract.address
     marketplace.withAllowanceLock:
       let allowance = await token.allowance(owner, spender)
-      discard await token.approve(spender, allowance + amount).confirm(1)
+      discard await token.approve(spender, allowance + amount.u256).confirm(1)
 
 method getZkeyHash*(marketplace: OnChainMarketplace): string =
   marketplace.configuration.proofs.zkeyHash
@@ -109,13 +103,13 @@ method periodicity*(marketplace: OnChainMarketplace): Periodicity =
   let period = marketplace.configuration.proofs.period
   Periodicity(seconds: period)
 
-method proofTimeout*(marketplace: OnChainMarketplace): uint64 =
+method proofTimeout*(marketplace: OnChainMarketplace): StorageDuration =
   marketplace.configuration.proofs.timeout
 
 method repairRewardPercentage*(marketplace: OnChainMarketplace): uint8 =
   marketplace.configuration.collateral.repairRewardPercentage
 
-method requestDurationLimit*(marketplace: OnChainMarketplace): uint64 =
+method requestDurationLimit*(marketplace: OnChainMarketplace): StorageDuration =
   marketplace.configuration.requestDurationLimit
 
 method proofDowntime*(marketplace: OnChainMarketplace): uint8 =
@@ -185,13 +179,13 @@ method slotState*(
 
 method getRequestEnd*(
     marketplace: OnChainMarketplace, id: RequestId
-): Future[SecondsSince1970] {.async.} =
+): Future[StorageTimestamp] {.async.} =
   convertEthersError("Failed to get request end"):
     return await marketplace.contract.requestEnd(id)
 
 method requestExpiresAt*(
     marketplace: OnChainMarketplace, id: RequestId
-): Future[SecondsSince1970] {.async.} =
+): Future[StorageTimestamp] {.async.} =
   convertEthersError("Failed to get request expiry"):
     return await marketplace.contract.requestExpiry(id)
 
@@ -208,7 +202,7 @@ method getHost(
 
 method currentCollateral*(
     marketplace: OnChainMarketplace, slotId: SlotId
-): Future[UInt256] {.async: (raises: [MarketplaceError, CancelledError]).} =
+): Future[Tokens] {.async: (raises: [MarketplaceError, CancelledError]).} =
   convertEthersError("Failed to get slot's current collateral"):
     return await marketplace.contract.currentCollateral(slotId)
 
@@ -226,7 +220,7 @@ method fillSlot(
     requestId: RequestId,
     slotIndex: uint64,
     proof: Groth16Proof,
-    collateral: UInt256,
+    collateral: Tokens,
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to fill slot"):
     logScope:
@@ -260,43 +254,15 @@ method freeSlot*(
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to free slot"):
     try:
-      var freeSlot: Future[Confirmable]
-      if rewardRecipient =? marketplace.rewardRecipient:
-        # If --reward-recipient specified, use it as the reward recipient, and use
-        # the SP's address as the collateral recipient
-        let collateralRecipient = await marketplace.getSigner()
+      # Add 200% to gas estimate to deal with different evm code flow when we
+      # happen to be the one to make the request fail
+      let gas = await marketplace.contract.estimateGas.freeSlot(slotId)
+      let gasLimit = gas * 3
+      let overrides = TransactionOverrides(gasLimit: some (gasLimit))
 
-        # Add 200% to gas estimate to deal with different evm code flow when we
-        # happen to be the one to make the request fail
-        let gas = await marketplace.contract.estimateGas.freeSlot(
-          slotId, rewardRecipient, collateralRecipient
-        )
-        let gasLimit = gas * 3
-        let overrides = TransactionOverrides(gasLimit: some gasLimit)
+      trace "calling freeSlot on contract", estimatedGas = gas, gasLimit = gasLimit
 
-        trace "calling freeSlot on contract", estimatedGas = gas, gasLimit = gasLimit
-
-        freeSlot = marketplace.contract.freeSlot(
-          slotId,
-          rewardRecipient, # --reward-recipient
-          collateralRecipient, # SP's address
-          overrides,
-        )
-      else:
-        # Otherwise, use the SP's address as both the reward and collateral
-        # recipient (the contract will use msg.sender for both)
-
-        # Add 200% to gas estimate to deal with different evm code flow when we
-        # happen to be the one to make the request fail
-        let gas = await marketplace.contract.estimateGas.freeSlot(slotId)
-        let gasLimit = gas * 3
-        let overrides = TransactionOverrides(gasLimit: some (gasLimit))
-
-        trace "calling freeSlot on contract", estimatedGas = gas, gasLimit = gasLimit
-
-        freeSlot = marketplace.contract.freeSlot(slotId, overrides)
-
-      discard await freeSlot.confirm(1)
+      discard await marketplace.contract.freeSlot(slotId, overrides).confirm(1)
     except Marketplace_SlotIsFree as parent:
       raise newException(
         SlotStateMismatchError, "Failed to free slot, slot is already free", parent
@@ -347,7 +313,7 @@ method submitProof*(
       )
 
 method markProofAsMissing*(
-    marketplace: OnChainMarketplace, id: SlotId, period: Period
+    marketplace: OnChainMarketplace, id: SlotId, period: ProofPeriod
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to mark proof as missing"):
     # Add 50% to gas estimate to deal with different evm code flow when we
@@ -363,7 +329,7 @@ method markProofAsMissing*(
       await marketplace.contract.markProofAsMissing(id, period, overrides).confirm(1)
 
 method canMarkProofAsMissing*(
-    marketplace: OnChainMarketplace, id: SlotId, period: Period
+    marketplace: OnChainMarketplace, id: SlotId, period: ProofPeriod
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   try:
     let overrides = CallOverrides(blockTag: some BlockTag.pending)
@@ -476,27 +442,6 @@ method subscribeFulfillment(
     let subscription = await marketplace.contract.subscribe(RequestFulfilled, onEvent)
     return OnChainMarketSubscription(eventSubscription: subscription)
 
-method subscribeRequestCancelled*(
-    marketplace: OnChainMarketplace, callback: OnRequestCancelled
-): Future[MarketSubscription] {.async.} =
-  proc onEvent(event: RequestCancelled) {.raises: [].} =
-    callback(event.requestId)
-
-  convertEthersError("Failed to subscribe to RequestCancelled events"):
-    let subscription = await marketplace.contract.subscribe(RequestCancelled, onEvent)
-    return OnChainMarketSubscription(eventSubscription: subscription)
-
-method subscribeRequestCancelled*(
-    marketplace: OnChainMarketplace, requestId: RequestId, callback: OnRequestCancelled
-): Future[MarketSubscription] {.async.} =
-  proc onEvent(event: RequestCancelled) {.raises: [].} =
-    if event.requestId == requestId:
-      callback(event.requestId)
-
-  convertEthersError("Failed to subscribe to RequestCancelled events"):
-    let subscription = await marketplace.contract.subscribe(RequestCancelled, onEvent)
-    return OnChainMarketSubscription(eventSubscription: subscription)
-
 method subscribeRequestFailed*(
     marketplace: OnChainMarketplace, callback: OnRequestFailed
 ): Future[MarketSubscription] {.async.} =
@@ -571,31 +516,3 @@ method queryPastStorageRequestedEvents*(
     let fromBlock = await marketplace.contract.provider.pastBlockTag(blocksAgo)
 
     return await marketplace.queryPastStorageRequestedEvents(fromBlock)
-
-method slotCollateral*(
-    marketplace: OnChainMarketplace, requestId: RequestId, slotIndex: uint64
-): Future[?!UInt256] {.async: (raises: [CancelledError]).} =
-  let slotid = slotId(requestId, slotIndex)
-
-  try:
-    let slotState = await marketplace.slotState(slotid)
-
-    without request =? await marketplace.getRequest(requestId):
-      return failure newException(
-        MarketplaceError,
-        "Failure calculating the slotCollateral, cannot get the request",
-      )
-
-    return success marketplace.slotCollateral(request.ask.collateralPerSlot, slotState)
-  except MarketplaceError as error:
-    error "Error when trying to calculate the slotCollateral", error = error.msg
-    return failure error
-
-method slotCollateral*(
-    marketplace: OnChainMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): UInt256 =
-  if slotState == SlotState.Repair:
-    let percentage = marketplace.configuration.collateral.repairRewardPercentage
-    return collateralPerSlot - (collateralPerSlot * percentage.u256).div(100.u256)
-
-  return collateralPerSlot

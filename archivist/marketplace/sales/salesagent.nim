@@ -24,7 +24,7 @@ type
     onCleanUp*: OnCleanUp
     onFilled*: ?OnFilled
 
-  OnCleanUp* = proc(reprocessSlot = false, returnedCollateral = UInt256.none) {.
+  OnCleanUp* = proc(reprocessSlot = false, returnedCollateral = Tokens.none) {.
     async: (raises: [])
   .}
   OnFilled* = proc(request: StorageRequest, slotIndex: uint64) {.gcsafe, raises: [].}
@@ -79,7 +79,8 @@ proc subscribeCancellation(agent: SalesAgent) {.async.} =
 
     try:
       let marketplace = agent.context.marketplace
-      let expiry = await marketplace.requestExpiresAt(data.requestId)
+      let expiry =
+        (await marketplace.requestExpiresAt(data.requestId)).toSecondsSince1970
 
       while true:
         let deadline = max(clock.now, expiry) + 1

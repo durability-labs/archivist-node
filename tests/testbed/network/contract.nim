@@ -11,7 +11,7 @@ type MarketplaceContract* = ref object of Contract
 type StorageRequested* = object of Event
   requestId*: array[32, byte]
   ask*: StorageAsk
-  expiry*: uint64
+  expiry*: StUint[40]
 
 type SlotFilled* = object of Event
   requestId* {.indexed.}: array[32, byte]
@@ -31,3 +31,4 @@ type SlotFreed* = object of Event
   slotIndex*: uint64
 
 proc token*(marketplace: MarketplaceContract): Address {.contract, view.}
+proc vault*(marketplace: MarketplaceContract): Address {.contract, view.}

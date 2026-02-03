@@ -558,13 +558,13 @@ proc ensureVerifiableManifest(
 proc setupRequest(
     self: ArchivistNodeRef,
     cid: Cid,
-    duration: uint64,
+    duration: StorageDuration,
     proofProbability: UInt256,
     nodes: uint,
     tolerance: uint,
-    pricePerBytePerSecond: UInt256,
-    collateralPerByte: UInt256,
-    expiry: uint64,
+    pricePerBytePerSecond: TokensPerSecond,
+    collateralPerByte: Tokens,
+    expiry: StorageDuration,
 ): Future[?!StorageRequest] {.async: (raises: [CancelledError]).} =
   ## Setup slots for a given dataset
   ##
@@ -615,13 +615,13 @@ proc setupRequest(
 proc requestStorage*(
     self: ArchivistNodeRef,
     cid: Cid,
-    duration: uint64,
+    duration: StorageDuration,
     proofProbability: UInt256,
     nodes: uint,
     tolerance: uint,
-    pricePerBytePerSecond: UInt256,
-    collateralPerByte: UInt256,
-    expiry: uint64,
+    pricePerBytePerSecond: TokensPerSecond,
+    collateralPerByte: Tokens,
+    expiry: StorageDuration,
 ): Future[?!PurchaseId] {.async: (raises: [CancelledError]).} =
   ## Initiate a request for storage sequence, this might
   ## be a multistep procedure.

@@ -68,7 +68,6 @@ proc connectMarketplace(s: NodeServer) {.async.} =
       storage = MarketplaceStorage.new(s.archivistNode, s.repoStore),
       options = MarketplaceOptions(
         marketplaceAddress: config.marketplaceAddress,
-        rewardRecipient: config.rewardRecipient,
         maxPriorityFeePerGas: config.maxPriorityFeePerGas,
         requestCacheSize: config.marketplaceRequestCacheSize,
         validationEnabled: config.validator,

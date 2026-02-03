@@ -41,7 +41,8 @@ asyncchecksuite "Sales agent":
 
   setup:
     marketplace = MockMarketplace.new()
-    marketplace.requestExpiry[request.id] = getTime().toUnix() + request.expiry.int64
+    marketplace.requestExpiry[request.id] =
+      StorageTimestamp.init(getTime().toUnix()) + request.expiry
     clock = MockClock.new()
     context = SalesContext(marketplace: marketplace, clock: clock)
     slotIndex = 0.uint64
@@ -83,7 +84,7 @@ asyncchecksuite "Sales agent":
     agent.start(MockState.new())
     await agent.subscribe()
     marketplace.requestState[request.id] = RequestState.Cancelled
-    clock.set(marketplace.requestExpiry[request.id] + 1)
+    clock.set(marketplace.requestExpiry[request.id].toSecondsSince1970 + 1)
     check eventually onCancelCalled
 
   for requestState in {
@@ -93,7 +94,7 @@ asyncchecksuite "Sales agent":
       agent.start(MockState.new())
       await agent.subscribe()
       marketplace.requestState[request.id] = requestState
-      clock.set(marketplace.requestExpiry[request.id] + 1)
+      clock.set(marketplace.requestExpiry[request.id].toSecondsSince1970 + 1)
       await sleepAsync(100.millis)
       check not onCancelCalled
 
@@ -102,7 +103,7 @@ asyncchecksuite "Sales agent":
       agent.start(MockState.new())
       await agent.subscribe()
       marketplace.requestState[request.id] = requestState
-      clock.set(marketplace.requestExpiry[request.id] + 1)
+      clock.set(marketplace.requestExpiry[request.id].toSecondsSince1970 + 1)
       check eventually agent.data.cancelled.finished
 
   test "cancelled future is finished (cancelled) when onFulfilled called":

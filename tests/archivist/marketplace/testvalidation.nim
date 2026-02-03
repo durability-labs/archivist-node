@@ -16,8 +16,8 @@ logScope:
   topics = "testValidation"
 
 asyncchecksuite "validation":
-  let period = 10.uint64
-  let timeout = 5.uint64
+  let period = 10'StorageDuration
+  let timeout = 5'StorageDuration
   let maxSlots = MaxSlots(100)
   let validationGroups = ValidationGroups(8).some
   let slot = Slot.example
@@ -62,7 +62,7 @@ asyncchecksuite "validation":
 
   proc advanceToNextPeriod() =
     let periodicity = Periodicity(seconds: period)
-    let period = periodicity.periodOf(clock.now().Timestamp)
+    let period = periodicity.periodOf(StorageTimestamp.init(clock.now()))
     let periodEnd = periodicity.periodEnd(period)
     clock.set(periodEnd.toSecondsSince1970 + 1)
 

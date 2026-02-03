@@ -4,15 +4,21 @@ import pkg/ethers/contracts/fields
 
 type StorageAsk* = object
   proofProbability*: UInt256
-  pricePerBytePerSecond*: UInt256
-  collateralPerByte*: UInt256
+  pricePerBytePerSecond*: StUint[96]
+  collateralPerByte*: UInt128
   slots*: uint64
   slotSize*: uint64
-  duration*: uint64
+  duration*: StUint[40]
   maxSlotLoss*: uint64
 
 func solidityType*(_: type StorageAsk): string =
   solidityType(StorageAsk.fieldTypes)
+
+func solidityType*(_: type StUint[40]): string =
+  "uint40"
+
+func solidityType*(_: type StUint[96]): string =
+  "uint96"
 
 func encode*(encoder: var AbiEncoder, ask: StorageAsk) =
   encoder.write(ask.fieldValues)

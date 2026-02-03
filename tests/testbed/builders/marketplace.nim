@@ -14,6 +14,7 @@ type MarketplaceBuilder = ref object
   testbed: Testbed
   contractInstance: ?MarketplaceContract
   tokenInstance: ?Erc20Token
+  vaultInstance: ?Address
 
 func marketplace*(testbed: Testbed): MarketplaceBuilder =
   MarketplaceBuilder(testbed: testbed)
@@ -35,6 +36,12 @@ proc token(builder: MarketplaceBuilder): Future[Erc20Token] {.async.} =
     token = Erc20Token.new(address, provider)
     builder.tokenInstance = some token
   token
+
+proc vault(builder: MarketplaceBuilder): Future[Address] {.async.} =
+  without var vault =? builder.vaultInstance:
+    vault = await builder.contract.vault
+    builder.vaultInstance = some vault
+  vault
 
 type Recording[Event] = ref object
   builder: MarketplaceBuilder
@@ -131,7 +138,7 @@ proc recordTransfers*(
 
 proc waitForTransferTo*(recording: Recording[Transfer], node: Node) {.async.} =
   let builder = recording.builder
-  let sender = builder.contract.address
+  let sender = await builder.vault
   without receiver =? await builder.testbed.api(node).getEthAddress():
     raise newException(TestbedError, "node does not have an eth address")
   await recording.waitForIt(it.sender == sender and it.receiver == receiver)

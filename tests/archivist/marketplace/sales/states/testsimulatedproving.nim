@@ -55,7 +55,7 @@ asyncchecksuite "sales state 'simulated-proving'":
 
   proc advanceToNextPeriod(marketplace: AbstractMarketplace) {.async.} =
     let periodicity = marketplace.periodicity()
-    let current = periodicity.periodOf(clock.now().Timestamp)
+    let current = periodicity.periodOf(clock.now())
     let periodEnd = periodicity.periodEnd(current)
     clock.set(periodEnd.toSecondsSince1970 + 1)
 

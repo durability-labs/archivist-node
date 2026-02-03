@@ -3,7 +3,6 @@ import pkg/ethers/erc20
 import pkg/json_rpc/rpcclient
 import pkg/stint
 import pkg/chronos
-import ../../clock
 import ./requests
 import ./proofs
 import ./config
@@ -61,7 +60,7 @@ proc configuration*(
 proc token*(marketplace: MarketplaceContract): Address {.contract, view.}
 proc currentCollateral*(
   marketplace: MarketplaceContract, id: SlotId
-): UInt256 {.contract, view.}
+): Tokens {.contract, view.}
 
 proc requestStorage*(
   marketplace: MarketplaceContract, request: StorageRequest
@@ -119,19 +118,6 @@ proc freeSlot*(
   ]
 .}
 
-proc freeSlot*(
-  marketplace: MarketplaceContract,
-  id: SlotId,
-  rewardRecipient: Address,
-  collateralRecipient: Address,
-): Confirmable {.
-  contract,
-  errors: [
-    Marketplace_InvalidSlotHost, Marketplace_AlreadyPaid,
-    Marketplace_StartNotBeforeExpiry, Marketplace_UnknownRequest, Marketplace_SlotIsFree,
-  ]
-.}
-
 proc getRequest*(
   marketplace: MarketplaceContract, id: RequestId
 ): StorageRequest {.contract, view, errors: [Marketplace_UnknownRequest].}
@@ -153,11 +139,11 @@ proc slotState*(
 
 proc requestEnd*(
   marketplace: MarketplaceContract, requestId: RequestId
-): SecondsSince1970 {.contract, view.}
+): StorageTimestamp {.contract, view.}
 
 proc requestExpiry*(
   marketplace: MarketplaceContract, requestId: RequestId
-): SecondsSince1970 {.contract, view.}
+): StorageTimestamp {.contract, view.}
 
 proc missingProofs*(
   marketplace: MarketplaceContract, id: SlotId
@@ -186,7 +172,7 @@ proc submitProof*(
 .}
 
 proc markProofAsMissing*(
-  marketplace: MarketplaceContract, id: SlotId, period: uint64
+  marketplace: MarketplaceContract, id: SlotId, period: ProofPeriod
 ): Confirmable {.
   contract,
   errors: [
@@ -197,7 +183,7 @@ proc markProofAsMissing*(
 .}
 
 proc canMarkProofAsMissing*(
-  marketplace: MarketplaceContract, id: SlotId, period: uint64
+  marketplace: MarketplaceContract, id: SlotId, period: ProofPeriod
 ) {.
   contract,
   view,

@@ -30,8 +30,8 @@ asyncchecksuite "Purchasing":
       ask: StorageAsk(
         slots: uint8.example.uint64,
         slotSize: uint32.example.uint64,
-        duration: uint16.example.uint64,
-        pricePerBytePerSecond: uint8.example.u256,
+        duration: StorageDuration.init(uint16.example),
+        pricePerBytePerSecond: TokensPerSecond.init(uint8.example),
       )
     )
 
@@ -83,16 +83,17 @@ asyncchecksuite "Purchasing":
     check marketplace.requested[0].client == await marketplace.getSigner()
 
   test "succeeds when request is finished":
-    marketplace.requestExpiry[populatedRequest.id] = getTime().toUnix() + 10
+    let expiry = StorageTimestamp.init(getTime().toUnix() + 10)
+    marketplace.requestExpiry[populatedRequest.id] = expiry
     let purchase = !await purchasing.purchase(populatedRequest)
 
     check eventually marketplace.requested.len > 0
     let request = marketplace.requested[0]
-    let requestEnd = getTime().toUnix() + 42
+    let requestEnd = StorageTimestamp.init(getTime().toUnix() + 42)
     marketplace.requestEnds[request.id] = requestEnd
 
     marketplace.emitRequestFulfilled(request.id)
-    clock.set(requestEnd + 1)
+    clock.set(requestEnd.toSecondsSince1970 + 1)
     await purchase.wait()
     check purchase.error.isNone
 
@@ -101,7 +102,7 @@ asyncchecksuite "Purchasing":
     check eventually marketplace.requested.len > 0
 
     let expiry = marketplace.requestExpiry[populatedRequest.id]
-    clock.set(expiry + 1)
+    clock.set(expiry.toSecondsSince1970 + 1)
     expect PurchaseTimeout:
       await purchase.wait()
 
@@ -110,7 +111,7 @@ asyncchecksuite "Purchasing":
     check eventually marketplace.requested.len > 0
     let request = marketplace.requested[0]
     let expiry = marketplace.requestExpiry[populatedRequest.id]
-    clock.set(expiry + 1)
+    clock.set(expiry.toSecondsSince1970 + 1)
     expect PurchaseTimeout:
       await purchase.wait()
     check marketplace.withdrawn == @[request.id]
@@ -129,8 +130,8 @@ suite "Purchasing state machine":
       ask: StorageAsk(
         slots: uint8.example.uint64,
         slotSize: uint32.example.uint64,
-        duration: uint16.example.uint64,
-        pricePerBytePerSecond: uint8.example.u256,
+        duration: StorageDuration.init(uint16.example),
+        pricePerBytePerSecond: TokensPerSecond.init(uint8.example),
       )
     )
 
@@ -157,7 +158,7 @@ suite "Purchasing state machine":
     marketplace.requestState[request5.id] = RequestState.Failed
 
     # ensure the started state doesn't error, giving a false positive test result
-    marketplace.requestEnds[request2.id] = clock.now() - 1
+    marketplace.requestEnds[request2.id] = StorageTimestamp.init(clock.now() - 1)
 
     await purchasing.load()
     check eventually purchasing.getPurchase(PurchaseId(request1.id)) .? finished ==
@@ -183,7 +184,8 @@ suite "Purchasing state machine":
   test "moves to PurchaseStarted when request state is Started":
     let request = StorageRequest.example
     let purchase = Purchase.new(request, marketplace, clock)
-    marketplace.requestEnds[request.id] = clock.now() + request.ask.duration.int64
+    let duration = request.ask.duration
+    marketplace.requestEnds[request.id] = StorageTimestamp.init(clock.now()) + duration
     marketplace.requested = @[request]
     marketplace.requestState[request.id] = RequestState.Started
     let next = await PurchaseUnknown().run(purchase)
@@ -216,7 +218,8 @@ suite "Purchasing state machine":
   test "moves to PurchaseFailed state once RequestFailed emitted":
     let request = StorageRequest.example
     let purchase = Purchase.new(request, marketplace, clock)
-    marketplace.requestEnds[request.id] = clock.now() + request.ask.duration.int64
+    let duration = request.ask.duration
+    marketplace.requestEnds[request.id] = StorageTimestamp.init(clock.now) + duration
     let future = PurchaseStarted().run(purchase)
 
     marketplace.emitRequestFailed(request.id)
@@ -227,10 +230,11 @@ suite "Purchasing state machine":
   test "moves to PurchaseFinished state once request finishes":
     let request = StorageRequest.example
     let purchase = Purchase.new(request, marketplace, clock)
-    marketplace.requestEnds[request.id] = clock.now() + request.ask.duration.int64
+    let duration = request.ask.duration
+    marketplace.requestEnds[request.id] = StorageTimestamp.init(clock.now) + duration
     let future = PurchaseStarted().run(purchase)
 
-    clock.advance(request.ask.duration.int64 + 1)
+    clock.advance(duration.u64.int64 + 1)
 
     let next = await future
     check !next of PurchaseFinished

@@ -35,7 +35,7 @@ suite "sales state 'filled'":
     )
     let context = SalesContext(marketplace: marketplace, storage: storage)
 
-    marketplace.requestEnds[request.id] = 321
+    marketplace.requestEnds[request.id] = 321'StorageTimestamp
     agent = newSalesAgent(context, request.id, slotIndex, some request)
     state = SaleFilled.new()
 
@@ -49,7 +49,7 @@ suite "sales state 'filled'":
     slot.host = await marketplace.getSigner()
     marketplace.filled = @[slot]
 
-    let expectedExpiry = 123
+    let expectedExpiry = 123'StorageTimestamp
     marketplace.requestEnds[request.id] = expectedExpiry
     let next = await state.run(agent)
     check !next of SaleProving

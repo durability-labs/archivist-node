@@ -5,35 +5,38 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
 import pkg/stew/byteutils
+import archivist/marketplace/timestamps
+import archivist/marketplace/tokens
 import archivist/marketplace/availability/terms
 import archivist/marketplace/availability/encoding
 import ./examples
 
 suite "availability terms encoding":
-  test "encodes with version 1":
+  test "encodes with version 2":
     let terms = AvailabilityTerms.example
     let encoded = terms.encode()
     let json = parseJson(string.fromBytes(encoded))
-    check json{"version"} == %1
+    check json{"version"} == %2
 
   test "encodes price, collateral and duration as decimals":
     let terms = AvailabilityTerms.example
     let encoded = terms.encode()
     let json = parseJson(string.fromBytes(encoded))
-    check json{"minimumPricePerBytePerSecond"} == %($terms.minimumPricePerBytePerSecond)
-    check json{"maximumCollateralPerByte"} == %($terms.maximumCollateralPerByte)
-    check json{"maximumDuration"} == %($terms.maximumDuration)
+    check json{"minimumPricePerBytePerSecond"} ==
+      %($terms.minimumPricePerBytePerSecond.u256)
+    check json{"maximumCollateralPerByte"} == %($terms.maximumCollateralPerByte.u256)
+    check json{"maximumDuration"} == %($terms.maximumDuration.u256)
 
-  test "encodes present availableUntil as integer":
+  test "encodes present availableUntil as decimals":
     var terms = AvailabilityTerms.example
-    terms.availableUntil = some SecondsSince1970.example
+    terms.availableUntil = some StorageTimestamp.example
     let encoded = terms.encode()
     let json = parseJson(string.fromBytes(encoded))
-    check json{"availableUntil"} == %terms.availableUntil
+    check json{"availableUntil"} == %($(!terms.availableUntil).u256)
 
   test "encodes missing availableUntil as null":
     var terms = AvailabilityTerms.example
-    terms.availableUntil = none SecondsSince1970
+    terms.availableUntil = none StorageTimestamp
     let encoded = terms.encode()
     let json = parseJson(string.fromBytes(encoded))
     check json{"availableUntil"}.kind == JNull
@@ -42,6 +45,22 @@ suite "availability terms encoding":
     let terms = AvailabilityTerms.example
     let encoded = terms.encode()
     check AvailabilityTerms.decode(encoded) == success terms
+
+  test "decodes version 1 encoded terms":
+    let json =
+      %*{
+        "version": 1,
+        "minimumPricePerBytePerSecond": "12",
+        "maximumCollateralPerByte": "34",
+        "maximumDuration": "56",
+        "availableUntil": 78,
+      }
+    let encoded = ($json).toBytes
+    let terms = AvailabilityTerms.decode(encoded)
+    check terms .? minimumPricePerBytePerSecond == success TokensPerSecond.init(12)
+    check terms .? maximumCollateralPerByte == success Tokens.init(34)
+    check terms .? maximumDuration == success StorageDuration.init(56)
+    check terms .? availableUntil == success some StorageTimestamp.init(78)
 
   test "decoding fails when version is not set":
     let terms = AvailabilityTerms.example
@@ -52,10 +71,10 @@ suite "availability terms encoding":
     check decoded.isFailure
     check "unknown version" in decoded.error.msg
 
-  test "decoding fails when version is not 1":
+  test "decoding fails when version is not 1 or 2":
     let terms = AvailabilityTerms.example
     let json = parseJson(string.fromBytes(terms.encode))
-    for version in [%0, %2, %(-1), %int.low, %int.high, %"invalid", newJNull()]:
+    for version in [%0, %3, %(-1), %int.low, %int.high, %"invalid", newJNull()]:
       json["version"] = version
       let encoded = ($json).toBytes
       let decoded = AvailabilityTerms.decode(encoded)

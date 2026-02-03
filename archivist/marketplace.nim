@@ -46,6 +46,25 @@ export requests.Slot
 export requests.SlotId
 export requests.`==`
 export requests.`$`
+export requests.`%`
+export requests.fromJson
+
+import ./marketplace/timestamps
+
+export timestamps.StorageTimestamp
+export timestamps.StorageDuration
+export timestamps.u64
+export timestamps.toSecondsSince1970
+export timestamps.`<`
+export timestamps.`<=`
+
+import ./marketplace/tokens
+
+export tokens.Tokens
+export tokens.TokensPerSecond
+export tokens.u256
+export tokens.`<`
+export tokens.`<=`
 
 import ./marketplace/sales
 

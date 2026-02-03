@@ -35,13 +35,13 @@ asyncchecksuite "sales state 'preparing'":
     marketplace = MockMarketplace.new()
 
     marketplace.requestEnds[request.id] =
-      clock.now() + cast[int64](request.ask.duration)
+      StorageTimestamp.init(clock.now()) + request.ask.duration
 
     terms = AvailabilityTerms(
-      maximumduration: request.ask.duration + 60.uint64,
+      maximumduration: request.ask.duration + 60'u8,
       minimumPricePerBytePerSecond: request.ask.pricePerBytePerSecond,
       maximumCollateralPerByte: request.ask.collateralPerByte,
-      availableUntil: none SecondsSince1970,
+      availableUntil: none StorageTimestamp,
     )
 
     storage = MockStorage.new()
@@ -85,19 +85,20 @@ asyncchecksuite "sales state 'preparing'":
     check ignored.reprocessSlot
 
   test "switches to ignored state when duration is too long":
-    terms.maximumDuration = request.ask.duration - 1
+    terms.maximumDuration = request.ask.duration - 1'StorageDuration
     context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored
 
   test "switches to ignored state when reward is too low":
-    terms.minimumPricePerBytePerSecond = request.ask.pricePerBytePerSecond + 1
+    terms.minimumPricePerBytePerSecond =
+      request.ask.pricePerBytePerSecond + 1'TokensPerSecond
     context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored
 
   test "switches to ignored state when collateral is too high":
-    terms.maximumCollateralPerByte = request.ask.collateralPerByte - 1
+    terms.maximumCollateralPerByte = request.ask.collateralPerByte - 1'Tokens
     context.availabilityTerms = some terms
     let next = !(await state.run(agent))
     check next of SaleIgnored

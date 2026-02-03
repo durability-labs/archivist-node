@@ -18,7 +18,9 @@ when defined(archivist_system_testing_options):
     failEveryNProofs*: int
     proofCount: int
 
-  proc onSubmitProofError(error: ref CatchableError, period: Period, slotId: SlotId) =
+  proc onSubmitProofError(
+      error: ref CatchableError, period: ProofPeriod, slotId: SlotId
+  ) =
     error "Submitting invalid proof failed", period, slotId, msg = error.msgDetail
 
   method prove*(
@@ -26,7 +28,7 @@ when defined(archivist_system_testing_options):
       slot: Slot,
       challenge: ProofChallenge,
       context: SalesContext,
-      currentPeriod: Period,
+      currentPeriod: ProofPeriod,
   ) {.async.} =
     try:
       trace "Processing proving in simulated mode"

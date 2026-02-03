@@ -41,14 +41,14 @@ asyncchecksuite "Sales - start":
       ask: StorageAsk(
         slots: 4,
         slotSize: 100.uint64,
-        duration: 60.uint64,
-        pricePerBytePerSecond: 1.u256,
-        collateralPerByte: 1.u256,
+        duration: 60'StorageDuration,
+        pricePerBytePerSecond: 1'TokensPerSecond,
+        collateralPerByte: 1'Tokens,
       ),
       content: StorageContent(
         cid: Cid.init("zb2rhheVmk3bLks5MgzTqyznLu1zqGH5jrfTA1eAZXrjx7Vob").tryGet
       ),
-      expiry: 60,
+      expiry: 60'StorageDuration,
     )
 
     marketplace = MockMarketplace.new()
@@ -103,8 +103,7 @@ asyncchecksuite "Sales":
     proof = Groth16Proof.example
     metaTmp = TempLevelDb.new()
 
-  var minPricePerBytePerSecond: UInt256
-  var requestedCollateralPerByte: UInt256
+  var minPricePerBytePerSecond: TokensPerSecond
   var request: StorageRequest
   var sales: Sales
   var marketplace: MockMarketplace
@@ -114,20 +113,19 @@ asyncchecksuite "Sales":
   var itemsProcessed: seq[SlotQueueItem]
 
   setup:
-    minPricePerBytePerSecond = 1.u256
-    requestedCollateralPerByte = 1.u256
+    minPricePerBytePerSecond = 1'TokensPerSecond
     request = StorageRequest(
       ask: StorageAsk(
         slots: 4,
         slotSize: 100.uint64,
-        duration: 60.uint64,
+        duration: 60'StorageDuration,
         pricePerBytePerSecond: minPricePerBytePerSecond,
-        collateralPerByte: 1.u256,
+        collateralPerByte: 1'Tokens,
       ),
       content: StorageContent(
         cid: Cid.init("zb2rhheVmk3bLks5MgzTqyznLu1zqGH5jrfTA1eAZXrjx7Vob").tryGet
       ),
-      expiry: 60,
+      expiry: 60'StorageDuration,
     )
 
     marketplace = MockMarketplace.new()
@@ -163,10 +161,10 @@ asyncchecksuite "Sales":
 
   proc setAvailability(
       availableStorage = 100'u64,
-      minimumPricePerBytePerSecond = 1.u256,
-      maximumCollateralPerByte = 1.u256,
-      maximumDuration = 60'u64,
-      availableUntil = none SecondsSince1970,
+      minimumPricePerBytePerSecond = 1'TokensPerSecond,
+      maximumCollateralPerByte = 1'Tokens,
+      maximumDuration = 60'StorageDuration,
+      availableUntil = none StorageTimestamp,
   ) {.async.} =
     storage.available = availableStorage
     let terms = AvailabilityTerms(
@@ -178,7 +176,8 @@ asyncchecksuite "Sales":
     !await sales.updateAvailability(terms)
 
   proc notProcessed(itemsProcessed: seq[SlotQueueItem], request: StorageRequest): bool =
-    let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
+    let collateral = request.ask.collateralPerSlot
+    let items = SlotQueueItem.init(request, collateral)
     for i in 0 ..< items.len:
       if itemsProcessed.contains(items[i]):
         return false
@@ -212,13 +211,9 @@ asyncchecksuite "Sales":
       itemsProcessed.add item
     await setAvailability()
     await marketplace.requestStorage(request)
-    let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
+    let collateral = request.ask.collateralPerSlot
+    let items = SlotQueueItem.init(request, collateral)
     check eventually items.allIt(itemsProcessed.contains(it))
-
-  test "removes slots from slot queue once RequestCancelled emitted":
-    let request1 = await addRequestToSaturatedQueue()
-    marketplace.emitRequestCancelled(request1.id)
-    check always itemsProcessed.notProcessed(request1)
 
   test "removes request from slot queue once RequestFailed emitted":
     let request1 = await addRequestToSaturatedQueue()
@@ -233,15 +228,15 @@ asyncchecksuite "Sales":
   test "removes slot index from slot queue once SlotFilled emitted":
     let request1 = await addRequestToSaturatedQueue()
     marketplace.emitSlotFilled(request1.id, 1.uint64)
-    let expected =
-      SlotQueueItem.init(request1, 1'u16, collateral = request1.ask.collateralPerSlot)
+    let collateral = request1.ask.collateralPerSlot
+    let expected = SlotQueueItem.init(request1, 1'u16, collateral)
     check always (not itemsProcessed.contains(expected))
 
   test "removes slot index from slot queue once SlotReservationsFull emitted":
     let request1 = await addRequestToSaturatedQueue()
     marketplace.emitSlotReservationsFull(request1.id, 1.uint64)
-    let expected =
-      SlotQueueItem.init(request1, 1'u16, collateral = request1.ask.collateralPerSlot)
+    let collateral = request1.ask.collateralPerSlot
+    let expected = SlotQueueItem.init(request1, 1'u16, collateral)
     check always (not itemsProcessed.contains(expected))
 
   test "adds slot index to slot queue once SlotFreed emitted":
@@ -255,18 +250,15 @@ asyncchecksuite "Sales":
 
     marketplace.emitSlotFreed(request.id, 2.uint64)
 
-    without collateralPerSlot =? await marketplace.slotCollateral(request.id, 2.uint64),
-      error:
-      fail()
-
-    let expected =
-      SlotQueueItem.init(request, 2.uint16, collateral = request.ask.collateralPerSlot)
+    let collateral = request.ask.collateralPerSlot
+    let expected = SlotQueueItem.init(request, 2.uint16, collateral)
 
     check eventually itemsProcessed.contains(expected)
 
   test "items in queue are readded once ignored":
     await marketplace.requestStorage(request)
-    let items = SlotQueueItem.init(request, collateral = request.ask.collateralPerSlot)
+    let collateral = request.ask.collateralPerSlot
+    let items = SlotQueueItem.init(request, collateral)
     check eventually queue.len > 0
       # queue starts paused, allow items to be added to the queue
     check eventually queue.paused
@@ -316,7 +308,8 @@ asyncchecksuite "Sales":
     request.ask.slots = 2
     marketplace.requested = @[request]
     marketplace.requestState[request.id] = RequestState.New
-    marketplace.requestEnds[request.id] = request.expiry.toSecondsSince1970
+    marketplace.requestEnds[request.id] =
+      StorageTimestamp.init(clock.now()) + request.expiry
 
     proc fillSlot(slotIdx: uint64 = 0) {.async.} =
       let address = await marketplace.getSigner()

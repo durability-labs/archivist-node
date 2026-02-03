@@ -28,8 +28,8 @@ type
     activeRequests*: Table[Address, seq[RequestId]]
     activeSlots*: Table[Address, seq[SlotId]]
     requested*: seq[StorageRequest]
-    requestEnds*: Table[RequestId, SecondsSince1970]
-    requestExpiry*: Table[RequestId, SecondsSince1970]
+    requestEnds*: Table[RequestId, StorageTimestamp]
+    requestExpiry*: Table[RequestId, StorageTimestamp]
     requestState*: Table[RequestId, RequestState]
     slotState*: Table[SlotId, SlotState]
     fulfilled*: seq[Fulfillment]
@@ -65,7 +65,7 @@ type
     slotIndex*: uint64
     proof*: Groth16Proof
     timestamp: SecondsSince1970
-    collateral*: UInt256
+    collateral*: Tokens
 
   Subscriptions = object
     onRequest: seq[RequestSubscription]
@@ -73,7 +73,6 @@ type
     onSlotFilled: seq[SlotFilledSubscription]
     onSlotFreed: seq[SlotFreedSubscription]
     onSlotReservationsFull: seq[SlotReservationsFullSubscription]
-    onRequestCancelled: seq[RequestCancelledSubscription]
     onRequestFailed: seq[RequestFailedSubscription]
     onProofSubmitted: seq[ProofSubmittedSubscription]
 
@@ -98,13 +97,9 @@ type
   SlotReservationsFullSubscription* = ref object of MockSubscription
     callback: OnSlotReservationsFull
 
-  RequestCancelledSubscription* = ref object of MockSubscription
-    requestId: ?RequestId
-    callback: OnRequestCancelled
-
   RequestFailedSubscription* = ref object of MockSubscription
     requestId: ?RequestId
-    callback: OnRequestCancelled
+    callback: OnRequestFailed
 
   ProofSubmittedSubscription = ref object of MockSubscription
     callback: OnProofSubmitted
@@ -124,13 +119,13 @@ proc new*(_: type MockMarketplace, clock: Clock = MockClock.new()): MockMarketpl
       validatorRewardPercentage: 20,
     ),
     proofs: ProofConfig(
-      period: 10.Period,
-      timeout: 5.uint64,
+      period: 10'StorageDuration,
+      timeout: 5'StorageDuration,
       downtime: 64.uint8,
       downtimeProduct: 67.uint8,
     ),
     reservations: SlotReservationsConfig(maxReservations: 3),
-    requestDurationLimit: (60 * 60 * 24 * 30).uint64,
+    requestDurationLimit: StorageDuration.init(60 * 60 * 24 * 30.stuint(40)),
   )
   MockMarketplace(
     signer: Address.example, config: config, canReserveSlot: true, clock: clock
@@ -144,10 +139,10 @@ method getSigner*(
 method periodicity*(mock: MockMarketplace): Periodicity =
   return Periodicity(seconds: mock.config.proofs.period)
 
-method proofTimeout*(marketplace: MockMarketplace): uint64 =
+method proofTimeout*(marketplace: MockMarketplace): StorageDuration =
   return marketplace.config.proofs.timeout
 
-method requestDurationLimit*(marketplace: MockMarketplace): uint64 =
+method requestDurationLimit*(marketplace: MockMarketplace): StorageDuration =
   return marketplace.config.requestDurationLimit
 
 method proofDowntime*(marketplace: MockMarketplace): uint8 =
@@ -164,15 +159,15 @@ method getPointer*(
 method requestStorage*(
     marketplace: MockMarketplace, request: StorageRequest
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
-  let now = marketplace.clock.now()
-  let requestExpiresAt = now + request.expiry.toSecondsSince1970
-  let requestEndsAt = now + request.ask.duration.toSecondsSince1970
+  let now = StorageTimestamp.init(marketplace.clock.now())
+  let requestExpiresAt = now + request.expiry
+  let requestEndsAt = now + request.ask.duration
   marketplace.requested.add(request)
   marketplace.requestExpiry[request.id] = requestExpiresAt
   marketplace.requestEnds[request.id] = requestEndsAt
   var subscriptions = marketplace.subscriptions.onRequest
   for subscription in subscriptions:
-    subscription.callback(request.id, request.ask, requestExpiresAt.uint64)
+    subscription.callback(request.id, request.ask, requestExpiresAt)
 
 method myRequests*(marketplace: MockMarketplace): Future[seq[RequestId]] {.async.} =
   return marketplace.activeRequests[marketplace.signer]
@@ -215,12 +210,12 @@ method slotState*(
 
 method getRequestEnd*(
     marketplace: MockMarketplace, id: RequestId
-): Future[SecondsSince1970] {.async.} =
+): Future[StorageTimestamp] {.async.} =
   return marketplace.requestEnds[id]
 
 method requestExpiresAt*(
     marketplace: MockMarketplace, id: RequestId
-): Future[SecondsSince1970] {.async.} =
+): Future[StorageTimestamp] {.async.} =
   return marketplace.requestExpiry[id]
 
 method getHost*(
@@ -236,11 +231,11 @@ method getHost*(
 
 method currentCollateral*(
     marketplace: MockMarketplace, slotId: SlotId
-): Future[UInt256] {.async: (raises: [MarketplaceError, CancelledError]).} =
+): Future[Tokens] {.async: (raises: [MarketplaceError, CancelledError]).} =
   for slot in marketplace.filled:
     if slotId == slotId(slot.requestId, slot.slotIndex):
       return slot.collateral
-  return 0.u256
+  return 0'Tokens
 
 proc emitSlotFilled*(
     marketplace: MockMarketplace, requestId: RequestId, slotIndex: uint64
@@ -268,12 +263,6 @@ proc emitSlotReservationsFull*(
   for subscription in subscriptions:
     subscription.callback(requestId, slotIndex)
 
-proc emitRequestCancelled*(marketplace: MockMarketplace, requestId: RequestId) =
-  var subscriptions = marketplace.subscriptions.onRequestCancelled
-  for subscription in subscriptions:
-    if subscription.requestId == requestId.some or subscription.requestId.isNone:
-      subscription.callback(requestId)
-
 proc emitRequestFulfilled*(marketplace: MockMarketplace, requestId: RequestId) =
   var subscriptions = marketplace.subscriptions.onFulfillment
   for subscription in subscriptions:
@@ -292,7 +281,7 @@ proc fillSlot*(
     slotIndex: uint64,
     proof: Groth16Proof,
     host: Address,
-    collateral = 0.u256,
+    collateral = 0'Tokens,
 ) =
   if error =? marketplace.errorOnFillSlot:
     raise error
@@ -314,7 +303,7 @@ method fillSlot*(
     requestId: RequestId,
     slotIndex: uint64,
     proof: Groth16Proof,
-    collateral: UInt256,
+    collateral: Tokens,
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.fillSlot(requestId, slotIndex, proof, marketplace.signer, collateral)
 
@@ -335,9 +324,6 @@ method withdrawFunds*(
     marketplace: MockMarketplace, requestId: RequestId
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.withdrawn.add(requestId)
-
-  if state =? marketplace.requestState .? [requestId] and state == RequestState.Cancelled:
-    marketplace.emitRequestCancelled(requestId)
 
 proc setProofRequired*(mock: MockMarketplace, id: SlotId, required: bool) =
   if required:
@@ -373,7 +359,7 @@ method submitProof*(
     subscription.callback(id)
 
 method markProofAsMissing*(
-    marketplace: MockMarketplace, id: SlotId, period: Period
+    marketplace: MockMarketplace, id: SlotId, period: ProofPeriod
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.markedAsMissingProofs.add(id)
 
@@ -384,7 +370,7 @@ proc setCanMarkProofAsMissing*(mock: MockMarketplace, id: SlotId, required: bool
     mock.canBeMarkedAsMissing.excl(id)
 
 method canMarkProofAsMissing*(
-    marketplace: MockMarketplace, id: SlotId, period: Period
+    marketplace: MockMarketplace, id: SlotId, period: ProofPeriod
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   return marketplace.canBeMarkedAsMissing.contains(id)
 
@@ -493,24 +479,6 @@ method subscribeSlotReservationsFull*(
   marketplace.subscriptions.onSlotReservationsFull.add(subscription)
   return subscription
 
-method subscribeRequestCancelled*(
-    marketplace: MockMarketplace, callback: OnRequestCancelled
-): Future[Subscription] {.async.} =
-  let subscription = RequestCancelledSubscription(
-    marketplace: marketplace, requestId: none RequestId, callback: callback
-  )
-  marketplace.subscriptions.onRequestCancelled.add(subscription)
-  return subscription
-
-method subscribeRequestCancelled*(
-    marketplace: MockMarketplace, requestId: RequestId, callback: OnRequestCancelled
-): Future[Subscription] {.async.} =
-  let subscription = RequestCancelledSubscription(
-    marketplace: marketplace, requestId: some requestId, callback: callback
-  )
-  marketplace.subscriptions.onRequestCancelled.add(subscription)
-  return subscription
-
 method subscribeRequestFailed*(
     marketplace: MockMarketplace, callback: OnRequestFailed
 ): Future[Subscription] {.async.} =
@@ -544,7 +512,7 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id].uint64,
+        expiry: marketplace.requestExpiry[request.id],
       )
   )
 
@@ -556,7 +524,7 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id].uint64,
+        expiry: marketplace.requestExpiry[request.id],
       )
   )
 
@@ -592,35 +560,6 @@ method unsubscribe*(subscription: Subscription) {.async: (raises: []).} =
   marketplace.subscriptions.onFulfillment.keepItIf(subscription != it)
   marketplace.subscriptions.onSlotFilled.keepItIf(subscription != it)
   marketplace.subscriptions.onSlotFreed.keepItIf(subscription != it)
-  marketplace.subscriptions.onRequestCancelled.keepItIf(subscription != it)
   marketplace.subscriptions.onRequestFailed.keepItIf(subscription != it)
   marketplace.subscriptions.onProofSubmitted.keepItIf(subscription != it)
   marketplace.subscriptions.onSlotReservationsFull.keepItIf(subscription != it)
-
-method slotCollateral*(
-    marketplace: MockMarketplace, requestId: RequestId, slotIndex: uint64
-): Future[?!UInt256] {.async: (raises: [CancelledError]).} =
-  let slotid = slotId(requestId, slotIndex)
-
-  try:
-    let state = await slotState(marketplace, slotid)
-
-    without request =? await marketplace.getRequest(requestId):
-      return failure newException(
-        MarketplaceError,
-        "Failure calculating the slotCollateral, cannot get the request",
-      )
-
-    success marketplace.slotCollateral(request.ask.collateralPerSlot, state)
-  except MarketplaceError as error:
-    error "Error when trying to calculate the slotCollateral", error = error.msg
-    failure error
-
-method slotCollateral*(
-    marketplace: MockMarketplace, collateralPerSlot: UInt256, slotState: SlotState
-): UInt256 {.raises: [].} =
-  if slotState == SlotState.Repair:
-    let percentage = marketplace.config.collateral.repairRewardPercentage.u256
-    return collateralPerSlot - (collateralPerSlot * percentage).div(100.u256)
-
-  return collateralPerSlot

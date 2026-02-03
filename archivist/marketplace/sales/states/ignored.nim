@@ -1,6 +1,5 @@
 import pkg/chronos
 import pkg/questionable
-import pkg/stint
 
 import ../../../logutils
 import ../../../utils/exceptions
@@ -31,7 +30,7 @@ method run*(
   without request =? data.request:
     raiseAssert "no sale request"
 
-  var returnedCollateral = UInt256.none
+  var returnedCollateral = Tokens.none
 
   try:
     if state.returnsCollateral:

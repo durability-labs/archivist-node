@@ -25,7 +25,7 @@ type
 
 const DefaultProofProbability = 100.u256
 
-func durationLimit*(purchasing: Purchasing): uint64 =
+func durationLimit*(purchasing: Purchasing): StorageDuration =
   purchasing.marketplace.requestDurationLimit
 
 proc new*(

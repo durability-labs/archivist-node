@@ -1,15 +1,18 @@
-type
-  Periodicity* = object
-    seconds*: uint64
+import pkg/stint
+import ../clock
+import ./timestamps
 
-  Period* = uint64
-  Timestamp* = uint64
+type Periodicity* = object
+  seconds*: StorageDuration
 
-func periodOf*(periodicity: Periodicity, timestamp: Timestamp): Period =
-  timestamp div periodicity.seconds
+func periodOf*(periodicity: Periodicity, timestamp: StorageTimestamp): ProofPeriod =
+  ProofPeriod.init(timestamp.u40 div periodicity.seconds.u40)
 
-func periodStart*(periodicity: Periodicity, period: Period): Timestamp =
-  period * periodicity.seconds
+func periodOf*(periodicity: Periodicity, timestamp: SecondsSince1970): ProofPeriod =
+  periodicity.periodOf(StorageTimestamp.init(timestamp))
 
-func periodEnd*(periodicity: Periodicity, period: Period): Timestamp =
-  periodicity.periodStart(period + 1)
+func periodStart*(periodicity: Periodicity, period: ProofPeriod): StorageTimestamp =
+  StorageTimestamp.init(period.u40 * periodicity.seconds.u40)
+
+func periodEnd*(periodicity: Periodicity, period: ProofPeriod): StorageTimestamp =
+  periodicity.periodStart(period + 1'u8)

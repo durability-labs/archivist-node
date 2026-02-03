@@ -81,7 +81,7 @@ proc remove(sales: Sales, agent: SalesAgent) {.async: (raises: []).} =
     sales.agents.keepItIf(it != agent)
 
 proc cleanUp(
-    sales: Sales, agent: SalesAgent, reprocessSlot: bool, returnedCollateral: ?UInt256
+    sales: Sales, agent: SalesAgent, reprocessSlot: bool, returnedCollateral: ?Tokens
 ) {.async: (raises: []).} =
   let data = agent.data
 
@@ -115,7 +115,7 @@ proc processSlot(
   let completed = newAsyncEvent()
 
   agent.onCleanUp = proc(
-      reprocessSlot = false, returnedCollateral = UInt256.none
+      reprocessSlot = false, returnedCollateral = Tokens.none
   ) {.async: (raises: []).} =
     trace "slot cleanup"
     await sales.cleanUp(agent, reprocessSlot, returnedCollateral)
@@ -164,7 +164,7 @@ proc load*(sales: Sales) {.async.} =
       newSalesAgent(sales.context, slot.request.id, slot.slotIndex, some slot.request)
 
     agent.onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = UInt256.none
+        reprocessSlot = false, returnedCollateral = Tokens.none
     ) {.async: (raises: []).} =
       await sales.cleanUp(agent, reprocessSlot, returnedCollateral)
 
@@ -176,7 +176,7 @@ proc load*(sales: Sales) {.async.} =
     sales.agents.add agent
 
 proc onStorageRequested(
-    sales: Sales, requestId: RequestId, ask: StorageAsk, expiry: uint64
+    sales: Sales, requestId: RequestId, ask: StorageAsk, expiry: StorageTimestamp
 ) {.raises: [].} =
   logScope:
     topics = "marketplace sales onStorageRequested"
@@ -188,9 +188,7 @@ proc onStorageRequested(
 
   trace "storage requested, adding slots to queue"
 
-  let marketplace = sales.context.marketplace
-
-  let collateral = marketplace.slotCollateral(ask.collateralPerSlot, SlotState.Free)
+  let collateral = ask.collateralPerSlot()
 
   without items =? SlotQueueItem.init(requestId, ask, expiry, collateral).catch, err:
     if err of SlotsOutOfRangeError:
@@ -227,20 +225,16 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
         error "unknown request in contract", error = err.msgDetail
         return
 
-      # Take the repairing state into consideration to calculate the collateral.
-      # This is particularly needed because it will affect the priority in the queue
-      # and we want to give the user the ability to tweak the parameters.
-      # Adding the repairing state directly in the queue priority calculation
-      # would not allow this flexibility.
-      let collateral =
-        marketplace.slotCollateral(request.ask.collateralPerSlot, SlotState.Repair)
+      let collateral = request.ask.collateralPerSlot
+      let percentage = marketplace.repairRewardPercentage
+      let repairReward = (collateral * percentage) div 100'u
 
       if slotIndex > uint16.high.uint64:
         error "Cannot cast slot index to uint16, value = ", slotIndex
         return
 
       without slotQueueItem =?
-        SlotQueueItem.init(request, slotIndex.uint16, collateral = collateral).catch,
+        SlotQueueItem.init(request, slotIndex.uint16, collateral, repairReward).catch,
         err:
         warn "Too many slots, cannot add to queue", error = err.msgDetail
         return
@@ -265,7 +259,7 @@ proc subscribeRequested(sales: Sales) {.async.} =
   let marketplace = context.marketplace
 
   proc onStorageRequested(
-      requestId: RequestId, ask: StorageAsk, expiry: uint64
+      requestId: RequestId, ask: StorageAsk, expiry: StorageTimestamp
   ) {.raises: [].} =
     sales.onStorageRequested(requestId, ask, expiry)
 
@@ -276,23 +270,6 @@ proc subscribeRequested(sales: Sales) {.async.} =
     raise error
   except CatchableError as e:
     error "Unable to subscribe to storage request events", msg = e.msg
-
-proc subscribeCancellation(sales: Sales) {.async.} =
-  let context = sales.context
-  let marketplace = context.marketplace
-  let queue = context.slotQueue
-
-  proc onCancelled(requestId: RequestId) =
-    trace "request cancelled (via contract RequestCancelled event), removing all request slots from queue"
-    queue.delete(requestId)
-
-  try:
-    let sub = await marketplace.subscribeRequestCancelled(onCancelled)
-    sales.subscriptions.add(sub)
-  except CancelledError as error:
-    raise error
-  except CatchableError as e:
-    error "Unable to subscribe to cancellation events", msg = e.msg
 
 proc subscribeFulfilled*(sales: Sales) {.async.} =
   let context = sales.context
@@ -422,7 +399,6 @@ proc subscribe(sales: Sales) {.async.} =
   await sales.subscribeFailure()
   await sales.subscribeSlotFilled()
   await sales.subscribeSlotFreed()
-  await sales.subscribeCancellation()
   await sales.subscribeSlotReservationsFull()
 
 proc unsubscribe(sales: Sales) {.async: (raises: []).} =

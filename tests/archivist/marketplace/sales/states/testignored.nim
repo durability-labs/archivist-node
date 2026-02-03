@@ -17,16 +17,15 @@ asyncchecksuite "sales state 'ignored'":
   let slotIndex = request.ask.slots div 2
   let marketplace = MockMarketplace.new()
   let clock = MockClock.new()
-  let currentCollateral = UInt256.example
 
   var state: SaleIgnored
   var agent: SalesAgent
   var reprocessSlotWas = false
-  var returnedCollateralValue: ?UInt256
+  var returnedCollateralValue: ?Tokens
 
   setup:
     let onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = UInt256.none
+        reprocessSlot = false, returnedCollateral = Tokens.none
     ) {.async: (raises: []).} =
       reprocessSlotWas = reprocessSlot
       returnedCollateralValue = returnedCollateral
@@ -35,7 +34,7 @@ asyncchecksuite "sales state 'ignored'":
     agent = newSalesAgent(context, request.id, slotIndex, request.some)
     agent.onCleanUp = onCleanUp
     state = SaleIgnored.new()
-    returnedCollateralValue = UInt256.none
+    returnedCollateralValue = Tokens.none
     reprocessSlotWas = false
 
   test "calls onCleanUp with values assigned to SaleIgnored":

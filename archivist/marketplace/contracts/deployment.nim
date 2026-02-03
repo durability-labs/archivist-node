@@ -5,7 +5,7 @@ import pkg/questionable/results
 
 const MarketplaceAddresses = {
   # Hardhat localhost network
-  "31337": !Address.init("0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"),
+  "31337": !Address.init("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"),
   # Taiko Alpha-3 Testnet
   "167005": !Address.init("0x948CF9291b77Bd7ad84781b9047129Addf1b894F"),
   # testnet - 2026-01-12 09:14:08 - UTC

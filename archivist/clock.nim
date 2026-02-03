@@ -1,6 +1,5 @@
 import pkg/chronos
 import pkg/stew/endians2
-import pkg/stint
 
 type
   Clock* = ref object of RootObj
@@ -41,6 +40,3 @@ proc toSecondsSince1970*(bytes: seq[byte]): SecondsSince1970 =
 
 proc toSecondsSince1970*(num: uint64): SecondsSince1970 =
   cast[int64](num)
-
-proc toSecondsSince1970*(bigint: UInt256): SecondsSince1970 =
-  bigint.truncate(int64)
