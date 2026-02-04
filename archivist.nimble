@@ -6,6 +6,7 @@ bin = @["archivist", "tools/cirdl/cirdl", "tools/setup/setup"]
 binDir = "build"
 
 import std/os
+import "./vendor/nimble/deps.nims"
 
 before build:
   exec "nim vendor" / "nimble" / "install.nims"
@@ -40,3 +41,9 @@ task format, "Format code using NPH":
   exec findExe("nph") & " archivist/"
   exec findExe("nph") & " tests/"
   exec findExe("nph") & " tools/"
+
+task addDep, "Add vendored Nim dependency (git submodule)":
+  addDepTask(thisDir())
+
+task removeDep, "Remove vendored Nim dependency (git submodule)":
+  removeDepTask(thisDir())
