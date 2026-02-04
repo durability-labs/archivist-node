@@ -11,13 +11,13 @@
 
 import pkg/chronos
 import pkg/chronos/futures
-import pkg/datastore
-import pkg/datastore/typedds
+import pkg/kvstore
 import pkg/libp2p/[cid, multicodec]
 import pkg/questionable
 import pkg/questionable/results
 
 import ./coders
+import ./overlays
 import ./types
 import ./operations
 import ../blockstore
@@ -29,7 +29,7 @@ import ../../logutils
 import ../../merkletree
 import ../../utils
 
-export blocktype, cid
+export blocktype, cid, overlays
 
 logScope:
   topics = "archivist repostore"
@@ -51,37 +51,31 @@ method getBlock*(
     trace "Empty block, ignoring"
     return cid.emptyBlock
 
-  without key =? makePrefixKey(self.postFixLen, cid), err:
-    trace "Error getting key from provider", err = err.msg
-    return failure(err)
+  let key = ?makePrefixKey(self.postFixLen, cid)
 
-  without data =? await self.repoDs.get(key), err:
-    if not (err of DatastoreKeyNotFound):
+  without record =? await self.repoDs.get(key), err:
+    if not (err of KVStoreKeyNotFound):
       trace "Error getting block from datastore", err = err.msg, key
       return failure(err)
 
     return failure(newException(BlockNotFoundError, err.msg))
 
   trace "Got block for cid", cid
-  return Block.new(cid, data, verify = true)
+  return Block.new(cid, record.val, verify = true)
 
 method getBlockAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!(Block, ArchivistProof)] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    return failure(err)
-
-  without blk =? await self.getBlock(leafMd.blkCid), err:
-    return failure(err)
+  let
+    leafMd = ?await self.getLeafMetadata(treeCid, index)
+    blk = ?await self.getBlock(leafMd.blkCid)
 
   success((blk, leafMd.proof))
 
 method getBlock*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    return failure(err)
-
+  let leafMd = ?await self.getLeafMetadata(treeCid, index)
   await self.getBlock(leafMd.blkCid)
 
 method getBlock*(
@@ -95,31 +89,6 @@ method getBlock*(
   else:
     self.getBlock(address.cid)
 
-method ensureExpiry*(
-    self: RepoStore, cid: Cid, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Ensure that block's associated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
-  ##
-
-  if expiry <= 0:
-    return
-      failure(newException(ValueError, "Expiry timestamp must be larger then zero"))
-
-  await self.updateBlockMetadata(cid, minExpiry = expiry)
-
-method ensureExpiry*(
-    self: RepoStore, treeCid: Cid, index: Natural, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Ensure that block's associated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
-  ##
-
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    return failure(err)
-
-  await self.ensureExpiry(leafMd.blkCid, expiry)
-
 method putCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
@@ -131,92 +100,99 @@ method putCidAndProof*(
     index = index
     blkCid = blkCid
 
-  trace "Storing LeafMetadata"
+  trace "Storing Leaf and Block Metadata"
 
-  without res =? await self.putLeafMetadata(treeCid, index, blkCid, proof), err:
+  if err =?
+      (await self.putOrUpdateLeafBlockMeta(treeCid, index, blkCid, proof)).errorOption:
+    trace "Unable to store Leaf and Block Metadata", err = err.msg
     return failure(err)
-
-  if blkCid.mcodec == BlockCodec:
-    if res == Stored:
-      if err =? (await self.updateBlockMetadata(blkCid, plusRefCount = 1)).errorOption:
-        return failure(err)
-      trace "Leaf metadata stored, block refCount incremented"
-    else:
-      trace "Leaf metadata already exists"
 
   return success()
 
 method getCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!(Cid, ArchivistProof)] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    return failure(err)
+  let leafMd = ?await self.getLeafMetadata(treeCid, index)
 
   success((leafMd.blkCid, leafMd.proof))
 
 method getCid*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    return failure(err)
-
-  success(leafMd.blkCid)
+  success (?await self.getLeafMetadata(treeCid, index)).blkCid
 
 method putBlock*(
     self: RepoStore, blk: Block, ttl = Duration.none
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Put a block to the blockstore
   ##
+  ## NOTE: historicaly, this method never incremented the
+  ## refCount, because there might have not exisisted a
+  ## dataset (treeCid) to associate the block, so the block
+  ## metadata is inserted with refCount 0. For now, we'll do
+  ## the same - if the block metadata already exists, we wont
+  ## update it, which explains why we do not return when we get
+  ## a conflict, but instead attempt to also put the block, in
+  ## case for some reason it was missing from the FS. In any case
+  ## this behavior should change, once we integrated overlays,
+  ## we'll also implement temp overlays for in-progress uploads,
+  ## which will allow us to homogenize the behavior and perform
+  ## all the block related operations here, instead of spreading them
+  ## across several methods.
+  ##
 
   logScope:
     cid = blk.cid
 
-  let expiry = self.clock.now() + (ttl |? self.blockTtl).seconds
+  if blk.cid.isEmpty:
+    trace "Skipping empty block"
+    return success()
 
-  without res =? await self.storeBlock(blk, expiry), err:
-    return failure(err)
+  if not self.available(blk.data.len.NBytes):
+    return failure(newException(QuotaNotEnoughError, "Block would exceed quota!"))
 
-  if res.kind == Stored:
-    trace "Block Stored"
-    if err =? (await self.updateQuotaUsage(plusUsed = res.used)).errorOption:
-      # rollback changes
-      without delRes =? await self.tryDeleteBlock(blk.cid), err:
-        return failure(err)
+  let metaKey = ?blockMetaKey(blk.cid)
+  if err =?
+      (await self.metaDs.put(
+        ?blockMetaKey(blk.cid),
+        BlockMetadata(refCount: 0, cid: blk.cid, size: blk.data.len.NBytes),
+      )).errorOption:
+    if err of KVConflictError:
+      trace "Block metadata already exists", err = err.msg
+      # don't return here, allow writing the block on disk
+    else:
+      trace "Error writing block metadata", err = err.msg
       return failure(err)
 
-    if err =? (await self.updateTotalBlocksCount(plusCount = 1)).errorOption:
+  let blkKey = ?makePrefixKey(self.postFixLen, blk.cid)
+
+  # we never update blocks on fs, we only insert
+  if err =? (await self.repoDs.put(RawKVRecord.init(blkKey, blk.data))).errorOption:
+    if err of KVConflictError:
+      trace "Block already in store", err = err.msg
+      return success()
+    else:
+      trace "Error writing block on disk", err = err.msg
       return failure(err)
 
-    if onBlock =? self.onBlockStored:
-      await onBlock(blk.cid)
-  else:
-    trace "Block already exists"
+  ?await self.updateCounters(quotaDelta = blk.data.len, blocksDelta = 1)
+  if onBlock =? self.onBlockStored:
+    await onBlock(blk.cid)
 
   return success()
 
-proc delBlockInternal(
+proc blockRefCount*(
     self: RepoStore, cid: Cid
-): Future[?!DeleteResultKind] {.async: (raises: [CancelledError]).} =
-  logScope:
-    cid = cid
+): Future[?!Natural] {.async: (raises: [CancelledError]).} =
+  ## Returns the reference count for a block. If the count is zero;
+  ## this means the block is eligible for garbage collection.
+  ##
 
-  if cid.isEmpty:
-    return success(Deleted)
-
-  trace "Attempting to delete a block"
-
-  without res =? await self.tryDeleteBlock(cid, self.clock.now()), err:
+  without blockMeta =? (await self.metaDs.get(?blockMetaKey(cid), BlockMetadata)), err:
+    trace "Unable to retrieve block metadata", err = err.msg
     return failure(err)
 
-  if res.kind == Deleted:
-    trace "Block deleted"
-    if err =? (await self.updateTotalBlocksCount(minusCount = 1)).errorOption:
-      return failure(err)
-
-    if err =? (await self.updateQuotaUsage(minusUsed = res.released)).errorOption:
-      return failure(err)
-
-  success(res.kind)
+  success blockMeta.val.refCount
 
 method delBlock*(
     self: RepoStore, cid: Cid
@@ -227,41 +203,25 @@ method delBlock*(
   logScope:
     cid = cid
 
-  without outcome =? await self.delBlockInternal(cid), err:
-    return failure(err)
+  if cid.isEmpty:
+    trace "Skipping empty Cid"
+    return success()
 
-  case outcome
-  of InUse:
-    failure("Directly deleting a block that is part of a dataset is not allowed.")
-  of NotFound:
-    trace "Block not found, ignoring"
-    success()
-  of Deleted:
-    trace "Block already deleted"
-    success()
+  if (?await self.blockRefCount(cid)) > 0.Natural:
+    return
+      failure("Directly deleting a block that is part of a dataset is not allowed.")
+
+  let skipped = ?await self.tryDeleteBlocks(cid)
+  if skipped.len > 0:
+    trace "Some blocks were not deleted, likely due to refcCount > 0",
+      skipped = skipped.len
+
+  return success()
 
 method delBlock*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without leafMd =? await self.getLeafMetadata(treeCid, index), err:
-    if err of BlockNotFoundError:
-      return success()
-    else:
-      return failure(err)
-
-  if err =? (await self.delLeafMetadata(treeCid, index)).errorOption:
-    error "Failed to delete leaf metadata, block will remain on disk.", err = err.msg
-    return failure(err)
-
-  if err =?
-      (await self.updateBlockMetadata(leafMd.blkCid, minusRefCount = 1)).errorOption:
-    if not (err of BlockNotFoundError):
-      return failure(err)
-
-  without _ =? await self.delBlockInternal(leafMd.blkCid), err:
-    return failure(err)
-
-  success()
+  await self.delLeafBlockMetadata(treeCid, index)
 
 method hasBlock*(
     self: RepoStore, cid: Cid
@@ -273,7 +233,7 @@ method hasBlock*(
     cid = cid
 
   if cid.isEmpty:
-    trace "Empty block, ignoring"
+    trace "Skipping empty block"
     return success true
 
   without key =? makePrefixKey(self.postFixLen, cid), err:
@@ -313,68 +273,27 @@ method listBlocks*(
 
   proc next(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
     await idleAsync()
-    if pair =? (await queryIter.next()):
-      if cid =? pair.key:
-        doAssert pair.data.len == 0
-        trace "Retrieved record from repo", cid
-        return Cid.init(cid.value).mapFailure
+    if maybeRecord =? (await queryIter.next()):
+      if record =? maybeRecord:
+        trace "Retrieved record from repo", key = record.key
+        return Cid.init(record.key.value).mapFailure
     return Cid.failure("No or invalid Cid")
 
   proc isFinished(): bool =
     queryIter.finished
 
-  return success SafeAsyncIter[Cid].new(next, isFinished)
+  proc onDispose(): Future[?!void] {.async: (raises: []).} =
+    # kvquery.dispose returns Future[?!void] - await and propagate errors
+    return await dispose(queryIter)
+
+  proc isDisposed(): bool =
+    queryIter.disposed
+
+  return success SafeAsyncIter[Cid].new(next, isFinished, onDispose, isDisposed)
 
 proc createBlockExpirationQuery(maxNumber: int, offset: int): ?!Query =
-  let queryKey = ?createBlockExpirationMetadataQueryKey()
+  let queryKey = ?blockMetaKeyQuery()
   success Query.init(queryKey, offset = offset, limit = maxNumber)
-
-proc blockRefCount*(self: RepoStore, cid: Cid): Future[?!Natural] {.async.} =
-  ## Returns the reference count for a block. If the count is zero;
-  ## this means the block is eligible for garbage collection.
-  ##
-  without key =? createBlockExpirationMetadataKey(cid), err:
-    return failure(err)
-
-  without md =? await get[BlockMetadata](self.metaDs, key), err:
-    return failure(err)
-
-  return success(md.refCount)
-
-method getBlockExpirations*(
-    self: RepoStore, maxNumber: int, offset: int
-): Future[?!SafeAsyncIter[BlockExpiration]] {.
-    async: (raises: [CancelledError]), base, gcsafe
-.} =
-  ## Get iterator with block expirations
-  ##
-
-  without beQuery =? createBlockExpirationQuery(maxNumber, offset), err:
-    error "Unable to format block expirations query", err = err.msg
-    return failure(err)
-
-  without queryIter =? await query[BlockMetadata](self.metaDs, beQuery), err:
-    error "Unable to execute block expirations query", err = err.msg
-    return failure(err)
-
-  let filteredIter: SafeAsyncIter[KeyVal[BlockMetadata]] =
-    await queryIter.toSafeAsyncIter().filterSuccess()
-
-  proc mapping(
-      kvRes: ?!KeyVal[BlockMetadata]
-  ): Future[Option[?!BlockExpiration]] {.async: (raises: [CancelledError]).} =
-    without kv =? kvRes, err:
-      error "Error occurred when getting KeyVal", err = err.msg
-      return Result[BlockExpiration, ref CatchableError].none
-    without cid =? Cid.init(kv.key.value).mapFailure, err:
-      error "Failed decoding cid", err = err.msg
-      return Result[BlockExpiration, ref CatchableError].none
-
-    some(success(BlockExpiration(cid: cid, expiry: kv.value.expiry)))
-
-  let blockExpIter =
-    await mapFilter[KeyVal[BlockMetadata], BlockExpiration](filteredIter, mapping)
-  success(blockExpIter)
 
 method close*(self: RepoStore): Future[void] {.async: (raises: []).} =
   ## Close the blockstore, cleaning up resources managed by it.
@@ -404,7 +323,10 @@ proc reserve*(
 
   trace "Reserving bytes", bytes
 
-  await self.updateQuotaUsage(plusReserved = bytes)
+  if not self.available(bytes):
+    return failure(newException(QuotaNotEnoughError, "Not enough bytes to reserve!"))
+
+  await self.updateCounters(reservedDelta = bytes.int)
 
 proc release*(
     self: RepoStore, bytes: NBytes
@@ -413,8 +335,10 @@ proc release*(
   ##
 
   trace "Releasing bytes", bytes
+  if bytes > self.quotaReservedBytes:
+    return failure(newException(QuotaNotEnoughError, "Not enough bytes to release!"))
 
-  await self.updateQuotaUsage(minusReserved = bytes)
+  await self.updateCounters(reservedDelta = -(bytes.int))
 
 proc start*(
     self: RepoStore
@@ -426,13 +350,7 @@ proc start*(
     trace "Repo already started"
     return
 
-  trace "Starting rep"
-  if err =? (await self.updateTotalBlocksCount()).errorOption:
-    raise newException(ArchivistError, err.msg)
-
-  if err =? (await self.updateQuotaUsage()).errorOption:
-    raise newException(ArchivistError, err.msg)
-
+  trace "Starting repo"
   self.started = true
 
 proc stop*(self: RepoStore): Future[void] {.async: (raises: []).} =

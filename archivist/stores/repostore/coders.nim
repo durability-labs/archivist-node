@@ -37,18 +37,6 @@ proc encode*(t: LeafMetadata): seq[byte] =
 proc decode*(T: type LeafMetadata, bytes: seq[byte]): ?!T =
   T.fromJson(bytes)
 
-proc encode*(t: DeleteResult): seq[byte] =
-  t.toJson().toBytes()
-
-proc decode*(T: type DeleteResult, bytes: seq[byte]): ?!T =
-  T.fromJson(bytes)
-
-proc encode*(t: StoreResult): seq[byte] =
-  t.toJson().toBytes()
-
-proc decode*(T: type StoreResult, bytes: seq[byte]): ?!T =
-  T.fromJson(bytes)
-
 proc encode*(i: uint64): seq[byte] =
   @(i.toBytesBE)
 

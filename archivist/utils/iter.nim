@@ -1,3 +1,18 @@
+## Iter[T] - Synchronous iterator with mandatory disposal
+##
+## USAGE CONTRACT:
+## 1. Single-consumer: Do NOT call next() concurrently from multiple threads/tasks
+## 2. Disposal required: Always call dispose() when done (use defer or try/finally)
+## 3. No concurrent dispose: Do NOT call dispose() while next() is in-flight
+## 4. After dispose: Calling next() will raise an error
+##
+## Example:
+##   let iter = createIterator()
+##   defer: iter.dispose()
+##   while not iter.finished:
+##     let item = iter.next()
+##     # process item
+
 import std/sugar
 
 import pkg/questionable
@@ -6,17 +21,40 @@ import pkg/questionable/results
 type
   Function*[T, U] = proc(fut: T): U {.raises: [CatchableError], gcsafe, closure.}
   IsFinished* = proc(): bool {.raises: [], gcsafe, closure.}
+  IsDisposed* = proc(): bool {.raises: [], gcsafe, closure.}
+  Dispose* = proc() {.raises: [], gcsafe, closure.}
   GenNext*[T] = proc(): T {.raises: [CatchableError], gcsafe.}
   Iterator[T] = iterator (): T
-  Iter*[T] = ref object
+
+  IterObj[T] = object
     finished: bool
     next*: GenNext[T]
+    disposeImpl: Dispose
+    disposedImpl: IsDisposed
+
+  Iter*[T] = ref IterObj[T]
+
+# Note: We intentionally don't use =destroy to auto-dispose because closures
+# captured in disposeImpl might reference objects that are garbage collected
+# before the Iter itself. Callers MUST call dispose() explicitly.
 
 proc finish*[T](self: Iter[T]): void =
   self.finished = true
 
 proc finished*[T](self: Iter[T]): bool =
   self.finished
+
+proc disposed*[T](self: Iter[T]): bool =
+  self.disposedImpl()
+
+proc dispose*[T](self: Iter[T]) =
+  ## Dispose the iterator and release any underlying resources.
+  ## Caller is responsible for calling this when done with the iterator.
+  ## Idempotent - safe to call multiple times.
+  ## Sets finished = true to prevent further iteration.
+  if not self.disposed:
+    self.finished = true
+    self.disposeImpl()
 
 iterator items*[T](self: Iter[T]): T =
   while not self.finished:
@@ -32,15 +70,24 @@ proc new*[T](
     _: type Iter[T],
     genNext: GenNext[T],
     isFinished: IsFinished,
+    dispose: Dispose,
+    isDisposed: IsDisposed,
     finishOnErr: bool = true,
 ): Iter[T] =
   ## Creates a new Iter using elements returned by supplier function `genNext`.
   ## Iter is finished whenever `isFinished` returns true.
+  ## Caller is responsible for calling `dispose()` when done with the iterator.
   ##
+  ## IMPORTANT: dispose and isDisposed callbacks are REQUIRED - passing nil will assert.
 
-  var iter = Iter[T]()
+  doAssert dispose != nil, "dispose callback is required"
+  doAssert isDisposed != nil, "isDisposed callback is required"
+
+  var iter = Iter[T](disposeImpl: dispose, disposedImpl: isDisposed)
 
   proc next(): T {.raises: [CatchableError].} =
+    if iter.disposed:
+      raise newException(CatchableError, "Iter is disposed - cannot call next()")
     if not iter.finished:
       var item: T
       try:
@@ -66,7 +113,9 @@ proc new*[U, V, S: Ordinal](_: type Iter[U], a: U, b: V, step: S = 1): Iter[U] =
   ## Creates a new Iter in range a..b with specified step (default 1)
   ##
 
-  var i = a
+  var
+    i = a
+    disposed = false
 
   proc genNext(): U =
     let u = i
@@ -76,7 +125,13 @@ proc new*[U, V, S: Ordinal](_: type Iter[U], a: U, b: V, step: S = 1): Iter[U] =
   proc isFinished(): bool =
     (step > 0 and i > b) or (step < 0 and i < b)
 
-  Iter[U].new(genNext, isFinished)
+  proc onDispose() =
+    disposed = true
+
+  proc isDisposed(): bool =
+    disposed
+
+  Iter[U].new(genNext, isFinished, onDispose, isDisposed)
 
 proc new*[U, V: Ordinal](_: type Iter[U], slice: HSlice[U, V]): Iter[U] =
   ## Creates a new Iter from a slice
@@ -93,7 +148,10 @@ proc new*[T](_: type Iter[T], items: seq[T]): Iter[T] =
 proc new*[T](_: type Iter[T], iter: Iterator[T]): Iter[T] =
   ## Creates a new Iter from an iterator
   ##
-  var nextOrErr: Option[?!T]
+  var
+    nextOrErr: Option[?!T]
+    disposed = false
+
   proc tryNext(): void =
     nextOrErr = none(?!T)
     while not iter.finished:
@@ -118,12 +176,20 @@ proc new*[T](_: type Iter[T], iter: Iterator[T]): Iter[T] =
   proc isFinished(): bool =
     nextOrErr.isNone
 
+  proc onDispose() =
+    disposed = true
+
+  proc isDisposed(): bool =
+    disposed
+
   tryNext()
-  Iter[T].new(genNext, isFinished)
+  Iter[T].new(genNext, isFinished, onDispose, isDisposed)
 
 proc empty*[T](_: type Iter[T]): Iter[T] =
   ## Creates an empty Iter
   ##
+
+  var disposed = false
 
   proc genNext(): T {.raises: [CatchableError].} =
     raise newException(CatchableError, "Next item requested from an empty Iter")
@@ -131,10 +197,22 @@ proc empty*[T](_: type Iter[T]): Iter[T] =
   proc isFinished(): bool =
     true
 
-  Iter[T].new(genNext, isFinished)
+  proc onDispose() =
+    disposed = true
+
+  proc isDisposed(): bool =
+    disposed
+
+  Iter[T].new(genNext, isFinished, onDispose, isDisposed)
 
 proc map*[T, U](iter: Iter[T], fn: Function[T, U]): Iter[U] =
-  Iter[U].new(genNext = () => fn(iter.next()), isFinished = () => iter.finished)
+  # Chain dispose to underlying iterator
+  Iter[U].new(
+    genNext = () => fn(iter.next()),
+    isFinished = () => iter.finished,
+    dispose = () => iter.dispose(),
+    isDisposed = () => iter.disposed,
+  )
 
 proc mapFilter*[T, U](iter: Iter[T], mapPredicate: Function[T, Option[U]]): Iter[U] =
   var nextUOrErr: Option[?!U]
@@ -165,7 +243,13 @@ proc mapFilter*[T, U](iter: Iter[T], mapPredicate: Function[T, Option[U]]): Iter
     nextUOrErr.isNone
 
   tryFetch()
-  Iter[U].new(genNext, isFinished)
+  # Chain dispose to underlying iterator
+  Iter[U].new(
+    genNext,
+    isFinished,
+    dispose = () => iter.dispose(),
+    isDisposed = () => iter.disposed,
+  )
 
 proc filter*[T](iter: Iter[T], predicate: Function[T, bool]): Iter[T] =
   proc wrappedPredicate(t: T): Option[T] =

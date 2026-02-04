@@ -162,3 +162,7 @@
 [submodule "vendor/nimble/nim-kvstore"]
 	path = vendor/nimble/nim-kvstore
 	url = git@github.com:durability-labs/nim-kvstore.git
+	url = https://github.com/durability-labs/nim-kvstore.git
+[submodule "vendor/nimble/threading"]
+	path = vendor/nimble/threading
+	url = https://github.com/nim-lang/threading.git

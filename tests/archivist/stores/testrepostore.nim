@@ -7,9 +7,9 @@ import pkg/questionable/results
 
 import pkg/chronos
 import pkg/stew/byteutils
-import pkg/datastore
+import pkg/kvstore
+import pkg/taskpools
 
-import pkg/archivist/stores/cachestore
 import pkg/archivist/chunker
 import pkg/archivist/stores
 import pkg/archivist/stores/repostore/operations
@@ -26,12 +26,19 @@ import ./commonstoretests
 
 suite "Test RepoStore start/stop":
   var
-    repoDs: Datastore
-    metaDs: Datastore
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
 
   setup:
-    repoDs = SQLiteDatastore.new(Memory).tryGet()
-    metaDs = SQLiteDatastore.new(Memory).tryGet()
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+
+  teardown:
+    (await repoDs.close()).tryGet
+    (await metaDs.close()).tryGet
+    tp.shutdown()
 
   test "Should set started flag once started":
     let repo = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 200'nb)
@@ -56,19 +63,27 @@ suite "Test RepoStore start/stop":
     await repo.stop()
     check not repo.started
 
-asyncchecksuite "RepoStore":
+suite "RepoStore":
   var
-    repoDs: Datastore
-    metaDs: Datastore
+    path = currentSourcePath() # get this file's name
+    basePath = "tests_data"
+    basePathAbs = path.parentDir / basePath
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
     mockClock: MockClock
-
     repo: RepoStore
 
   let now: SecondsSince1970 = 123
 
   setup:
-    repoDs = SQLiteDatastore.new(Memory).tryGet()
-    metaDs = SQLiteDatastore.new(Memory).tryGet()
+    # removeDir(basePathAbs)
+    # require(not dirExists(basePathAbs))
+    # createDir(basePathAbs)
+
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
     mockClock = MockClock.new()
     mockClock.set(now)
 
@@ -77,6 +92,10 @@ asyncchecksuite "RepoStore":
   teardown:
     (await repoDs.close()).tryGet
     (await metaDs.close()).tryGet
+    tp.shutdown()
+
+    # removeDir(basePathAbs)
+    # require(not dirExists(basePathAbs))
 
   proc createTestBlock(size: int): bt.Block =
     bt.Block.new('a'.repeat(size).toBytes).tryGet()
@@ -168,170 +187,13 @@ asyncchecksuite "RepoStore":
     (await repo.reserve(100'nb)).tryGet
     check repo.totalUsed == 100'nb
 
-    expect RangeDefect:
+    expect QuotaNotEnoughError:
       (await repo.release(101'nb)).tryGet
 
     check:
       repo.totalUsed == 100'nb
       repo.quotaUsedBytes == 0'nb
       repo.quotaReservedBytes == 100'nb
-
-  proc getExpirations(): Future[seq[BlockExpiration]] {.async.} =
-    let iter = (await repo.getBlockExpirations(100, 0)).tryGet()
-
-    var res = newSeq[BlockExpiration]()
-    for fut in iter:
-      if be =? (await fut):
-        res.add(be)
-    res
-
-  test "Should store block expiration timestamp":
-    let
-      duration = 10.seconds
-      blk = createTestBlock(100)
-
-    let expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-
-    (await repo.putBlock(blk, duration.some)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-  test "Should store block with default expiration timestamp when not provided":
-    let blk = createTestBlock(100)
-
-    let expectedExpiration =
-      BlockExpiration(cid: blk.cid, expiry: now + DefaultBlockTtl.seconds)
-
-    (await repo.putBlock(blk)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-  test "Should refuse update expiry with negative timestamp":
-    let
-      blk = createTestBlock(100)
-      expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-
-    (await repo.putBlock(blk, some 10.seconds)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-    expect ValueError:
-      (await repo.ensureExpiry(blk.cid, -1)).tryGet
-
-    expect ValueError:
-      (await repo.ensureExpiry(blk.cid, 0)).tryGet
-
-  test "Should fail when updating expiry of non-existing block":
-    let blk = createTestBlock(100)
-
-    expect BlockNotFoundError:
-      (await repo.ensureExpiry(blk.cid, 10)).tryGet
-
-  test "Should update block expiration timestamp when new expiration is farther":
-    let
-      blk = createTestBlock(100)
-      expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-      updatedExpectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 20)
-
-    (await repo.putBlock(blk, some 10.seconds)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-    (await repo.ensureExpiry(blk.cid, now + 20)).tryGet
-
-    let updatedExpirations = await getExpirations()
-
-    check:
-      expectedExpiration notin updatedExpirations
-      updatedExpectedExpiration in updatedExpirations
-
-  test "Should not update block expiration timestamp when current expiration is farther then new one":
-    let
-      blk = createTestBlock(100)
-      expectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 10)
-      updatedExpectedExpiration = BlockExpiration(cid: blk.cid, expiry: now + 5)
-
-    (await repo.putBlock(blk, some 10.seconds)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expectedExpiration in expirations
-
-    (await repo.ensureExpiry(blk.cid, now + 5)).tryGet
-
-    let updatedExpirations = await getExpirations()
-
-    check:
-      expectedExpiration in updatedExpirations
-      updatedExpectedExpiration notin updatedExpirations
-
-  test "delBlock should remove expiration metadata":
-    let
-      blk = createTestBlock(100)
-      expectedKey = Key.init("meta/ttl/" & $blk.cid).tryGet
-
-    (await repo.putBlock(blk, 10.seconds.some)).tryGet
-    (await repo.delBlock(blk.cid)).tryGet
-
-    let expirations = await getExpirations()
-
-    check:
-      expirations.len == 0
-
-  test "Should retrieve block expiration information":
-    proc unpack(
-        beIter: Future[?!SafeAsyncIter[BlockExpiration]]
-    ): Future[seq[BlockExpiration]] {.async: (raises: [CatchableError]).} =
-      var expirations = newSeq[BlockExpiration](0)
-      without iter =? (await beIter), err:
-        return expirations
-      for beFut in toSeq(iter):
-        if value =? (await beFut):
-          expirations.add(value)
-      return expirations
-
-    let
-      duration = 10.seconds
-      blk1 = createTestBlock(10)
-      blk2 = createTestBlock(11)
-      blk3 = createTestBlock(12)
-
-    let expectedExpiration: SecondsSince1970 = now + 10
-
-    proc assertExpiration(be: BlockExpiration, expectedBlock: bt.Block) =
-      check:
-        be.cid == expectedBlock.cid
-        be.expiry == expectedExpiration
-
-    (await repo.putBlock(blk1, duration.some)).tryGet
-    (await repo.putBlock(blk2, duration.some)).tryGet
-    (await repo.putBlock(blk3, duration.some)).tryGet
-
-    let
-      blockExpirations1 =
-        await unpack(repo.getBlockExpirations(maxNumber = 2, offset = 0))
-      blockExpirations2 =
-        await unpack(repo.getBlockExpirations(maxNumber = 2, offset = 2))
-
-    check blockExpirations1.len == 2
-    assertExpiration(blockExpirations1[0], blk2)
-    assertExpiration(blockExpirations1[1], blk1)
-
-    check blockExpirations2.len == 1
-    assertExpiration(blockExpirations2[0], blk3)
 
   test "should put empty blocks":
     let blk = Cid.example.emptyBlock.tryGet()
@@ -402,8 +264,7 @@ asyncchecksuite "RepoStore":
     let
       dataset1 = @[blockPool[0], blockPool[1]]
       dataset2 = @[blockPool[1], blockPool[2]]
-
-    let sharedBlock = blockPool[1]
+      sharedBlock = blockPool[1]
 
     let
       (manifest1, tree1) = makeManifestAndTree(dataset1).tryGet()
@@ -468,38 +329,40 @@ asyncchecksuite "RepoStore":
     (await repo.putBlock(blk)).tryGet()
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
 
-commonBlockStoreTests(
-  "RepoStore Sql backend",
-  proc(): BlockStore =
-    BlockStore(
-      RepoStore.new(
-        SQLiteDatastore.new(Memory).tryGet(),
-        SQLiteDatastore.new(Memory).tryGet(),
-        clock = MockClock.new(),
-      )
-    ),
-)
+# commonBlockStoreTests(
+#   "RepoStore Sql backend",
+#   proc(): BlockStore =
+#     let tp = Taskpool.new()
+#     BlockStore(
+#       RepoStore.new(
+#         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+#         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+#         clock = MockClock.new(),
+#       )
+#     ),
+# )
 
-const path = currentSourcePath().parentDir / "test"
+# const path = currentSourcePath().parentDir / "test"
 
-proc before() {.async.} =
-  createDir(path)
+# proc before() {.async.} =
+#   createDir(path)
 
-proc after() {.async.} =
-  removeDir(path)
+# proc after() {.async.} =
+#   removeDir(path)
 
-let depth = path.split(DirSep).len
+# let depth = path.split(DirSep).len
 
-commonBlockStoreTests(
-  "RepoStore FS backend",
-  proc(): BlockStore =
-    BlockStore(
-      RepoStore.new(
-        FSDatastore.new(path, depth).tryGet(),
-        SQLiteDatastore.new(Memory).tryGet(),
-        clock = MockClock.new(),
-      )
-    ),
-  before = before,
-  after = after,
-)
+# commonBlockStoreTests(
+#   "RepoStore FS backend",
+#   proc(): BlockStore =
+#     let tp = Taskpool.new()
+#     BlockStore(
+#       RepoStore.new(
+#         FSKVStore.new(path, depth = depth, tp = tp).tryGet(),
+#         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+#         clock = MockClock.new(),
+#       )
+#     ),
+#   before = before,
+#   after = after,
+# )

@@ -11,14 +11,13 @@ import pkg/archivist/blockexchange
 import pkg/archivist/rng
 import pkg/archivist/utils
 
-import ./helpers/nodeutils
 import ./helpers/randomchunker
 import ./helpers/mockchunker
 import ./helpers/mockdiscovery
 import ./helpers/always
 import ../checktest
 
-export randomchunker, nodeutils, mockdiscovery, mockchunker, always, checktest, manifest
+export randomchunker, mockdiscovery, mockchunker, always, checktest, manifest
 
 export libp2p except setup, eventually
 

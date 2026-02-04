@@ -1,16 +1,16 @@
 import pkg/chronos
 import pkg/questionable/results
-import pkg/datastore/typedds
+import pkg/kvstore
 import ../../stores/keyutils
 import ./terms
 import ./encoding
 
 type AvailabilityStore* = ref object
-  store: TypedDatastore
+  store: KVStore
 
 const DatastoreKey = !(!(ArchivistMetaKey / "sales") / "availability")
 
-func new*(_: type AvailabilityStore, store: TypedDatastore): AvailabilityStore =
+func new*(_: type AvailabilityStore, store: KVStore): AvailabilityStore =
   AvailabilityStore(store: store)
 
 proc load*(

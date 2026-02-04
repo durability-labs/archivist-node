@@ -7,6 +7,24 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+## SafeAsyncIter[T] - Exception-safe asynchronous iterator with mandatory disposal
+##
+## Similar to `AsyncIter[Future[T]]` but does not throw exceptions other than
+## CancelledError. It is thus way easier to use with checked exceptions.
+##
+## USAGE CONTRACT:
+## 1. Single-consumer: Do NOT call next() concurrently from multiple tasks
+## 2. Disposal required: Always call dispose() when done (use defer or try/finally)
+## 3. No concurrent dispose: Do NOT call dispose() concurrently or while next() is in-flight
+## 4. After dispose: Calling next() will return failure
+##
+## Example:
+##   let iter = createIterator()
+##   defer: discard await iter.dispose()
+##   while not iter.finished:
+##     let item = ?await iter.next()
+##     # process item
+
 {.push raises: [].}
 
 import std/sugar
@@ -16,11 +34,6 @@ import pkg/questionable/results
 import pkg/chronos
 
 import ./iter
-
-## SafeAsyncIter[T] is similar to `AsyncIter[Future[T]]`
-## but does not throw exceptions others than CancelledError.
-## It is thus way easier to use with checked exceptions
-##
 ##
 ## Public interface:
 ##
@@ -31,6 +44,8 @@ import ./iter
 ## - new - to create a new async iterator (SafeAsyncIter)
 ## - finish - to finish the async iterator
 ## - finished - to check if the async iterator is finished
+## - disposed - to check if the async iterator has been disposed
+## - dispose - to dispose the async iterator and release resources
 ## - next - to get the next item from the async iterator
 ## - items - to iterate over the async iterator
 ## - pairs - to iterate over the async iterator and return the index of each item
@@ -44,13 +59,17 @@ import ./iter
 type
   SafeFunction[T, U] =
     proc(fut: T): Future[U] {.async: (raises: [CancelledError]), gcsafe, closure.}
-  SafeIsFinished = proc(): bool {.raises: [], gcsafe, closure.}
-  SafeGenNext[T] = proc(): Future[T] {.async: (raises: [CancelledError]).}
+  SafeIsFinished* = proc(): bool {.raises: [], gcsafe, closure.}
+  SafeIsDisposed* = proc(): bool {.raises: [], gcsafe, closure.}
+  SafeDispose* = proc(): Future[?!void] {.async: (raises: []), gcsafe, closure.}
+  SafeGenNext*[T] = proc(): Future[T] {.async: (raises: [CancelledError]).}
 
   SafeAsyncIter*[T] = ref object
     finished: bool
     nextImpl:
       proc(iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).}
+    disposeImpl: SafeDispose
+    disposedImpl: SafeIsDisposed
 
 proc flatMap[T, U](
     fut: auto, fn: SafeFunction[?!T, ?!U]
@@ -68,18 +87,30 @@ proc flatMap[T, U](
 ## SafeAsyncIter public interface methods
 ########################################################################
 
+# Forward declarations for procs used inside new()
+proc disposed*[T](self: SafeAsyncIter[T]): bool
+
 proc new*[T](
     _: type SafeAsyncIter[T],
     genNext: SafeGenNext[?!T],
     isFinished: SafeIsFinished,
+    dispose: SafeDispose,
+    isDisposed: SafeIsDisposed,
     finishOnErr: bool = true,
 ): SafeAsyncIter[T] =
   ## Creates a new Iter using elements returned by supplier function `genNext`.
   ## Iter is finished whenever `isFinished` returns true.
+  ## Caller is responsible for calling `dispose()` when done with the iterator.
   ##
+  ## IMPORTANT: dispose and isDisposed callbacks are REQUIRED - passing nil will assert.
+
+  doAssert dispose != nil, "dispose callback is required"
+  doAssert isDisposed != nil, "isDisposed callback is required"
 
   proc next(iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).} =
     try:
+      if iter.disposed:
+        return failure("SafeAsyncIter is disposed - cannot call next()")
       if not iter.finished:
         let item = await genNext()
         if finishOnErr and err =? item.errorOption:
@@ -94,7 +125,12 @@ proc new*[T](
       iter.finished = true
       raise err
 
-  return SafeAsyncIter[T](nextImpl: next, finished: isFinished())
+  return SafeAsyncIter[T](
+    nextImpl: next,
+    finished: isFinished(),
+    disposeImpl: dispose,
+    disposedImpl: isDisposed,
+  )
 
 proc next*[T](
     iter: SafeAsyncIter[T]
@@ -140,6 +176,21 @@ proc finish*[T](self: SafeAsyncIter[T]): void =
 proc finished*[T](self: SafeAsyncIter[T]): bool =
   self.finished
 
+proc disposed*[T](self: SafeAsyncIter[T]): bool =
+  self.disposedImpl()
+
+proc dispose*[T](self: SafeAsyncIter[T]): Future[?!void] {.async: (raises: []).} =
+  ## Dispose the iterator and release any underlying resources.
+  ## Caller is responsible for calling this when done with the iterator.
+  ## Idempotent - safe to call multiple times.
+  ## Sets finished = true to prevent further iteration.
+  ## Uses noCancel to ensure cleanup completes even if caller is cancelled.
+  if not self.disposed:
+    self.finished = true
+    return await noCancel self.disposeImpl()
+
+  success()
+
 iterator items*[T](self: SafeAsyncIter[T]): auto {.inline.} =
   while not self.finished:
     yield self.next()
@@ -153,19 +204,27 @@ iterator pairs*[T](self: SafeAsyncIter[T]): auto {.inline.} =
 proc mapAsync*[T, U](
     iter: Iter[T], fn: SafeFunction[T, ?!U], finishOnErr: bool = true
 ): SafeAsyncIter[U] =
+  # Chain dispose to underlying sync iterator
   SafeAsyncIter[U].new(
     genNext = () => fn(iter.next()),
     isFinished = () => iter.finished(),
+    dispose = proc(): Future[?!void] {.async: (raises: []).} =
+      iter.dispose()
+      success(),
+    isDisposed = () => iter.disposed,
     finishOnErr = finishOnErr,
   )
 
 proc map*[T, U](
     iter: SafeAsyncIter[T], fn: SafeFunction[?!T, ?!U], finishOnErr: bool = true
 ): SafeAsyncIter[U] =
+  # Chain dispose to underlying iterator
   SafeAsyncIter[U].new(
     genNext = () => iter.next().flatMap(fn),
     isFinished = () => iter.finished,
     finishOnErr = finishOnErr,
+    dispose = () => iter.dispose(),
+    isDisposed = () => iter.disposed,
   )
 
 proc mapFilter*[T, U](
@@ -192,7 +251,14 @@ proc mapFilter*[T, U](
     nextU.isNone
 
   await filter()
-  SafeAsyncIter[U].new(genNext, isFinished, finishOnErr = finishOnErr)
+  # Chain dispose to underlying iterator
+  SafeAsyncIter[U].new(
+    genNext,
+    isFinished,
+    finishOnErr = finishOnErr,
+    dispose = () => iter.dispose(),
+    isDisposed = () => iter.disposed,
+  )
 
 proc filter*[T](
     iter: SafeAsyncIter[T], predicate: SafeFunction[?!T, bool], finishOnErr: bool = true
@@ -221,6 +287,15 @@ proc delayBy*[T](
     finishOnErr = finishOnErr,
   )
 
+proc collect*[T](
+    iter: SafeAsyncIter[T]
+): Future[?!seq[T]] {.async: (raises: [CancelledError]).} =
+  var res: seq[T]
+  for item in iter:
+    res.add(?(await item))
+
+  success res
+
 proc empty*[T](_: type SafeAsyncIter[T]): SafeAsyncIter[T] =
   ## Creates an empty SafeAsyncIter
   ##
@@ -231,4 +306,11 @@ proc empty*[T](_: type SafeAsyncIter[T]): SafeAsyncIter[T] =
   proc isFinished(): bool =
     true
 
-  SafeAsyncIter[T].new(genNext, isFinished)
+  SafeAsyncIter[T].new(
+    genNext,
+    isFinished,
+    dispose = proc(): Future[?!void] {.async: (raises: []).} =
+      success(),
+    isDisposed = proc(): bool =
+      true,
+  )

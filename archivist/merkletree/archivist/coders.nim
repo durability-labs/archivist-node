@@ -33,7 +33,7 @@ proc encode*(self: ArchivistTree): seq[byte] =
   pb.finish
   pb.buffer
 
-proc decode*(_: type ArchivistTree, data: seq[byte]): ?!ArchivistTree =
+proc decode*(_: type ArchivistTree, data: openArray[byte]): ?!ArchivistTree =
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var leavesCount: uint64
@@ -45,7 +45,7 @@ proc decode*(_: type ArchivistTree, data: seq[byte]): ?!ArchivistTree =
     return failure("Invalid MultiCodec code " & $mcodecCode)
 
   var
-    nodesBuff: seq[seq[byte]]
+    nodesBuff: seq[openArray[byte]]
     nodes: seq[ByteHash]
 
   if ?pb.getRepeatedField(3, nodesBuff).mapFailure:
@@ -71,7 +71,7 @@ proc encode*(self: ArchivistProof): seq[byte] =
   pb.finish
   pb.buffer
 
-proc decode*(_: type ArchivistProof, data: seq[byte]): ?!ArchivistProof =
+proc decode*(_: type ArchivistProof, data: openArray[byte]): ?!ArchivistProof =
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var index: uint64

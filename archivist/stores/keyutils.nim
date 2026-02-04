@@ -9,7 +9,7 @@
 
 import std/sugar
 import pkg/questionable/results
-import pkg/datastore
+import pkg/kvstore
 import pkg/libp2p
 import ../namespaces
 import ../manifest
@@ -22,7 +22,8 @@ const
   ArchivistBlocksKey* = Key.init(ArchivistBlocksNamespace).tryGet
   ArchivistTotalBlocksKey* = Key.init(ArchivistBlockTotalNamespace).tryGet
   ArchivistManifestKey* = Key.init(ArchivistManifestNamespace).tryGet
-  BlocksTtlKey* = Key.init(ArchivistBlocksTtlNamespace).tryGet
+  ArchivistOverlaysKey* = Key.init(ArchivistDatasetsNamespace).tryGet
+  BlocksMetaKey* = Key.init(ArchivistBlocksMetaNamespace).tryGet
   BlockProofKey* = Key.init(ArchivistBlockProofNamespace).tryGet
   QuotaKey* = Key.init(ArchivistQuotaNamespace).tryGet
   QuotaUsedKey* = (QuotaKey / "used").tryGet
@@ -36,12 +37,19 @@ func makePrefixKey*(postFixLen: int, cid: Cid): ?!Key =
   else:
     success ArchivistBlocksKey / cidKey
 
-proc createBlockExpirationMetadataKey*(cid: Cid): ?!Key =
-  BlocksTtlKey / $cid
+func overlayKey*(treeCid: Cid): ?!Key =
+  ## Key for dataset overlay metadata: /meta/datasets/{treeCid}
+  ArchivistOverlaysKey / $treeCid
 
-proc createBlockExpirationMetadataQueryKey*(): ?!Key =
-  let queryString = ?(BlocksTtlKey / "*")
-  Key.init(queryString)
+func overlayQueryKey*(): ?!Key =
+  ## Query key for iterating all datasets: /meta/datasets/*
+  Key.init(?(ArchivistOverlaysKey / "*"))
 
-proc createBlockCidAndProofMetadataKey*(treeCid: Cid, index: Natural): ?!Key =
+proc blockMetaKey*(cid: Cid): ?!Key =
+  BlocksMetaKey / $cid
+
+proc blockMetaKeyQuery*(): ?!Key =
+  Key.init(?(BlocksMetaKey / "*"))
+
+proc blockProofKey*(treeCid: Cid, index: Natural): ?!Key =
   (BlockProofKey / $treeCid).flatMap((k: Key) => k / $index)

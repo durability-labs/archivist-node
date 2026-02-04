@@ -70,10 +70,10 @@ suite "KeyUtils":
       namespaces[2].value == expectedPrefix
       namespaces[3].value == expectedPostfix
 
-  test "createBlockExpirationMetadataKey should create block TTL key":
+  test "blockMetaKey should create block TTL key":
     let cid = Cid.example
 
-    let key = !createBlockExpirationMetadataKey(cid).option
+    let key = !blockMetaKey(cid).option
     let namespaces = key.namespaces
 
     check:
@@ -82,8 +82,8 @@ suite "KeyUtils":
       namespaces[1].value == "ttl"
       namespaces[2].value == $cid
 
-  test "createBlockExpirationMetadataQueryKey should create key for all block TTL entries":
-    let key = !createBlockExpirationMetadataQueryKey().option
+  test "blockMetaKeyQuery should create key for all block TTL entries":
+    let key = !blockMetaKeyQuery().option
     let namespaces = key.namespaces
 
     check:

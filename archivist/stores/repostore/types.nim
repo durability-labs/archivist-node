@@ -8,10 +8,10 @@
 ## those terms.
 
 import pkg/chronos
-import pkg/datastore
-import pkg/datastore/typedds
+import pkg/kvstore
 import pkg/libp2p/cid
 import pkg/questionable
+import pkg/stew/bitseqs
 
 import ../blockstore
 import ../../clock
@@ -29,8 +29,8 @@ type
 
   RepoStore* = ref object of BlockStore
     postFixLen*: int
-    repoDs*: Datastore
-    metaDs*: TypedDatastore
+    repoDs*: KVStore
+    metaDs*: KVStore
     clock*: Clock
     quotaMaxBytes*: NBytes
     quotaUsage*: QuotaUsage
@@ -43,34 +43,38 @@ type
     reserved*: NBytes
 
   BlockMetadata* {.serialize.} = object
-    expiry*: SecondsSince1970
+    cid*: Cid
     size*: NBytes
     refCount*: Natural
 
   LeafMetadata* {.serialize.} = object
+    deleted*: bool
     blkCid*: Cid
     proof*: ArchivistProof
 
-  BlockExpiration* {.serialize.} = object
-    cid*: Cid
+  OverlayStatus* {.serialize.} = enum
+    Storing ## Upload in progress (temp overlay protecting blocks)
+    Downloading ## Download in progress (includes paused/partial)
+    Completed ## All blocks received/stored
+    Deleting ## Deletion in progress
+    Error ## Unrecoverable error
+
+  CleanupMode* {.serialize.} = enum
+    ## Mode for cleaning up after storage request
+    SlotsOnly ## Delete slot overlays, keep dataset
+    Full ## Delete both slots and dataset
+    None ## Keep everything
+
+  OverlayMetadata* {.serialize.} = object
+    ## Transient local state for an overlay - manifest is source of truth for dataset metadata.
+    ## Overlay type is implicit (determined by loading manifest):
+    ##   - protected=false → original dataset
+    ##   - protected=true, verifiable=false → protected dataset
+    ##   - protected=true, verifiable=true → slot
+    status*: OverlayStatus
+    manifestCid*: Cid ## For Storing: tempId placeholder; otherwise real manifest CID
     expiry*: SecondsSince1970
-
-  DeleteResultKind* {.serialize.} = enum
-    Deleted = 0 # block removed from store
-    InUse = 1 # block not removed, refCount > 0 and not expired
-    NotFound = 2 # block not found in store
-
-  DeleteResult* {.serialize.} = object
-    kind*: DeleteResultKind
-    released*: NBytes
-
-  StoreResultKind* {.serialize.} = enum
-    Stored = 0 # new block stored
-    AlreadyInStore = 1 # block already in store
-
-  StoreResult* {.serialize.} = object
-    kind*: StoreResultKind
-    used*: NBytes
+    downloadedBlocks*: BitSeq ## Bitmap (bit N = block N present)
 
 func quotaUsedBytes*(self: RepoStore): NBytes =
   self.quotaUsage.used
@@ -85,12 +89,12 @@ func available*(self: RepoStore): NBytes =
   return self.quotaMaxBytes - self.totalUsed
 
 func available*(self: RepoStore, bytes: NBytes): bool =
-  return bytes < self.available()
+  return bytes <= self.available()
 
 func new*(
     T: type RepoStore,
-    repoDs: Datastore,
-    metaDs: Datastore,
+    repoDs: KVStore,
+    metaDs: KVStore,
     clock: Clock = SystemClock.new(),
     postFixLen = 2,
     quotaMaxBytes = DefaultQuotaBytes,
@@ -100,7 +104,7 @@ func new*(
   ##
   RepoStore(
     repoDs: repoDs,
-    metaDs: TypedDatastore.init(metaDs),
+    metaDs: metaDs,
     clock: clock,
     postFixLen: postFixLen,
     quotaMaxBytes: quotaMaxBytes,

@@ -136,6 +136,100 @@ method delBlock*(
 
   raiseAssert("delBlock not implemented!")
 
+method putBlocks*(
+    self: BlockStore, blocks: seq[Block]
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Put multiple blocks to the blockstore as a batch
+  ##
+
+  raiseAssert("putBlocks not implemented!")
+
+method getBlocks*(
+    self: BlockStore, addresses: seq[BlockAddress]
+): Future[?!seq[Block]] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Get multiple blocks from the blockstore as a batch
+  ##
+
+  raiseAssert("getBlocks by addresses not implemented!")
+
+method getBlocks*(
+    self: BlockStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[Block]] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Get multiple blocks by tree CID and indices as a batch
+  ##
+
+  raiseAssert("getBlocks by treeCid not implemented!")
+
+method delBlocks*(
+    self: BlockStore, addresses: seq[BlockAddress]
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Delete multiple blocks from the blockstore as a batch
+  ##
+
+  raiseAssert("delBlocks by addresses not implemented!")
+
+method delBlocks*(
+    self: BlockStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Delete multiple blocks by tree CID and indices as a batch
+  ##
+
+  raiseAssert("delBlocks by treeCid not implemented!")
+
+method getBlockRange*(
+    self: BlockStore, treeCid: Cid, start: Natural, count: Natural
+): Future[?!seq[Block]] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Get a contiguous range of blocks from the blockstore as a batch
+  ##
+
+  raiseAssert("getBlockRange not implemented!")
+
+method getBlockAndProof*(
+    self: BlockStore, address: BlockAddress
+): Future[?!(Block, ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Get a block and proof by BlockAddress
+  ##
+
+  raiseAssert("getBlockAndProof by address not implemented!")
+
+method getBlocksAndProofs*(
+    self: BlockStore, addresses: seq[BlockAddress]
+): Future[?!seq[(Block, ArchivistProof)]] {.
+    base, async: (raises: [CancelledError]), gcsafe
+.} =
+  ## Get multiple blocks and proofs as a batch
+  ##
+
+  raiseAssert("getBlocksAndProofs by addresses not implemented!")
+
+method getBlocksAndProofs*(
+    self: BlockStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Block, ArchivistProof)]] {.
+    base, async: (raises: [CancelledError]), gcsafe
+.} =
+  ## Get multiple blocks and proofs by tree CID and indices as a batch
+  ##
+
+  raiseAssert("getBlocksAndProofs by treeCid not implemented!")
+
+method putCidsAndProofs*(
+    self: BlockStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Put multiple CIDs and proofs as a batch
+  ##
+
+  raiseAssert("putCidsAndProofs not implemented!")
+
+method getCidsAndProofs*(
+    self: BlockStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Cid, ArchivistProof)]] {.
+    base, async: (raises: [CancelledError]), gcsafe
+.} =
+  ## Get multiple CIDs and proofs as a batch
+  ##
+
+  raiseAssert("getCidsAndProofs not implemented!")
+
 method hasBlock*(
     self: BlockStore, cid: Cid
 ): Future[?!bool] {.base, async: (raises: [CancelledError]), gcsafe.} =

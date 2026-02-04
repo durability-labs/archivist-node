@@ -50,7 +50,7 @@ suite "Marketplace storage interface implementation":
 
   proc checkBlockExpiry(cid: Cid, expiry: int64) {.async.} =
     let localStore = temporary.localStore
-    let key = !createBlockExpirationMetadataKey(cid)
+    let key = !blockMetaKey(cid)
     let metadata = !await get[BlockMetaData](localStore.metaDs, key)
     check metadata.expiry == expiry
 

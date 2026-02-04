@@ -7,7 +7,8 @@ import pkg/libp2p/multicodec
 import pkg/stew/byteutils
 import pkg/questionable
 import pkg/questionable/results
-import pkg/archivist/stores/cachestore
+# import pkg/archivist/stores/cachestore # Commented - module removed during kvstore migration
+import pkg/archivist/stores
 import pkg/archivist/chunker
 import pkg/archivist/manifest
 import pkg/archivist/merkletree
