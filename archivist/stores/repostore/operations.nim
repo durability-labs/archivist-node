@@ -121,12 +121,15 @@ proc updateCounters*(
 
   if quotaDelta != 0:
     self.quotaUsage.used = (self.quotaUsage.used.int + quotaDelta).NBytes
+    archivist_repostore_bytes_used.set(self.quotaUsage.used.int64)
 
   if reservedDelta != 0:
     self.quotaUsage.reserved = (self.quotaUsage.reserved.int + reservedDelta).NBytes
+    archivist_repostore_bytes_reserved.set(self.quotaUsage.reserved.int64)
 
   if blocksDelta != 0:
     self.totalBlocks = (self.totalBlocks.int + blocksDelta).Natural
+    archivist_repostore_blocks.set(self.totalBlocks.int64)
 
   success()
 
@@ -230,14 +233,13 @@ proc tryDeleteBlocks*(
 ): Future[?!seq[Cid]] {.async: (raises: [CancelledError], raw: true).} =
   self.tryDeleteBlocks(@[cid])
 
+type BlockLeafTuple* =
+  tuple[
+    index: Natural, blkCid: Cid, proof: ArchivistProof, blockSize = DefaultBlockSize
+  ]
+
 proc putOrUpdateLeafBlockMeta*(
-    self: RepoStore,
-    treeCid: Cid,
-    blocks: seq[
-      tuple[
-        index: Natural, blkCid: Cid, proof: ArchivistProof, blockSize = DefaultBlockSize
-      ]
-    ],
+    self: RepoStore, treeCid: Cid, blocks: seq[BlockLeafTuple]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Put or update lef and block metadata
   ##
@@ -260,21 +262,25 @@ proc putOrUpdateLeafBlockMeta*(
   proc putLeafAndBlockMetaAtomic(
       records: seq[RawKVRecord], conflicts: seq[Key]
   ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
-    var
-      records = records.mapIt((it.key, it)).toTable
-      refreshed = ?await self.metaDs.get(conflicts)
+    var records = records.mapIt((it.key, it)).toTable
+    let refreshed = ?await self.metaDs.get(conflicts)
 
     trace "Got refreshed leaf and block records",
       refreshed = refreshed.len, conflicts = conflicts.len
 
-    for record in refreshed:
+    for rec in refreshed:
+      var record = rec
+
       trace "Processing record", key = record.key
       if BlocksMetaKey.ancestor(record.key):
         var blockMeta = ?toRecord[BlockMetadata](record)
         blockMeta.val.refCount += 1.Natural
         trace "Updated refCount for",
           cid = blockMeta.val.cid, refCount = blockMeta.val.refCount
-        records[record.key] = blockMeta.toRaw
+        record = blockMeta.toRaw
+
+      # update records
+      records[record.key] = record
 
     trace "Records to put ", records = records.len
     success toSeq(records.values)
@@ -345,40 +351,43 @@ proc delLeafBlockMetadata*(
       ).toRaw
     )
 
-  # cache block and leaf records for later update
-  proc atomicUpdateMetadataMiddleware(
+  proc atomicUpdateDelMeta(
       records: seq[RawKVRecord], conflicts: seq[Key]
   ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
-    var
-      records = records.mapIt((it.key, it)).toTable
-      refreshed = ?await self.metaDs.get(conflicts)
+    var records = records.mapIt((it.key, it)).toTable
 
-    trace "Got refreshed leaf and block metadata in update middleware",
-      count = refreshed.len
-    for record in refreshed:
+    let refreshed = ?await self.metaDs.get(conflicts)
+
+    trace "Got refreshed metadata", count = refreshed.len
+    for rec in refreshed:
+
+      var record = rec
       trace "Processing record", key = record.key
       if BlockProofKey.ancestor(record.key):
         var leaf = ?toRecord[LeafMetadata](record)
         leaf.val.deleted = true # mark for delete
         trace "Setting leaf to deleted", key = record.key
-        records[record.key] = leaf.toRaw
+        record = leaf.toRaw
       elif BlocksMetaKey.ancestor(record.key):
         var blkMeta = ?toRecord[BlockMetadata](record)
         trace "Before decrease refCount", refCount = blkMeta.val.refCount
         blkMeta.val.refCount = max(0, blkMeta.val.refCount - 1)
         trace "Decreassed refCount for block",
           key = record.key, refCount = blkMeta.val.refCount
-        records[record.key] = blkMeta.toRaw
+        record = blkMeta.toRaw
       else:
         return failure(
           "Got an unknown key updating leaf and block metadata - key: " & $record.key
         )
 
+      # update records
+      records[record.key] = record
+
     trace "Refreshed leaf and block records", count = refreshed.len
     success toSeq(records.values)
 
   ?await self.metaDs.tryPutAtomic(
-    updateLeafsRecs & updateBlksRecs, maxRetries = 3, atomicUpdateMetadataMiddleware
+    updateLeafsRecs & updateBlksRecs, maxRetries = 3, atomicUpdateDelMeta
   )
 
   # if no retry, we need to get the records first
