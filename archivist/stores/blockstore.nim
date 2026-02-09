@@ -80,11 +80,23 @@ method getBlockAndProof*(
 
 method putBlock*(
     self: BlockStore, blk: Block, ttl = Duration.none
-): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!void] {.
+    base, async: (raises: [CancelledError]), gcsafe, deprecated: "se putLeafAndBlock"
+.} =
   ## Put a block to the blockstore
   ##
 
   raiseAssert("putBlock not implemented!")
+
+method putLeafAndBlock*(
+    self: BlockStore, treeCid: Cid, blk: Block, intex: Natural, proof: ArchivistProof
+): Future[?!void] {.base, async: (raises: [CancelledError]).} =
+  ## Puts a leaf and block, for temporal leafs
+  ## treeCid is a unique temporary hash and proof
+  ## is nil (or none when changed to optional)
+  ##
+
+  raiseAssert("putLeafAndBlock not implemented!")
 
 method putCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: ArchivistProof
@@ -104,7 +116,12 @@ method getCidAndProof*(
 
 method ensureExpiry*(
     self: BlockStore, cid: Cid, expiry: SecondsSince1970
-): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!void] {.
+    base,
+    async: (raises: [CancelledError]),
+    gcsafe,
+    deprecated: "deprecated, will be removed"
+.} =
   ## Ensure that block's assosicated expiry is at least given timestamp
   ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
   ##
@@ -113,7 +130,12 @@ method ensureExpiry*(
 
 method ensureExpiry*(
     self: BlockStore, treeCid: Cid, index: Natural, expiry: SecondsSince1970
-): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!void] {.
+    base,
+    async: (raises: [CancelledError]),
+    gcsafe,
+    deprecated: "deprecated, will be removed"
+.} =
   ## Ensure that block's associated expiry is at least given timestamp
   ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
   ##
@@ -122,7 +144,12 @@ method ensureExpiry*(
 
 method delBlock*(
     self: BlockStore, cid: Cid
-): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!void] {.
+    base,
+    async: (raises: [CancelledError]),
+    gcsafe,
+    deprecated: "Use delBlock(treeCid, idx)"
+.} =
   ## Delete a block from the blockstore
   ##
 

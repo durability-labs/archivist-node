@@ -22,25 +22,25 @@ import ../../utils/json
 proc encode*(t: QuotaUsage): seq[byte] =
   t.toJson().toBytes()
 
-proc decode*(T: type QuotaUsage, bytes: seq[byte]): ?!T =
+proc decode*(T: type QuotaUsage, bytes: openArray[byte]): ?!T =
   T.fromJson(bytes)
 
 proc encode*(t: BlockMetadata): seq[byte] =
   t.toJson().toBytes()
 
-proc decode*(T: type BlockMetadata, bytes: seq[byte]): ?!T =
+proc decode*(T: type BlockMetadata, bytes: openArray[byte]): ?!T =
   T.fromJson(bytes)
 
 proc encode*(t: LeafMetadata): seq[byte] =
   t.toJson().toBytes()
 
-proc decode*(T: type LeafMetadata, bytes: seq[byte]): ?!T =
+proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
   T.fromJson(bytes)
 
 proc encode*(i: uint64): seq[byte] =
   @(i.toBytesBE)
 
-proc decode*(T: type uint64, bytes: seq[byte]): ?!T =
+proc decode*(T: type uint64, bytes: openArray[byte]): ?!T =
   if bytes.len >= sizeof(uint64):
     success(uint64.fromBytesBE(bytes))
   else:
@@ -49,5 +49,5 @@ proc decode*(T: type uint64, bytes: seq[byte]): ?!T =
 proc encode*(i: Natural | enum): seq[byte] =
   cast[uint64](i).encode
 
-proc decode*(T: typedesc[Natural | enum], bytes: seq[byte]): ?!T =
+proc decode*(T: typedesc[Natural | enum], bytes: openArray[byte]): ?!T =
   uint64.decode(bytes).map((ui: uint64) => cast[T](ui))

@@ -21,7 +21,7 @@ import ../../systemclock
 import ../../units
 
 const
-  DefaultBlockTtl* = 30.days
+  DefaultOverlayTtl* = 30.days
   DefaultQuotaBytes* = 20.GiBs
 
 type
@@ -35,7 +35,7 @@ type
     quotaMaxBytes*: NBytes
     quotaUsage*: QuotaUsage
     totalBlocks*: Natural
-    blockTtl*: Duration
+    overlayTtl*: Duration
     started*: bool
 
   QuotaUsage* {.serialize.} = object
@@ -52,29 +52,29 @@ type
     blkCid*: Cid
     proof*: ArchivistProof
 
-  OverlayStatus* {.serialize.} = enum
+  OverlayStatus* {.serialize, pure.} = enum
+    Error ## Unrecoverable error
     Storing ## Upload in progress (temp overlay protecting blocks)
     Downloading ## Download in progress (includes paused/partial)
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
-    Error ## Unrecoverable error
 
-  CleanupMode* {.serialize.} = enum
+  CleanupMode* {.serialize, pure.} = enum
     ## Mode for cleaning up after storage request
     SlotsOnly ## Delete slot overlays, keep dataset
     Full ## Delete both slots and dataset
     None ## Keep everything
 
   OverlayMetadata* {.serialize.} = object
-    ## Transient local state for an overlay - manifest is source of truth for dataset metadata.
-    ## Overlay type is implicit (determined by loading manifest):
-    ##   - protected=false → original dataset
-    ##   - protected=true, verifiable=false → protected dataset
-    ##   - protected=true, verifiable=true → slot
+    ## Transient local state for an overlay
+    ##
+    ##   - protected=false -> original dataset
+    ##   - protected=true, verifiable=false -> protected dataset
+    ##   - protected=true, verifiable=true -> slot
     status*: OverlayStatus
-    manifestCid*: Cid ## For Storing: tempId placeholder; otherwise real manifest CID
-    expiry*: SecondsSince1970
-    downloadedBlocks*: BitSeq ## Bitmap (bit N = block N present)
+    manifest*: ?Cid # stores the manifest Cid, or none for temp overlay
+    expiry*: SecondsSince1970 # overlay expiration
+    blocks*: BitSeq # bitmap of currently stored blocks
 
 func quotaUsedBytes*(self: RepoStore): NBytes =
   self.quotaUsage.used
@@ -98,7 +98,7 @@ func new*(
     clock: Clock = SystemClock.new(),
     postFixLen = 2,
     quotaMaxBytes = DefaultQuotaBytes,
-    blockTtl = DefaultBlockTtl,
+    overlayTtl = DefaultOverlayTtl,
 ): RepoStore =
   ## Create new instance of a RepoStore
   ##
@@ -108,6 +108,6 @@ func new*(
     clock: clock,
     postFixLen: postFixLen,
     quotaMaxBytes: quotaMaxBytes,
-    blockTtl: blockTtl,
+    overlayTtl: overlayTtl,
     onBlockStored: CidCallback.none,
   )

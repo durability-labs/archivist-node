@@ -5,5 +5,4 @@ import ./stores/maintenance
 import ./stores/keyutils
 import ./stores/treehelper
 
-export
-  blockstore, networkstore, repostore, keyutils, treehelper, maintenance
+export blockstore, networkstore, repostore, keyutils, treehelper, maintenance

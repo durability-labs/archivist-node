@@ -57,6 +57,9 @@ proc decode*(_: type ArchivistTree, data: openArray[byte]): ?!ArchivistTree =
   ArchivistTree.fromNodes(mcodec, nodes, leavesCount.int)
 
 proc encode*(self: ArchivistProof): seq[byte] =
+  if self.isNil:
+    return @[]
+
   var pb = initProtoBuffer()
   pb.write(1, self.mcodec.uint64)
   pb.write(2, self.index.uint64)

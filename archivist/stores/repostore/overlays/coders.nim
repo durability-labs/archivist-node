@@ -20,6 +20,7 @@
 {.push raises: [].}
 
 import pkg/libp2p/[cid, protobuf/minprotobuf]
+import pkg/questionable
 import pkg/questionable/results
 import pkg/stew/bitseqs
 
@@ -33,11 +34,12 @@ proc encode*(meta: OverlayMetadata): seq[byte] =
   var pb = initProtoBuffer()
 
   pb.write(1, meta.status.uint32)
-  pb.write(2, meta.manifestCid.data.buffer)
+  if manifest =? meta.manifest:
+    pb.write(2, manifest.data.buffer)
   pb.write(3, meta.expiry.uint64)
 
-  if meta.downloadedBlocks.len > 0:
-    pb.write(4, seq[byte] meta.downloadedBlocks)
+  if meta.blocks.len > 0:
+    pb.write(4, seq[byte] meta.blocks)
 
   pb.finish()
   pb.buffer
@@ -49,28 +51,28 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
   var
     pb = initProtoBuffer(data)
     status: uint32
-    manifestCidBuf: seq[byte]
+    manifest: seq[byte]
     expiry: uint64
-    downloadedBlocks: seq[byte]
+    blocks: seq[byte]
 
   if pb.getField(1, status).isErr:
     return failure("Unable to decode `status` from OverlayMetadata")
 
-  if pb.getField(2, manifestCidBuf).isErr:
+  if pb.getField(2, manifest).isErr:
     return failure("Unable to decode `manifestCid` from OverlayMetadata")
 
   if pb.getField(3, expiry).isErr:
     return failure("Unable to decode `expiry` from OverlayMetadata")
 
-  discard pb.getField(4, downloadedBlocks) # Optional field
+  discard pb.getField(4, blocks) # Optional field
 
-  let manifestCid = ?Cid.init(manifestCidBuf).mapFailure
-
-  success(
-    OverlayMetadata(
+  let
+    cid = ?Cid.init(manifest).mapFailure
+    meta = OverlayMetadata(
       status: OverlayStatus(status),
-      manifestCid: manifestCid,
+      manifest: some(cid),
       expiry: expiry.int64,
-      downloadedBlocks: BitSeq downloadedBlocks,
+      blocks: BitSeq blocks,
     )
-  )
+
+  success meta

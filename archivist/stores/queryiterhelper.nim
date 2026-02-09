@@ -9,8 +9,7 @@ import ../utils/safeasynciter
 
 {.push raises: [].}
 
-type
-  KeyVal*[T] = tuple[key: Key, value: T]
+type KeyVal*[T] = tuple[key: Key, value: T]
 
 proc toSafeAsyncIter*[T](queryIter: QueryIter[T]): SafeAsyncIter[?KVRecord[T]] =
   ## Converts kvstore `QueryIter[T]` to `SafeAsyncIter[?KVRecord[T]]`

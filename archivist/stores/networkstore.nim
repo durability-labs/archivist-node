@@ -97,7 +97,9 @@ method getCidAndProof*(
 
 method ensureExpiry*(
     self: NetworkStore, cid: Cid, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.
+    async: (raises: [CancelledError]), deprecated: "deprecated, will be removed"
+.} =
   ## Ensure that block's assosicated expiry is at least given timestamp
   ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
   ##
@@ -114,7 +116,9 @@ method ensureExpiry*(
 
 method ensureExpiry*(
     self: NetworkStore, treeCid: Cid, index: Natural, expiry: SecondsSince1970
-): Future[?!void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.
+    async: (raises: [CancelledError]), deprecated: "deprecated, will be removed"
+.} =
   ## Ensure that block's associated expiry is at least given timestamp
   ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
   ##
@@ -136,7 +140,10 @@ method listBlocks*(
 
 method delBlock*(
     self: NetworkStore, cid: Cid
-): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+): Future[?!void] {.
+    async: (raw: true, raises: [CancelledError]),
+    deprecated: "Use delBlock(treeCid, idx)"
+.} =
   ## Delete a block from the blockstore
   ##
 

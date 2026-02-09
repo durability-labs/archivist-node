@@ -26,7 +26,9 @@ type MockRepoStore* = ref object of RepoStore
 
 method delBlock*(
     self: MockRepoStore, cid: Cid
-): Future[?!void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.
+    async: (raises: [CancelledError]), deprecated: "Use delBlock(treeCid, idx)"
+.} =
   self.delBlockCids.add(cid)
   self.testBlockExpirations = self.testBlockExpirations.filterIt(it.cid != cid)
   return success()

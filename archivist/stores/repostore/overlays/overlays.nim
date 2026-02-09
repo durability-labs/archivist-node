@@ -11,10 +11,12 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/oids
 
 import pkg/chronos
 import pkg/kvstore
-import pkg/libp2p/cid
+import pkg/libp2p/[cid, multihash, multicodec]
+import pkg/stew/bitseqs
 import pkg/results
 import pkg/questionable
 import pkg/questionable/results
@@ -22,6 +24,8 @@ import pkg/questionable/results
 import ./coders
 import ../types
 import ../../keyutils
+import ../../../clock
+import ../../../archivisttypes
 
 import ../../queryiterhelper
 
@@ -33,6 +37,8 @@ export coders
 
 logScope:
   topics = "archivist repostore overlays"
+
+const DefaultTmpOverlayTtl = 3.days # Default ttl for tmp overlays
 
 proc putOverlayMetadata*(
     self: RepoStore, treeCid: Cid, meta: OverlayMetadata
@@ -66,6 +72,7 @@ proc getOverlayMetadata*(
 
   let meta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
   trace "OverlayMetadata loaded", treeCid = treeCid, status = meta.val.status
+  success meta.val
 
 proc deleteOverlayMetadata*(
     self: RepoStore, treeCid: Cid
@@ -78,96 +85,143 @@ proc deleteOverlayMetadata*(
   trace "Overlay metadata deleted", treeCid = treeCid
   success()
 
-# func toCid[T](record: Record[T]): ?!Cid =
-#   success ?Cid.init(record.key.value).mapFailure
+func toCid(key: Key): ?!Cid =
+  success ?Cid.init(key.value).mapFailure
 
-# proc listOverlays*(
-#     self: RepoStore
-# ): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
-#   ## List all overlay CIDs.
-#   ##
+proc listOverlays*(
+    self: RepoStore
+): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
+  ## List all overlay CIDs.
+  ##
 
-#   let
-#     queryKey = ?overlayQueryKey()
-#     iter = ?(await query[OverlayMetadata](self.metaDs, Query.init(queryKey)))
+  let
+    queryKey = ?overlayQueryKey()
+    iter = ?(await query(self.metaDs, Query.init(queryKey), OverlayMetadata))
 
-#   proc mapCids(
-#       iterRes: ?!(?Record[OverlayMetadata])
-#   ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
-#     if maybeRecord =? iterRes and record =? maybeRecord:
-#       return success ?record.toCid
-#     else:
-#       return
-#         failure(newException(ArchivistError, "Unable to construct Cid from record"))
+  proc mapCids(
+      iterRes: ?!(?KVRecord[OverlayMetadata])
+  ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+    if maybeRecord =? iterRes and record =? maybeRecord:
+      return success ?record.key.toCid
+    else:
+      return
+        failure(newException(ArchivistError, "Unable to construct Cid from record"))
 
-#   let safeQueryIter = iter.toSafeAsyncIter()
-#   success map[?Record[OverlayMetadata], Cid](safeQueryIter, mapCids)
+  let safeQueryIter = iter.toSafeAsyncIter()
+  success map[?KVRecord[OverlayMetadata], Cid](safeQueryIter, mapCids)
 
-# proc listOverlaysInState*(
-#     self: RepoStore, status: OverlayStatus
-# ): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
-#   ## List all overlay CIDs by status.
-#   ##
+proc listOverlaysInState*(
+    self: RepoStore, status: OverlayStatus
+): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
+  ## List all overlay CIDs by status.
+  ##
 
-#   let
-#     queryKey = ?overlayQueryKey()
-#     iter = ?(await query[OverlayMetadata](self.metaDs, Query.init(queryKey)))
+  let
+    queryKey = ?overlayQueryKey()
+    iter = ?(await query(self.metaDs, Query.init(queryKey), OverlayMetadata))
 
-#   let safeQueryIter = iter.toSafeAsyncIter()
+  let safeQueryIter = iter.toSafeAsyncIter()
 
-#   proc filterBytStatus(
-#       iterRes: ?!(?Record[OverlayMetadata])
-#   ): Future[?(?!Cid)] {.async: (raises: [CancelledError]).} =
-#     if maybeRecord =? iterRes and record =? maybeRecord:
-#       if record.val.status == status:
-#         without cid =? record.toCid, err:
-#           trace "Unable to construct Cid from key", error = err.msg
-#           return none(?!Cid)
+  proc filterBytStatus(
+      iterRes: ?!(?KVRecord[OverlayMetadata])
+  ): Future[?(?!Cid)] {.async: (raises: [CancelledError]).} =
+    if maybeRecord =? iterRes and record =? maybeRecord:
+      if record.val.status == status:
+        without cid =? record.key.toCid, err:
+          trace "Unable to construct Cid from key", error = err.msg
+          return none(?!Cid)
 
-#         return some(success(cid))
+        return some(success(cid))
 
-#     return none(?!Cid)
+    return none(?!Cid)
 
-#   success await mapFilter[?Record[OverlayMetadata], Cid](
-#     safeQueryIter, filterBytStatus, finishOnErr = false
-#   )
+  success await mapFilter[?KVRecord[OverlayMetadata], Cid](
+    safeQueryIter, filterBytStatus, finishOnErr = false
+  )
 
-# proc listOverlaysByExpiry*(
-#     self: RepoStore, limit: int, offset: int
-# ): Future[?!seq[(Cid, OverlayMetadata)]] {.async: (raises: [CancelledError]).} =
-#   ## List overlays sorted by expiry time (ascending).
-#   ##
+proc listOverlaysByExpiry*(
+    self: RepoStore, limit: int, offset: int
+): Future[?!seq[(Cid, OverlayMetadata)]] {.async: (raises: [CancelledError]).} =
+  ## List overlays sorted by expiry time (ascending).
+  ##
 
-#   let
-#     queryKey = ?overlayQueryKey()
-#     iter =
-#       ?(
-#         await query[OverlayMetadata](
-#           self.metaDs, Query.init(queryKey, limit = limit, offset = offset)
-#         )
-#       )
+  let
+    queryKey = ?overlayQueryKey()
+    iter =
+      ?(
+        await query(
+          self.metaDs,
+          Query.init(queryKey, limit = limit, offset = offset),
+          OverlayMetadata,
+        )
+      )
 
-#   proc mapRecord(
-#       iterRes: ?!(?Record[OverlayMetadata])
-#   ): Future[?(?!(Cid, OverlayMetadata))] {.async: (raises: [CancelledError]).} =
-#     if maybeRecord =? iterRes and record =? maybeRecord:
-#       without cid =? record.toCid, err:
-#         trace "Unable to construct Cid from key", error = err.msg
-#         return none(?!(Cid, OverlayMetadata))
+  proc mapRecord(
+      iterRes: ?!(?KVRecord[OverlayMetadata])
+  ): Future[?(?!(Cid, OverlayMetadata))] {.async: (raises: [CancelledError]).} =
+    if maybeRecord =? iterRes and record =? maybeRecord:
+      without cid =? record.key.toCid, err:
+        trace "Unable to construct Cid from key", error = err.msg
+        return none(?!(Cid, OverlayMetadata))
 
-#     return none(?!(Cid, OverlayMetadata))
+      return (success((cid, record.val))).some
 
-#   let metadata = (
-#     ?await collect(
-#       await mapFilter[?Record[OverlayMetadata], (Cid, OverlayMetadata)](
-#         iter.toSafeAsyncIter(), mapRecord
-#       )
-#     )
-#   )
-#   # Sort by expiry (ascending - earliest expiry first)
-#   .sorted(
-#     func (a, b: (Cid, OverlayMetadata)): int =
-#       cmp(a[1].expiry, b[1].expiry)
-#   )
+  let metadata = (
+    ?await collect(
+      await mapFilter[?KVRecord[OverlayMetadata], (Cid, OverlayMetadata)](
+        iter.toSafeAsyncIter(), mapRecord
+      )
+    )
+  )
+  # Sort by expiry (ascending - earliest expiry first)
+  .sorted(
+    func (a, b: (Cid, OverlayMetadata)): int =
+      cmp(a[1].expiry, b[1].expiry)
+  )
 
-#   success metadata
+  success metadata
+
+proc createOrUpdateOverlay*(
+    self: RepoStore,
+    treeCid: Cid,
+    status: OverlayStatus,
+    blocks: BitSeq,
+    expiry = DefaultOverlayTtl,
+    manifest: ?Cid = Cid.none,
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
+  self.putOverlayMetadata(
+    treeCid,
+    OverlayMetadata(
+      status: status,
+      blocks: blocks,
+      manifest: manifest,
+      expiry: self.clock.now() + expiry.seconds,
+    ),
+  )
+
+proc createTmpOverlay*(
+    self: RepoStore, expiry = DefaultOverlayTtl
+): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+  let
+    oid = genOid()
+    oidStr = $oid # 24-char hex string
+    mhash =
+      ?MultiHash.digest($Sha256HashCodec, oidStr.toOpenArrayByte(0, oidStr.high)).mapFailure
+    tmpTreeCid = ?Cid.init(CIDv1, BlockCodec, mhash).mapFailure
+
+  ?await self.putOverlayMetadata(
+    tmpTreeCid,
+    OverlayMetadata(
+      status: OverlayStatus.Storing,
+      manifest: Cid.none,
+      expiry: self.clock.now() + expiry.seconds,
+      blocks: BitSeq.init(0)
+    ),
+  )
+
+  success tmpTreeCid
+
+proc dropOverlay*(
+    self: RepoStore, treeCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
+  self.deleteOverlayMetadata(treeCid)

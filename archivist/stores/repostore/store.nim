@@ -15,6 +15,7 @@ import pkg/kvstore
 import pkg/libp2p/[cid, multicodec]
 import pkg/questionable
 import pkg/questionable/results
+import pkg/stew/bitseqs
 
 import ./coders
 import ./overlays
@@ -111,10 +112,50 @@ method putCidAndProof*(
 
 method getCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
-): Future[?!(Cid, ArchivistProof)] {.async: (raises: [CancelledError]).} =
+): Future[?!(Cid, ArchivistProof)] {.
+    async: (raises: [CancelledError], deprecated: "Use putLeafAndBlock")
+.} =
   let leafMd = ?await self.getLeafMetadata(treeCid, index)
 
   success((leafMd.blkCid, leafMd.proof))
+
+method putLeafAndBlock*(
+    self: RepoStore,
+    treeCid: Cid,
+    blk: Block,
+    index: Natural,
+    proof: ArchivistProof = nil,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  logScope:
+    treeCid = treeCid
+    index = index
+    blkCid = blk.cid
+
+  trace "Storing Leaf and Block"
+
+  if err =?
+      (await self.putOrUpdateLeafBlockMeta(treeCid, index, blk.cid, proof)).errorOption:
+    trace "Unable to store Leaf and Block Metadata", err = err.msg
+    return failure(err)
+
+  # we never update blocks on fs, we only insert
+  if err =? (
+    await self.repoDs.put(
+      RawKVRecord.init(?makePrefixKey(self.postFixLen, blk.cid), blk.data)
+    )
+  ).errorOption:
+    if err of KVConflictError:
+      trace "Block already in store", err = err.msg
+      return success()
+    else:
+      trace "Error writing block on disk", err = err.msg
+      return failure(err)
+
+  ?await self.updateCounters(quotaDelta = blk.data.len, blocksDelta = 1)
+  if onBlock =? self.onBlockStored:
+    await onBlock(blk.cid)
+
+  return success()
 
 method getCid*(
     self: RepoStore, treeCid: Cid, index: Natural
@@ -123,7 +164,9 @@ method getCid*(
 
 method putBlock*(
     self: RepoStore, blk: Block, ttl = Duration.none
-): Future[?!void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.
+    async: (raises: [CancelledError], deprecated: "Use putLeafAndBlock")
+.} =
   ## Put a block to the blockstore
   ##
   ## NOTE: historicaly, this method never incremented the
@@ -152,11 +195,12 @@ method putBlock*(
     return failure(newException(QuotaNotEnoughError, "Block would exceed quota!"))
 
   let metaKey = ?blockMetaKey(blk.cid)
-  if err =?
-      (await self.metaDs.put(
-        ?blockMetaKey(blk.cid),
-        BlockMetadata(refCount: 0, cid: blk.cid, size: blk.data.len.NBytes),
-      )).errorOption:
+  if err =? (
+    await self.metaDs.put(
+      ?blockMetaKey(blk.cid),
+      BlockMetadata(refCount: 0, cid: blk.cid, size: blk.data.len.NBytes),
+    )
+  ).errorOption:
     if err of KVConflictError:
       trace "Block metadata already exists", err = err.msg
       # don't return here, allow writing the block on disk
@@ -196,7 +240,9 @@ proc blockRefCount*(
 
 method delBlock*(
     self: RepoStore, cid: Cid
-): Future[?!void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.
+    async: (raises: [CancelledError]), deprecated: "Use delBlock(treeCid, idx)"
+.} =
   ## Delete a block from the blockstore when block refCount is 0 or block is expired
   ##
 
@@ -290,10 +336,6 @@ method listBlocks*(
     queryIter.disposed
 
   return success SafeAsyncIter[Cid].new(next, isFinished, onDispose, isDisposed)
-
-proc createBlockExpirationQuery(maxNumber: int, offset: int): ?!Query =
-  let queryKey = ?blockMetaKeyQuery()
-  success Query.init(queryKey, offset = offset, limit = maxNumber)
 
 method close*(self: RepoStore): Future[void] {.async: (raises: []).} =
   ## Close the blockstore, cleaning up resources managed by it.

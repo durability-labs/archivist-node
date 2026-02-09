@@ -360,7 +360,6 @@ proc delLeafBlockMetadata*(
 
     trace "Got refreshed metadata", count = refreshed.len
     for rec in refreshed:
-
       var record = rec
       trace "Processing record", key = record.key
       if BlockProofKey.ancestor(record.key):

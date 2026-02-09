@@ -44,3 +44,4 @@ docker/prometheus-data
 data/
 nimbledeps
 logs/
+.grepai/

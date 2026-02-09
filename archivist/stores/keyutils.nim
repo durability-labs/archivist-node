@@ -22,9 +22,9 @@ const
   ArchivistBlocksKey* = Key.init(ArchivistBlocksNamespace).tryGet
   ArchivistTotalBlocksKey* = Key.init(ArchivistBlockTotalNamespace).tryGet
   ArchivistManifestKey* = Key.init(ArchivistManifestNamespace).tryGet
-  ArchivistOverlaysKey* = Key.init(ArchivistDatasetsNamespace).tryGet
+  ArchivistOverlaysKey* = Key.init(ArchivistOverlayNamespace).tryGet
   BlocksMetaKey* = Key.init(ArchivistBlocksMetaNamespace).tryGet
-  BlockProofKey* = Key.init(ArchivistBlockProofNamespace).tryGet
+  BlockProofKey* = Key.init(ArchivistBlockLeafNamespace).tryGet
   QuotaKey* = Key.init(ArchivistQuotaNamespace).tryGet
   QuotaUsedKey* = (QuotaKey / "used").tryGet
   QuotaReservedKey* = (QuotaKey / "reserved").tryGet
