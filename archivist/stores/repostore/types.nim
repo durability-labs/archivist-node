@@ -54,8 +54,7 @@ type
 
   OverlayStatus* {.serialize, pure.} = enum
     Error ## Unrecoverable error
-    Storing ## Upload in progress (temp overlay protecting blocks)
-    Downloading ## Download in progress (includes paused/partial)
+    Storing ## Upload/Download in progress
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
 
