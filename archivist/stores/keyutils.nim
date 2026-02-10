@@ -24,7 +24,7 @@ const
   ArchivistManifestKey* = Key.init(ArchivistManifestNamespace).tryGet
   ArchivistOverlaysKey* = Key.init(ArchivistOverlayNamespace).tryGet
   BlocksMetaKey* = Key.init(ArchivistBlocksMetaNamespace).tryGet
-  BlockProofKey* = Key.init(ArchivistBlockLeafNamespace).tryGet
+  BlockLeafKey* = Key.init(ArchivistBlockLeafNamespace).tryGet
   QuotaKey* = Key.init(ArchivistQuotaNamespace).tryGet
   QuotaUsedKey* = (QuotaKey / "used").tryGet
   QuotaReservedKey* = (QuotaKey / "reserved").tryGet
@@ -51,5 +51,9 @@ proc blockMetaKey*(cid: Cid): ?!Key =
 proc blockMetaKeyQuery*(): ?!Key =
   Key.init(?(BlocksMetaKey / "*"))
 
-proc blockProofKey*(treeCid: Cid, index: Natural): ?!Key =
-  (BlockProofKey / $treeCid).flatMap((k: Key) => k / $index)
+proc blockLeafKey*(treeCid: Cid, index: Natural): ?!Key =
+  (BlockLeafKey / $treeCid).flatMap((k: Key) => k / $index)
+
+proc blockProofQueryKey*(treeCid: Cid): ?!Key =
+  ## Query key for iterating all leafs under a tree: /meta/leafs/{treeCid}/*
+  Key.init(?(BlockLeafKey / $treeCid / "*"))
