@@ -9,6 +9,7 @@
 
 import std/tables
 import std/sugar
+import std/hashes
 
 export tables
 
@@ -49,6 +50,9 @@ logutils.formatIt(LogFormat.textLines, BlockAddress):
 
 logutils.formatIt(LogFormat.json, BlockAddress):
   %it
+
+func hash*(blk: Block): Hash =
+  cast[pointer](blk).hash
 
 proc `==`*(a, b: BlockAddress): bool =
   a.leaf == b.leaf and (
