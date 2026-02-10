@@ -101,11 +101,30 @@ suite "RepoStore":
   proc createTestBlock(size: int): bt.Block =
     bt.Block.new('a'.repeat(size).toBytes).tryGet()
 
+  proc putBlockWithOverlay(
+      repo: RepoStore, blk: bt.Block
+  ): Future[?!(Cid, Natural)] {.async.} =
+    let (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+    let treeCid = tree.rootCid.tryGet()
+    let proof = tree.getProof(0).tryGet()
+
+    var blocks = BitSeq.init(1)
+    blocks.setBit(0)
+
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      )
+    ).tryGet()
+
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    success((treeCid, 0.Natural))
+
   test "Should update current used bytes on block put":
     let blk = createTestBlock(200)
 
     check repo.quotaUsedBytes == 0'nb
-    (await repo.putBlock(blk)).tryGet
+    discard (await putBlockWithOverlay(repo, blk)).tryGet
 
     check:
       repo.quotaUsedBytes == 200'nb
@@ -114,10 +133,10 @@ suite "RepoStore":
     let blk = createTestBlock(100)
 
     check repo.quotaUsedBytes == 0'nb
-    (await repo.putBlock(blk)).tryGet
+    let (treeCid, index) = (await putBlockWithOverlay(repo, blk)).tryGet
     check repo.quotaUsedBytes == 100'nb
 
-    (await repo.delBlock(blk.cid)).tryGet
+    (await repo.delBlock(treeCid, index)).tryGet
 
     check:
       repo.quotaUsedBytes == 0'nb
@@ -126,11 +145,11 @@ suite "RepoStore":
     let blk = createTestBlock(100)
 
     check repo.quotaUsedBytes == 0'nb
-    (await repo.putBlock(blk)).tryGet
+    discard (await putBlockWithOverlay(repo, blk)).tryGet
     check repo.quotaUsedBytes == 100'nb
 
     # put again
-    (await repo.putBlock(blk)).tryGet
+    discard (await putBlockWithOverlay(repo, blk)).tryGet
     check repo.quotaUsedBytes == 100'nb
 
   test "Should fail storing passed the quota":
@@ -138,13 +157,13 @@ suite "RepoStore":
 
     check repo.totalUsed == 0'nb
     expect QuotaNotEnoughError:
-      (await repo.putBlock(blk)).tryGet
+      discard (await putBlockWithOverlay(repo, blk)).tryGet
 
   test "Should reserve bytes":
     let blk = createTestBlock(100)
 
     check repo.totalUsed == 0'nb
-    (await repo.putBlock(blk)).tryGet
+    discard (await putBlockWithOverlay(repo, blk)).tryGet
     check repo.totalUsed == 100'nb
 
     (await repo.reserve(100'nb)).tryGet
@@ -158,7 +177,7 @@ suite "RepoStore":
     let blk = createTestBlock(100)
 
     check repo.totalUsed == 0'nb
-    (await repo.putBlock(blk)).tryGet
+    discard (await putBlockWithOverlay(repo, blk)).tryGet
     check repo.totalUsed == 100'nb
 
     expect QuotaNotEnoughError:
@@ -196,34 +215,74 @@ suite "RepoStore":
       repo.quotaUsedBytes == 0'nb
       repo.quotaReservedBytes == 100'nb
 
-  test "should put empty blocks":
-    let blk = Cid.example.emptyBlock.tryGet()
-    check (await repo.putBlock(blk)).isOk
+  test "Should handle duplicate CIDs in same putLeafsAndBlocks batch correctly":
+    let blk = createTestBlock(100)
 
-  test "should get empty blocks":
+    # Build manifest/tree with same block at indices 0 and 1
+    let (manifest, tree) = makeManifestAndTree(@[blk, blk]).tryGet()
+    let treeCid = tree.rootCid.tryGet()
+
+    # Create overlay
+    var blocks = BitSeq.init(2)
+
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      )
+    ).tryGet()
+
+    # Get initial counters
+    let
+      initialBytes = repo.quotaUsedBytes
+      initialBlocks = repo.totalBlocks
+
+      # Put same block at two indices
+      proof0 = tree.getProof(0).tryGet()
+      proof1 = tree.getProof(1).tryGet()
+
+    (
+      await repo.putLeafsAndBlocks(
+        treeCid, @[(blk, 0.Natural, proof0), (blk, 1.Natural, proof1)]
+      )
+    ).tryGet()
+
+    # Verify counters incremented once (unique block)
+    check repo.quotaUsedBytes == initialBytes + 100.NBytes
+    check repo.totalBlocks == initialBlocks + 1
+
+    # First delete should not remove the block
+    (await repo.delBlock(treeCid, 0)).tryGet()
+    # Block should not be deleted (refCount was 2, now 1)
+    check (await repo.getBlock(blk.cid)).isOk
+
+    # Second delete removes the block
+    (await repo.delBlock(treeCid, 1)).tryGet()
+    # Block should be deleted (refCount was 1, now 0)
+    check (await repo.getBlock(blk.cid)).isErr
+
+  test "Should put empty blocks":
+    let blk = Cid.example.emptyBlock.tryGet()
+    check (await putBlockWithOverlay(repo, blk)).isOk
+
+  test "Should get empty blocks":
     let blk = Cid.example.emptyBlock.tryGet()
 
     let got = await repo.getBlock(blk.cid)
     check got.isOk
     check got.get.cid == blk.cid
 
-  test "should delete empty blocks":
+  test "Should delete empty blocks":
     let blk = Cid.example.emptyBlock.tryGet()
     check (await repo.delBlock(blk.cid)).isOk
 
-  test "should have empty block":
+  test "Should have empty block":
     let blk = Cid.example.emptyBlock.tryGet()
 
     let has = await repo.hasBlock(blk.cid)
     check has.isOk
     check has.get
 
-  test "should set the reference count for orphan blocks to 0":
-    let blk = Block.example(size = 200)
-    (await repo.putBlock(blk)).tryGet()
-    check (await repo.blockRefCount(blk.cid)).tryGet() == 0.Natural
-
-  test "should not allow non-orphan blocks to be deleted directly":
+  test "Should not allow non-orphan blocks to be deleted directly":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1000'nb)
@@ -246,7 +305,7 @@ suite "RepoStore":
     check err.msg ==
       "Directly deleting a block that is part of a dataset is not allowed."
 
-  test "should allow non-orphan blocks to be deleted by dataset reference":
+  test "Should allow non-orphan blocks to be deleted by dataset reference":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1000'nb)
@@ -269,79 +328,133 @@ suite "RepoStore":
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
     check not (await blk.cid in repo)
 
-  # test "should not delete a non-orphan block until it is deleted from all parent datasets":
-  #   let
-  #     repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-  #         1000'nb)
-  #     blockPool = await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)
+  test "Should not delete a non-orphan block until it is deleted from all parent datasets":
+    let
+      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
+          1024'nb)
+      blockPool = await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)
 
-  #   let
-  #     dataset1 = @[blockPool[0], blockPool[1]]
-  #     dataset2 = @[blockPool[1], blockPool[2]]
-  #     sharedBlock = blockPool[1]
+      dataset1 = @[blockPool[0], blockPool[1]]
+      dataset2 = @[blockPool[1], blockPool[2]]
+      sharedBlock = blockPool[1]
 
-  #   let
-  #     (manifest1, tree1) = makeManifestAndTree(dataset1).tryGet()
-  #     treeCid1 = tree1.rootCid.tryGet()
-  #     (manifest2, tree2) = makeManifestAndTree(dataset2).tryGet()
-  #     treeCid2 = tree2.rootCid.tryGet()
+      (manifest1, tree1) = makeManifestAndTree(dataset1).tryGet()
+      treeCid1 = tree1.rootCid.tryGet()
+      (manifest2, tree2) = makeManifestAndTree(dataset2).tryGet()
+      treeCid2 = tree2.rootCid.tryGet()
 
-  #   (await repo.putBlock(sharedBlock)).tryGet()
-  #   check (await repo.blockRefCount(sharedBlock.cid)).tryGet() == 0.Natural
+    # Create overlay for tree1
+    var blocks1 = BitSeq.init(2)
+    blocks1.setBit(0)
+    blocks1.setBit(1)
 
-  #   let
-  #     proof1 = tree1.getProof(1).tryGet()
-  #     proof2 = tree2.getProof(0).tryGet()
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid1, status = OverlayStatus.Completed, blocks = blocks1
+      )
+    ).tryGet()
 
-  #   (await repo.putCidAndProof(treeCid1, 1, sharedBlock.cid, proof1)).tryGet()
-  #   check (await repo.blockRefCount(sharedBlock.cid)).tryGet() == 1.Natural
+    # Put dataset1
+    let
+      proof1_0 = tree1.getProof(0).tryGet()
+      proof1_1 = tree1.getProof(1).tryGet()
 
-  #   (await repo.putCidAndProof(treeCid2, 0, sharedBlock.cid, proof2)).tryGet()
-  #   check (await repo.blockRefCount(sharedBlock.cid)).tryGet() == 2.Natural
+    (
+      await repo.putLeafsAndBlocks(
+        treeCid1,
+        @[(blockPool[0], 0.Natural, proof1_0), (sharedBlock, 1.Natural, proof1_1)],
+      )
+    ).tryGet()
 
-  #   (await repo.delBlock(treeCid1, 1.Natural)).tryGet()
-  #   check (await repo.blockRefCount(sharedBlock.cid)).tryGet() == 1.Natural
-  #   check (await sharedBlock.cid in repo)
+    # Shared block should exist with refCount = 1
+    check (await repo.blockRefCount(sharedBlock.cid)).tryGet() == 1.Natural
 
-  #   (await repo.delBlock(treeCid2, 0.Natural)).tryGet()
-  #   check not (await sharedBlock.cid in repo)
+    # Create overlay for tree2
+    var blocks2 = BitSeq.init(2)
+    blocks2.setBit(0)
+    blocks2.setBit(1)
 
-  # test "should clear leaf metadata when block is deleted from dataset":
-  #   let
-  #     repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-  #         1000'nb)
-  #     dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
-  #     blk = dataset[0]
-  #     (manifest, tree) = makeManifestAndTree(dataset).tryGet()
-  #     treeCid = tree.rootCid.tryGet()
-  #     proof = tree.getProof(1).tryGet()
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid2, status = OverlayStatus.Completed, blocks = blocks2
+      )
+    ).tryGet()
 
-  #   (await repo.putBlock(blk)).tryGet()
-  #   (await repo.putCidAndProof(treeCid, 0.Natural, blk.cid, proof)).tryGet()
+    # Put dataset2
+    let
+      proof2_0 = tree2.getProof(0).tryGet()
+      proof2_1 = tree2.getProof(1).tryGet()
 
-  #   discard (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+    (
+      await repo.putLeafsAndBlocks(
+        treeCid2,
+        @[(sharedBlock, 0.Natural, proof2_0), (blockPool[2], 1.Natural, proof2_1)],
+      )
+    ).tryGet()
 
-  #   (await repo.delBlock(treeCid, 0.Natural)).tryGet()
+    # Shared block should now have refCount = 2
+    check (await repo.blockRefCount(sharedBlock.cid)).tryGet() == 2.Natural
 
-  #   let err = (await repo.getLeafMetadata(treeCid, 0.Natural)).error()
-  #   check err of BlockNotFoundError
+    # Delete from tree1
+    (await repo.delBlock(treeCid1, 1.Natural)).tryGet()
+    check (await repo.blockRefCount(sharedBlock.cid)).tryGet() == 1.Natural
+    check (await sharedBlock.cid in repo)
 
-  # test "should not fail when reinserting and deleting a previously deleted block (bug #1108)":
-  #   let
-  #     repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
-  #         1000'nb)
-  #     dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
-  #     blk = dataset[0]
-  #     (manifest, tree) = makeManifestAndTree(dataset).tryGet()
-  #     treeCid = tree.rootCid.tryGet()
-  #     proof = tree.getProof(1).tryGet()
+    # Delete from tree2
+    (await repo.delBlock(treeCid2, 0.Natural)).tryGet()
+    check not (await sharedBlock.cid in repo)
 
-  #   (await repo.putBlock(blk)).tryGet()
-  #   (await repo.putCidAndProof(treeCid, 0, blk.cid, proof)).tryGet()
+  test "Should clear leaf metadata when block is deleted from dataset":
+    let
+      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
+          1000'nb)
+      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      blk = dataset[0]
+      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
 
-  #   (await repo.delBlock(treeCid, 0.Natural)).tryGet()
-  #   (await repo.putBlock(blk)).tryGet()
-  #   (await repo.delBlock(treeCid, 0.Natural)).tryGet()
+    var blocks = BitSeq.init(1)
+
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      )
+    ).tryGet()
+
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    discard (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+
+    (await repo.delBlock(treeCid, 0.Natural)).tryGet()
+
+    let err = (await repo.getLeafMetadata(treeCid, 0.Natural)).error()
+    check err of BlockNotFoundError
+
+  test "Should not fail when reinserting and deleting a previously deleted block (bug #1108)":
+    let
+      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
+          1000'nb)
+      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      blk = dataset[0]
+      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    var blocks = BitSeq.init(1)
+    blocks.setBit(0)
+
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      )
+    ).tryGet()
+
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    (await repo.delBlock(treeCid, 0.Natural)).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.delBlock(treeCid, 0.Natural)).tryGet()
 
 # commonBlockStoreTests(
 #   "RepoStore Sql backend",
