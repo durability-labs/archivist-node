@@ -7,6 +7,7 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+import std/sets
 import std/tables
 import std/sugar
 
@@ -15,11 +16,13 @@ import pkg/chronos/futures
 import pkg/kvstore
 import pkg/libp2p/cid
 import pkg/metrics
+import pkg/stew/bitseqs
 import pkg/questionable
 import pkg/questionable/results
 
 import ./coders
 import ./types
+import ./overlays/coders
 import ../blockstore
 import ../keyutils
 import ../../blocktype
@@ -120,15 +123,16 @@ proc updateCounters*(
   ?await self.metaDs.tryPutAtomic(updates, maxRetries = 3, updateCountersMiddleware)
 
   if quotaDelta != 0:
-    self.quotaUsage.used = (self.quotaUsage.used.int + quotaDelta).NBytes
+    self.quotaUsage.used = max(0, self.quotaUsage.used.int + quotaDelta).NBytes
     archivist_repostore_bytes_used.set(self.quotaUsage.used.int64)
 
   if reservedDelta != 0:
-    self.quotaUsage.reserved = (self.quotaUsage.reserved.int + reservedDelta).NBytes
+    self.quotaUsage.reserved =
+      max(0, self.quotaUsage.reserved.int + reservedDelta).NBytes
     archivist_repostore_bytes_reserved.set(self.quotaUsage.reserved.int64)
 
   if blocksDelta != 0:
-    self.totalBlocks = (self.totalBlocks.int + blocksDelta).Natural
+    self.totalBlocks = max(0, self.totalBlocks.int + blocksDelta).Natural
     archivist_repostore_blocks.set(self.totalBlocks.int64)
 
   success()
@@ -244,26 +248,67 @@ proc putOrUpdateLeafBlockMeta*(
   ## Put or update lef and block metadata
   ##
 
-  let updates = blocks
-    .deduplicate()
-    .mapIt(
-      @[
+  # we only increase refcount for **NEW LEAFS**, if a leaf
+  # already esists, we skip the refCount.inc, thus we make
+  # a mapping of block rec -> leaf rec to be able to filter
+  # out inserts from updates
+  var
+    blkToLeafRecs: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
+    blocksBits = BitSeq.init(blocks.len)
+
+  for item in blocks:
+    let blkKey = ?blockMetaKey(item.blkCid)
+    blocksBits.setBit(item.index)
+
+    blkToLeafRecs.withValue(blkKey, pairs):
+      var (blkRawRec, leafsSet) = pairs[]
+
+      leafsSet.incl(
         KVRecord[LeafMetadata].init(
-          ?blockProofKey(treeCid, it.index),
-          LeafMetadata(blkCid: it.blkCid, proof: it.proof),
-        ).toRaw,
+          ?blockLeafKey(treeCid, item.index),
+          LeafMetadata(blkCid: item.blkCid, proof: item.proof),
+        ).toRaw
+      )
+
+      blkRawRec = KVRecord[BlockMetadata].init(
+        blkKey,
+        BlockMetadata(
+          refCount: max(1, leafsSet.len), cid: item.blkCid, size: item.blockSize
+        ),
+      ).toRaw
+
+      pairs[] = (blkRawRec, leafsSet)
+    do:
+      blkToLeafRecs[blkKey] = (
         KVRecord[BlockMetadata].init(
-          ?blockMetaKey(it.blkCid),
-          BlockMetadata(refCount: 1, cid: it.blkCid, size: it.blockSize),
+          blkKey, BlockMetadata(refCount: 1, cid: item.blkCid, size: item.blockSize)
         ).toRaw,
-      ]
-    ).concat
+        [
+          KVRecord[LeafMetadata].init(
+            ?blockLeafKey(treeCid, item.index),
+            LeafMetadata(blkCid: item.blkCid, proof: item.proof),
+          ).toRaw
+        ].toHashSet,
+      )
+
+  let overlayMeta = KVRecord[OverlayMetadata].init(
+    ?overlayKey(treeCid),
+    OverlayMetadata(
+      blocks: blocksBits,
+      status: OverlayStatus.Storing,
+      manifest: Cid.none,
+      expiry: self.clock.now() + self.overlayTtl.seconds,
+    ),
+  ).toRaw
 
   proc putLeafAndBlockMetaAtomic(
       records: seq[RawKVRecord], conflicts: seq[Key]
   ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
+    # Then, filter to only block meta keys in conflicts
     var records = records.mapIt((it.key, it)).toTable
-    let refreshed = ?await self.metaDs.get(conflicts)
+    let
+      refreshed = ?await self.metaDs.get(conflicts)
+      conflictSet = conflicts.toHashSet
 
     trace "Got refreshed leaf and block records",
       refreshed = refreshed.len, conflicts = conflicts.len
@@ -274,10 +319,30 @@ proc putOrUpdateLeafBlockMeta*(
       trace "Processing record", key = record.key
       if BlocksMetaKey.ancestor(record.key):
         var blockMeta = ?toRecord[BlockMetadata](record)
-        blockMeta.val.refCount += 1.Natural
-        trace "Updated refCount for",
-          cid = blockMeta.val.cid, refCount = blockMeta.val.refCount
-        record = blockMeta.toRaw
+        # Count only new leaf references (leaves NOT in conflict set)
+        blkToLeafRecs.withValue(record.key, pairs):
+          let (_, leafRecs) = pairs[]
+
+          let
+            # get the intersection
+            newLeafs = leafRecs.mapIt(it.key).toHashSet - conflictSet
+
+          if newLeafs.len > 0:
+            blockMeta.val.refCount += leafRecs.len.Natural
+            trace "Updated refCount for",
+              cid = blockMeta.val.cid,
+              refCount = blockMeta.val.refCount,
+              newLeafs = newLeafs.len
+          else:
+            trace "Skipping refCount increment (all leafs already existed)",
+              cid = blockMeta.val.cid, refCount = blockMeta.val.refCount
+
+          record = blockMeta.toRaw
+      elif ArchivistOverlaysKey.ancestor(record.key):
+        var overlayMetaRec = ?toRecord[OverlayMetadata](record)
+        overlayMetaRec.val.blocks.combine(blocksBits)
+        trace "Updated overlay meta", overlay = overlayMetaRec.val
+        record = overlayMetaRec.toRaw
 
       # update records
       records[record.key] = record
@@ -285,7 +350,9 @@ proc putOrUpdateLeafBlockMeta*(
     trace "Records to put ", records = records.len
     success toSeq(records.values)
 
-  trace "Put or update leaf and block metadata", treeCid, count = updates.len
+  let updates =
+    @[overlayMeta] & blkToLeafRecs.values.toSeq.mapIt(@[it[0]] & toSeq(it[1])).concat
+  trace "Put or update leaf and block metadata", treeCid, recordsCount = updates.len
   if err =? (
     await self.metaDs.tryPutAtomic(updates, maxRetries = 3, putLeafAndBlockMetaAtomic)
   ).errorOption:
@@ -330,14 +397,15 @@ proc delLeafBlockMetadata*(
     # block metadata), we can do this by packing multiple leafs into a single
     # key (sharding the tree storage essentially), this becomes relevant as well
     # when we flatten the tree
-    leafKeys = index.deduplicate().mapIt(?blockProofKey(treeCid, it))
+    uniqueIdxs = index.deduplicate()
+    leafKeys = uniqueIdxs.mapIt(?blockLeafKey(treeCid, it))
     # Get the leafs
     leafsMeta =
       (?await self.metaDs.get(leafKeys, LeafMetadata)).filterIt(not it.val.deleted)
     updateLeafsRecs = leafsMeta.mapIt(
       it.fromRecord(
         LeafMetadata(blkCid: it.val.blkCid, proof: it.val.proof, deleted: true)
-      ).toRaw
+      )
     )
 
     # Get the blocks
@@ -348,8 +416,24 @@ proc delLeafBlockMetadata*(
         BlockMetadata(
           refCount: max(0, it.val.refCount - 1), cid: it.val.cid, size: it.val.size
         )
-      ).toRaw
+      )
     )
+
+  var
+    overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
+    blockBits = overlayMeta.val.blocks
+
+  for i in uniqueIdxs:
+    blockBits.clearBit(i)
+
+  let updateOverlayRec = overlayMeta.fromRecord(
+    OverlayMetadata(
+      blocks: blockBits,
+      status: OverlayStatus.Deleting,
+      manifest: overlayMeta.val.manifest,
+      expiry: self.clock.now(),
+    )
+  )
 
   proc atomicUpdateDelMeta(
       records: seq[RawKVRecord], conflicts: seq[Key]
@@ -362,7 +446,7 @@ proc delLeafBlockMetadata*(
     for rec in refreshed:
       var record = rec
       trace "Processing record", key = record.key
-      if BlockProofKey.ancestor(record.key):
+      if BlockLeafKey.ancestor(record.key):
         var leaf = ?toRecord[LeafMetadata](record)
         leaf.val.deleted = true # mark for delete
         trace "Setting leaf to deleted", key = record.key
@@ -374,6 +458,11 @@ proc delLeafBlockMetadata*(
         trace "Decreassed refCount for block",
           key = record.key, refCount = blkMeta.val.refCount
         record = blkMeta.toRaw
+      elif ArchivistOverlaysKey.ancestor(record.key):
+        var overlayMetaRec = ?toRecord[OverlayMetadata](record)
+        overlayMetaRec.val = updateOverlayRec.val
+        trace "Updated overlay meta for delete", overlay = overlayMetaRec.val
+        record = overlayMetaRec.toRaw
       else:
         return failure(
           "Got an unknown key updating leaf and block metadata - key: " & $record.key
@@ -386,10 +475,12 @@ proc delLeafBlockMetadata*(
     success toSeq(records.values)
 
   ?await self.metaDs.tryPutAtomic(
-    updateLeafsRecs & updateBlksRecs, maxRetries = 3, atomicUpdateDelMeta
+    @[updateOverlayRec.toRaw] & updateLeafsRecs.mapIt(it.toRaw) &
+      updateBlksRecs.mapIt(it.toRaw),
+    maxRetries = 3,
+    atomicUpdateDelMeta,
   )
 
-  # if no retry, we need to get the records first
   let
     toDeleteLeafMeta =
       ?await self.metaDs.get(updateLeafsRecs.mapIt(it.key), LeafMetadata)
@@ -433,7 +524,7 @@ proc delLeafBlockMetadata*(
 proc getLeafMetadata*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!LeafMetadata] {.async: (raises: [CancelledError]).} =
-  let key = ?blockProofKey(treeCid, index)
+  let key = ?blockLeafKey(treeCid, index)
 
   without leafMd =? await self.metaDs.get(key, LeafMetadata), err:
     if err of KVStoreKeyNotFound:

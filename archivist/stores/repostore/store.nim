@@ -9,6 +9,9 @@
 
 {.push raises: [].}
 
+import std/sets
+import std/sugar
+
 import pkg/chronos
 import pkg/chronos/futures
 import pkg/kvstore
@@ -92,7 +95,9 @@ method getBlock*(
 
 method putCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
-): Future[?!void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.
+    async: (raises: [CancelledError]), deprecated: "Use putLeafAndBlock"
+.} =
   ## Put a block to the blockstore
   ##
 
@@ -113,11 +118,70 @@ method putCidAndProof*(
 method getCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!(Cid, ArchivistProof)] {.
-    async: (raises: [CancelledError], deprecated: "Use putLeafAndBlock")
+    async: (raises: [CancelledError], deprecated: "Use getBlockAndProof")
 .} =
   let leafMd = ?await self.getLeafMetadata(treeCid, index)
 
   success((leafMd.blkCid, leafMd.proof))
+
+method putLeafsAndBlocks*(
+    self: RepoStore, treeCid: Cid, items: seq[(Block, Natural, ArchivistProof)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Put multiple leafs and blocks as a batch (primary method)
+  ##
+
+  logScope:
+    treeCid = treeCid
+    totalItems = items.len
+
+  trace "Storing Leafs and Blocks"
+
+  if items.len == 0:
+    return success()
+
+  var
+    totalSize = 0
+    uniqeBlks: HashSet[Block] # filter out duplicate leafs for different tree branches
+
+  let blocks = collect(newSeq):
+    for (blk, idx, proof) in items.deduplicate():
+      if not blk.cid.isEmpty:
+        totalSize += blk.data.len
+        uniqeBlks.incl(blk)
+      (idx, blk.cid, proof, blk.data.len.NBytes)
+
+  trace "Putting blocks", actualBlocks = blocks.len, totalSize
+
+  if not self.available(totalSize.NBytes):
+    return failure(newException(QuotaNotEnoughError, "Blocks would exceed quota!"))
+
+  # Atomic metadata update (leaf + block refcount)
+  if err =? (await self.putOrUpdateLeafBlockMeta(treeCid, blocks)).errorOption:
+    trace "Unable to store Leaf and Block Metadata", err = err.msg
+    return failure(err)
+
+  trace "Writting blocks to disc", actualBlocks = blocks.len
+  # Write blocks to FS (best effort, idempotent)
+  let
+    records = uniqeBlks.mapIt(
+      RawKVRecord.init(?makePrefixKey(self.postFixLen, it.cid), it.data)
+    )
+    skipped = (?await self.repoDs.put(records)).toHashSet
+
+  # Count only unique blocks that were successfully written
+  var newBlocks, newBytes = 0
+  for record in records:
+    if record.key notin skipped:
+      newBytes += record.val.len
+      newBlocks += 1
+
+  if newBlocks > 0:
+    ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+
+  if onBlock =? self.onBlockStored:
+    await allFutures(uniqeBlks.mapIt(onBlock(it.cid)))
+
+  return success()
 
 method putLeafAndBlock*(
     self: RepoStore,
@@ -126,36 +190,10 @@ method putLeafAndBlock*(
     index: Natural,
     proof: ArchivistProof = nil,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  logScope:
-    treeCid = treeCid
-    index = index
-    blkCid = blk.cid
+  ## Put a leaf and block (wrapper for putLeafsAndBlocks)
+  ##
 
-  trace "Storing Leaf and Block"
-
-  if err =?
-      (await self.putOrUpdateLeafBlockMeta(treeCid, index, blk.cid, proof)).errorOption:
-    trace "Unable to store Leaf and Block Metadata", err = err.msg
-    return failure(err)
-
-  # we never update blocks on fs, we only insert
-  if err =? (
-    await self.repoDs.put(
-      RawKVRecord.init(?makePrefixKey(self.postFixLen, blk.cid), blk.data)
-    )
-  ).errorOption:
-    if err of KVConflictError:
-      trace "Block already in store", err = err.msg
-      return success()
-    else:
-      trace "Error writing block on disk", err = err.msg
-      return failure(err)
-
-  ?await self.updateCounters(quotaDelta = blk.data.len, blocksDelta = 1)
-  if onBlock =? self.onBlockStored:
-    await onBlock(blk.cid)
-
-  return success()
+  await self.putLeafsAndBlocks(treeCid, @[(blk, index, proof)])
 
 method getCid*(
     self: RepoStore, treeCid: Cid, index: Natural
