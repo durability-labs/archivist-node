@@ -6,14 +6,14 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-## Protobuf serialization for DatasetManager types
+## Protobuf serialization for OverlayMetadata
 ##
 ## ```protobuf
 ## message OverlayMetadata {
-##   uint32 status = 1;           # OverlayStatus enum
-##   bytes manifestCid = 2;       # Cid bytes
-##   int64 expiry = 3;            # SecondsSince1970
-##   bytes downloadedBlocks = 4;  # Bitmap (bit N = block N present)
+##   uint32 status = 1;      # OverlayStatus enum
+##   bytes manifest = 2;     # Cid bytes (optional, none for temp overlays)
+##   int64 expiry = 3;       # SecondsSince1970
+##   bytes blocks = 4;       # Bitmap (bit N = block N present)
 ## }
 ## ```
 
@@ -38,8 +38,9 @@ proc encode*(meta: OverlayMetadata): seq[byte] =
     pb.write(2, manifest.data.buffer)
   pb.write(3, meta.expiry.uint64)
 
-  if meta.blocks.len > 0:
-    pb.write(4, seq[byte] meta.blocks)
+  let blocksBytes = seq[byte](meta.blocks)
+  if blocksBytes.len > 0:
+    pb.write(4, blocksBytes)
 
   pb.finish()
   pb.buffer
@@ -59,20 +60,24 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
     return failure("Unable to decode `status` from OverlayMetadata")
 
   if pb.getField(2, manifest).isErr:
-    return failure("Unable to decode `manifestCid` from OverlayMetadata")
+    return failure("Unable to decode `manifest` from OverlayMetadata")
 
   if pb.getField(3, expiry).isErr:
     return failure("Unable to decode `expiry` from OverlayMetadata")
 
   discard pb.getField(4, blocks) # Optional field
 
-  let
-    cid = ?Cid.init(manifest).mapFailure
-    meta = OverlayMetadata(
-      status: OverlayStatus(status),
-      manifest: some(cid),
-      expiry: expiry.int64,
-      blocks: BitSeq blocks,
-    )
+  let cidOpt =
+    if manifest.len > 0:
+      (?Cid.init(manifest).mapFailure).some
+    else:
+      Cid.none
+
+  let meta = OverlayMetadata(
+    status: OverlayStatus(status),
+    manifest: cidOpt,
+    expiry: expiry.int64,
+    blocks: BitSeq blocks,
+  )
 
   success meta

@@ -12,6 +12,7 @@
 
 import std/algorithm
 import std/oids
+import std/strutils
 
 import pkg/chronos
 import pkg/kvstore
@@ -23,6 +24,7 @@ import pkg/questionable/results
 
 import ./coders
 import ../types
+import ../operations
 import ../../keyutils
 import ../../../clock
 import ../../../archivisttypes
@@ -215,7 +217,7 @@ proc createTmpOverlay*(
       status: OverlayStatus.Storing,
       manifest: Cid.none,
       expiry: self.clock.now() + expiry.seconds,
-      blocks: BitSeq.init(0)
+      blocks: BitSeq.init(0),
     ),
   )
 
@@ -223,5 +225,78 @@ proc createTmpOverlay*(
 
 proc dropOverlay*(
     self: RepoStore, treeCid: Cid
-): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
-  self.deleteOverlayMetadata(treeCid)
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Drop an overlay and delete all attached blocks.
+  ##
+  ## Queries all leaf records under /meta/leafs/{treeCid}/*, calls
+  ## delLeafBlockMetadata to decrement refcounts and delete blocks at
+  ## refCount=0, then deletes the overlay metadata record.
+  ##
+
+  logScope:
+    treeCid = treeCid
+
+  trace "Dropping overlay and cleaning up blocks"
+
+  # Query all leaf records for this tree
+  let
+    queryKey = ?blockProofQueryKey(treeCid)
+    iter = ?(await query(self.metaDs, Query.init(queryKey), LeafMetadata))
+    leafRecords = ?await iter.fetchAll()
+
+  trace "Found leaf records to delete", count = leafRecords.len
+
+  # Extract indices from the leaf keys
+  var indices: seq[Natural]
+  for record in leafRecords:
+    # Key format: /meta/leafs/{treeCid}/{index}
+    # Extract index from last namespace segment
+    let indexStr = record.key.value
+    without idx =? parseInt(indexStr).catch, err:
+      return failure(
+        newException(ValueError, "Invalid index in key: " & indexStr & " - " & err.msg)
+      )
+    indices.add(idx.Natural)
+
+  # Delete leaf metadata and decrement refcounts (two-phase atomic)
+  if indices.len > 0:
+    ?await delLeafBlockMetadata(self, treeCid, indices)
+    trace "Deleted leaf metadata and updated refcounts", count = indices.len
+
+  # Delete overlay metadata
+  ?await self.deleteOverlayMetadata(treeCid)
+  trace "Overlay dropped successfully"
+
+  success()
+
+proc finalizeOverlay*(
+    self: RepoStore, tmpCid, realTreeCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Promote a temp overlay to a real overlay.
+  ##
+  ## Moves all leaf records from /meta/leafs/{tmpCid}/* to
+  ## /meta/leafs/{realTreeCid}/* using a native key-prefix move,
+  ## then moves the overlay metadata record.
+  ## Block metadata is unchanged (keyed by blkCid, not treeCid).
+  ##
+
+  logScope:
+    tmpCid = tmpCid
+    realTreeCid = realTreeCid
+
+  trace "Finalizing temp overlay"
+
+  # Move leaf records: /meta/leafs/{tmpCid}/* → /meta/leafs/{realTreeCid}/*
+  let
+    oldLeafPrefix = ?(BlockLeafKey / $tmpCid)
+    newLeafPrefix = ?(BlockLeafKey / $realTreeCid)
+
+  ?await self.metaDs.moveKeysAtomic(oldLeafPrefix, newLeafPrefix)
+
+  # Move overlay metadata (single record — use put+delete)
+  let meta = ?await self.getOverlayMetadata(tmpCid)
+  ?await self.putOverlayMetadata(realTreeCid, meta)
+  ?await self.deleteOverlayMetadata(tmpCid)
+
+  trace "Temp overlay finalized successfully"
+  success()
