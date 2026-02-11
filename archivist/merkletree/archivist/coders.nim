@@ -45,7 +45,7 @@ proc decode*(_: type ArchivistTree, data: openArray[byte]): ?!ArchivistTree =
     return failure("Invalid MultiCodec code " & $mcodecCode)
 
   var
-    nodesBuff: seq[openArray[byte]]
+    nodesBuff: seq[seq[byte]]
     nodes: seq[ByteHash]
 
   if ?pb.getRepeatedField(3, nodesBuff).mapFailure:

@@ -35,6 +35,12 @@ type
     disposeImpl: AsyncDispose
     disposedImpl: AsyncIsDisposed
 
+proc defaultAsyncDispose(): Future[void] {.async.} =
+  discard
+
+proc defaultAsyncIsDisposed(): bool =
+  false
+
 proc finish*[T](self: AsyncIter[T]): void =
   self.finished = true
 
@@ -76,18 +82,13 @@ proc new*[T](
     _: type AsyncIter[T],
     genNext: GenNext[Future[T]],
     isFinished: IsFinished,
-    dispose: AsyncDispose,
-    isDisposed: AsyncIsDisposed,
+    dispose: AsyncDispose = defaultAsyncDispose,
+    isDisposed: AsyncIsDisposed = defaultAsyncIsDisposed,
     finishOnErr: bool = true,
 ): AsyncIter[T] =
   ## Creates a new Iter using elements returned by supplier function `genNext`.
   ## Iter is finished whenever `isFinished` returns true.
   ## Caller is responsible for calling `dispose()` when done with the iterator.
-  ##
-  ## IMPORTANT: dispose and isDisposed callbacks are REQUIRED - passing nil will assert.
-
-  doAssert dispose != nil, "dispose callback is required"
-  doAssert isDisposed != nil, "isDisposed callback is required"
 
   var iter = AsyncIter[T](disposeImpl: dispose, disposedImpl: isDisposed)
 

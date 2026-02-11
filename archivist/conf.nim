@@ -91,7 +91,6 @@ type
   RepoKind* = enum
     repoFS = "fs"
     repoSQLite = "sqlite"
-    repoLevelDb = "leveldb"
 
   NodeConf* = object
     configFile* {.
@@ -220,7 +219,7 @@ type
     .}: Option[string]
 
     repoKind* {.
-      desc: "Backend for main repo store (fs, sqlite, leveldb)",
+      desc: "Backend for main repo store (fs, sqlite)",
       defaultValueDesc: "fs",
       defaultValue: repoFS,
       name: "repo-kind"

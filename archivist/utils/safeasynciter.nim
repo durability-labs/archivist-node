@@ -71,6 +71,12 @@ type
     disposeImpl: SafeDispose
     disposedImpl: SafeIsDisposed
 
+proc defaultSafeDispose(): Future[?!void] {.async: (raises: []).} =
+  success()
+
+proc defaultSafeIsDisposed(): bool =
+  false
+
 proc flatMap[T, U](
     fut: auto, fn: SafeFunction[?!T, ?!U]
 ): Future[?!U] {.async: (raises: [CancelledError]).} =
@@ -94,18 +100,13 @@ proc new*[T](
     _: type SafeAsyncIter[T],
     genNext: SafeGenNext[?!T],
     isFinished: SafeIsFinished,
-    dispose: SafeDispose,
-    isDisposed: SafeIsDisposed,
+    dispose: SafeDispose = defaultSafeDispose,
+    isDisposed: SafeIsDisposed = defaultSafeIsDisposed,
     finishOnErr: bool = true,
 ): SafeAsyncIter[T] =
   ## Creates a new Iter using elements returned by supplier function `genNext`.
   ## Iter is finished whenever `isFinished` returns true.
   ## Caller is responsible for calling `dispose()` when done with the iterator.
-  ##
-  ## IMPORTANT: dispose and isDisposed callbacks are REQUIRED - passing nil will assert.
-
-  doAssert dispose != nil, "dispose callback is required"
-  doAssert isDisposed != nil, "isDisposed callback is required"
 
   proc next(iter: SafeAsyncIter[T]): Future[?!T] {.async: (raises: [CancelledError]).} =
     try:

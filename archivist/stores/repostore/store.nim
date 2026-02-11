@@ -257,9 +257,7 @@ proc blockRefCount*(
 
 method delBlock*(
     self: RepoStore, cid: Cid
-): Future[?!void] {.
-    async: (raises: [CancelledError]), deprecated: "Use delBlock(treeCid, idx)"
-.} =
+): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Delete a block from the blockstore when block refCount is 0 or block is expired
   ##
 

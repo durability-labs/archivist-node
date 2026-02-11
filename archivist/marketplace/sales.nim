@@ -2,7 +2,6 @@ import std/sequtils
 import pkg/questionable
 import pkg/questionable/results
 import pkg/stint
-import pkg/datastore
 import ../clock
 import ../stores
 import ../logutils

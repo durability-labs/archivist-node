@@ -16,7 +16,8 @@ func new*(_: type AvailabilityStore, store: KVStore): AvailabilityStore =
 proc load*(
     availability: AvailabilityStore
 ): Future[?!AvailabilityTerms] {.async: (raises: [CancelledError]).} =
-  await get[AvailabilityTerms](availability.store, DataStoreKey)
+  let record = ?await get(availability.store, DataStoreKey, AvailabilityTerms)
+  success(record.val)
 
 proc save*(
     availability: AvailabilityStore, terms: AvailabilityTerms

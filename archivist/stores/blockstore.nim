@@ -157,12 +157,7 @@ method ensureExpiry*(
 
 method delBlock*(
     self: BlockStore, cid: Cid
-): Future[?!void] {.
-    base,
-    async: (raises: [CancelledError]),
-    gcsafe,
-    deprecated: "Use delBlock(treeCid, idx)"
-.} =
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Delete a block from the blockstore
   ##
 
@@ -231,7 +226,8 @@ method getBlockAndProof*(
   ##
 
   if not address.leaf:
-    return failure(newException(ArchivistError, "getBlockAndProof requires a leaf address"))
+    return
+      failure(newException(ArchivistError, "getBlockAndProof requires a leaf address"))
 
   await self.getBlockAndProof(address.treeCid, address.index)
 

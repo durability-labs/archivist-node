@@ -18,7 +18,7 @@ import pkg/libp2p/[cid, multicodec, routing_record, signed_envelope]
 import pkg/questionable
 import pkg/questionable/results
 import pkg/contractabi/address as ca
-import pkg/datastore
+import pkg/kvstore
 import pkg/archivistdht/discv5/[routing_table, protocol as discv5]
 from pkg/nimcrypto import keccak256
 
@@ -220,7 +220,7 @@ proc new*(
     bindPort = 0.Port,
     announceAddrs: openArray[MultiAddress],
     bootstrapNodes: openArray[SignedPeerRecord] = [],
-    store: Datastore = SQLiteDatastore.new(datastore.Memory).expect("Should not fail!"),
+    store: KVStore,
 ): Discovery =
   ## Create a new Discovery node instance for the given key and datastore
   ##

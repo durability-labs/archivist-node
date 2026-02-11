@@ -80,8 +80,4 @@ proc allFinishedValues*[T](
 
   # here, we know there are no failed futures in "futs"
   # and we are only interested in those that completed successfully
-  let values = collect:
-    for b in futs:
-      if b.finished:
-        b.value
-  return success values
+  return success futs.filterIt(it.finished).mapIt(it.value)

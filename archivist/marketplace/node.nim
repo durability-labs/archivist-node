@@ -1,7 +1,7 @@
 import pkg/ethers
 import pkg/chronos
 import pkg/questionable/results
-import pkg/datastore/typedds
+import pkg/kvstore
 import ./purchasing
 import ./sales
 import ./validation
@@ -30,7 +30,7 @@ proc connect*(
     ethProviderUrl: string,
     ethPrivateKeyFile: string,
     storage: StorageInterface,
-    datastore: TypedDatastore,
+    datastore: KVStore,
     options = MarketplaceOptions(),
 ): Future[?!MarketplaceNode] {.async: (raises: [CancelledError]).} =
   let provider = ?await Provider.connect(ethProviderUrl, options)

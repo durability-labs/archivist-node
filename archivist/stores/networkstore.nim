@@ -166,10 +166,7 @@ method listBlocks*(
 
 method delBlock*(
     self: NetworkStore, cid: Cid
-): Future[?!void] {.
-    async: (raw: true, raises: [CancelledError]),
-    deprecated: "Use delBlock(treeCid, idx)"
-.} =
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Delete a block from the blockstore
   ##
 

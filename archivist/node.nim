@@ -206,12 +206,12 @@ proc fetchBatched*(
   #   )
 
   while not iter.finished:
-    let blockFutures = collect:
-      for i in 0 ..< batchSize:
-        if not iter.finished:
-          let address = BlockAddress.init(cid, iter.next())
-          if not (await address in self.networkStore) or fetchLocal:
-            self.networkStore.getBlock(address)
+    var blockFutures: seq[Future[?!bt.Block]]
+    for i in 0 ..< batchSize:
+      if not iter.finished:
+        let address = BlockAddress.init(cid, iter.next())
+        if not (await address in self.networkStore) or fetchLocal:
+          blockFutures.add(self.networkStore.getBlock(address))
 
     if blockFutures.len == 0:
       continue

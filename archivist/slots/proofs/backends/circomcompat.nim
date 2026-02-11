@@ -56,11 +56,13 @@ func normalizeInput*[SomeHash](
   ## inputs to the CIRCOM circuit for testing and debugging when one wishes
   ## to bypass the Rust FFI.
 
-  let normSamples = collect:
-    for sample in input.samples:
-      var merklePaths = sample.merklePaths
-      merklePaths.setLen(self.slotDepth)
+  var normSamples: seq[Sample[SomeHash]]
+  for sample in input.samples:
+    var merklePaths = sample.merklePaths
+    merklePaths.setLen(self.slotDepth)
+    normSamples.add(
       Sample[SomeHash](cellData: sample.cellData, merklePaths: merklePaths)
+    )
 
   var normSlotProof = input.slotProof
   normSlotProof.setLen(self.datasetDepth)
