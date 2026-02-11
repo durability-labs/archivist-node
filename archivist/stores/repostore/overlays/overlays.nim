@@ -102,15 +102,16 @@ proc listOverlays*(
 
   proc mapCids(
       iterRes: ?!(?KVRecord[OverlayMetadata])
-  ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+  ): Future[?(?!Cid)] {.async: (raises: [CancelledError]).} =
     if maybeRecord =? iterRes and record =? maybeRecord:
-      return success ?record.key.toCid
-    else:
-      return
-        failure(newException(ArchivistError, "Unable to construct Cid from record"))
+      without cid =? record.key.toCid, err:
+        trace "Unable to construct Cid from key", error = err.msg
+        return none(?!Cid)
+      return some(success(cid))
+    return none(?!Cid)
 
   let safeQueryIter = iter.toSafeAsyncIter()
-  success map[?KVRecord[OverlayMetadata], Cid](safeQueryIter, mapCids)
+  success await mapFilter[?KVRecord[OverlayMetadata], Cid](safeQueryIter, mapCids)
 
 proc listOverlaysInState*(
     self: RepoStore, status: OverlayStatus
