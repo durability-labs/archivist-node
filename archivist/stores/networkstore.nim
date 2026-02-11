@@ -9,6 +9,8 @@
 
 {.push raises: [].}
 
+import std/sequtils
+
 import pkg/chronos
 import pkg/libp2p
 import pkg/questionable/results
@@ -78,6 +80,16 @@ method putBlock*(
   await self.engine.resolveBlocks(@[blk])
   return success()
 
+method putLeafsAndBlocks*(
+    self: NetworkStore, treeCid: Cid, items: seq[(Block, Natural, ArchivistProof)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store leafs and blocks locally and notify the network
+  ##
+
+  ?await self.localStore.putLeafsAndBlocks(treeCid, items)
+  await self.engine.resolveBlocks(items.mapIt(it[0]))
+  return success()
+
 method putCidAndProof*(
     self: NetworkStore,
     treeCid: Cid,
@@ -90,18 +102,33 @@ method putCidAndProof*(
 method getCidAndProof*(
     self: NetworkStore, treeCid: Cid, index: Natural
 ): Future[?!(Cid, ArchivistProof)] {.async: (raw: true, raises: [CancelledError]).} =
-  ## Get a block proof from the blockstore
+  ## Get a block CID and proof from the blockstore
   ##
 
   self.localStore.getCidAndProof(treeCid, index)
+
+method getBlockAndProof*(
+    self: NetworkStore, treeCid: Cid, index: Natural
+): Future[?!(Block, ArchivistProof)] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get a block and proof from the local store
+  ##
+
+  self.localStore.getBlockAndProof(treeCid, index)
+
+method delBlock*(
+    self: NetworkStore, treeCid: Cid, index: Natural
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Delete a block by tree CID and index
+  ##
+
+  self.localStore.delBlock(treeCid, index)
 
 method ensureExpiry*(
     self: NetworkStore, cid: Cid, expiry: SecondsSince1970
 ): Future[?!void] {.
     async: (raises: [CancelledError]), deprecated: "deprecated, will be removed"
 .} =
-  ## Ensure that block's assosicated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
+  ## Ensure that block's associated expiry is at least given timestamp
   ##
 
   without blockCheck =? await self.localStore.hasBlock(cid), err:
@@ -120,7 +147,6 @@ method ensureExpiry*(
     async: (raises: [CancelledError]), deprecated: "deprecated, will be removed"
 .} =
   ## Ensure that block's associated expiry is at least given timestamp
-  ## If the current expiry is lower then it is updated to the given one, otherwise it is left intact
   ##
 
   without blockCheck =? await self.localStore.hasBlock(treeCid, index), err:

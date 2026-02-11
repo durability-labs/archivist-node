@@ -59,11 +59,14 @@ method getCid*(
 
 method getBlock*(
     self: BlockStore, address: BlockAddress
-): Future[?!Block] {.base, async: (raises: [CancelledError]), gcsafe.} =
-  ## Get a block from the blockstore
+): Future[?!Block] {.base, async: (raw: true, raises: [CancelledError]), gcsafe.} =
+  ## Get a block from the blockstore — routes to leaf or cid variant
   ##
 
-  raiseAssert("getBlock by addr not implemented!")
+  if address.leaf:
+    self.getBlock(address.treeCid, address.index)
+  else:
+    self.getBlock(address.cid)
 
 method completeBlock*(
     self: BlockStore, address: BlockAddress, blk: Block
@@ -110,9 +113,7 @@ method putLeafAndBlock*(
 
 method putCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: ArchivistProof
-): Future[?!void] {.
-    base, async: (raises: [CancelledError]), gcsafe, deprecated: "Use putLeafAndBlock"
-.} =
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Put a block proof to the blockstore
   ##
 
@@ -121,7 +122,7 @@ method putCidAndProof*(
 method getCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural
 ): Future[?!(Cid, ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
-  ## Get a block proof from the blockstore
+  ## Get a block CID and proof from the blockstore
   ##
 
   raiseAssert("getCidAndProof not implemented!")
@@ -226,10 +227,13 @@ method getBlockRange*(
 method getBlockAndProof*(
     self: BlockStore, address: BlockAddress
 ): Future[?!(Block, ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
-  ## Get a block and proof by BlockAddress
+  ## Get a block and proof by BlockAddress — requires leaf address
   ##
 
-  raiseAssert("getBlockAndProof by address not implemented!")
+  if not address.leaf:
+    return failure(newException(ArchivistError, "getBlockAndProof requires a leaf address"))
+
+  await self.getBlockAndProof(address.treeCid, address.index)
 
 method getBlocksAndProofs*(
     self: BlockStore, addresses: seq[BlockAddress]

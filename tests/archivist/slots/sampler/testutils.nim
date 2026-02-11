@@ -14,7 +14,6 @@ import pkg/archivist/blocktype as bt
 import pkg/archivist/marketplace/contracts/requests
 import pkg/archivist/marketplace/contracts
 import pkg/archivist/merkletree
-import pkg/archivist/stores/cachestore
 import pkg/archivist/slots/types
 import pkg/archivist/slots/sampler/utils
 import pkg/archivist/utils/json

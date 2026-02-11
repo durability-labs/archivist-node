@@ -77,22 +77,9 @@ method getBlock*(
   let leafMd = ?await self.getLeafMetadata(treeCid, index)
   await self.getBlock(leafMd.blkCid)
 
-method getBlock*(
-    self: RepoStore, address: BlockAddress
-): Future[?!Block] {.async: (raw: true, raises: [CancelledError]).} =
-  ## Get a block from the blockstore
-  ##
-
-  if address.leaf:
-    self.getBlock(address.treeCid, address.index)
-  else:
-    self.getBlock(address.cid)
-
 method putCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
-): Future[?!void] {.
-    async: (raises: [CancelledError]), deprecated: "Use putLeafAndBlock"
-.} =
+): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Put a block to the blockstore
   ##
 
@@ -112,9 +99,7 @@ method putCidAndProof*(
 
 method getCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
-): Future[?!(Cid, ArchivistProof)] {.
-    async: (raises: [CancelledError], deprecated: "Use getBlockAndProof")
-.} =
+): Future[?!(Cid, ArchivistProof)] {.async: (raises: [CancelledError]).} =
   let leafMd = ?await self.getLeafMetadata(treeCid, index)
 
   success((leafMd.blkCid, leafMd.proof))
