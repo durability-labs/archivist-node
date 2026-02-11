@@ -3,7 +3,7 @@ import std/sequtils
 import std/times
 import std/typetraits
 
-# import pkg/archivist/marketplace/contracts/requests # Commented for kvstore migration
+import pkg/archivist/marketplace/contracts/requests
 import pkg/archivist/rng
 import pkg/archivist/marketplace/contracts/proofs
 import pkg/archivist/marketplace/sales/slotqueue
@@ -77,10 +77,10 @@ proc example*(_: type StorageRequest): StorageRequest =
     nonce: Nonce.example,
   )
 
-# proc example*(_: type Slot): Slot = # Commented for kvstore migration
-#   let request = StorageRequest.example # Commented for kvstore migration
-#   let slotIndex = rand(request.ask.slots.int).uint64 # Commented for kvstore migration
-#   Slot(request: request, slotIndex: slotIndex) # Commented for kvstore migration
+proc example*(_: type Slot): Slot =
+  let request = StorageRequest.example
+  let slotIndex = rand(request.ask.slots.int).uint64
+  Slot(request: request, slotIndex: slotIndex)
 
 proc example*(_: type SlotQueueItem): SlotQueueItem =
   let request = StorageRequest.example
@@ -88,17 +88,17 @@ proc example*(_: type SlotQueueItem): SlotQueueItem =
   let collateral = request.ask.collateralPerSlot
   SlotQueueItem.init(request, slot.slotIndex.uint16, collateral)
 
-# proc example(_: type G1Point): G1Point = # Commented for kvstore migration
-#   G1Point(x: UInt256.example, y: UInt256.example) # Commented for kvstore migration
+proc example(_: type G1Point): G1Point =
+  G1Point(x: UInt256.example, y: UInt256.example)
 
-# proc example(_: type G2Point): G2Point = # Commented for kvstore migration
-#   G2Point( # Commented for kvstore migration
-#     x: Fp2Element(real: UInt256.example, imag: UInt256.example), # Commented for kvstore migration
-#     y: Fp2Element(real: UInt256.example, imag: UInt256.example), # Commented for kvstore migration
-#   ) # Commented for kvstore migration
+proc example(_: type G2Point): G2Point =
+  G2Point(
+    x: Fp2Element(real: UInt256.example, imag: UInt256.example),
+    y: Fp2Element(real: UInt256.example, imag: UInt256.example),
+  )
 
-# proc example*(_: type Groth16Proof): Groth16Proof = # Commented for kvstore migration
-#   Groth16Proof(a: G1Point.example, b: G2Point.example, c: G1Point.example) # Commented for kvstore migration
+proc example*(_: type Groth16Proof): Groth16Proof =
+  Groth16Proof(a: G1Point.example, b: G2Point.example, c: G1Point.example)
 
 proc example*(_: type RandomChunker, blocks: int): Future[seq[byte]] {.async.} =
   let rng = Rng.instance()

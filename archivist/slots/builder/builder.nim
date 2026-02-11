@@ -21,6 +21,7 @@ import pkg/constantine/math/io/io_fields
 
 import ../../logutils
 import ../../utils
+import ../../utils/poseidon2digest
 import ../../stores
 import ../../manifest
 import ../../merkletree

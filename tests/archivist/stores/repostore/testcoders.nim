@@ -10,6 +10,7 @@ import pkg/archivist/stores/repostore/types
 import pkg/archivist/stores/repostore/coders
 
 import ../../helpers
+import ../../examples
 
 suite "Test coders":
   proc rand(T: type NBytes): T =
@@ -22,16 +23,11 @@ suite "Test coders":
   proc rand(T: type QuotaUsage): T =
     QuotaUsage(used: rand(NBytes), reserved: rand(NBytes))
 
+  proc rand(T: type Cid): T =
+    Cid.example
+
   proc rand(T: type BlockMetadata): T =
-    BlockMetadata(
-      expiry: rand(SecondsSince1970), size: rand(NBytes), refCount: rand(Natural)
-    )
-
-  proc rand(T: type DeleteResult): T =
-    DeleteResult(kind: rand(DeleteResultKind), released: rand(NBytes))
-
-  proc rand(T: type StoreResult): T =
-    StoreResult(kind: rand(StoreResultKind), used: rand(NBytes))
+    BlockMetadata(cid: rand(Cid), size: rand(NBytes), refCount: rand(Natural))
 
   test "Natural encode/decode":
     for val in newSeqWith(100, rand(Natural)) & @[Natural.low, Natural.high]:
@@ -47,13 +43,3 @@ suite "Test coders":
     for val in newSeqWith(100, rand(BlockMetadata)):
       check:
         success(val) == BlockMetadata.decode(encode(val))
-
-  test "DeleteResult encode/decode":
-    for val in newSeqWith(100, rand(DeleteResult)):
-      check:
-        success(val) == DeleteResult.decode(encode(val))
-
-  test "StoreResult encode/decode":
-    for val in newSeqWith(100, rand(StoreResult)):
-      check:
-        success(val) == StoreResult.decode(encode(val))
