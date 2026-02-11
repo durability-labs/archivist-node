@@ -8,9 +8,12 @@ proc connect*(
     _: type Provider, url: string, options: MarketplaceOptions
 ): Future[?!Provider] {.async: (raises: [CancelledError]).} =
   try:
-    let provider = await JsonRpcProvider.connect(
-      url, maxPriorityFeePerGas = options.maxPriorityFeePerGas.u256
+    let jsonRpcOptions = JsonRpcOptions(
+      maxPriorityFeePerGas: options.maxPriorityFeePerGas.u256,
+      httpPipelining: true,
+      httpConcurrencyLimit: some 10,
     )
+    let provider = await JsonRpcProvider.connect(url, jsonRpcOptions)
     success Provider(provider)
   except JsonRpcProviderError as error:
     failure error
