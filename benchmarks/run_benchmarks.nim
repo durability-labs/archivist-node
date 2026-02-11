@@ -3,7 +3,6 @@ import std/[times, os, strutils, terminal]
 
 import pkg/questionable
 import pkg/questionable/results
-import pkg/datastore
 
 import pkg/archivist/[rng, stores, merkletree, archivisttypes, slots]
 import pkg/archivist/utils/[json, poseidon2digest]
