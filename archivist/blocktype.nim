@@ -52,7 +52,7 @@ logutils.formatIt(LogFormat.json, BlockAddress):
   %it
 
 func hash*(blk: Block): Hash =
-  cast[pointer](blk).hash
+  hash(blk.cid.data.buffer)
 
 proc `==`*(a, b: BlockAddress): bool =
   a.leaf == b.leaf and (
