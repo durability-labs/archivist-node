@@ -8,6 +8,9 @@ import pkg/libp2p/errors
 import pkg/libp2p/routing_record
 import pkg/archivistdht/discv5/protocol as discv5
 
+import pkg/kvstore
+import pkg/taskpools
+
 import pkg/archivist/rng
 import pkg/archivist/blockexchange
 import pkg/archivist/stores
@@ -37,8 +40,10 @@ asyncchecksuite "NetworkStore engine basic":
     pendingBlocks: PendingBlocksManager
     blocks: seq[Block]
     done: Future[void]
+    tp: Taskpool
 
   setup:
+    tp = Taskpool.new(num_threads = 4)
     rng = Rng.instance()
     seckey = PrivateKey.random(rng[]).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
@@ -72,7 +77,13 @@ asyncchecksuite "NetworkStore engine basic":
 
     let
       network = BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
-      localStore = CacheStore.new(blocks.mapIt(it))
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
+    for blk in blocks:
+      (await localStore.putBlock(blk)).tryGet()
+    let
       discovery = DiscoveryEngine.new(
         localStore, peerStore, network, blockDiscovery, pendingBlocks
       )
@@ -99,7 +110,10 @@ asyncchecksuite "NetworkStore engine basic":
     let
       network = BlockExcNetwork(request: BlockExcRequest(sendAccount: sendAccount))
 
-      localStore = CacheStore.new()
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
       discovery = DiscoveryEngine.new(
         localStore, peerStore, network, blockDiscovery, pendingBlocks
       )
@@ -114,6 +128,9 @@ asyncchecksuite "NetworkStore engine basic":
     await engine.setupPeer(peerId)
 
     await done.wait(100.millis)
+
+  teardown:
+    tp.shutdown()
 
 asyncchecksuite "NetworkStore engine handlers":
   var
@@ -132,6 +149,7 @@ asyncchecksuite "NetworkStore engine handlers":
     peerCtx: BlockExcPeerCtx
     localStore: BlockStore
     blocks: seq[Block]
+    tp: Taskpool
 
   setup:
     rng = Rng.instance()
@@ -151,7 +169,11 @@ asyncchecksuite "NetworkStore engine handlers":
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
-    localStore = CacheStore.new()
+    tp = Taskpool.new(num_threads = 4)
+    localStore = RepoStore.new(
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+    )
     network = BlockExcNetwork()
 
     discovery =
@@ -165,6 +187,9 @@ asyncchecksuite "NetworkStore engine handlers":
 
     peerCtx = BlockExcPeerCtx(id: peerId)
     engine.peers.add(peerCtx)
+
+  teardown:
+    tp.shutdown()
 
   test "Should schedule block requests":
     let wantList = makeWantList(blocks.mapIt(it.cid), wantType = WantType.WantBlock)
@@ -378,6 +403,7 @@ asyncchecksuite "Block Download":
     peerCtx: BlockExcPeerCtx
     localStore: BlockStore
     blocks: seq[Block]
+    tp: Taskpool
 
   setup:
     rng = Rng.instance()
@@ -397,7 +423,11 @@ asyncchecksuite "Block Download":
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
-    localStore = CacheStore.new()
+    tp = Taskpool.new(num_threads = 4)
+    localStore = RepoStore.new(
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+    )
     network = BlockExcNetwork()
 
     discovery =
@@ -411,6 +441,9 @@ asyncchecksuite "Block Download":
 
     peerCtx = BlockExcPeerCtx(id: peerId)
     engine.peers.add(peerCtx)
+
+  teardown:
+    tp.shutdown()
 
   test "Should exhaust retries":
     var
@@ -535,6 +568,7 @@ asyncchecksuite "Task Handler":
     discovery: DiscoveryEngine
     advertiser: Advertiser
     localStore: BlockStore
+    tp: Taskpool
 
     peersCtx: seq[BlockExcPeerCtx]
     peers: seq[PeerId]
@@ -557,7 +591,11 @@ asyncchecksuite "Task Handler":
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
-    localStore = CacheStore.new()
+    tp = Taskpool.new(num_threads = 4)
+    localStore = RepoStore.new(
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+    )
     network = BlockExcNetwork()
 
     discovery =
@@ -578,6 +616,9 @@ asyncchecksuite "Task Handler":
       peerStore.add(peersCtx[i])
 
     engine.pricing = Pricing.example.some
+
+  teardown:
+    tp.shutdown()
 
   test "Should send want-blocks in priority order":
     proc sendBlocksDelivery(

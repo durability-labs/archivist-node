@@ -1,22 +1,24 @@
 import pkg/questionable/results
-import pkg/datastore/typedds
+import pkg/kvstore
+import pkg/taskpools
 import archivist/marketplace/availability/store
 import archivist/marketplace/availability/terms
 import ../../../asynctest
-import ../../../helpers/templeveldb
 import ./examples
 
 suite "availability store":
   var store: AvailabilityStore
-  var database: TempLevelDb
+  var database: KVStore
+  var tp: Taskpool
 
   setup:
-    database = TempLevelDb.new()
-    let datastore = TypedDatastore.init(database.newDb())
-    store = AvailabilityStore.new(datastore)
+    tp = Taskpool.new(num_threads = 4)
+    database = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    store = AvailabilityStore.new(database)
 
   teardown:
-    await database.destroyDb()
+    (await database.close()).tryGet()
+    tp.shutdown()
 
   test "cannot load when there's are no terms saved":
     let loaded = await store.load()

@@ -22,6 +22,7 @@ import ../../examples
 import ../helpers
 
 import ./helpers
+import ../helpers/nodeutils
 
 proc fetchStreamData(stream: LPStream, datasetSize: int): Future[seq[byte]] {.async.} =
   var buf = newSeq[byte](datasetSize)

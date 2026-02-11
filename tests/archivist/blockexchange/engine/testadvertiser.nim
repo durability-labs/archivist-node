@@ -1,6 +1,8 @@
 import pkg/chronos
 import pkg/libp2p/routing_record
 import pkg/archivistdht/discv5/protocol as discv5
+import pkg/kvstore
+import pkg/taskpools
 
 import pkg/archivist/blockexchange
 import pkg/archivist/stores
@@ -20,6 +22,7 @@ asyncchecksuite "Advertiser":
     localStore: BlockStore
     advertiser: Advertiser
     advertised: seq[Cid]
+    tp: Taskpool
   let
     manifest = Manifest.new(
       treeCid = Cid.example, blockSize = 123.NBytes, datasetSize = 234.NBytes
@@ -29,7 +32,11 @@ asyncchecksuite "Advertiser":
 
   setup:
     blockDiscovery = MockDiscovery.new()
-    localStore = CacheStore.new()
+    tp = Taskpool.new(num_threads = 4)
+    let
+      repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    localStore = RepoStore.new(repoDs, metaDs)
 
     advertised = newSeq[Cid]()
     blockDiscovery.publishBlockProvideHandler = proc(
@@ -43,6 +50,7 @@ asyncchecksuite "Advertiser":
 
   teardown:
     await advertiser.stop()
+    tp.shutdown()
 
   proc waitTillQueueEmpty() {.async.} =
     check eventually advertiser.advertiseQueue.len == 0
@@ -84,7 +92,11 @@ asyncchecksuite "Advertiser":
     check manifest.treeCid in advertised
 
   test "Should advertise existing manifests and their trees":
-    let newStore = CacheStore.new([manifestBlk])
+    let
+      newRepoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      newMetaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      newStore = RepoStore.new(newRepoDs, newMetaDs)
+    (await newStore.putBlock(manifestBlk)).tryGet()
 
     await advertiser.stop()
     advertiser = Advertiser.new(newStore, blockDiscovery)

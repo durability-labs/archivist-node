@@ -15,6 +15,8 @@ import ../../../asynctest
 import ../../examples
 import ../../helpers
 
+import ../../helpers/nodeutils
+
 asyncchecksuite "NetworkStore engine - 2 nodes":
   var
     nodeCmps1, nodeCmps2: NodesComponents

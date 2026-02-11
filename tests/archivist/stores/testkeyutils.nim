@@ -18,7 +18,6 @@ import pkg/archivist/clock
 
 import ../../asynctest
 import ../helpers/mocktimer
-import ../helpers/mockrepostore
 import ../helpers/mockclock
 import ../examples
 

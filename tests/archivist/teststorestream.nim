@@ -1,4 +1,6 @@
 import pkg/chronos
+import pkg/kvstore
+import pkg/taskpools
 
 import pkg/archivist/[streams, stores, indexingstrategy, manifest, blocktype as bt]
 
@@ -11,6 +13,7 @@ asyncchecksuite "StoreStream":
     manifest: Manifest
     store: BlockStore
     stream: StoreStream
+    tp: Taskpool
 
   # Check that `buf` contains `size` bytes with values start, start+1...
   proc sequentialBytes(buf: seq[byte], size: int, start: int): bool =
@@ -31,9 +34,14 @@ asyncchecksuite "StoreStream":
 
   teardown:
     await stream.close()
+    tp.shutdown()
 
   setup:
-    store = CacheStore.new()
+    tp = Taskpool.new(num_threads = 4)
+    store = RepoStore.new(
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+    )
     manifest = await storeDataGetManifest(
       store, MockChunker.new(dataset = data, chunkSize = chunkSize)
     )
@@ -95,35 +103,51 @@ asyncchecksuite "StoreStream":
     check sequentialBytes(buf, 15, 0)
 
 suite "StoreStream - Size Tests":
-  var stream: StoreStream
+  var
+    stream: StoreStream
+    tp: Taskpool
+
+  setup:
+    tp = Taskpool.new(num_threads = 4)
 
   teardown:
     await stream.close()
+    tp.shutdown()
 
   test "Should return dataset size as stream size":
-    let manifest = Manifest.new(
-      treeCid = Cid.example, datasetSize = 80.NBytes, blockSize = 10.NBytes
-    )
+    let
+      manifest = Manifest.new(
+        treeCid = Cid.example, datasetSize = 80.NBytes, blockSize = 10.NBytes
+      )
+      store = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
 
-    stream = StoreStream.new(CacheStore.new(), manifest)
+    stream = StoreStream.new(store, manifest)
 
     check stream.size == 80
 
   test "Should not count parity/padding bytes as part of stream size":
-    let protectedManifest = Manifest.new(
-      treeCid = Cid.example,
-      datasetSize = 120.NBytes, # size including parity bytes
-      blockSize = 10.NBytes,
-      version = CIDv1,
-      hcodec = Sha256HashCodec,
-      codec = BlockCodec,
-      ecK = 2,
-      ecM = 1,
-      originalTreeCid = Cid.example,
-      originalDatasetSize = 80.NBytes, # size without parity bytes
-      strategy = StrategyType.SteppedStrategy,
-    )
+    let
+      protectedManifest = Manifest.new(
+        treeCid = Cid.example,
+        datasetSize = 120.NBytes, # size including parity bytes
+        blockSize = 10.NBytes,
+        version = CIDv1,
+        hcodec = Sha256HashCodec,
+        codec = BlockCodec,
+        ecK = 2,
+        ecM = 1,
+        originalTreeCid = Cid.example,
+        originalDatasetSize = 80.NBytes, # size without parity bytes
+        strategy = StrategyType.SteppedStrategy,
+      )
+      store = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
 
-    stream = StoreStream.new(CacheStore.new(), protectedManifest)
+    stream = StoreStream.new(store, protectedManifest)
 
     check stream.size == 80

@@ -12,6 +12,7 @@ import pkg/archivist/rng
 import pkg/archivist/utils
 import pkg/archivist/indexingstrategy
 import pkg/taskpools
+import pkg/kvstore
 
 import ../asynctest
 import ./helpers
@@ -26,14 +27,14 @@ suite "Erasure encode/decode":
   var manifest: Manifest
   var store: BlockStore
   var erasure: Erasure
-  let repoTmp = TempLevelDb.new()
-  let metaTmp = TempLevelDb.new()
   var taskpool: Taskpool
+  var dbTp: Taskpool
 
   setup:
+    dbTp = Taskpool.new(num_threads = 4)
     let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+      repoDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
     rng = Rng.instance()
     chunker = RandomChunker.new(rng, size = dataSetSize, chunkSize = BlockSize)
     store = RepoStore.new(repoDs, metaDs)
@@ -42,8 +43,8 @@ suite "Erasure encode/decode":
     manifest = await storeDataGetManifest(store, chunker)
 
   teardown:
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    await store.close()
+    dbTp.shutdown()
     taskpool.shutdown()
 
   proc encode(buffers, parity: int): Future[Manifest] {.async.} =
@@ -201,9 +202,7 @@ suite "Erasure encode/decode":
 
     let
       encoded = await encode(buffers, parity)
-      blocks = collect:
-        for i in 0 .. encoded.blocksCount:
-          i
+      blocks = toSeq(0 .. encoded.blocksCount)
 
     # loose M parity (all!) symbols/blocks from the dataset
     for b in blocks[^(encoded.steps * encoded.ecM) ..^ 1]:

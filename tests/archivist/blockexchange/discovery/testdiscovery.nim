@@ -3,6 +3,8 @@ import std/sugar
 import std/tables
 
 import pkg/chronos
+import pkg/kvstore
+import pkg/taskpools
 
 import pkg/libp2p/errors
 
@@ -34,9 +36,10 @@ asyncchecksuite "Block Advertising and Discovery":
     advertiser: Advertiser
     wallet: WalletRef
     network: BlockExcNetwork
-    localStore: CacheStore
+    localStore: BlockStore
     engine: BlockExcEngine
     pendingBlocks: PendingBlocksManager
+    tp: Taskpool
 
   setup:
     while true:
@@ -50,7 +53,13 @@ asyncchecksuite "Block Advertising and Discovery":
     blockDiscovery = MockDiscovery.new()
     wallet = WalletRef.example
     network = BlockExcNetwork.new(switch)
-    localStore = CacheStore.new(blocks.mapIt(it))
+    tp = Taskpool.new(num_threads = 4)
+    localStore = RepoStore.new(
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+    )
+    for blk in blocks:
+      (await localStore.putBlock(blk)).tryGet()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
@@ -150,6 +159,9 @@ asyncchecksuite "Block Advertising and Discovery":
 
     await engine.stop()
 
+  teardown:
+    tp.shutdown()
+
 proc asBlock(m: Manifest): bt.Block =
   let mdata = m.encode().tryGet()
   bt.Block.new(data = mdata, codec = ManifestCodec).tryGet()
@@ -161,6 +173,7 @@ asyncchecksuite "E2E - Multiple Nodes Discovery":
     manifests: seq[Manifest]
     mBlocks: seq[bt.Block]
     trees: seq[ArchivistTree]
+    tps: seq[Taskpool]
 
   setup:
     for _ in 0 ..< 4:
@@ -182,7 +195,11 @@ asyncchecksuite "E2E - Multiple Nodes Discovery":
         blockDiscovery = MockDiscovery.new()
         wallet = WalletRef.example
         network = BlockExcNetwork.new(s)
-        localStore = CacheStore.new()
+        tp = Taskpool.new(num_threads = 4)
+        localStore = RepoStore.new(
+          SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+          SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        )
         peerStore = PeerCtxStore.new()
         pendingBlocks = PendingBlocksManager.new()
 
@@ -202,16 +219,20 @@ asyncchecksuite "E2E - Multiple Nodes Discovery":
         )
         networkStore = NetworkStore.new(engine, localStore)
 
+      tps.add(tp)
       s.mount(network)
       switch.add(s)
       blockexc.add(networkStore)
 
   teardown:
+    for tp in tps.mitems:
+      tp.shutdown()
     switch = @[]
     blockexc = @[]
     manifests = @[]
     mBlocks = @[]
     trees = @[]
+    tps = @[]
 
   test "E2E - Should advertise and discover blocks":
     # Distribute the manifests and trees amongst 1..3

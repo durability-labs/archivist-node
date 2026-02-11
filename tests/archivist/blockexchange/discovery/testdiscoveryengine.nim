@@ -2,6 +2,8 @@ import std/sequtils
 import std/tables
 
 import pkg/chronos
+import pkg/kvstore
+import pkg/taskpools
 
 import pkg/archivist/rng
 import pkg/archivist/stores
@@ -34,8 +36,10 @@ asyncchecksuite "Test Discovery Engine":
     blockDiscovery: MockDiscovery
     pendingBlocks: PendingBlocksManager
     network: BlockExcNetwork
+    tp: Taskpool
 
   setup:
+    tp = Taskpool.new(num_threads = 4)
     while true:
       let chunk = await chunker.getBytes()
       if chunk.len <= 0:
@@ -53,9 +57,15 @@ asyncchecksuite "Test Discovery Engine":
     pendingBlocks = PendingBlocksManager.new()
     blockDiscovery = MockDiscovery.new()
 
+  teardown:
+    tp.shutdown()
+
   test "Should Query Wants":
     var
-      localStore = CacheStore.new()
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
       discoveryEngine = DiscoveryEngine.new(
         localStore,
         peerStore,
@@ -81,7 +91,10 @@ asyncchecksuite "Test Discovery Engine":
 
   test "Should queue discovery request":
     var
-      localStore = CacheStore.new()
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
       discoveryEngine = DiscoveryEngine.new(
         localStore,
         peerStore,
@@ -106,7 +119,10 @@ asyncchecksuite "Test Discovery Engine":
 
   test "Should not request more than minPeersPerBlock":
     var
-      localStore = CacheStore.new()
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
       minPeers = 2
       discoveryEngine = DiscoveryEngine.new(
         localStore,
@@ -149,7 +165,10 @@ asyncchecksuite "Test Discovery Engine":
 
   test "Should not request if there is already an inflight discovery request":
     var
-      localStore = CacheStore.new()
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
       discoveryEngine = DiscoveryEngine.new(
         localStore,
         peerStore,

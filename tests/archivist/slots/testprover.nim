@@ -15,6 +15,7 @@ import pkg/archivist/utils/poseidon2digest
 import pkg/archivist/nat
 import pkg/archivist/utils/natutils
 import pkg/taskpools
+import pkg/kvstore
 import ./helpers
 import ../helpers
 
@@ -23,19 +24,19 @@ suite "Test CircomCompat Prover":
     samples = 5
     blockSize = DefaultBlockSize
     cellSize = DefaultCellSize
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
     tp = Taskpool.new()
     challenge = 1234567.toF.toBytes.toArray32
 
   var
     store: BlockStore
     prover: Prover
+    dbTp: Taskpool
 
   setup:
+    dbTp = Taskpool.new(num_threads = 4)
     let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+      repoDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
       backend = CircomCompatBackendRef.new(
         r1csPath = "tests/circuits/fixtures/proof_main.r1cs",
         wasmPath = "tests/circuits/fixtures/proof_main.wasm",
@@ -47,8 +48,8 @@ suite "Test CircomCompat Prover":
     prover = Prover.new(backend, samples, tp)
 
   teardown:
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    await store.close()
+    dbTp.shutdown()
 
   test "Should sample and prove a slot":
     let
@@ -99,20 +100,20 @@ suite "Test NimGroth16 Prover":
     samples = 5
     blockSize = DefaultBlockSize
     cellSize = DefaultCellSize
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
     tp = Taskpool.new()
     challenge = 1234567.toF.toBytes.toArray32
 
   var
     store: BlockStore
     prover: Prover
+    dbTp: Taskpool
 
   setup:
+    dbTp = Taskpool.new(num_threads = 4)
     let
       tp = Taskpool.new()
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+      repoDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
       backend = NimGroth16BackendRef.new(
         r1csPath = "tests/circuits/fixtures/proof_main.r1cs",
         graphPath = "tests/circuits/fixtures/proof_main.bin",
@@ -124,8 +125,8 @@ suite "Test NimGroth16 Prover":
     prover = Prover.new(backend, samples, tp)
 
   teardown:
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    await store.close()
+    dbTp.shutdown()
 
   test "Should sample and prove a slot":
     let
