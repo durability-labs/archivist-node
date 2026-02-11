@@ -54,7 +54,7 @@ asyncchecksuite "NetworkStore engine basic":
     pendingBlocks = PendingBlocksManager.new()
 
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 
@@ -156,7 +156,7 @@ asyncchecksuite "NetworkStore engine handlers":
     chunker = RandomChunker.new(rng, size = 1024'nb, chunkSize = 256'nb)
 
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 
@@ -410,7 +410,7 @@ asyncchecksuite "Block Download":
     chunker = RandomChunker.new(rng, size = 1024'nb, chunkSize = 256'nb)
 
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 
@@ -578,7 +578,7 @@ asyncchecksuite "Task Handler":
     rng = Rng.instance()
     chunker = RandomChunker.new(rng, size = 1024, chunkSize = 256'nb)
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 

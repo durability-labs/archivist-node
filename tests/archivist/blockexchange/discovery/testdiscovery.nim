@@ -43,7 +43,7 @@ asyncchecksuite "Block Advertising and Discovery":
 
   setup:
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 
@@ -180,7 +180,7 @@ asyncchecksuite "E2E - Multiple Nodes Discovery":
       let chunker = RandomChunker.new(Rng.instance(), size = 4096, chunkSize = 256)
       var blocks = newSeq[bt.Block]()
       while true:
-        let chunk = await chunker.getBytes()
+        let chunk = (await chunker.getBytes()).tryGet()
         if chunk.len <= 0:
           break
 

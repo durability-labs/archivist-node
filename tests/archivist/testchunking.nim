@@ -1,4 +1,5 @@
 import pkg/stew/byteutils
+import pkg/questionable/results
 import pkg/archivist/chunker
 import pkg/archivist/logutils
 import pkg/chronos
@@ -27,24 +28,24 @@ asyncchecksuite "Chunking":
     let contents = [1.byte, 2, 3, 4, 5, 6, 7, 8, 9, 0]
     proc reader(
         data: ChunkBuffer, len: int
-    ): Future[int] {.gcsafe, async: (raises: [ChunkerError, CancelledError]).} =
+    ): Future[?!int] {.gcsafe, async: (raises: [CancelledError]).} =
       let read = min(contents.len - offset, len)
       if read == 0:
-        return 0
+        return success 0
 
       copyMem(data, unsafeAddr contents[offset], read)
       offset += read
-      return read
+      return success read
 
     let chunker = Chunker.new(reader = reader, chunkSize = 2'nb)
 
     check:
-      (await chunker.getBytes()) == [1.byte, 2]
-      (await chunker.getBytes()) == [3.byte, 4]
-      (await chunker.getBytes()) == [5.byte, 6]
-      (await chunker.getBytes()) == [7.byte, 8]
-      (await chunker.getBytes()) == [9.byte, 0]
-      (await chunker.getBytes()) == []
+      (await chunker.getBytes()).tryGet() == [1.byte, 2]
+      (await chunker.getBytes()).tryGet() == [3.byte, 4]
+      (await chunker.getBytes()).tryGet() == [5.byte, 6]
+      (await chunker.getBytes()).tryGet() == [7.byte, 8]
+      (await chunker.getBytes()).tryGet() == [9.byte, 0]
+      (await chunker.getBytes()).tryGet() == []
       chunker.offset == offset
 
   test "should chunk LPStream":
@@ -59,12 +60,12 @@ asyncchecksuite "Chunking":
 
     let writerFut = writer()
     check:
-      (await chunker.getBytes()) == [1.byte, 2]
-      (await chunker.getBytes()) == [3.byte, 4]
-      (await chunker.getBytes()) == [5.byte, 6]
-      (await chunker.getBytes()) == [7.byte, 8]
-      (await chunker.getBytes()) == [9.byte, 0]
-      (await chunker.getBytes()) == []
+      (await chunker.getBytes()).tryGet() == [1.byte, 2]
+      (await chunker.getBytes()).tryGet() == [3.byte, 4]
+      (await chunker.getBytes()).tryGet() == [5.byte, 6]
+      (await chunker.getBytes()).tryGet() == [7.byte, 8]
+      (await chunker.getBytes()).tryGet() == [9.byte, 0]
+      (await chunker.getBytes()).tryGet() == []
       chunker.offset == 10
 
     await writerFut
@@ -77,7 +78,7 @@ asyncchecksuite "Chunking":
 
     var data: seq[byte]
     while true:
-      let buff = await fileChunker.getBytes()
+      let buff = (await fileChunker.getBytes()).tryGet()
       if buff.len <= 0:
         break
 
@@ -97,16 +98,24 @@ asyncchecksuite "Chunking":
     discard (await chunker.getBytes())
 
   test "stream should forward LPStreamError":
-    try:
-      await raiseStreamException(newException(LPStreamError, "test error"))
-    except ChunkerError as exc:
-      check exc.parent of LPStreamError
-    except CatchableError as exc:
-      checkpoint("Unexpected error: " & exc.msg)
-      fail()
+    let stream = CrashingStreamWrapper.new()
+    let chunker = LPStreamChunker.new(stream = stream, chunkSize = 2'nb)
+
+    stream.toRaise = proc(): void {.raises: [CancelledError, LPStreamError].} =
+      raise newException(LPStreamError, "test error")
+
+    let res = await chunker.getBytes()
+    check res.isErr
+    check res.error of LPStreamError
 
   test "stream should catch LPStreamEOFError":
-    await raiseStreamException(newException(LPStreamEOFError, "test error"))
+    let stream = CrashingStreamWrapper.new()
+    let chunker = LPStreamChunker.new(stream = stream, chunkSize = 2'nb)
+
+    stream.toRaise = proc(): void {.raises: [CancelledError, LPStreamError].} =
+      raise newException(LPStreamEOFError, "test error")
+
+    check (await chunker.getBytes()).tryGet() == []
 
   test "stream should forward CancelledError":
     expect CancelledError:

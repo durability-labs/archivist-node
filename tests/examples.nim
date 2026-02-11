@@ -106,7 +106,7 @@ proc example*(_: type RandomChunker, blocks: int): Future[seq[byte]] {.async.} =
     rng, size = DefaultBlockSize * blocks.NBytes, chunkSize = DefaultBlockSize
   )
   var data: seq[byte]
-  while (let moar = await chunker.getBytes(); moar != []):
+  while (let moar = (await chunker.getBytes()).tryGet(); moar != []):
     data.add moar
   return data
 

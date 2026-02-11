@@ -41,7 +41,7 @@ asyncchecksuite "Test Discovery Engine":
   setup:
     tp = Taskpool.new(num_threads = 4)
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 
