@@ -45,3 +45,6 @@ data/
 nimbledeps
 logs/
 .grepai/
+*.log
+CLAUDE.md
+AGENTS.md
