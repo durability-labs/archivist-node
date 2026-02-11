@@ -14,6 +14,7 @@ import pkg/taskpools
 import pkg/archivist/chunker
 import pkg/archivist/stores
 import pkg/archivist/stores/repostore/operations
+import pkg/archivist/stores/keyutils
 import pkg/archivist/blocktype as bt
 import pkg/archivist/clock
 import pkg/archivist/utils/safeasynciter
@@ -455,6 +456,121 @@ suite "RepoStore":
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
     (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
+
+  test "Should handle non-contiguous indices in putLeafsAndBlocks (BitSeq length fix)":
+    let
+      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
+          2000'nb)
+      dataset = await makeRandomBlocks(datasetSize = 2560, blockSize = 256'nb)
+      blk = dataset[0]
+      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    # Create overlay with 10 blocks, but only insert at index 5
+    var blocks = BitSeq.init(10)
+
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      )
+    ).tryGet()
+
+    # Put only index 5 (non-contiguous)
+    let proof = tree.getProof(5).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 5.Natural, proof)])).tryGet()
+
+    # Verify block was stored
+    check (await repo.getBlock(blk.cid)).isOk
+    check repo.quotaUsedBytes == 256.NBytes
+
+    # Verify overlay has correct bit set
+    let overlayMeta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check overlayMeta.blocks.len == 10
+    check overlayMeta.blocks[5] == true
+
+  test "Should correctly handle multi-index delete with same block CID (refCount aggregation)":
+    let
+      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
+          2000'nb)
+      blk = createTestBlock(256)
+
+    # Create tree with same block at indices 1, 3, and 5
+    let (manifest, tree) = makeManifestAndTree(@[blk, blk, blk, blk, blk, blk]).tryGet()
+    let treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(6)
+    blocks.setBit(1)
+    blocks.setBit(3)
+    blocks.setBit(5)
+
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      )
+    ).tryGet()
+
+    # Put same block at indices 1, 3, and 5
+    let
+      proof1 = tree.getProof(1).tryGet()
+      proof3 = tree.getProof(3).tryGet()
+      proof5 = tree.getProof(5).tryGet()
+
+    (
+      await repo.putLeafsAndBlocks(
+        treeCid,
+        @[(blk, 1.Natural, proof1), (blk, 3.Natural, proof3), (blk, 5.Natural, proof5)],
+      )
+    ).tryGet()
+
+    # Verify refCount = 3
+    check (await repo.blockRefCount(blk.cid)).tryGet() == 3.Natural
+    check repo.quotaUsedBytes == 256.NBytes
+
+    # Delete all three indices in ONE call (tests aggregation in delLeafBlockMetadata)
+    (await repo.delLeafBlockMetadata(treeCid, @[1.Natural, 3.Natural, 5.Natural])).tryGet()
+
+    # Verify block is deleted (refCount went from 3 to 0 in one atomic operation)
+    check not (await blk.cid in repo)
+    check repo.quotaUsedBytes == 0.NBytes
+
+  test "Should restore deleted leaf on re-put (crash recovery resurrection)":
+    let
+      repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
+          1000'nb)
+      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      blk = dataset[0]
+      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    var blocks = BitSeq.init(1)
+    blocks.setBit(0)
+
+    (
+      await repo.createOrUpdateOverlay(
+        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      )
+    ).tryGet()
+
+    # Put block first
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    check (await repo.getBlock(blk.cid)).isOk
+
+    # Delete block (marks leaf as deleted, but don't physically remove yet)
+    (await repo.delBlock(treeCid, 0.Natural)).tryGet()
+    check not (await blk.cid in repo)
+
+    # Re-put the same block (should restore deleted leaf via resurrection logic)
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    # Verify block is back
+    check (await repo.getBlock(blk.cid)).isOk
+    check (await repo.blockRefCount(blk.cid)).tryGet() == 1.Natural
+
+    # Verify leaf metadata is correct (not marked as deleted)
+    let restoredLeaf = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+    check restoredLeaf.blkCid == blk.cid
+    check restoredLeaf.deleted == false
 
 # commonBlockStoreTests(
 #   "RepoStore Sql backend",

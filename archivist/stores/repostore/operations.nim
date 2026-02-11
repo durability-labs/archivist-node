@@ -8,6 +8,7 @@
 ## those terms.
 
 import std/sets
+import std/strutils
 import std/tables
 import std/sugar
 
@@ -252,53 +253,51 @@ proc putOrUpdateLeafBlockMeta*(
   # already esists, we skip the refCount.inc, thus we make
   # a mapping of block rec -> leaf rec to be able to filter
   # out inserts from updates
+
+  # Fetch existing overlay to get correct BitSeq length
+  # (overlay must exist before putLeafsAndBlocks is called)
+  let
+    existingOverlayRec = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
+    existingOverlay = existingOverlayRec.val
+
   var
-    blkToLeafRecs: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
-    blocksBits = BitSeq.init(blocks.len)
+    blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
+    leafsMap: Table[Key, RawKVRecord]
+    blocksBits = BitSeq.init(max(existingOverlay.blocks.len, blocks.len))
 
   for item in blocks:
-    let blkKey = ?blockMetaKey(item.blkCid)
-    blocksBits.setBit(item.index)
+    let
+      blkKey = ?blockMetaKey(item.blkCid)
+      leafKey = ?blockLeafKey(treeCid, item.index)
 
-    blkToLeafRecs.withValue(blkKey, pairs):
-      var (blkRawRec, leafsSet) = pairs[]
-
-      leafsSet.incl(
-        KVRecord[LeafMetadata].init(
-          ?blockLeafKey(treeCid, item.index),
-          LeafMetadata(blkCid: item.blkCid, proof: item.proof),
-        ).toRaw
+    var
+      blkRec = KVRecord[BlockMetadata].init(
+        blkKey, BlockMetadata(refCount: 1, cid: item.blkCid, size: item.blockSize)
+      )
+      leafRec = KVRecord[LeafMetadata].init(
+        leafKey, LeafMetadata(blkCid: item.blkCid, proof: item.proof)
       )
 
-      blkRawRec = KVRecord[BlockMetadata].init(
-        blkKey,
-        BlockMetadata(
-          refCount: max(1, leafsSet.len), cid: item.blkCid, size: item.blockSize
-        ),
-      ).toRaw
+    blocksBits.setBit(item.index)
+    leafsMap[leafKey] = leafRec.toRaw
+    blkToLeafMap.withValue(blkKey, pairs):
+      var (blkRawRec, leafsSet) = pairs[]
+
+      leafsSet.incl(leafRec.toRaw)
+      blkRec.val.refCount = max(1, leafsSet.len)
+      blkRawRec = blkRec.toRaw
 
       pairs[] = (blkRawRec, leafsSet)
     do:
-      blkToLeafRecs[blkKey] = (
-        KVRecord[BlockMetadata].init(
-          blkKey, BlockMetadata(refCount: 1, cid: item.blkCid, size: item.blockSize)
-        ).toRaw,
-        [
-          KVRecord[LeafMetadata].init(
-            ?blockLeafKey(treeCid, item.index),
-            LeafMetadata(blkCid: item.blkCid, proof: item.proof),
-          ).toRaw
-        ].toHashSet,
-      )
+      blkToLeafMap[blkKey] = (blkRec.toRaw, [leafRec.toRaw].toHashSet)
 
-  let overlayMeta = KVRecord[OverlayMetadata].init(
-    ?overlayKey(treeCid),
+  let overlayMeta = existingOverlayRec.fromRecord(
     OverlayMetadata(
       blocks: blocksBits,
       status: OverlayStatus.Storing,
-      manifest: Cid.none,
-      expiry: self.clock.now() + self.overlayTtl.seconds,
-    ),
+      manifest: existingOverlay.manifest,
+      expiry: existingOverlay.expiry,
+    )
   ).toRaw
 
   proc putLeafAndBlockMetaAtomic(
@@ -317,18 +316,20 @@ proc putOrUpdateLeafBlockMeta*(
       var record = rec
 
       trace "Processing record", key = record.key
-      if BlocksMetaKey.ancestor(record.key):
+      if BlockLeafKey.ancestor(record.key):
+        record.val = (?catch(leafsMap[record.key])).val
+      elif BlocksMetaKey.ancestor(record.key):
         var blockMeta = ?toRecord[BlockMetadata](record)
         # Count only new leaf references (leaves NOT in conflict set)
-        blkToLeafRecs.withValue(record.key, pairs):
-          let (_, leafRecs) = pairs[]
-
+        blkToLeafMap.withValue(record.key, pairs):
           let
+            (_, leafRecs) = pairs[]
+
             # get the intersection
-            newLeafs = leafRecs.mapIt(it.key).toHashSet - conflictSet
+            newLeafs = (leafRecs.mapIt(it.key).toHashSet - conflictSet)
 
           if newLeafs.len > 0:
-            blockMeta.val.refCount += leafRecs.len.Natural
+            blockMeta.val.refCount += newLeafs.len.Natural
             trace "Updated refCount for",
               cid = blockMeta.val.cid,
               refCount = blockMeta.val.refCount,
@@ -351,7 +352,7 @@ proc putOrUpdateLeafBlockMeta*(
     success toSeq(records.values)
 
   let updates =
-    @[overlayMeta] & blkToLeafRecs.values.toSeq.mapIt(@[it[0]] & toSeq(it[1])).concat
+    @[overlayMeta] & blkToLeafMap.values.toSeq.mapIt(@[it[0]] & toSeq(it[1])).concat
   trace "Put or update leaf and block metadata", treeCid, recordsCount = updates.len
   if err =? (
     await self.metaDs.tryPutAtomic(updates, maxRetries = 3, putLeafAndBlockMetaAtomic)
@@ -408,15 +409,37 @@ proc delLeafBlockMetadata*(
       )
     )
 
-    # Get the blocks
-    blkKeys = leafsMeta.mapIt(?blockMetaKey(it.val.blkCid))
-    blksMeta = ?await self.metaDs.get(blkKeys, BlockMetadata)
+  # Build aggregation table: block key -> set of leaf indices
+  # This ensures we correctly decrement refCount when multiple leaves
+  # reference the same block
+  var blkToLeafIndices: Table[Key, HashSet[Natural]]
+  for leafMeta in leafsMeta:
+    let
+      blkKey = ?blockMetaKey(leafMeta.val.blkCid)
+      # Extract index from leaf key: /meta/leafs/{treeCid}/{index}
+      idx = ?catch(parseInt(leafMeta.key.value))
+
+    blkToLeafIndices.withValue(blkKey, indices):
+      indices[].incl(idx.Natural)
+    do:
+      blkToLeafIndices[blkKey] = [idx.Natural].toHashSet
+
+  # Get unique block keys and build update records with correct refCount decrement
+  let
+    uniqueBlkKeys = toSeq(blkToLeafIndices.keys)
+    blksMeta = ?await self.metaDs.get(uniqueBlkKeys, BlockMetadata)
     updateBlksRecs = blksMeta.mapIt(
-      it.fromRecord(
-        BlockMetadata(
-          refCount: max(0, it.val.refCount - 1), cid: it.val.cid, size: it.val.size
+      block:
+        let leafCount =
+          blkToLeafIndices.getOrDefault(it.key, initHashSet[Natural]()).len
+
+        it.fromRecord(
+          BlockMetadata(
+            refCount: max(0, it.val.refCount - leafCount),
+            cid: it.val.cid,
+            size: it.val.size,
+          )
         )
-      )
     )
 
   var
@@ -453,14 +476,23 @@ proc delLeafBlockMetadata*(
         record = leaf.toRaw
       elif BlocksMetaKey.ancestor(record.key):
         var blkMeta = ?toRecord[BlockMetadata](record)
-        trace "Before decrease refCount", refCount = blkMeta.val.refCount
-        blkMeta.val.refCount = max(0, blkMeta.val.refCount - 1)
+        # Decrement by the count of leaves pointing to this block
+        let leafCount =
+          blkToLeafIndices.getOrDefault(record.key, initHashSet[Natural]()).len
+        trace "Before decrease refCount",
+          refCount = blkMeta.val.refCount, leafCount = leafCount
+        blkMeta.val.refCount = max(0, blkMeta.val.refCount - leafCount)
         trace "Decreassed refCount for block",
           key = record.key, refCount = blkMeta.val.refCount
         record = blkMeta.toRaw
       elif ArchivistOverlaysKey.ancestor(record.key):
         var overlayMetaRec = ?toRecord[OverlayMetadata](record)
-        overlayMetaRec.val = updateOverlayRec.val
+        # Re-apply clearBit operations on fresh overlay data
+        # to avoid clobbering concurrent updates
+        for i in uniqueIdxs:
+          overlayMetaRec.val.blocks.clearBit(i)
+        overlayMetaRec.val.status = OverlayStatus.Deleting
+        overlayMetaRec.val.expiry = self.clock.now()
         trace "Updated overlay meta for delete", overlay = overlayMetaRec.val
         record = overlayMetaRec.toRaw
       else:
