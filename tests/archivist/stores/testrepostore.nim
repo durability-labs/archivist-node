@@ -1,6 +1,5 @@
 import std/os
 import std/strutils
-import std/sequtils
 
 import pkg/questionable
 import pkg/questionable/results
@@ -14,17 +13,14 @@ import pkg/taskpools
 import pkg/archivist/chunker
 import pkg/archivist/stores
 import pkg/archivist/stores/repostore/operations
-import pkg/archivist/stores/keyutils
 import pkg/archivist/blocktype as bt
 import pkg/archivist/clock
-import pkg/archivist/utils/safeasynciter
 import pkg/archivist/merkletree/archivist
 
 import ../../asynctest
 import ../helpers
 import ../helpers/mockclock
 import ../examples
-import ./commonstoretests
 
 suite "Test RepoStore start/stop":
   var
@@ -105,7 +101,7 @@ suite "RepoStore":
   proc putBlockWithOverlay(
       repo: RepoStore, blk: bt.Block
   ): Future[?!(Cid, Natural)] {.async.} =
-    let (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+    let (_, tree) = makeManifestAndTree(@[blk]).tryGet()
     let treeCid = tree.rootCid.tryGet()
     let proof = tree.getProof(0).tryGet()
 
@@ -220,7 +216,7 @@ suite "RepoStore":
     let blk = createTestBlock(100)
 
     # Build manifest/tree with same block at indices 0 and 1
-    let (manifest, tree) = makeManifestAndTree(@[blk, blk]).tryGet()
+    let (_, tree) = makeManifestAndTree(@[blk, blk]).tryGet()
     let treeCid = tree.rootCid.tryGet()
 
     # Create overlay
@@ -289,7 +285,7 @@ suite "RepoStore":
           1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
-      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
@@ -312,7 +308,7 @@ suite "RepoStore":
           1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
-      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
@@ -339,9 +335,9 @@ suite "RepoStore":
       dataset2 = @[blockPool[1], blockPool[2]]
       sharedBlock = blockPool[1]
 
-      (manifest1, tree1) = makeManifestAndTree(dataset1).tryGet()
+      (_, tree1) = makeManifestAndTree(dataset1).tryGet()
       treeCid1 = tree1.rootCid.tryGet()
-      (manifest2, tree2) = makeManifestAndTree(dataset2).tryGet()
+      (_, tree2) = makeManifestAndTree(dataset2).tryGet()
       treeCid2 = tree2.rootCid.tryGet()
 
     # Create overlay for tree1
@@ -411,7 +407,7 @@ suite "RepoStore":
           1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
-      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
@@ -438,7 +434,7 @@ suite "RepoStore":
           1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
-      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
@@ -463,7 +459,7 @@ suite "RepoStore":
           2000'nb)
       dataset = await makeRandomBlocks(datasetSize = 2560, blockSize = 256'nb)
       blk = dataset[0]
-      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
     # Create overlay with 10 blocks, but only insert at index 5
@@ -495,7 +491,7 @@ suite "RepoStore":
       blk = createTestBlock(256)
 
     # Create tree with same block at indices 1, 3, and 5
-    let (manifest, tree) = makeManifestAndTree(@[blk, blk, blk, blk, blk, blk]).tryGet()
+    let (_, tree) = makeManifestAndTree(@[blk, blk, blk, blk, blk, blk]).tryGet()
     let treeCid = tree.rootCid.tryGet()
 
     var blocks = BitSeq.init(6)
@@ -539,7 +535,7 @@ suite "RepoStore":
           1000'nb)
       dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
       blk = dataset[0]
-      (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 

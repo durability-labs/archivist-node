@@ -10,25 +10,20 @@
 {.push raises: [].}
 
 import std/sets
-import std/sugar
 
 import pkg/chronos
-import pkg/chronos/futures
 import pkg/kvstore
 import pkg/libp2p/[cid, multicodec]
 import pkg/questionable
 import pkg/questionable/results
 import pkg/stew/bitseqs
 
-import ./coders
 import ./overlays
 import ./types
 import ./operations
 import ../blockstore
 import ../keyutils
-import ../queryiterhelper
 import ../../blocktype
-import ../../clock
 import ../../logutils
 import ../../merkletree
 import ../../utils
@@ -232,7 +227,6 @@ method putBlock*(
   if not self.available(blk.data.len.NBytes):
     return failure(newException(QuotaNotEnoughError, "Block would exceed quota!"))
 
-  let metaKey = ?blockMetaKey(blk.cid)
   if err =? (
     await self.metaDs.put(
       ?blockMetaKey(blk.cid),

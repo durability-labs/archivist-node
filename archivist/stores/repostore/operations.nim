@@ -8,12 +8,9 @@
 ## those terms.
 
 import std/sets
-import std/strutils
 import std/tables
-import std/sugar
 
 import pkg/chronos
-import pkg/chronos/futures
 import pkg/kvstore
 import pkg/libp2p/cid
 import pkg/metrics
@@ -281,13 +278,9 @@ proc putOrUpdateLeafBlockMeta*(
     blocksBits.setBit(item.index)
     leafsMap[leafKey] = leafRec.toRaw
     blkToLeafMap.withValue(blkKey, pairs):
-      var (blkRawRec, leafsSet) = pairs[]
-
-      leafsSet.incl(leafRec.toRaw)
-      blkRec.val.refCount = max(1, leafsSet.len)
-      blkRawRec = blkRec.toRaw
-
-      pairs[] = (blkRawRec, leafsSet)
+      pairs[][1].incl(leafRec.toRaw)
+      blkRec.val.refCount = max(1, pairs[][1].len)
+      pairs[][0] = blkRec.toRaw
     do:
       blkToLeafMap[blkKey] = (blkRec.toRaw, [leafRec.toRaw].toHashSet)
 
@@ -482,7 +475,7 @@ proc delLeafBlockMetadata*(
         trace "Before decrease refCount",
           refCount = blkMeta.val.refCount, leafCount = leafCount
         blkMeta.val.refCount = max(0, blkMeta.val.refCount - leafCount)
-        trace "Decreassed refCount for block",
+        trace "Decreased refCount for block",
           key = record.key, refCount = blkMeta.val.refCount
         record = blkMeta.toRaw
       elif ArchivistOverlaysKey.ancestor(record.key):
