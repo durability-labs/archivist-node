@@ -11,7 +11,7 @@ import ./helpers
 asyncchecksuite "StoreStream":
   var
     manifest: Manifest
-    store: BlockStore
+    store: RepoStore
     stream: StoreStream
     tp: Taskpool
 
@@ -42,9 +42,11 @@ asyncchecksuite "StoreStream":
       SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
       SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
     )
-    manifest = await storeDataGetManifest(
-      store, MockChunker.new(dataset = data, chunkSize = chunkSize)
-    )
+    manifest = (
+      await storeDataGetManifest(
+        store, MockChunker.new(dataset = data, chunkSize = chunkSize)
+      )
+    ).tryGet()
     stream = StoreStream.new(store, manifest)
 
   test "Read all blocks < blockSize":

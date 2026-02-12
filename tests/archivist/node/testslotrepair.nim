@@ -53,7 +53,7 @@ asyncchecksuite "Test Node - Slot Repair":
     cluster: NodesCluster
 
     nodes: seq[ArchivistNodeRef]
-    localStores: seq[BlockStore]
+    localStores: seq[RepoStore]
 
   setup:
     cluster = generateNodes(numNodes, config = config)
@@ -85,7 +85,7 @@ asyncchecksuite "Test Node - Slot Repair":
     check blocks.len == numBlocks
 
     # Populate manifest in local store
-    manifest = await storeDataGetManifest(localStore, blocks)
+    manifest = (await storeDataGetManifest(localStore, blocks)).tryGet()
     let
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
@@ -168,7 +168,7 @@ asyncchecksuite "Test Node - Slot Repair":
     check blocks.len == numBlocks
 
     # Populate manifest in local store
-    manifest = await storeDataGetManifest(localStore, blocks)
+    manifest = (await storeDataGetManifest(localStore, blocks)).tryGet()
     let
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()

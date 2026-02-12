@@ -25,27 +25,24 @@ suite "Erasure encode/decode":
   var rng: Rng
   var chunker: Chunker
   var manifest: Manifest
-  var store: BlockStore
+  var store: RepoStore
   var erasure: Erasure
-  var taskpool: Taskpool
-  var dbTp: Taskpool
+  var tp: Taskpool
 
   setup:
-    dbTp = Taskpool.new(num_threads = 4)
+    tp = Taskpool.new(num_threads = 4)
     let
-      repoDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
-      metaDs = SQLiteKVStore.new(SqliteMemory, dbTp).tryGet()
+      repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
     rng = Rng.instance()
     chunker = RandomChunker.new(rng, size = dataSetSize, chunkSize = BlockSize)
     store = RepoStore.new(repoDs, metaDs)
-    taskpool = Taskpool.new()
-    erasure = Erasure.new(store, leoEncoderProvider, leoDecoderProvider, taskpool)
-    manifest = await storeDataGetManifest(store, chunker)
+    erasure = Erasure.new(store, store, leoEncoderProvider, leoDecoderProvider, tp)
+    manifest = (await storeDataGetManifest(store, chunker)).tryGet()
 
   teardown:
     await store.close()
-    dbTp.shutdown()
-    taskpool.shutdown()
+    tp.shutdown()
 
   proc encode(buffers, parity: int): Future[Manifest] {.async.} =
     let encoded =
@@ -240,7 +237,7 @@ suite "Erasure encode/decode":
         # create random data and store it
         blockSize = rng.sample(@[1, 2, 4, 8, 16, 32, 64].mapIt(it.KiBs))
         chunker = RandomChunker.new(rng, size = datasetSize, chunkSize = blockSize)
-        manifest = await storeDataGetManifest(store, chunker)
+        manifest = (await storeDataGetManifest(store, chunker)).tryGet()
       manifests.add(manifest)
       # encode the data concurrently
       encodeTasks.add(erasure.encode(manifest, ecK, ecM))
@@ -291,7 +288,7 @@ suite "Erasure encode/decode":
 
       let
         chunker = RandomChunker.new(rng, size = datasetSize, chunkSize = blockSize)
-        manifest = await storeDataGetManifest(store, chunker)
+        manifest = (await storeDataGetManifest(store, chunker)).tryGet()
         encoded = (await erasure.encode(manifest, ecK, ecM)).tryGet()
         decoded = (await erasure.decode(encoded)).tryGet()
 
@@ -312,7 +309,7 @@ suite "Erasure encode/decode":
     let recovered = new seq[seq[byte]]
     let cancelledTaskParity = new seq[seq[byte]]
     let cancelledTaskRecovered = new seq[seq[byte]]
-    data[] = newSeqWith(blocksLen, await chunker.getBytes())
+    data[] = newSeqWith(blocksLen, (await chunker.getBytes()).tryGet())
     parity[] = newSeqWith(10, newSeqWith(BlockSize.int, 0'u8))
     cancelledTaskParity[] = newSeqWith(10, newSeqWith(BlockSize.int, 0'u8))
     recovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
