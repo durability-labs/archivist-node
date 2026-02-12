@@ -21,7 +21,7 @@ import ../../helpers
 import ../../helpers/mockdiscovery
 import ../../examples
 
-asyncchecksuite "Block Advertising and Discovery":
+suite "Block Advertising and Discovery":
   let chunker = RandomChunker.new(Rng.instance(), size = 4096, chunkSize = 256)
 
   var
@@ -85,6 +85,10 @@ asyncchecksuite "Block Advertising and Discovery":
     )
 
     switch.mount(network)
+
+  teardown:
+    await discovery.stop()
+    tp.shutdown()
 
   test "Should discover want list":
     let pendingBlocks = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
@@ -159,14 +163,11 @@ asyncchecksuite "Block Advertising and Discovery":
 
     await engine.stop()
 
-  teardown:
-    tp.shutdown()
-
 proc asBlock(m: Manifest): bt.Block =
   let mdata = m.encode().tryGet()
   bt.Block.new(data = mdata, codec = ManifestCodec).tryGet()
 
-asyncchecksuite "E2E - Multiple Nodes Discovery":
+suite "E2E - Multiple Nodes Discovery":
   var
     switch: seq[Switch]
     blockexc: seq[NetworkStore]

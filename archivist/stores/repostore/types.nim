@@ -52,13 +52,13 @@ type
     blkCid*: Cid
     proof*: ArchivistProof
 
-  OverlayStatus* {.serialize, pure.} = enum
+  OverlayStatus* {.serialize.} = enum
     Error ## Unrecoverable error
     Storing ## Upload/Download in progress
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
 
-  CleanupMode* {.serialize, pure.} = enum
+  CleanupMode* {.serialize.} = enum
     ## Mode for cleaning up after storage request
     SlotsOnly ## Delete slot overlays, keep dataset
     Full ## Delete both slots and dataset
@@ -71,7 +71,6 @@ type
     ##   - protected=true, verifiable=false -> protected dataset
     ##   - protected=true, verifiable=true -> slot
     status*: OverlayStatus
-    manifest*: ?Cid # stores the manifest Cid, or none for temp overlay
     expiry*: SecondsSince1970 # overlay expiration
     blocks*: BitSeq # bitmap of currently stored blocks
 

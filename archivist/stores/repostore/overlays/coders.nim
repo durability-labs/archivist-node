@@ -34,13 +34,11 @@ proc encode*(meta: OverlayMetadata): seq[byte] =
   var pb = initProtoBuffer()
 
   pb.write(1, meta.status.uint32)
-  if manifest =? meta.manifest:
-    pb.write(2, manifest.data.buffer)
-  pb.write(3, meta.expiry.uint64)
+  pb.write(2, meta.expiry.uint64)
 
   let blocksBytes = seq[byte](meta.blocks)
   if blocksBytes.len > 0:
-    pb.write(4, blocksBytes)
+    pb.write(3, blocksBytes)
 
   pb.finish()
   pb.buffer
@@ -59,13 +57,10 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
   if pb.getField(1, status).isErr:
     return failure("Unable to decode `status` from OverlayMetadata")
 
-  if pb.getField(2, manifest).isErr:
-    return failure("Unable to decode `manifest` from OverlayMetadata")
-
-  if pb.getField(3, expiry).isErr:
+  if pb.getField(2, expiry).isErr:
     return failure("Unable to decode `expiry` from OverlayMetadata")
 
-  discard pb.getField(4, blocks) # Optional field
+  discard pb.getField(3, blocks) # Optional field
 
   let cidOpt =
     if manifest.len > 0:
@@ -74,10 +69,7 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
       Cid.none
 
   let meta = OverlayMetadata(
-    status: OverlayStatus(status),
-    manifest: cidOpt,
-    expiry: expiry.int64,
-    blocks: BitSeq blocks,
+    status: OverlayStatus(status), expiry: expiry.int64, blocks: BitSeq blocks
   )
 
   success meta

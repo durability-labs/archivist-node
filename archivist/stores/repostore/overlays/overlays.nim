@@ -187,26 +187,23 @@ proc listOverlaysByExpiry*(
 proc createOrUpdateOverlay*(
     self: RepoStore,
     treeCid: Cid,
-    status: OverlayStatus,
+    status = OverlayStatus.none,
     blocks = BitSeq.init(0),
-    manifest = Cid.none,
-    expiry = ZeroDuration,
+    expiry = ZeroDuration.seconds,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without var overlay =? await self.getOverlayMetadata(treeCid), err:
+  without var overlay =? (await self.getOverlayMetadata(treeCid)), err:
     if not (err of KVStoreKeyNotFound):
       trace "Error fetching overlay metadata for update",
         treeCid = treeCid, error = err.msg
       return failure(err)
+    overlay = OverlayMetadata()
+
+  overlay.blocks.combineSafe(blocks)
+  overlay.status = status |? overlay.status
 
   let expiryTime =
     self.clock.now() +
-    (if expiry == ZeroDuration: self.overlayTtl.seconds else: expiry.seconds)
-
-  overlay.status = status
-  overlay.blocks.combineSafe(blocks)
-
-  if manifest != Cid.none:
-    overlay.manifest = manifest
+    (if expiry == ZeroDuration.seconds: self.overlayTtl.seconds else: expiry)
 
   overlay.expiry = expiryTime
 
@@ -228,12 +225,7 @@ proc createTmpOverlay*(
 
   ?await self.putOverlayMetadata(
     tmpTreeCid,
-    OverlayMetadata(
-      status: OverlayStatus.Storing,
-      manifest: Cid.none,
-      expiry: expiryTime,
-      blocks: BitSeq.init(0),
-    ),
+    OverlayMetadata(status: Storing, expiry: expiryTime, blocks: BitSeq.init(0)),
   )
 
   success tmpTreeCid
@@ -288,8 +280,7 @@ proc finalizeOverlay*(
     self: RepoStore,
     tmpCid, realTreeCid: Cid,
     status = OverlayStatus.none,
-    manifest = Cid.none,
-    expiry = ZeroDuration,
+    expiry = ZeroDuration.seconds,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Promote a temp overlay to a real overlay.
   ##
@@ -317,12 +308,10 @@ proc finalizeOverlay*(
 
   let expiryTime =
     self.clock.now() +
-    (if expiry == ZeroDuration: self.overlayTtl.seconds else: expiry.seconds)
+    (if expiry == ZeroDuration.seconds: self.overlayTtl.seconds else: expiry)
 
   meta.expiry = expiryTime
-  meta.manifest = manifest
-  if overlayStatus =? status:
-    meta.status = overlayStatus
+  meta.status = status |? meta.status
 
   ?await self.putOverlayMetadata(realTreeCid, meta)
   ?await self.deleteOverlayMetadata(tmpCid)

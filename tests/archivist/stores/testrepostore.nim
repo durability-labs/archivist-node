@@ -110,7 +110,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
 
@@ -224,7 +224,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
 
@@ -294,7 +294,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet
     (await repo.putLeafAndBlock(treeCid, blk, 0, proof)).tryGet
@@ -317,7 +317,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet
     (await repo.putLeafAndBlock(treeCid, blk, 0, proof)).tryGet
@@ -347,7 +347,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid1, status = OverlayStatus.Completed, blocks = blocks1
+        treeCid = treeCid1, status = Completed.some, blocks = blocks1
       )
     ).tryGet()
 
@@ -373,7 +373,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid2, status = OverlayStatus.Completed, blocks = blocks2
+        treeCid = treeCid2, status = Completed.some, blocks = blocks2
       )
     ).tryGet()
 
@@ -415,7 +415,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
 
@@ -443,7 +443,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
 
@@ -467,7 +467,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
 
@@ -501,7 +501,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
 
@@ -544,7 +544,7 @@ suite "RepoStore":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+        treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
 

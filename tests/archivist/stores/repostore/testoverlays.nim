@@ -38,7 +38,7 @@ proc putBlockWithOverlay(
 
   (
     await repo.createOrUpdateOverlay(
-      treeCid = treeCid, status = OverlayStatus.Completed, blocks = blocks
+      treeCid = treeCid, status = Completed.some, blocks = blocks
     )
   ).tryGet()
   (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
@@ -51,37 +51,15 @@ suite "OverlayMetadata codecs":
     bits.setBit(0)
     bits.setBit(9)
 
-    let meta = OverlayMetadata(
-      status: OverlayStatus.Completed, manifest: cid.some, expiry: 12345, blocks: bits
-    )
+    let meta = OverlayMetadata(status: Completed, expiry: 12345, blocks: bits)
 
     let decoded = OverlayMetadata.decode(meta.encode()).tryGet()
     check decoded.status == meta.status
     check decoded.expiry == meta.expiry
     check decoded.blocks == meta.blocks
-    check decoded.manifest.get == cid
-
-  test "Should roundtrip with no manifest":
-    let meta = OverlayMetadata(
-      status: OverlayStatus.Storing,
-      manifest: Cid.none,
-      expiry: 777,
-      blocks: BitSeq.init(4),
-    )
-
-    let decoded = OverlayMetadata.decode(meta.encode()).tryGet()
-    check decoded.status == meta.status
-    check decoded.expiry == meta.expiry
-    check decoded.blocks == meta.blocks
-    check decoded.manifest.isNone
 
   test "Should roundtrip with empty blocks":
-    let meta = OverlayMetadata(
-      status: OverlayStatus.Completed,
-      manifest: Cid.none,
-      expiry: 999,
-      blocks: BitSeq.init(0),
-    )
+    let meta = OverlayMetadata(status: Completed, expiry: 999, blocks: BitSeq.init(0))
 
     let decoded = OverlayMetadata.decode(meta.encode()).tryGet()
     check decoded.status == meta.status
@@ -93,9 +71,7 @@ suite "OverlayMetadata codecs":
       OverlayStatus.Error, OverlayStatus.Storing, OverlayStatus.Completed,
       OverlayStatus.Deleting,
     ]:
-      let meta = OverlayMetadata(
-        status: status, manifest: Cid.none, expiry: 11, blocks: BitSeq.init(0)
-      )
+      let meta = OverlayMetadata(status: status, expiry: 11, blocks: BitSeq.init(0))
 
       let decoded = OverlayMetadata.decode(meta.encode()).tryGet()
       check decoded.status == status
@@ -124,20 +100,13 @@ suite "Overlay CRUD":
     tp.shutdown()
 
   test "Should put and get overlay metadata":
-    let
-      treeCid = Cid.example
-      manifestCid = createTestBlock(16).cid
+    let treeCid = Cid.example
 
     var bits = BitSeq.init(10)
     bits.setBit(0)
     bits.setBit(9)
 
-    let meta = OverlayMetadata(
-      status: OverlayStatus.Completed,
-      manifest: manifestCid.some,
-      expiry: now + 100,
-      blocks: bits,
-    )
+    let meta = OverlayMetadata(status: Completed, expiry: now + 100, blocks: bits)
 
     (await repo.putOverlayMetadata(treeCid, meta)).tryGet()
     let got = (await repo.getOverlayMetadata(treeCid)).tryGet()
@@ -145,24 +114,17 @@ suite "Overlay CRUD":
     check got.status == meta.status
     check got.expiry == meta.expiry
     check got.blocks == meta.blocks
-    check got.manifest.get == manifestCid
 
   test "Should update existing overlay metadata":
     let treeCid = Cid.example
 
-    let meta1 = OverlayMetadata(
-      status: OverlayStatus.Storing,
-      manifest: Cid.none,
-      expiry: now + 1,
-      blocks: BitSeq.init(1),
-    )
+    let meta1 =
+      OverlayMetadata(status: Storing, expiry: now + 1, blocks: BitSeq.init(1))
     (await repo.putOverlayMetadata(treeCid, meta1)).tryGet()
 
     var bits = BitSeq.init(2)
     bits.setBit(1)
-    let meta2 = OverlayMetadata(
-      status: OverlayStatus.Completed, manifest: Cid.none, expiry: now + 2, blocks: bits
-    )
+    let meta2 = OverlayMetadata(status: Completed, expiry: now + 2, blocks: bits)
     (await repo.putOverlayMetadata(treeCid, meta2)).tryGet()
 
     let got = (await repo.getOverlayMetadata(treeCid)).tryGet()
@@ -172,12 +134,8 @@ suite "Overlay CRUD":
 
   test "Should delete overlay metadata":
     let treeCid = Cid.example
-    let meta = OverlayMetadata(
-      status: OverlayStatus.Completed,
-      manifest: Cid.none,
-      expiry: now + 10,
-      blocks: BitSeq.init(0),
-    )
+    let meta =
+      OverlayMetadata(status: Completed, expiry: now + 10, blocks: BitSeq.init(0))
 
     (await repo.putOverlayMetadata(treeCid, meta)).tryGet()
     (await repo.deleteOverlayMetadata(treeCid)).tryGet()
@@ -224,29 +182,12 @@ suite "Overlay creation":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Storing, blocks = blocks
+        treeCid = treeCid, status = Storing.some, blocks = blocks
       )
     ).tryGet()
 
     let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
     check meta.expiry == now + DefaultOverlayTtl.seconds
-
-  test "Should store manifest cid":
-    let
-      treeCid = Cid.example
-      manifestCid = createTestBlock(17).cid
-
-    (
-      await repo.createOrUpdateOverlay(
-        treeCid = treeCid,
-        status = OverlayStatus.Completed,
-        blocks = BitSeq.init(1),
-        manifest = manifestCid.some,
-      )
-    ).tryGet()
-
-    let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
-    check meta.manifest.get == manifestCid
 
   test "Should create unique tmp overlays":
     let tmpCid1 = (await repo.createTmpOverlay()).tryGet()
@@ -254,12 +195,11 @@ suite "Overlay creation":
 
     check tmpCid1 != tmpCid2
 
-  test "Should create tmp overlay with storing status and no manifest":
+  test "Should create tmp overlay with storing status":
     let tmpCid = (await repo.createTmpOverlay()).tryGet()
     let meta = (await repo.getOverlayMetadata(tmpCid)).tryGet()
 
-    check meta.status == OverlayStatus.Storing
-    check meta.manifest.isNone
+    check meta.status == Storing
 
   test "Should set tmp overlay expiry from clock and ttl":
     let tmpCid = (await repo.createTmpOverlay()).tryGet()
@@ -296,14 +236,10 @@ suite "Overlay listing":
       cid2 = createTestBlock(22).cid
       cid3 = createTestBlock(23).cid
 
-    for (cid, status) in [
-      (cid1, OverlayStatus.Completed),
-      (cid2, OverlayStatus.Storing),
-      (cid3, OverlayStatus.Error),
-    ]:
+    for (cid, status) in [(cid1, Completed), (cid2, Storing), (cid3, Error)]:
       (
         await repo.createOrUpdateOverlay(
-          treeCid = cid, status = status, blocks = BitSeq.init(1)
+          treeCid = cid, status = status.some, blocks = BitSeq.init(1)
         )
       ).tryGet()
 
@@ -327,18 +263,14 @@ suite "Overlay listing":
       cid2 = createTestBlock(32).cid
       cid3 = createTestBlock(33).cid
 
-    for (cid, status) in [
-      (cid1, OverlayStatus.Completed),
-      (cid2, OverlayStatus.Storing),
-      (cid3, OverlayStatus.Completed),
-    ]:
+    for (cid, status) in [(cid1, Completed), (cid2, Storing), (cid3, Completed)]:
       (
         await repo.createOrUpdateOverlay(
-          treeCid = cid, status = status, blocks = BitSeq.init(1)
+          treeCid = cid, status = status.some, blocks = BitSeq.init(1)
         )
       ).tryGet()
 
-    let iter = (await repo.listOverlaysInState(OverlayStatus.Completed)).tryGet()
+    let iter = (await repo.listOverlaysInState(Completed)).tryGet()
     let cids = (await utils.collect(iter)).tryGet()
 
     check cids.len == 2
@@ -351,11 +283,11 @@ suite "Overlay listing":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = cid, status = OverlayStatus.Completed, blocks = BitSeq.init(1)
+        treeCid = cid, status = Completed.some, blocks = BitSeq.init(1)
       )
     ).tryGet()
 
-    let iter = (await repo.listOverlaysInState(OverlayStatus.Deleting)).tryGet()
+    let iter = (await repo.listOverlaysInState(Deleting)).tryGet()
     let cids = (await utils.collect(iter)).tryGet()
 
     check cids.len == 0
@@ -367,13 +299,11 @@ suite "Overlay listing":
       cid3 = createTestBlock(53).cid
 
     for (cid, status) in [
-      (cid1, OverlayStatus.Storing),
-      (cid2, OverlayStatus.Storing),
-      (cid3, OverlayStatus.Storing),
+      (cid1, Storing.some), (cid2, Storing.some), (cid3, Storing.some)
     ]:
       (
         await repo.createOrUpdateOverlay(
-          treeCid = cid, status = status, blocks = BitSeq.init(1), expiry = 50.seconds
+          treeCid = cid, status = status, blocks = BitSeq.init(1), expiry = 50
         )
       ).tryGet()
 
@@ -393,7 +323,7 @@ suite "Overlay listing":
     for cid in [cid1, cid2, cid3, cid4]:
       (
         await repo.createOrUpdateOverlay(
-          treeCid = cid, status = OverlayStatus.Completed, blocks = BitSeq.init(1)
+          treeCid = cid, status = Completed.some, blocks = BitSeq.init(1)
         )
       ).tryGet()
 
@@ -459,13 +389,13 @@ suite "Overlay lifecycle":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid1, status = OverlayStatus.Completed, blocks = BitSeq.init(2)
+        treeCid = treeCid1, status = Completed.some, blocks = BitSeq.init(2)
       )
     ).tryGet()
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid2, status = OverlayStatus.Completed, blocks = BitSeq.init(2)
+        treeCid = treeCid2, status = Completed.some, blocks = BitSeq.init(2)
       )
     ).tryGet()
 
@@ -484,7 +414,7 @@ suite "Overlay lifecycle":
 
     (
       await repo.createOrUpdateOverlay(
-        treeCid = treeCid, status = OverlayStatus.Storing, blocks = BitSeq.init(0)
+        treeCid = treeCid, status = Storing.some, blocks = BitSeq.init(0)
       )
     ).tryGet()
 
@@ -509,7 +439,7 @@ suite "Overlay lifecycle":
       realOverlay = (await repo.getOverlayMetadata(realTreeCid)).tryGet()
       leaf = (await repo.getLeafMetadata(realTreeCid, 0.Natural)).tryGet()
 
-    check realOverlay.status == OverlayStatus.Storing
+    check realOverlay.status == Storing
     check realOverlay.blocks[0]
     check leaf.blkCid == blk.cid
 

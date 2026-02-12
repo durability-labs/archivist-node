@@ -593,7 +593,9 @@ proc decode*(
 
   return decoded.success
 
-proc repair*(self: Erasure, encoded: Manifest): Future[?!void] {.async.} =
+proc repair*(
+    self: Erasure, encoded: Manifest
+): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Repair a protected manifest by reconstructing the full dataset
   ##
   ## `encoded` - the encoded (protected) manifest to

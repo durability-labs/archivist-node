@@ -74,8 +74,9 @@ asyncchecksuite "Test Node - Slot Repair":
       ecM = 1
       localStore = localStores[0]
       store = nodes[0].blockStore
-      blocks =
-        (await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)).tryGet
+      blocks = (
+        await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+      ).tryGet
       data = (
         block:
           collect(newSeq):
@@ -89,8 +90,9 @@ asyncchecksuite "Test Node - Slot Repair":
     let
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-      erasure =
-        Erasure.new(store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+      erasure = Erasure.new(
+        store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool
+      )
 
     (await localStore.putBlock(manifestBlock)).tryGet()
 
@@ -157,8 +159,9 @@ asyncchecksuite "Test Node - Slot Repair":
       ecM = 2
       localStore = localStores[0]
       store = nodes[0].blockStore
-      blocks =
-        (await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)).tryGet
+      blocks = (
+        await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+      ).tryGet
       data = (
         block:
           collect(newSeq):
@@ -172,8 +175,9 @@ asyncchecksuite "Test Node - Slot Repair":
     let
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-      erasure =
-        Erasure.new(store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+      erasure = Erasure.new(
+        store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool
+      )
 
     (await localStore.putBlock(manifestBlock)).tryGet()
 

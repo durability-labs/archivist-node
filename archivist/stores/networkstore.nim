@@ -123,42 +123,6 @@ method delBlock*(
 
   self.localStore.delBlock(treeCid, index)
 
-method ensureExpiry*(
-    self: NetworkStore, cid: Cid, expiry: SecondsSince1970
-): Future[?!void] {.
-    async: (raises: [CancelledError]), deprecated: "deprecated, will be removed"
-.} =
-  ## Ensure that block's associated expiry is at least given timestamp
-  ##
-
-  without blockCheck =? await self.localStore.hasBlock(cid), err:
-    return failure(err)
-
-  if blockCheck:
-    return await self.localStore.ensureExpiry(cid, expiry)
-  else:
-    trace "Updating expiry - block not in local store", cid
-
-  return success()
-
-method ensureExpiry*(
-    self: NetworkStore, treeCid: Cid, index: Natural, expiry: SecondsSince1970
-): Future[?!void] {.
-    async: (raises: [CancelledError]), deprecated: "deprecated, will be removed"
-.} =
-  ## Ensure that block's associated expiry is at least given timestamp
-  ##
-
-  without blockCheck =? await self.localStore.hasBlock(treeCid, index), err:
-    return failure(err)
-
-  if blockCheck:
-    return await self.localStore.ensureExpiry(treeCid, index, expiry)
-  else:
-    trace "Updating expiry - block not in local store", treeCid, index
-
-  return success()
-
 method listBlocks*(
     self: NetworkStore, blockType = BlockType.Manifest
 ): Future[?!SafeAsyncIter[Cid]] {.async: (raw: true, raises: [CancelledError]).} =

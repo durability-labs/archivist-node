@@ -134,10 +134,7 @@ proc fetchManifest*(
     trace "Unable to fetch manifest for cid", cid
     return failure(error)
 
-  if err =? (await self.networkStore.ensureExpiry(cid, expiry)).errorOption:
-    error "Failed to update manifest block expiry", cid, expiry
-    return failure(err)
-
+  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, expiry = expiry)
   return success(manifest)
 
 proc findPeer*(self: ArchivistNodeRef, peerId: PeerId): Future[?PeerRecord] {.async.} =
@@ -157,20 +154,7 @@ proc updateExpiry*(
     trace "Unable to fetch manifest for cid", manifestCid
     return failure(error)
 
-  try:
-    let ensuringFutures = Iter[int].new(0 ..< manifest.blocksCount).mapIt(
-        self.networkStore.ensureExpiry(manifest.treeCid, it, expiry)
-      )
-
-    let res = await allFinishedFailed[?!void](ensuringFutures)
-    if res.failure.len > 0:
-      trace "Some blocks failed to update expiry", len = res.failure.len
-      return failure("Some blocks failed to update expiry (" & $res.failure.len & " )")
-  except CancelledError as exc:
-    raise exc
-  except CatchableError as exc:
-    return failure(exc.msg)
-
+  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, expiry = expiry)
   return success()
 
 proc fetchBatched*(
@@ -303,9 +287,7 @@ proc streamEntireDataset(
         )
 
         if err =? (
-          await self.repoStore.createOrUpdateOverlay(
-            manifest.treeCid, OverlayStatus.Storing, manifest = manifestCid.some
-          )
+          await self.repoStore.createOrUpdateOverlay(manifest.treeCid, Storing.some)
         ).errorOption:
           error "Unable to create overlay", manifestCid, exc = err.msg
           return
@@ -315,9 +297,7 @@ proc streamEntireDataset(
           return
 
         if err =? (
-          await self.repoStore.createOrUpdateOverlay(
-            manifest.treeCid, OverlayStatus.Completed
-          )
+          await self.repoStore.createOrUpdateOverlay(manifest.treeCid, Completed.some)
         ).errorOption:
           error "Unable to update overlay", manifestCid, exc = err.msg
       except CatchableError as exc:
@@ -479,12 +459,7 @@ proc store*(
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
 
   # move tmp overlay leafs to final treeCid
-  ?await self.repoStore.finalizeOverlay(
-    tmpTreeCid,
-    treeCid,
-    status = OverlayStatus.Completed.some,
-    manifest = manifestBlk.cid.some,
-  )
+  ?await self.repoStore.finalizeOverlay(tmpTreeCid, treeCid, status = Completed.some)
   cleanupTmp = false # temp overlay has been finalized, no need to clean up
 
   # TODO: Once we have progressive tree building we can get rid of the
@@ -547,9 +522,7 @@ proc ensureProtectedManifest(
     manifestBlk = ?await self.repoStore.storeManifest(encodedManifest)
 
   # Mark overlay as completed
-  ?await self.repoStore.createOrUpdateOverlay(
-    encodedManifest.treeCid, OverlayStatus.Completed, manifest = manifestBlk.cid.some
-  )
+  ?await self.repoStore.createOrUpdateOverlay(encodedManifest.treeCid, Completed.some)
 
   success encodedManifest
 
@@ -710,21 +683,6 @@ proc storeSlot*(
     error "Slot index not in manifest"
     return failure(newException(ArchivistError, "Slot index not in manifest"))
 
-  proc updateExpiry(
-      blocks: seq[bt.Block]
-  ): Future[?!void] {.async: (raises: [CancelledError]).} =
-    trace "Updating expiry for blocks", blocks = blocks.len
-
-    let ensureExpiryFutures =
-      blocks.mapIt(self.networkStore.ensureExpiry(it.cid, expiry))
-
-    let res = await allFinishedFailed[?!void](ensureExpiryFutures)
-    if res.failure.len > 0:
-      error "Some blocks failed to update expiry", len = res.failure.len
-      return failure("Some blocks failed to update expiry (" & $res.failure.len & " )")
-
-    return success()
-
   if slotIndex > int.high.uint64:
     error "Cannot cast slot index to int", slotIndex = slotIndex
     return failure(newException(ArchivistError, "Cannot cast slot index to int"))
@@ -735,33 +693,23 @@ proc storeSlot*(
 
   if repair:
     trace "start repairing slot", slotIdx
-    try:
-      let erasure = Erasure.new(
-        self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
-        self.taskpool,
-      )
-      if err =? (await erasure.repair(manifest)).errorOption:
-        error "Unable to erasure decode repairing manifest",
-          cid = manifest.treeCid, exc = err.msg
-        return failure(err)
+    let erasure = Erasure.new(
+      self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
+      self.taskpool,
+    )
+    if err =? (await erasure.repair(manifest)).errorOption:
+      error "Unable to erasure decode repairing manifest",
+        cid = manifest.treeCid, exc = err.msg
+      return failure(err)
 
-      # Iterate the slot blocks. Provide them to the updateExpiry callback.
-      while not blksIter.finished:
-        without blk =?
-          await self.networkStore.getBlock(manifest.treeCid, blksIter.next()), err:
-          error "Unable to get slot block after repair"
-          return failure(err)
-        if err =? (await updateExpiry(@[blk])).errorOption:
-          error "Unable to update expiry for slot block after repair"
-          return failure(err)
-    except CatchableError as exc:
-      error "Error erasure decoding repairing manifest",
-        cid = manifest.treeCid, exc = exc.msg
-      return failure(exc.msg)
+    # Iterate the slot blocks. Provide them to the updateExpiry callback.
+    while not blksIter.finished:
+      without blk =? await self.networkStore.getBlock(manifest.treeCid, blksIter.next()),
+        err:
+        error "Unable to get slot block after repair"
+        return failure(err)
   else:
-    if err =? (
-      await self.fetchBatched(manifest.treeCid, blksIter, onBatch = updateExpiry)
-    ).errorOption:
+    if err =? (await self.fetchBatched(manifest.treeCid, blksIter)).errorOption:
       error "Unable to fetch blocks", err = err.msg
       return failure(err)
 
