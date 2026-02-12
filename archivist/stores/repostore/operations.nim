@@ -27,6 +27,7 @@ import ../../blocktype
 import ../../clock
 import ../../logutils
 import ../../merkletree
+import ../../utils
 
 logScope:
   topics = "archivist repostore"
@@ -118,7 +119,7 @@ proc updateCounters*(
     success toSeq(refreshed.values)
 
   trace "Updating counters", quotaDelta, reservedDelta, blocksDelta
-  ?await self.metaDs.tryPutAtomic(updates, maxRetries = 3, updateCountersMiddleware)
+  ?await self.metaDs.tryPutAtomic(updates, maxRetries = 10, updateCountersMiddleware)
 
   if quotaDelta != 0:
     self.quotaUsage.used = max(0, self.quotaUsage.used.int + quotaDelta).NBytes
@@ -149,7 +150,7 @@ proc deleteBlocksMetaRecs*(
   # delete meta keys
   await self.metaDs.tryDelete(
     blocksMeta.filterIt(it.val.refCount == 0), # never delete if refCount != 0
-    maxRetries = 3,
+    maxRetries = 10,
     proc(
         records: seq[KVRecord[BlockMetadata]]
     ): Future[?!seq[KVRecord[BlockMetadata]]] {.async: (raises: [CancelledError]).} =
@@ -246,11 +247,6 @@ proc putOrUpdateLeafBlockMeta*(
   ## Put or update lef and block metadata
   ##
 
-  # we only increase refcount for **NEW LEAFS**, if a leaf
-  # already esists, we skip the refCount.inc, thus we make
-  # a mapping of block rec -> leaf rec to be able to filter
-  # out inserts from updates
-
   # Fetch existing overlay to get correct BitSeq length
   # (overlay must exist before putLeafsAndBlocks is called)
   let
@@ -260,7 +256,7 @@ proc putOrUpdateLeafBlockMeta*(
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
-    blocksBits = BitSeq.init(max(existingOverlay.blocks.len, blocks.len))
+    blocksBits = BitSeq.init(blocks.mapIt(it.index).max() + 1)
 
   for item in blocks:
     let
@@ -275,6 +271,10 @@ proc putOrUpdateLeafBlockMeta*(
         leafKey, LeafMetadata(blkCid: item.blkCid, proof: item.proof)
       )
 
+    # we only increase refcount for **NEW LEAFS**, if a leaf
+    # already exists, we skip the refCount.inc, thus we make
+    # a mapping of block rec -> leaf rec to be able to filter
+    # out inserts from updates
     blocksBits.setBit(item.index)
     leafsMap[leafKey] = leafRec.toRaw
     blkToLeafMap.withValue(blkKey, pairs):
@@ -334,7 +334,7 @@ proc putOrUpdateLeafBlockMeta*(
           record = blockMeta.toRaw
       elif ArchivistOverlaysKey.ancestor(record.key):
         var overlayMetaRec = ?toRecord[OverlayMetadata](record)
-        overlayMetaRec.val.blocks.combine(blocksBits)
+        overlayMetaRec.val.blocks.combineSafe(blocksBits)
         trace "Updated overlay meta", overlay = overlayMetaRec.val
         record = overlayMetaRec.toRaw
 
@@ -348,7 +348,7 @@ proc putOrUpdateLeafBlockMeta*(
     @[overlayMeta] & blkToLeafMap.values.toSeq.mapIt(@[it[0]] & toSeq(it[1])).concat
   trace "Put or update leaf and block metadata", treeCid, recordsCount = updates.len
   if err =? (
-    await self.metaDs.tryPutAtomic(updates, maxRetries = 3, putLeafAndBlockMetaAtomic)
+    await self.metaDs.tryPutAtomic(updates, maxRetries = 10, putLeafAndBlockMetaAtomic)
   ).errorOption:
     trace "Unable to put or update leaf and block metadata", error = err.msg
     return failure(err)
@@ -373,7 +373,7 @@ proc delLeafBlockMetadata*(
   ##
   ## - We first do an atomic update of the block refcount and
   ## set leafs as deleted = true.
-  ## - If a crash occurs in between, recounts stay consistent
+  ## - If a crash occurs in between, refCounts stay consistent
   ## We then delete leafs and blocks who's refcount is 0.
   ##
 
@@ -437,8 +437,9 @@ proc delLeafBlockMetadata*(
 
   var
     overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
-    blockBits = overlayMeta.val.blocks
+    blockBits = BitSeq.init(uniqueIdxs.max() + 1)
 
+  blockBits.combineSafe(overlayMeta.val.blocks)
   for i in uniqueIdxs:
     blockBits.clearBit(i)
 
@@ -482,8 +483,11 @@ proc delLeafBlockMetadata*(
         var overlayMetaRec = ?toRecord[OverlayMetadata](record)
         # Re-apply clearBit operations on fresh overlay data
         # to avoid clobbering concurrent updates
+        blockBits.combineSafe(overlayMetaRec.val.blocks)
         for i in uniqueIdxs:
-          overlayMetaRec.val.blocks.clearBit(i)
+          blockBits.clearBit(i)
+
+        overlayMetaRec.val.blocks = blockBits
         overlayMetaRec.val.status = OverlayStatus.Deleting
         overlayMetaRec.val.expiry = self.clock.now()
         trace "Updated overlay meta for delete", overlay = overlayMetaRec.val
@@ -502,7 +506,7 @@ proc delLeafBlockMetadata*(
   ?await self.metaDs.tryPutAtomic(
     @[updateOverlayRec.toRaw] & updateLeafsRecs.mapIt(it.toRaw) &
       updateBlksRecs.mapIt(it.toRaw),
-    maxRetries = 3,
+    maxRetries = 10,
     atomicUpdateDelMeta,
   )
 

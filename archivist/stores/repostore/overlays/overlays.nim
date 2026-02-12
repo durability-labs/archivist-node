@@ -188,22 +188,32 @@ proc createOrUpdateOverlay*(
     self: RepoStore,
     treeCid: Cid,
     status: OverlayStatus,
-    blocks: BitSeq,
-    expiry = DefaultOverlayTtl,
-    manifest: ?Cid = Cid.none,
-): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
-  self.putOverlayMetadata(
-    treeCid,
-    OverlayMetadata(
-      status: status,
-      blocks: blocks,
-      manifest: manifest,
-      expiry: self.clock.now() + expiry.seconds,
-    ),
-  )
+    blocks = BitSeq.init(0),
+    manifest = Cid.none,
+    expiry = ZeroDuration,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  without var overlay =? await self.getOverlayMetadata(treeCid), err:
+    if not (err of KVStoreKeyNotFound):
+      trace "Error fetching overlay metadata for update",
+        treeCid = treeCid, error = err.msg
+      return failure(err)
+
+  let expiryTime =
+    self.clock.now() +
+    (if expiry == ZeroDuration: self.overlayTtl.seconds else: expiry.seconds)
+
+  overlay.status = status
+  overlay.blocks.combineSafe(blocks)
+
+  if manifest != Cid.none:
+    overlay.manifest = manifest
+
+  overlay.expiry = expiryTime
+
+  await self.putOverlayMetadata(treeCid, overlay)
 
 proc createTmpOverlay*(
-    self: RepoStore, expiry = DefaultOverlayTtl
+    self: RepoStore, expiry = ZeroDuration
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
   let
     oid = genOid()
@@ -212,12 +222,16 @@ proc createTmpOverlay*(
       ?MultiHash.digest($Sha256HashCodec, oidStr.toOpenArrayByte(0, oidStr.high)).mapFailure
     tmpTreeCid = ?Cid.init(CIDv1, BlockCodec, mhash).mapFailure
 
+  let expiryTime =
+    self.clock.now() +
+    (if expiry == ZeroDuration: self.overlayTtl.seconds else: expiry.seconds)
+
   ?await self.putOverlayMetadata(
     tmpTreeCid,
     OverlayMetadata(
       status: OverlayStatus.Storing,
       manifest: Cid.none,
-      expiry: self.clock.now() + expiry.seconds,
+      expiry: expiryTime,
       blocks: BitSeq.init(0),
     ),
   )
@@ -271,7 +285,11 @@ proc dropOverlay*(
   success()
 
 proc finalizeOverlay*(
-    self: RepoStore, tmpCid, realTreeCid: Cid
+    self: RepoStore,
+    tmpCid, realTreeCid: Cid,
+    status = OverlayStatus.none,
+    manifest = Cid.none,
+    expiry = ZeroDuration,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Promote a temp overlay to a real overlay.
   ##
@@ -295,7 +313,17 @@ proc finalizeOverlay*(
   ?await self.metaDs.moveKeysAtomic(oldLeafPrefix, newLeafPrefix)
 
   # Move overlay metadata (single record — use put+delete)
-  let meta = ?await self.getOverlayMetadata(tmpCid)
+  var meta = ?await self.getOverlayMetadata(tmpCid)
+
+  let expiryTime =
+    self.clock.now() +
+    (if expiry == ZeroDuration: self.overlayTtl.seconds else: expiry.seconds)
+
+  meta.expiry = expiryTime
+  meta.manifest = manifest
+  if overlayStatus =? status:
+    meta.status = overlayStatus
+
   ?await self.putOverlayMetadata(realTreeCid, meta)
   ?await self.deleteOverlayMetadata(tmpCid)
 

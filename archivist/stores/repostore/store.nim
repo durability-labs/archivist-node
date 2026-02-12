@@ -27,6 +27,7 @@ import ../../blocktype
 import ../../logutils
 import ../../merkletree
 import ../../utils
+import ../../manifest
 
 export blocktype, cid, overlays
 
@@ -396,6 +397,17 @@ proc release*(
     return failure(newException(QuotaNotEnoughError, "Not enough bytes to release!"))
 
   await self.updateCounters(reservedDelta = -(bytes.int))
+
+proc storeManifest*(
+    self: RepoStore, manifest: Manifest
+): Future[?!Block] {.async: (raises: [CancelledError]).} =
+  let
+    encodedVerifiable = ?manifest.encode()
+    blk = ?Block.new(data = encodedVerifiable, codec = ManifestCodec)
+
+  ?await self.putBlock(blk)
+  trace "Stored manifest block", cid = blk.cid
+  success blk
 
 proc start*(
     self: RepoStore
