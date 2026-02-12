@@ -234,6 +234,7 @@ proc new*(
     archivistNode = ArchivistNodeRef.new(
       switch = switch,
       networkStore = store,
+      repoStore = repoStore,
       engine = engine,
       discovery = discovery,
       prover = prover,

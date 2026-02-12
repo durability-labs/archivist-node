@@ -16,6 +16,7 @@ import std/sugar
 import times
 
 import pkg/taskpools
+import pkg/stew/bitseqs
 import pkg/questionable
 import pkg/questionable/results
 import pkg/chronos
@@ -62,6 +63,7 @@ type
     switch: Switch
     networkId: PeerId
     networkStore: NetworkStore
+    repoStore: RepoStore
     engine: BlockExcEngine
     prover: ?Prover
     discovery: Discovery
@@ -99,23 +101,6 @@ func marketplace*(self: ArchivistNodeRef): ?MarketplaceNode =
 func `marketplace=`*(self: ArchivistNodeRef, marketplace: MarketplaceNode) =
   doAssert self.marketplace.isNone
   self.marketplace = some marketplace
-
-proc storeManifest*(
-    self: ArchivistNodeRef, manifest: Manifest
-): Future[?!bt.Block] {.async: (raises: [CancelledError]).} =
-  without encodedVerifiable =? manifest.encode(), err:
-    trace "Unable to encode manifest"
-    return failure(err)
-
-  without blk =? bt.Block.new(data = encodedVerifiable, codec = ManifestCodec), error:
-    trace "Unable to create block from manifest"
-    return failure(error)
-
-  if err =? (await self.networkStore.putBlock(blk)).errorOption:
-    trace "Unable to store manifest block", cid = blk.cid, err = err.msg
-    return failure(err)
-
-  success blk
 
 proc fetchManifest*(
     self: ArchivistNodeRef, cid: Cid
@@ -315,8 +300,17 @@ proc streamEntireDataset(
         let erasure = Erasure.new(
           self.networkStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
         )
+
+        ?await self.repoStore.createOrUpdateOverlay(
+          encoded.treeCid, OverlayStatus.Storing, manifestCid.some, self.conf.overlayTtl
+        )
+
         without _ =? (await erasure.decode(manifest)), error:
           error "Unable to erasure decode manifest", manifestCid, exc = error.msg
+
+        ?await self.repoStore.createOrUpdateOverlay(
+          encoded.treeCid, OverlayStatus.Completed
+        )
       except CatchableError as exc:
         trace "Error erasure decoding manifest", manifestCid, exc = exc.msg
 
@@ -432,64 +426,58 @@ proc store*(
   ##
   info "Storing data"
 
+  var cleanupTmp = true
+  let tmpTreeCid = ?await self.repoStore.createTmpOverlay()
+  defer:
+    await stream.close()
+    if cleanupTmp:
+      if err =? (await self.repoStore.dropOverlay(tmpTreeCid)).errorOption:
+        trace "Unable to drop temporary overlay", tmpTreeCid, err = err.msg
+
   let
     hcodec = Sha256HashCodec
     dataCodec = BlockCodec
     chunker = LPStreamChunker.new(stream, chunkSize = blockSize)
 
-  var cids: seq[Cid]
+  var
+    index = 0
+    cids: seq[Cid]
+  while (let chunk = ?await chunker.getBytes(); chunk.len > 0):
+    let
+      mhash = ?MultiHash.digest($hcodec, chunk).mapFailure
+      cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
+      blk = ?bt.Block.new(cid, chunk, verify = false)
 
-  try:
-    while (let chunk = await chunker.getBytes(); chunk.len > 0):
-      without mhash =? MultiHash.digest($hcodec, chunk).mapFailure, err:
-        return failure(err)
+    cids.add(cid)
+    ?await self.repoStore.putLeafAndBlock(tmpTreeCid, blk, index)
+    index.inc
 
-      without cid =? Cid.init(CIDv1, dataCodec, mhash).mapFailure, err:
-        return failure(err)
+  let
+    tree = ?ArchivistTree.init(cids)
+    treeCid = ?tree.rootCid(CIDv1, dataCodec)
+    manifest = Manifest.new(
+      treeCid = treeCid,
+      blockSize = blockSize,
+      datasetSize = NBytes(chunker.offset),
+      version = CIDv1,
+      hcodec = hcodec,
+      codec = dataCodec,
+      filename = filename,
+      mimetype = mimetype,
+    )
 
-      without blk =? bt.Block.new(cid, chunk, verify = false):
-        return failure("Unable to init block from chunk!")
+  # store the manifest
+  let manifestBlk = ?await self.repoStore.storeManifest(manifest)
 
-      cids.add(cid)
+  # move tmp overlay leafs to final treeCid
+  ?await self.repoStore.finalizeOverlay(tmpTreeCid, treeCid, manifestBlk.cid.some)
+  cleanupTmp = false # we don't need to drop the manifest anymore
 
-      if err =? (await self.networkStore.putBlock(blk)).errorOption:
-        error "Unable to store block", cid = blk.cid, err = err.msg
-        return failure(&"Unable to store block {blk.cid}")
-  except CancelledError as exc:
-    raise exc
-  except CatchableError as exc:
-    return failure(exc.msg)
-  finally:
-    await stream.close()
-
-  without tree =? ArchivistTree.init(cids), err:
-    return failure(err)
-
-  without treeCid =? tree.rootCid(CIDv1, dataCodec), err:
-    return failure(err)
-
+  # TODO: Once we have progressive tree building we can get rid of the
+  # separate proofs putting and just put leafs directly in the same
+  # putLeafAndBlock call as we build the tree
   for index, cid in cids:
-    without proof =? tree.getProof(index), err:
-      return failure(err)
-    if err =?
-        (await self.networkStore.putCidAndProof(treeCid, index, cid, proof)).errorOption:
-      # TODO add log here
-      return failure(err)
-
-  let manifest = Manifest.new(
-    treeCid = treeCid,
-    blockSize = blockSize,
-    datasetSize = NBytes(chunker.offset),
-    version = CIDv1,
-    hcodec = hcodec,
-    codec = dataCodec,
-    filename = filename,
-    mimetype = mimetype,
-  )
-
-  without manifestBlk =? await self.storeManifest(manifest), err:
-    error "Unable to store manifest"
-    return failure(err)
+    ?await self.repoStore.putCidAndProof(treeCid, index, cid, ?tree.getProof(index))
 
   info "Stored data",
     manifestCid = manifestBlk.cid,
@@ -540,7 +528,16 @@ proc ensureProtectedManifest(
     self.networkStore.localStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
   )
 
-  return await erasure.encode(manifest, ecK, ecM)
+  let
+    encodedManifest = ?await erasure.encode(manifest, ecK, ecM)
+    manifestBlk = ?await self.repoStore.storeManifest(encodedManifest)
+
+  # Mark overlay as completed
+  ?await self.repoStore.createOrUpdateOverlay(
+    encoded.treeCid, OverlayStatus.Completed, manifestBlk.cid.some, self.conf.overlayTtl
+  )
+
+  success encodedManifest
 
 proc ensureVerifiableManifest(
     self: ArchivistNodeRef, manifest: Manifest, ecK: uint, ecM: uint
@@ -590,7 +587,7 @@ proc setupRequest(
   let
     manifest = ?await self.fetchManifest(cid)
     verifiable = ?await self.ensureVerifiableManifest(manifest, ecK, ecM)
-    manifestBlk = ?await self.storeManifest(verifiable)
+    manifestBlk = ?await self.repoStore.storeManifest(verifiable)
 
     verifyRoot = (?verifiable.verifyRoot.fromVerifyCid).toBytes
     slotBytes = (verifiable.blockSize.int * verifiable.numSlotBlocks).NBytes
@@ -839,6 +836,7 @@ proc new*(
     T: type ArchivistNodeRef,
     switch: Switch,
     networkStore: NetworkStore,
+    repoStore: RepoStore,
     engine: BlockExcEngine,
     discovery: Discovery,
     taskpool: Taskpool,
@@ -851,6 +849,7 @@ proc new*(
   ArchivistNodeRef(
     switch: switch,
     networkStore: networkStore,
+    repoStore: repoStore,
     engine: engine,
     prover: prover,
     discovery: discovery,
