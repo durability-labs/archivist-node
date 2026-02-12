@@ -27,11 +27,20 @@ export asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs
 when defined(posix):
   import os, posix
 
+type Bytes = seq[byte]
+
 func combineSafe*(tgt: var BitSeq, src: BitSeq) =
   ## OR-combine two BitSeqs that may have different lengths.
   ##
 
-  if src.len == 0:
+  if Bytes(src).len == 0:
+    return
+
+  if Bytes(tgt).len == 0:
+    tgt = BitSeq.init(src.len)
+    for i in 0 ..< src.len:
+      if src[i]:
+        tgt.setBit(i)
     return
 
   if tgt.len == src.len:

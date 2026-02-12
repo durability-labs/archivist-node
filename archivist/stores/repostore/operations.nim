@@ -284,12 +284,12 @@ proc putOrUpdateLeafBlockMeta*(
     do:
       blkToLeafMap[blkKey] = (blkRec.toRaw, [leafRec.toRaw].toHashSet)
 
+  var combinedBlocks = existingOverlay.blocks
+  combinedBlocks.combineSafe(blocksBits)
+
   let overlayMeta = existingOverlayRec.fromRecord(
     OverlayMetadata(
-      blocks: blocksBits,
-      status: OverlayStatus.Storing,
-      manifest: existingOverlay.manifest,
-      expiry: existingOverlay.expiry,
+      blocks: combinedBlocks, status: Storing, expiry: existingOverlay.expiry
     )
   ).toRaw
 
@@ -444,12 +444,7 @@ proc delLeafBlockMetadata*(
     blockBits.clearBit(i)
 
   let updateOverlayRec = overlayMeta.fromRecord(
-    OverlayMetadata(
-      blocks: blockBits,
-      status: OverlayStatus.Deleting,
-      manifest: overlayMeta.val.manifest,
-      expiry: self.clock.now(),
-    )
+    OverlayMetadata(blocks: blockBits, status: Deleting, expiry: self.clock.now())
   )
 
   proc atomicUpdateDelMeta(
@@ -488,7 +483,7 @@ proc delLeafBlockMetadata*(
           blockBits.clearBit(i)
 
         overlayMetaRec.val.blocks = blockBits
-        overlayMetaRec.val.status = OverlayStatus.Deleting
+        overlayMetaRec.val.status = Deleting
         overlayMetaRec.val.expiry = self.clock.now()
         trace "Updated overlay meta for delete", overlay = overlayMetaRec.val
         record = overlayMetaRec.toRaw

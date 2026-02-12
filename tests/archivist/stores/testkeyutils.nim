@@ -69,7 +69,7 @@ suite "KeyUtils":
       namespaces[2].value == expectedPrefix
       namespaces[3].value == expectedPostfix
 
-  test "blockMetaKey should create block TTL key":
+  test "blockMetaKey should create block metadata key":
     let cid = Cid.example
 
     let key = !blockMetaKey(cid).option
@@ -78,15 +78,15 @@ suite "KeyUtils":
     check:
       namespaces.len == 3
       namespaces[0].value == ArchivistMetaNamespace
-      namespaces[1].value == "ttl"
+      namespaces[1].value == "blocks"
       namespaces[2].value == $cid
 
-  test "blockMetaKeyQuery should create key for all block TTL entries":
+  test "blockMetaKeyQuery should create key for all block metadata entries":
     let key = !blockMetaKeyQuery().option
     let namespaces = key.namespaces
 
     check:
       namespaces.len == 3
       namespaces[0].value == ArchivistMetaNamespace
-      namespaces[1].value == "ttl"
+      namespaces[1].value == "blocks"
       namespaces[2].value == "*"
