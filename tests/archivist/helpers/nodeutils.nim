@@ -40,7 +40,7 @@ type
     blockDiscovery*: Discovery
     wallet*: WalletRef
     network*: BlockExcNetwork
-    localStore*: BlockStore
+    localStore*: RepoStore
     peerStore*: PeerCtxStore
     pendingBlocks*: PendingBlocksManager
     discovery*: DiscoveryEngine
@@ -66,7 +66,7 @@ converter toTuple*(
   blockDiscovery: Discovery,
   wallet: WalletRef,
   network: BlockExcNetwork,
-  localStore: BlockStore,
+  localStore: RepoStore,
   peerStore: PeerCtxStore,
   pendingBlocks: PendingBlocksManager,
   discovery: DiscoveryEngine,
@@ -84,7 +84,7 @@ converter toComponents*(cluster: NodesCluster): seq[NodesComponents] =
 proc nodes*(cluster: NodesCluster): seq[ArchivistNodeRef] =
   cluster.components.filterIt(it.node != nil).mapIt(it.node)
 
-proc localStores*(cluster: NodesCluster): seq[BlockStore] =
+proc localStores*(cluster: NodesCluster): seq[RepoStore] =
   cluster.components.mapIt(it.localStore)
 
 proc switches*(cluster: NodesCluster): seq[Switch] =
@@ -151,7 +151,7 @@ proc generateNodes*(
             bootstrapNodes = bootstrapNodes,
           )
         waitFor store.start()
-        (store.BlockStore, discovery)
+        (store, discovery)
       else:
         let
           repoDs = SQLiteKVStore.new(SqliteMemory, taskpool).tryGet()
@@ -165,7 +165,7 @@ proc generateNodes*(
           )
         for blk in blocks:
           (waitFor store.putBlock(blk)).tryGet()
-        (store.BlockStore, discovery)
+        (store, discovery)
 
     let
       discovery = DiscoveryEngine.new(

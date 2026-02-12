@@ -52,7 +52,7 @@ proc drain*(
 
 proc pipeChunker*(stream: BufferStream, chunker: Chunker) {.async.} =
   try:
-    while (let chunk = await chunker.getBytes(); chunk.len > 0):
+    while (let chunk = (await chunker.getBytes()).tryGet; chunk.len > 0):
       await stream.pushData(chunk)
   finally:
     await stream.pushEof()

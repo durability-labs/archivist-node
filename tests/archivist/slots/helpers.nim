@@ -80,7 +80,7 @@ proc createBlocks*(
     chunker: Chunker, store: BlockStore
 ): Future[seq[bt.Block]] {.async.} =
   collect(newSeq):
-    while (let chunk = await chunker.getBytes(); chunk.len > 0):
+    while (let chunk = (await chunker.getBytes()).tryGet; chunk.len > 0):
       let blk = bt.Block.new(chunk).tryGet()
       discard await store.putBlock(blk)
       blk

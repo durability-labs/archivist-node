@@ -65,6 +65,7 @@ proc initializeNode(temporary: TemporaryNode) =
   temporary.node = ArchivistNodeRef.new(
     temporary.p2p,
     temporary.networkStore,
+    temporary.localStore,
     temporary.exchangeEngine,
     temporary.discoveryNetwork,
     Taskpool.new(),

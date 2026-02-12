@@ -84,43 +84,51 @@ proc makeWantList*(
   )
 
 proc storeDataGetManifest*(
-    store: BlockStore, blocks: seq[Block]
-): Future[Manifest] {.async.} =
-  for blk in blocks:
-    (await store.putBlock(blk)).tryGet()
+    store: RepoStore, blocks: seq[Block]
+): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
+  let tmpTreeCid = ?await store.createTmpOverlay()
+
+  for i, blk in blocks:
+    ?await store.putLeafAndBlock(tmpTreeCid, blk, i)
 
   let
-    (manifest, tree) = makeManifestAndTree(blocks).tryGet()
-    treeCid = tree.rootCid.tryGet()
+    (manifest, tree) = ?makeManifestAndTree(blocks)
+    treeCid = ?tree.rootCid
+
+  ?await store.finalizeOverlay(tmpTreeCid, treeCid)
 
   for i in 0 ..< tree.leavesCount:
-    let proof = tree.getProof(i).tryGet()
-    (await store.putCidAndProof(treeCid, i, blocks[i].cid, proof)).tryGet()
+    let proof = ?tree.getProof(i)
+    ?await store.putCidAndProof(treeCid, i, blocks[i].cid, proof)
 
-  return manifest
+  success manifest
 
 proc storeDataGetManifest*(
-    store: BlockStore, chunker: Chunker
-): Future[Manifest] {.async.} =
+    store: RepoStore, chunker: Chunker
+): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
   var blocks = newSeq[Block]()
 
-  while (let chunk = await chunker.getBytes(); chunk.len > 0):
-    blocks.add(Block.new(chunk).tryGet())
+  while (let chunk = ?await chunker.getBytes(); chunk.len > 0):
+    blocks.add(?Block.new(chunk))
 
-  return await storeDataGetManifest(store, blocks)
+  await storeDataGetManifest(store, blocks)
 
 proc makeRandomBlocks*(
     datasetSize: int, blockSize: NBytes
-): Future[seq[Block]] {.async.} =
-  var chunker =
-    RandomChunker.new(Rng.instance(), size = datasetSize, chunkSize = blockSize)
+): Future[?!seq[Block]] {.async.} =
+  var
+    chunker =
+      RandomChunker.new(Rng.instance(), size = datasetSize, chunkSize = blockSize)
+    blocks: seq[Block]
 
   while true:
-    let chunk = await chunker.getBytes()
+    let chunk = ?await chunker.getBytes()
     if chunk.len <= 0:
       break
 
-    result.add(Block.new(chunk).tryGet())
+    blocks.add(Block.new(chunk).tryGet())
+
+  success blocks
 
 proc corruptBlocks*(
     store: BlockStore, manifest: Manifest, blks, bytes: int
