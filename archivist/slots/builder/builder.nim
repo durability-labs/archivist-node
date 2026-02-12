@@ -133,11 +133,11 @@ func slotIndicesIter*[SomeTree, SomeHash](
 
 func slotIndices*[SomeTree, SomeHash](
     self: SlotsBuilder[SomeTree, SomeHash], slot: Natural
-): seq[int] =
+): ?!seq[int] =
   ## Returns the slot indices.
   ##
 
-  toSeq(?catch(self.strategy.getIndices(slot)))
+  success toSeq(?catch(self.strategy.getIndices(slot)))
 
 func manifest*[SomeTree, SomeHash](self: SlotsBuilder[SomeTree, SomeHash]): Manifest =
   ## Returns the manifest.
@@ -242,7 +242,7 @@ proc buildSlot*[SomeTree, SomeHash](
       error "Failed to get proof for slot tree", e = e.msg
       return failure(e)
 
-      ?await self.store.putCidAndProof(treeCid, i, cellCid, encodableProof)
+    ?await self.repoStore.putCidAndProof(treeCid, i, cellCid, encodableProof)
 
   ?await self.repoStore.createOrUpdateOverlay(treeCid, OverlayStatus.Completed)
   tree.root()

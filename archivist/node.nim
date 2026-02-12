@@ -298,19 +298,28 @@ proc streamEntireDataset(
       try:
         # Spawn an erasure decoding job
         let erasure = Erasure.new(
-          self.networkStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
+          self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
+          self.taskpool,
         )
 
-        ?await self.repoStore.createOrUpdateOverlay(
-          encoded.treeCid, OverlayStatus.Storing, manifestCid.some, self.conf.overlayTtl
-        )
+        if err =? (
+          await self.repoStore.createOrUpdateOverlay(
+            manifest.treeCid, OverlayStatus.Storing, manifest = manifestCid.some
+          )
+        ).errorOption:
+          error "Unable to create overlay", manifestCid, exc = err.msg
+          return
 
-        without _ =? (await erasure.decode(manifest)), error:
-          error "Unable to erasure decode manifest", manifestCid, exc = error.msg
+        if err =? (await erasure.decode(manifest)).errorOption:
+          error "Unable to erasure decode manifest", manifestCid, exc = err.msg
+          return
 
-        ?await self.repoStore.createOrUpdateOverlay(
-          encoded.treeCid, OverlayStatus.Completed
-        )
+        if err =? (
+          await self.repoStore.createOrUpdateOverlay(
+            manifest.treeCid, OverlayStatus.Completed
+          )
+        ).errorOption:
+          error "Unable to update overlay", manifestCid, exc = err.msg
       except CatchableError as exc:
         trace "Error erasure decoding manifest", manifestCid, exc = exc.msg
 
@@ -470,8 +479,13 @@ proc store*(
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
 
   # move tmp overlay leafs to final treeCid
-  ?await self.repoStore.finalizeOverlay(tmpTreeCid, treeCid, manifestBlk.cid.some)
-  cleanupTmp = false # we don't need to drop the manifest anymore
+  ?await self.repoStore.finalizeOverlay(
+    tmpTreeCid,
+    treeCid,
+    status = OverlayStatus.Completed.some,
+    manifest = manifestBlk.cid.some,
+  )
+  cleanupTmp = false # temp overlay has been finalized, no need to clean up
 
   # TODO: Once we have progressive tree building we can get rid of the
   # separate proofs putting and just put leafs directly in the same
@@ -524,17 +538,17 @@ proc ensureProtectedManifest(
     return success manifest
 
   # Erasure code the dataset according to provided parameters
-  let erasure = Erasure.new(
-    self.networkStore.localStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
-  )
-
   let
+    erasure = Erasure.new(
+      self.networkStore.localStore, self.repoStore, leoEncoderProvider,
+      leoDecoderProvider, self.taskpool,
+    )
     encodedManifest = ?await erasure.encode(manifest, ecK, ecM)
     manifestBlk = ?await self.repoStore.storeManifest(encodedManifest)
 
   # Mark overlay as completed
   ?await self.repoStore.createOrUpdateOverlay(
-    encoded.treeCid, OverlayStatus.Completed, manifestBlk.cid.some, self.conf.overlayTtl
+    encodedManifest.treeCid, OverlayStatus.Completed, manifest = manifestBlk.cid.some
   )
 
   success encodedManifest
@@ -549,7 +563,8 @@ proc ensureVerifiableManifest(
     return success protected
 
   # Create verifiable manifest from protected manifest
-  let builder = ?Poseidon2Builder.new(self.networkStore.localStore, protected)
+  let builder =
+    ?Poseidon2Builder.new(self.networkStore.localStore, self.repoStore, protected)
   return await builder.buildManifest()
 
 proc setupRequest(
@@ -685,7 +700,9 @@ proc storeSlot*(
     return failure(err)
 
   without builder =?
-    Poseidon2Builder.new(self.networkStore, manifest, manifest.verifiableStrategy), err:
+    Poseidon2Builder.new(
+      self.networkStore, self.repoStore, manifest, manifest.verifiableStrategy
+    ), err:
     error "Unable to create slots builder", err = err.msg
     return failure(err)
 
@@ -720,7 +737,8 @@ proc storeSlot*(
     trace "start repairing slot", slotIdx
     try:
       let erasure = Erasure.new(
-        self.networkStore, leoEncoderProvider, leoDecoderProvider, self.taskpool
+        self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
+        self.taskpool,
       )
       if err =? (await erasure.repair(manifest)).errorOption:
         error "Unable to erasure decode repairing manifest",
@@ -779,7 +797,9 @@ proc proveSlot*(
     let
       manifest = ?await self.fetchManifest(cid)
       builder =
-        ?Poseidon2Builder.new(self.networkStore, manifest, manifest.verifiableStrategy)
+        ?Poseidon2Builder.new(
+          self.networkStore, self.repoStore, manifest, manifest.verifiableStrategy
+        )
       sampler = ?Poseidon2Sampler.new(slotIdx, self.networkStore, builder)
 
     when defined(verify_circuit):

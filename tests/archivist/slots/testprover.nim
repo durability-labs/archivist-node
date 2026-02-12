@@ -28,7 +28,7 @@ suite "Test CircomCompat Prover":
     challenge = 1234567.toF.toBytes.toArray32
 
   var
-    store: BlockStore
+    store: RepoStore
     prover: Prover
     dbTp: Taskpool
 
@@ -62,8 +62,9 @@ suite "Test CircomCompat Prover":
         cellSize,
       )
 
-      builder =
-        Poseidon2Builder.new(store, verifiable, verifiable.verifiableStrategy).tryGet
+      builder = Poseidon2Builder.new(
+        store, store, verifiable, verifiable.verifiableStrategy
+      ).tryGet
       sampler = Poseidon2Sampler.new(1, store, builder).tryGet
       (_, checked) =
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet
@@ -86,8 +87,9 @@ suite "Test CircomCompat Prover":
         cellSize,
       )
 
-      builder =
-        Poseidon2Builder.new(store, verifiable, verifiable.verifiableStrategy).tryGet
+      builder = Poseidon2Builder.new(
+        store, store, verifiable, verifiable.verifiableStrategy
+      ).tryGet
       sampler = Poseidon2Sampler.new(1, store, builder).tryGet
       (_, checked) =
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet
@@ -104,7 +106,7 @@ suite "Test NimGroth16 Prover":
     challenge = 1234567.toF.toBytes.toArray32
 
   var
-    store: BlockStore
+    store: RepoStore
     prover: Prover
     dbTp: Taskpool
 
@@ -139,8 +141,9 @@ suite "Test NimGroth16 Prover":
         cellSize,
       )
 
-      builder =
-        Poseidon2Builder.new(store, verifiable, verifiable.verifiableStrategy).tryGet
+      builder = Poseidon2Builder.new(
+        store, store, verifiable, verifiable.verifiableStrategy
+      ).tryGet
       sampler = Poseidon2Sampler.new(1, store, builder).tryGet
       (_, checked) =
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet
@@ -163,8 +166,9 @@ suite "Test NimGroth16 Prover":
         cellSize,
       )
 
-      builder =
-        Poseidon2Builder.new(store, verifiable, verifiable.verifiableStrategy).tryGet
+      builder = Poseidon2Builder.new(
+        store, store, verifiable, verifiable.verifiableStrategy
+      ).tryGet
       sampler = Poseidon2Sampler.new(1, store, builder).tryGet
       (_, checked) =
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet

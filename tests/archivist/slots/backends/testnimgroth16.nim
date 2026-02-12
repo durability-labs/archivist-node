@@ -72,7 +72,7 @@ suite "Test NimGoth16 Backend":
     zkey = "tests/circuits/fixtures/proof_main.zkey"
 
   var
-    store: BlockStore
+    store: RepoStore
     manifest: Manifest
     protected: Manifest
     verifiable: Manifest
@@ -95,7 +95,7 @@ suite "Test NimGoth16 Backend":
       store, numDatasetBlocks, ecK, ecM, blockSize, cellSize
     )
 
-    builder = Poseidon2Builder.new(store, verifiable).tryGet
+    builder = Poseidon2Builder.new(store, store, verifiable).tryGet
     sampler = Poseidon2Sampler.new(slotId, store, builder).tryGet
 
     nimGroth16 = NimGroth16BackendRef.new(graph, r1cs, zkey, tp = Taskpool.new()).tryGet

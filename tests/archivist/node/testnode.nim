@@ -190,7 +190,7 @@ suite "Test Node - Basic":
     let
       blocks = (await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)).tryGet
       manifest = (await storeDataGetManifest(localStore, blocks)).tryGet()
-      manifestBlock = (await networkStore.storeManifest(manifest)).tryGet()
+      manifestBlock = (await localStore.storeManifest(manifest)).tryGet()
       manifestCid = manifestBlock.cid
 
     check await manifestCid in localStore

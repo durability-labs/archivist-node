@@ -26,8 +26,8 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     pendingBlocks1, pendingBlocks2: seq[BlockHandle]
 
   setup:
-    blocks1 = await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)
-    blocks2 = await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)
+    blocks1 = (await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)).tryGet
+    blocks2 = (await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)).tryGet
     nodeCmps1 = generateNodes(1, blocks1).components[0]
     nodeCmps2 = generateNodes(1, blocks2).components[0]
 
@@ -153,7 +153,7 @@ asyncchecksuite "NetworkStore - multiple nodes":
     blocks: seq[bt.Block]
 
   setup:
-    blocks = await makeRandomBlocks(datasetSize = 4096, blockSize = 256'nb)
+    blocks = (await makeRandomBlocks(datasetSize = 4096, blockSize = 256'nb)).tryGet
     nodes = generateNodes(5)
     for e in nodes:
       await e.engine.start()

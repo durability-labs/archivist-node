@@ -65,7 +65,7 @@ suite "Test Circom Compat Backend":
     zkey = "tests/circuits/fixtures/proof_main.zkey"
 
   var
-    store: BlockStore
+    store: RepoStore
     manifest: Manifest
     protected: Manifest
     verifiable: Manifest
@@ -88,7 +88,7 @@ suite "Test Circom Compat Backend":
       store, numDatasetBlocks, ecK, ecM, blockSize, cellSize
     )
 
-    builder = Poseidon2Builder.new(store, verifiable).tryGet
+    builder = Poseidon2Builder.new(store, store, verifiable).tryGet
     sampler = Poseidon2Sampler.new(slotId, store, builder).tryGet
 
     circom = CircomCompatBackendRef.new(r1cs, wasm, zkey).tryGet

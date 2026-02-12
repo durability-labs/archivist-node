@@ -75,7 +75,7 @@ asyncchecksuite "Test Node - Slot Repair":
       localStore = localStores[0]
       store = nodes[0].blockStore
       blocks =
-        await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+        (await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)).tryGet
       data = (
         block:
           collect(newSeq):
@@ -90,12 +90,12 @@ asyncchecksuite "Test Node - Slot Repair":
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
       erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+        Erasure.new(store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
 
     (await localStore.putBlock(manifestBlock)).tryGet()
 
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
-    builder = Poseidon2Builder.new(localStore, protected).tryGet()
+    builder = Poseidon2Builder.new(store, localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
     verifiableBlock =
       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
@@ -158,7 +158,7 @@ asyncchecksuite "Test Node - Slot Repair":
       localStore = localStores[0]
       store = nodes[0].blockStore
       blocks =
-        await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+        (await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)).tryGet
       data = (
         block:
           collect(newSeq):
@@ -173,12 +173,12 @@ asyncchecksuite "Test Node - Slot Repair":
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
       erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+        Erasure.new(store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
 
     (await localStore.putBlock(manifestBlock)).tryGet()
 
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
-    builder = Poseidon2Builder.new(localStore, protected).tryGet()
+    builder = Poseidon2Builder.new(store, localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
     verifiableBlock =
       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()

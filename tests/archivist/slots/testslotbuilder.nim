@@ -67,7 +67,7 @@ suite "Slot builder":
 
   var
     datasetBlocks: seq[bt.Block]
-    localStore: BlockStore
+    localStore: RepoStore
     manifest: Manifest
     protectedManifest: Manifest
     builder: Poseidon2Builder
@@ -83,7 +83,7 @@ suite "Slot builder":
     localStore = RepoStore.new(repoDs, metaDs)
     chunker =
       RandomChunker.new(Rng.instance(), size = totalDatasetSize, chunkSize = blockSize)
-    datasetBlocks = await chunker.createBlocks(localStore)
+    datasetBlocks = await chunker.createBlocks()
 
     (manifest, protectedManifest) = await createProtectedManifest(
       datasetBlocks, localStore, numDatasetBlocks, ecK, ecM, blockSize,
@@ -114,8 +114,9 @@ suite "Slot builder":
     )
 
     check:
-      Poseidon2Builder.new(localStore, unprotectedManifest, cellSize = cellSize).error.msg ==
-        "Manifest is not protected."
+      Poseidon2Builder.new(
+        localStore, localStore, unprotectedManifest, cellSize = cellSize
+      ).error.msg == "Manifest is not protected."
 
   test "Number of blocks must be devisable by number of slots":
     let mismatchManifest = Manifest.new(
@@ -132,8 +133,9 @@ suite "Slot builder":
     )
 
     check:
-      Poseidon2Builder.new(localStore, mismatchManifest, cellSize = cellSize).error.msg ==
-        "Number of blocks must be divisible by number of slots."
+      Poseidon2Builder.new(
+        localStore, localStore, mismatchManifest, cellSize = cellSize
+      ).error.msg == "Number of blocks must be divisible by number of slots."
 
   test "Block size must be divisable by cell size":
     let mismatchManifest = Manifest.new(
@@ -150,12 +152,14 @@ suite "Slot builder":
     )
 
     check:
-      Poseidon2Builder.new(localStore, mismatchManifest, cellSize = cellSize).error.msg ==
-        "Block size must be divisible by cell size."
+      Poseidon2Builder.new(
+        localStore, localStore, mismatchManifest, cellSize = cellSize
+      ).error.msg == "Block size must be divisible by cell size."
 
   test "Should build correct slot builder":
-    builder =
-      Poseidon2Builder.new(localStore, protectedManifest, cellSize = cellSize).tryGet()
+    builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
 
     check:
       builder.cellSize == cellSize
@@ -172,7 +176,7 @@ suite "Slot builder":
       )
 
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
     for i in 0 ..< numSlots:
@@ -197,7 +201,7 @@ suite "Slot builder":
       )
 
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
     for i in 0 ..< numSlots:
@@ -216,8 +220,9 @@ suite "Slot builder":
         slotTree.root().tryGet() == expectedRoot
 
   test "Should persist trees for all slots":
-    let builder =
-      Poseidon2Builder.new(localStore, protectedManifest, cellSize = cellSize).tryGet()
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
 
     for i in 0 ..< numSlots:
       let
@@ -243,7 +248,7 @@ suite "Slot builder":
         0, protectedManifest.blocksCount - 1, numSlots, numSlots, numPadSlotBlocks
       )
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
     (await builder.buildSlots()).tryGet
@@ -271,7 +276,7 @@ suite "Slot builder":
         0, protectedManifest.blocksCount - 1, numSlots, numSlots, numPadSlotBlocks
       )
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
       slotsHashes = collect(newSeq):
@@ -297,45 +302,53 @@ suite "Slot builder":
   test "Should not build from verifiable manifest with 0 slots":
     var
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
       verifyManifest = (await builder.buildManifest()).tryGet()
 
     verifyManifest.slotRoots = @[]
-    check Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).isErr
+    check Poseidon2Builder.new(
+      localStore, localStore, verifyManifest, cellSize = cellSize
+    ).isErr
 
   test "Should not build from verifiable manifest with incorrect number of slots":
     var
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
       verifyManifest = (await builder.buildManifest()).tryGet()
 
     verifyManifest.slotRoots.del(verifyManifest.slotRoots.len - 1)
 
-    check Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).isErr
+    check Poseidon2Builder.new(
+      localStore, localStore, verifyManifest, cellSize = cellSize
+    ).isErr
 
   test "Should not build from verifiable manifest with invalid verify root":
-    let builder =
-      Poseidon2Builder.new(localStore, protectedManifest, cellSize = cellSize).tryGet()
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
 
     var verifyManifest = (await builder.buildManifest()).tryGet()
 
     rng.shuffle(Rng.instance, verifyManifest.verifyRoot.data.buffer)
 
-    check Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).isErr
+    check Poseidon2Builder.new(
+      localStore, localStore, verifyManifest, cellSize = cellSize
+    ).isErr
 
   test "Should build from verifiable manifest":
     let
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
       verifyManifest = (await builder.buildManifest()).tryGet()
 
-      verificationBuilder =
-        Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).tryGet()
+      verificationBuilder = Poseidon2Builder
+        .new(localStore, localStore, verifyManifest, cellSize = cellSize)
+        .tryGet()
 
     check:
       builder.slotRoots == verificationBuilder.slotRoots

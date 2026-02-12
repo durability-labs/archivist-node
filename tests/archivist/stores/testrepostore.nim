@@ -283,7 +283,7 @@ suite "RepoStore":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1000'nb)
-      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      dataset = (await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)).tryGet
       blk = dataset[0]
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
@@ -306,7 +306,7 @@ suite "RepoStore":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1000'nb)
-      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      dataset = (await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)).tryGet
       blk = dataset[0]
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
@@ -329,7 +329,7 @@ suite "RepoStore":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1024'nb)
-      blockPool = await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)
+      blockPool = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
 
       dataset1 = @[blockPool[0], blockPool[1]]
       dataset2 = @[blockPool[1], blockPool[2]]
@@ -405,7 +405,7 @@ suite "RepoStore":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1000'nb)
-      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      dataset = (await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)).tryGet
       blk = dataset[0]
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
@@ -432,7 +432,7 @@ suite "RepoStore":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1000'nb)
-      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      dataset = (await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)).tryGet
       blk = dataset[0]
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
@@ -457,7 +457,7 @@ suite "RepoStore":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           2000'nb)
-      dataset = await makeRandomBlocks(datasetSize = 2560, blockSize = 256'nb)
+      dataset = (await makeRandomBlocks(datasetSize = 2560, blockSize = 256'nb)).tryGet
       blk = dataset[0]
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
@@ -533,7 +533,7 @@ suite "RepoStore":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           1000'nb)
-      dataset = await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)
+      dataset = (await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)).tryGet
       blk = dataset[0]
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()

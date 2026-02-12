@@ -15,79 +15,14 @@ import pkg/archivist/rng
 
 import ../helpers
 
-proc makeManifestBlock*(manifest: Manifest): ?!bt.Block =
-  without encodedVerifiable =? manifest.encode(), err:
-    trace "Unable to encode manifest"
-    return failure(err)
-
-  without blk =? bt.Block.new(data = encodedVerifiable, codec = ManifestCodec), error:
-    trace "Unable to create block from manifest"
-    return failure(error)
-
-  success blk
-
-proc storeManifest*(
-    store: BlockStore, manifest: Manifest
-): Future[?!bt.Block] {.async.} =
-  without blk =? makeManifestBlock(manifest), err:
-    trace "Unable to create manifest block", err = err.msg
-    return failure(err)
-
-  if err =? (await store.putBlock(blk)).errorOption:
-    trace "Unable to store manifest block", cid = blk.cid, err = err.msg
-    return failure(err)
-
-  success blk
-
-proc makeManifest*(
-    cids: seq[Cid],
-    datasetSize: NBytes,
-    blockSize: NBytes,
-    store: BlockStore,
-    hcodec = Sha256HashCodec,
-    dataCodec = BlockCodec,
-): Future[?!Manifest] {.async.} =
-  without tree =? ArchivistTree.init(cids), err:
-    return failure(err)
-
-  without treeCid =? tree.rootCid(CIDv1, dataCodec), err:
-    return failure(err)
-
-  for index, cid in cids:
-    without proof =? tree.getProof(index), err:
-      return failure(err)
-
-    if err =? (await store.putCidAndProof(treeCid, index, cid, proof)).errorOption:
-      # TODO add log here
-      return failure(err)
-
-  let manifest = Manifest.new(
-    treeCid = treeCid,
-    blockSize = blockSize,
-    datasetSize = datasetSize,
-    version = CIDv1,
-    hcodec = hcodec,
-    codec = dataCodec,
-  )
-
-  without manifestBlk =? await store.storeManifest(manifest), err:
-    trace "Unable to store manifest"
-    return failure(err)
-
-  success manifest
-
-proc createBlocks*(
-    chunker: Chunker, store: BlockStore
-): Future[seq[bt.Block]] {.async.} =
+proc createBlocks*(chunker: Chunker): Future[seq[bt.Block]] {.async.} =
   collect(newSeq):
     while (let chunk = (await chunker.getBytes()).tryGet; chunk.len > 0):
-      let blk = bt.Block.new(chunk).tryGet()
-      discard await store.putBlock(blk)
-      blk
+      bt.Block.new(chunk).tryGet()
 
 proc createProtectedManifest*(
     datasetBlocks: seq[bt.Block],
-    store: BlockStore,
+    store: RepoStore,
     numDatasetBlocks: int,
     ecK: int,
     ecM: int,
@@ -99,17 +34,26 @@ proc createProtectedManifest*(
     cids = datasetBlocks.mapIt(it.cid)
     datasetTree = ArchivistTree.init(cids[0 ..< numDatasetBlocks]).tryGet()
     datasetTreeCid = datasetTree.rootCid().tryGet()
-
     protectedTree = ArchivistTree.init(cids).tryGet()
     protectedTreeCid = protectedTree.rootCid().tryGet()
 
-  for index, cid in cids[0 ..< numDatasetBlocks]:
+  # Create overlay for dataset tree and store blocks + proofs
+  let tmpDatasetCid = (await store.createTmpOverlay()).tryGet()
+  for i, blk in datasetBlocks[0 ..< numDatasetBlocks]:
+    (await store.putLeafAndBlock(tmpDatasetCid, blk, i)).tryGet()
+  (await store.finalizeOverlay(tmpDatasetCid, datasetTreeCid)).tryGet()
+  for index in 0 ..< numDatasetBlocks:
     let proof = datasetTree.getProof(index).tryGet()
-    (await store.putCidAndProof(datasetTreeCid, index, cid, proof)).tryGet
+    (await store.putCidAndProof(datasetTreeCid, index, cids[index], proof)).tryGet()
 
+  # Create overlay for protected tree and store all blocks + proofs
+  let tmpProtectedCid = (await store.createTmpOverlay()).tryGet()
+  for i, blk in datasetBlocks:
+    (await store.putLeafAndBlock(tmpProtectedCid, blk, i)).tryGet()
+  (await store.finalizeOverlay(tmpProtectedCid, protectedTreeCid)).tryGet()
   for index, cid in cids:
     let proof = protectedTree.getProof(index).tryGet()
-    (await store.putCidAndProof(protectedTreeCid, index, cid, proof)).tryGet
+    (await store.putCidAndProof(protectedTreeCid, index, cid, proof)).tryGet()
 
   let
     manifest = Manifest.new(
@@ -127,19 +71,13 @@ proc createProtectedManifest*(
       strategy = SteppedStrategy,
     )
 
-    manifestBlock =
-      bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-
-    protectedManifestBlock =
-      bt.Block.new(protectedManifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-
-  (await store.putBlock(manifestBlock)).tryGet()
-  (await store.putBlock(protectedManifestBlock)).tryGet()
+  discard (await store.storeManifest(manifest)).tryGet()
+  discard (await store.storeManifest(protectedManifest)).tryGet()
 
   (manifest, protectedManifest)
 
 proc createVerifiableManifest*(
-    store: BlockStore,
+    store: RepoStore,
     numDatasetBlocks: int,
     ecK: int,
     ecM: int,
@@ -151,22 +89,20 @@ proc createVerifiableManifest*(
   let
     numSlots = ecK + ecM
     numTotalBlocks = calcEcBlocksCount(numDatasetBlocks, ecK, ecM)
-      # total number of blocks in the dataset after
-      # EC (should will match number of slots)
     originalDatasetSize = numDatasetBlocks * blockSize.int
     totalDatasetSize = numTotalBlocks * blockSize.int
 
     chunker =
       RandomChunker.new(Rng.instance(), size = totalDatasetSize, chunkSize = blockSize)
-    datasetBlocks = await chunker.createBlocks(store)
+    datasetBlocks = await chunker.createBlocks()
 
     (manifest, protectedManifest) = await createProtectedManifest(
       datasetBlocks, store, numDatasetBlocks, ecK, ecM, blockSize, originalDatasetSize,
       totalDatasetSize,
     )
 
-    builder = Poseidon2Builder.new(store, protectedManifest, cellSize = cellSize).tryGet
+    builder =
+      Poseidon2Builder.new(store, store, protectedManifest, cellSize = cellSize).tryGet
     verifiableManifest = (await builder.buildManifest()).tryGet
 
-  # build the slots and manifest
   (manifest, protectedManifest, verifiableManifest)

@@ -184,6 +184,7 @@ proc generateNodes*(
         let fullNode = ArchivistNodeRef.new(
           switch = switch,
           networkStore = networkStore,
+          repoStore = localStore,
           engine = engine,
           prover = Prover.none,
           discovery = blockDiscovery,

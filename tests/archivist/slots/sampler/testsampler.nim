@@ -102,7 +102,7 @@ suite "Test Sampler":
     )
 
     # create sampler
-    builder = Poseidon2Builder.new(store, verifiable).tryGet
+    builder = Poseidon2Builder.new(store, store, verifiable).tryGet
 
   teardown:
     await store.close()
@@ -115,7 +115,7 @@ suite "Test Sampler":
 
   test "Should fail instantiating for non verifiable builder":
     let
-      nonVerifiableBuilder = Poseidon2Builder.new(store, protected).tryGet
+      nonVerifiableBuilder = Poseidon2Builder.new(store, store, protected).tryGet
       sampler = Poseidon2Sampler.new(slotIndex, store, nonVerifiableBuilder)
 
     check sampler.isErr
