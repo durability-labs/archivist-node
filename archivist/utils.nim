@@ -15,16 +15,39 @@ import std/parseutils
 import std/options
 
 import pkg/chronos
+import pkg/stew/bitseqs
 
 import ./utils/asyncheapqueue
 import ./utils/fileutils
 import ./utils/asynciter
 import ./utils/safeasynciter
 
-export asyncheapqueue, fileutils, asynciter, safeasynciter, chronos
+export asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs
 
 when defined(posix):
   import os, posix
+
+func combineSafe*(tgt: var BitSeq, src: BitSeq) =
+  ## OR-combine two BitSeqs that may have different lengths.
+  ##
+
+  if src.len == 0:
+    return
+
+  if tgt.len == src.len:
+    tgt.combine(src)
+    return
+
+  let minLen = min(tgt.len, src.len)
+
+  # OR the overlapping portion
+  for i in 0 ..< minLen:
+    if src[i]:
+      tgt.setBit(i)
+
+  # Extend tgt with src's extra bits
+  for i in minLen ..< src.len:
+    tgt.add(src[i])
 
 func divUp*[T: SomeInteger](a, b: T): T =
   ## Division with result rounded up (rather than truncated as in 'div')
