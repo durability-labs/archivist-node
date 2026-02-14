@@ -127,16 +127,6 @@ proc fetchManifest*(
 
   return manifest.success
 
-proc fetchManifest*(
-    self: ArchivistNodeRef, cid: Cid, expiry: SecondsSince1970
-): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
-  without manifest =? await self.fetchManifest(cid), error:
-    trace "Unable to fetch manifest for cid", cid
-    return failure(error)
-
-  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, expiry = expiry)
-  return success(manifest)
-
 proc findPeer*(self: ArchivistNodeRef, peerId: PeerId): Future[?PeerRecord] {.async.} =
   ## Find peer using the discovery service from the given ArchivistNode
   ##
@@ -148,14 +138,19 @@ proc connect*(
   self.switch.connect(peerId, addrs)
 
 proc updateExpiry*(
+    self: ArchivistNodeRef, manifest: Manifest, expiry: SecondsSince1970
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, expiry = expiry)
+  return success()
+
+proc updateExpiry*(
     self: ArchivistNodeRef, manifestCid: Cid, expiry: SecondsSince1970
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without manifest =? await self.fetchManifest(manifestCid, expiry), error:
+  without manifest =? await self.fetchManifest(manifestCid), error:
     trace "Unable to fetch manifest for cid", manifestCid
     return failure(error)
 
-  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, expiry = expiry)
-  return success()
+  await self.updateExpiry(manifest, expiry)
 
 proc fetchBatched*(
     self: ArchivistNodeRef,
@@ -640,12 +635,16 @@ proc storeSlot*(
     slotSize = slotSize
 
   trace "Received a request to store a slot"
-  without manifest =? (await self.fetchManifest(cid, expiry)), err:
+  without manifest =? (await self.fetchManifest(cid)), err:
     error "Unable to fetch manifest for cid", cid, err = err.msg
     return failure(err)
 
   if err =? validateVerifiableManifest(manifest, slotSize).errorOption:
     error "Validation of verifiable manifest failed", err = err.msg
+    return failure(err)
+
+  if err =? (await self.updateExpiry(manifest, expiry)).errorOption:
+    error "Unable to update manifest expiry", cid, err = err.msg
     return failure(err)
 
   without builder =?
@@ -678,7 +677,6 @@ proc storeSlot*(
         cid = manifest.treeCid, exc = err.msg
       return failure(err)
 
-    # Iterate the slot blocks. Provide them to the updateExpiry callback.
     while not blksIter.finished:
       without blk =? await self.networkStore.getBlock(manifest.treeCid, blksIter.next()),
         err:
