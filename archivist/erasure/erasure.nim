@@ -647,28 +647,27 @@ proc decode*(
     encoded.treeCid,
     status = Storing.some,
     body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
-      (cids, recoveredIndices) =
-        ?await self.decodeInternal(encoded.treeCid, encoded.treeCid, params)
+      let
+        (cids, recoveredIndices) =
+          ?await self.decodeInternal(encoded.treeCid, encoded.treeCid, params)
+        tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
+        treeCid = ?tree.rootCid
+
+      if treeCid != encoded.originalTreeCid:
+        return failure(
+          "Original tree root differs from the tree root computed out of recovered data"
+        )
+
+      let idxIter =
+        Iter[Natural].new(recoveredIndices).filter((i: Natural) => i < tree.leavesCount)
+
+      if err =? (await self.repoStore.putSomeProofs(tree, idxIter)).errorOption:
+        return failure(err)
+
       success(),
   )
 
-  let
-    tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
-    treeCid = ?tree.rootCid
-
-  if treeCid != encoded.originalTreeCid:
-    return failure(
-      "Original tree root differs from the tree root computed out of recovered data"
-    )
-
-  let idxIter =
-    Iter[Natural].new(recoveredIndices).filter((i: Natural) => i < tree.leavesCount)
-
-  if err =? (await self.repoStore.putSomeProofs(tree, idxIter)).errorOption:
-    return failure(err)
-
   let decoded = Manifest.new(encoded)
-
   return decoded.success
 
 proc repair*(
