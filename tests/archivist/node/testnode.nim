@@ -25,6 +25,7 @@ import pkg/archivist/erasure
 import pkg/archivist/merkletree
 import pkg/archivist/blocktype as bt
 import pkg/archivist/rng
+import pkg/archivist/utils
 
 import pkg/archivist/node {.all.}
 
@@ -36,6 +37,37 @@ import ../slots/helpers
 
 import ./helpers
 import ./tempnode
+
+proc overlayCount(
+    repo: RepoStore
+): Future[?!int] {.async: (raises: [CancelledError]).} =
+  let iter = ?await repo.listOverlays()
+  let cids = ?await utils.collect(iter)
+  success(cids.len)
+
+proc assertOverlayCompleted(
+    repo: RepoStore, treeCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  let meta = ?await repo.getOverlayMetadata(treeCid)
+  if meta.status != Completed:
+    return failure("Expected Completed overlay status")
+  success()
+
+proc assertRequestOverlaysCompleted(
+    repo: RepoStore, request: StorageRequest
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  let
+    manifestBlk = ?await repo.getBlock(request.content.cid)
+    manifest = ?Manifest.decode(manifestBlk)
+
+  if not manifest.verifiable:
+    return failure("Expected verifiable manifest in storage request")
+
+  ?await repo.assertOverlayCompleted(manifest.treeCid)
+  for slotRoot in manifest.slotRoots:
+    ?await repo.assertOverlayCompleted(slotRoot)
+
+  success()
 
 suite "Test Node - Basic":
   var temporary: TemporaryNode
@@ -203,124 +235,151 @@ suite "Test Node - Basic":
     for blk in blocks:
       check not (await blk.cid in localStore)
 
-# suite "Test Node - Purchase request":
-#   var temporary: TemporaryNode
-#   var node: ArchivistNodeRef
-#   var localStore: RepoStore
-#   var file: File
-#   var builder: Poseidon2Builder
-#   var manifest: Manifest
-#   var manifestBlock: bt.Block
-#   var protected: Manifest
-#   var protectedManifestBlock: bt.Block
-#   var verifiable: Manifest
-#   var verifiableBlock: bt.Block
+suite "Test Node - Purchase request":
+  var temporary: TemporaryNode
+  var node: ArchivistNodeRef
+  var localStore: RepoStore
+  var networkStore: NetworkStore
+  var file: File
+  var manifest: Manifest
+  var manifestBlock: bt.Block
+  var protectedManifestBlock: bt.Block
+  var verifiableBlock: bt.Block
+  var verifiableMerkleRoot: array[32, byte]
 
-#   setup:
-#     temporary = await TemporaryNode.create()
-#     node = temporary.node
-#     localStore = temporary.localStore
-#     file = open(currentSourcePath().parentDir / ".." / ".." / "fixtures" / "test.jpg")
+  setup:
+    temporary = await TemporaryNode.create()
+    node = temporary.node
+    localStore = temporary.localStore
+    networkStore = temporary.networkStore
+    file = open(currentSourcePath().parentDir / ".." / ".." / "fixtures" / "test.jpg")
 
-#     let
-#       chunker = FileChunker.new(file = file, chunkSize = DefaultBlockSize)
-#       erasure =
-#         Erasure.new(localStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new())
+    let
+      chunker = FileChunker.new(file = file, chunkSize = DefaultBlockSize)
+      referenceBlocks = (
+        await makeRandomBlocks(
+          datasetSize = 4 * DefaultBlockSize.int, blockSize = DefaultBlockSize
+        )
+      ).tryGet()
 
-#     manifest = (await storeDataGetManifest(localStore, chunker)).tryGet()
-#     manifestBlock =
-#       bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-#     protected = (await erasure.encode(manifest, 3, 2)).tryGet()
-#     protectedManifestBlock =
-#       bt.Block.new(protected.encode().tryGet(), codec = ManifestCodec).tryGet()
-#     builder = Poseidon2Builder.new(localStore, protected).tryGet()
-#     verifiable = (await builder.buildManifest()).tryGet()
-#     verifiableBlock =
-#       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+    manifest = (await storeDataGetManifest(localStore, chunker)).tryGet()
+    manifestBlock =
+      bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
 
-#   teardown:
-#     file.close()
-#     await temporary.destroy()
+    let
+      referenceManifest =
+        (await storeDataGetManifest(localStore, referenceBlocks)).tryGet()
+      erasure = Erasure.new(
+        networkStore, localStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new()
+      )
+      protected = (await erasure.encode(referenceManifest, 3, 2)).tryGet()
+      builder = Poseidon2Builder.new(networkStore, localStore, protected).tryGet()
+      verifiable = (await builder.buildManifest()).tryGet()
 
-#   test "Setup purchase request - Basic manifest":
-#     (await localStore.putBlock(manifestBlock)).tryGet()
+    protectedManifestBlock =
+      bt.Block.new(protected.encode().tryGet(), codec = ManifestCodec).tryGet()
+    verifiableBlock =
+      bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
+    verifiableMerkleRoot = (verifiable.verifyRoot.fromVerifyCid).tryGet().toBytes
 
-#     let request = (
-#       await node.setupRequest(
-#         cid = manifestBlock.cid,
-#         nodes = 5,
-#         tolerance = 2,
-#         duration = 100'StorageDuration,
-#         pricePerBytePerSecond = 1'TokensPerSecond,
-#         proofProbability = 3.u256,
-#         expiry = 200'StorageDuration,
-#         collateralPerByte = 1'Tokens,
-#       )
-#     ).tryGet
+  teardown:
+    file.close()
+    await temporary.destroy()
 
-#     check:
-#       (await verifiableBlock.cid in localStore) == true
-#       request.content.cid == verifiableBlock.cid
-#       request.content.merkleRoot == builder.verifyRoot.get.toBytes
+  test "Setup purchase request - Basic manifest":
+    (await localStore.putBlock(manifestBlock)).tryGet()
 
-#   test "Setup purchase request - Protected manifest":
-#     (await localStore.putBlock(protectedManifestBlock)).tryGet()
+    let request = (
+      await node.setupRequest(
+        cid = manifestBlock.cid,
+        nodes = 5,
+        tolerance = 2,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
+        proofProbability = 3.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
+      )
+    ).tryGet()
 
-#     let request = (
-#       await node.setupRequest(
-#         cid = protectedManifestBlock.cid,
-#         nodes = 5,
-#         tolerance = 2,
-#         duration = 100'StorageDuration,
-#         pricePerBytePerSecond = 1'TokensPerSecond,
-#         proofProbability = 3.u256,
-#         expiry = 200'StorageDuration,
-#         collateralPerByte = 1'Tokens,
-#       )
-#     ).tryGet
+    let
+      requestManifestBlock = (await localStore.getBlock(request.content.cid)).tryGet()
+      requestManifest = Manifest.decode(requestManifestBlock).tryGet()
+      verifyRoot = (requestManifest.verifyRoot.fromVerifyCid).tryGet().toBytes
 
-#     check:
-#       (await verifiableBlock.cid in localStore) == true
-#       request.content.cid == verifiableBlock.cid
-#       request.content.merkleRoot == builder.verifyRoot.get.toBytes
+    check:
+      requestManifest.protected == true
+      requestManifest.verifiable == true
+      request.content.merkleRoot == verifyRoot
+    (await assertRequestOverlaysCompleted(localStore, request)).tryGet()
 
-#   test "Setup purchase request - Verifiable manifest":
-#     (await localStore.putBlock(verifiableBlock)).tryGet()
+  test "Setup purchase request - Protected manifest":
+    (await localStore.putBlock(protectedManifestBlock)).tryGet()
 
-#     let request = (
-#       await node.setupRequest(
-#         cid = verifiableBlock.cid,
-#         nodes = 5,
-#         tolerance = 2,
-#         duration = 100'StorageDuration,
-#         pricePerBytePerSecond = 1'TokensPerSecond,
-#         proofProbability = 3.u256,
-#         expiry = 200'StorageDuration,
-#         collateralPerByte = 1'Tokens,
-#       )
-#     ).tryGet
+    let request = (
+      await node.setupRequest(
+        cid = protectedManifestBlock.cid,
+        nodes = 5,
+        tolerance = 2,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
+        proofProbability = 3.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
+      )
+    ).tryGet
 
-#     check:
-#       request.content.cid == verifiableBlock.cid
-#       request.content.merkleRoot == builder.verifyRoot.get.toBytes
+    let
+      requestManifestBlock = (await localStore.getBlock(request.content.cid)).tryGet()
+      requestManifest = Manifest.decode(requestManifestBlock).tryGet()
+      verifyRoot = (requestManifest.verifyRoot.fromVerifyCid).tryGet().toBytes
 
-#   test "Setup purchase request - Verifiable manifest fails when ec params mismatch":
-#     (await localStore.putBlock(verifiableBlock)).tryGet()
+    check:
+      requestManifest.protected == true
+      requestManifest.verifiable == true
+      request.content.merkleRoot == verifyRoot
+    (await assertRequestOverlaysCompleted(localStore, request)).tryGet()
 
-#     let request = (
-#       await node.setupRequest(
-#         cid = verifiableBlock.cid,
-#         nodes = 6,
-#         tolerance = 2,
-#         duration = 100'StorageDuration,
-#         pricePerBytePerSecond = 1'TokensPerSecond,
-#         proofProbability = 3.u256,
-#         expiry = 200'StorageDuration,
-#         collateralPerByte = 1'Tokens,
-#       )
-#     )
+  test "Setup purchase request - Verifiable manifest":
+    (await localStore.putBlock(verifiableBlock)).tryGet()
 
-#     check not request.isSuccess
-#     check request.error.msg ==
-#       "Attempt to proceed with protected manifest with parameters " &
-#       "3/2 but required: 4/2"
+    let request = (
+      await node.setupRequest(
+        cid = verifiableBlock.cid,
+        nodes = 5,
+        tolerance = 2,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
+        proofProbability = 3.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
+      )
+    ).tryGet
+
+    check:
+      request.content.cid == verifiableBlock.cid
+      request.content.merkleRoot == verifiableMerkleRoot
+    (await assertRequestOverlaysCompleted(localStore, request)).tryGet()
+
+  test "Setup purchase request - Verifiable manifest fails when ec params mismatch":
+    (await localStore.putBlock(verifiableBlock)).tryGet()
+    let overlaysBefore = (await overlayCount(localStore)).tryGet()
+
+    let request = (
+      await node.setupRequest(
+        cid = verifiableBlock.cid,
+        nodes = 6,
+        tolerance = 2,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
+        proofProbability = 3.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
+      )
+    )
+
+    check not request.isSuccess
+    check request.error.msg ==
+      "Attempt to proceed with protected manifest with parameters " &
+      "3/2 but required: 4/2"
+    check (await overlayCount(localStore)).tryGet() == overlaysBefore
