@@ -587,6 +587,68 @@ suite "withOverlay proc":
     check meta.status == Completed
     check meta.expiry == now + customExpiry
 
+  test "Should keep initial status when body is cancelled":
+    let treeCid = Cid.example
+    var bodyStarted = newFuture[void]("withOverlay.cancel.started")
+
+    let op = withOverlay(
+      repo,
+      treeCid,
+      status = Repairing.some,
+      body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+        if not bodyStarted.finished:
+          bodyStarted.complete()
+        await sleepAsync(10.seconds)
+        success(),
+    )
+
+    await bodyStarted.wait(500.millis)
+    await op.cancelAndWait()
+
+    try:
+      discard await op
+      check false
+    except CatchableError as exc:
+      check exc of CancelledError
+
+    let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta.status == Repairing
+
+  test "Should retain written leaf metadata when body is cancelled":
+    let
+      blk = createTestBlock(132)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+    var writeDone = newFuture[void]("withOverlay.cancel.writeDone")
+
+    let op = withOverlay(
+      repo,
+      treeCid,
+      status = Storing.some,
+      body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+        ?await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])
+        if not writeDone.finished:
+          writeDone.complete()
+        await sleepAsync(10.seconds)
+        success(),
+    )
+
+    await writeDone.wait(500.millis)
+    await op.cancelAndWait()
+
+    try:
+      discard await op
+      check false
+    except CatchableError as exc:
+      check exc of CancelledError
+
+    let
+      meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+      leaf = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+    check meta.status == Storing
+    check leaf.blkCid == blk.cid
+
 suite "withTmpOverlay proc":
   var
     tp: Taskpool
@@ -708,3 +770,77 @@ suite "withTmpOverlay proc":
     let tmpLeafRes = await repo.getLeafMetadata(capturedTmpCid, 0.Natural)
     check tmpLeafRes.isErr
     check tmpLeafRes.error() of BlockNotFoundError
+
+  test "Should drop tmp overlay metadata when body is cancelled":
+    let realTreeCid = Cid.example
+    var
+      capturedTmpCid: Cid
+      bodyStarted = newFuture[void]("withTmpOverlay.cancel.started")
+
+    let op = withTmpOverlay(
+      repo,
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+        capturedTmpCid = tmpCid
+        if not bodyStarted.finished:
+          bodyStarted.complete()
+        await sleepAsync(10.seconds)
+        success(realTreeCid),
+    )
+
+    await bodyStarted.wait(500.millis)
+    await op.cancelAndWait()
+
+    try:
+      discard await op
+      check false
+    except CatchableError as exc:
+      check exc of CancelledError
+
+    let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
+    check tmpMetaRes.isErr
+    check tmpMetaRes.error() of KVStoreKeyNotFound
+
+  test "Should cleanup tmp overlay leaf and block on body cancellation":
+    let
+      blk = createTestBlock(133)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      proof = tree.getProof(0).tryGet()
+    var
+      capturedTmpCid: Cid
+      writeDone = newFuture[void]("withTmpOverlay.cancel.writeDone")
+
+    let op = withTmpOverlay(
+      repo,
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+        capturedTmpCid = tmpCid
+        ?await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+        if not writeDone.finished:
+          writeDone.complete()
+        await sleepAsync(10.seconds)
+        success(tmpCid),
+    )
+
+    await writeDone.wait(500.millis)
+    await op.cancelAndWait()
+
+    try:
+      discard await op
+      check false
+    except CatchableError as exc:
+      check exc of CancelledError
+
+    let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
+    check tmpMetaRes.isErr
+    check tmpMetaRes.error() of KVStoreKeyNotFound
+
+    let tmpLeafRes = await repo.getLeafMetadata(capturedTmpCid, 0.Natural)
+    check tmpLeafRes.isErr
+    check tmpLeafRes.error() of BlockNotFoundError
+
+    let blkRes = await repo.getBlock(blk.cid)
+    check blkRes.isErr
+    check blkRes.error() of BlockNotFoundError

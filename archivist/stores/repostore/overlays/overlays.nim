@@ -80,8 +80,7 @@ proc getOverlayMetadata*(
 proc deleteOverlayMetadata*(
     self: RepoStore, treeCid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Delete overlay metadata (idempotent - returns success
-  ## on any get error).
+  ## Delete overlay metadata
   ##
 
   ?await self.metaDs.delete(?await self.metaDs.get(?overlayKey(treeCid)))
@@ -244,25 +243,30 @@ proc dropOverlay*(
 
   trace "Dropping overlay and cleaning up blocks"
 
+  if err =?
+      (await self.createOrUpdateOverlay(treeCid, status = Deleting.some)).errorOption:
+    error "Unable to mark overlay as deleting", exc = err.msg
+    return failure(err)
+
   # Query all leaf records for this tree
   let
-    queryKey = ?blockProofQueryKey(treeCid)
+    queryKey = ?blockLeafQueryKey(treeCid)
     iter = ?(await query(self.metaDs, Query.init(queryKey), LeafMetadata))
-    leafRecords = ?await iter.fetchAll()
-
-  trace "Found leaf records to delete", count = leafRecords.len
 
   # Extract indices from the leaf keys
   var indices: seq[Natural]
-  for record in leafRecords:
-    # Key format: /meta/leafs/{treeCid}/{index}
-    # Extract index from last namespace segment
-    let indexStr = record.key.value
-    without idx =? parseInt(indexStr).catch, err:
-      return failure(
-        newException(ValueError, "Invalid index in key: " & indexStr & " - " & err.msg)
-      )
-    indices.add(idx.Natural)
+  for recordFut in iter:
+    if record =? ?catch(?(await recordFut)):
+      # Key format: /meta/leafs/{treeCid}/{index}
+      # Extract index from last namespace segment
+      let indexStr = record.key.value
+      without idx =? parseInt(indexStr).catch, err:
+        return failure(
+          newException(
+            ValueError, "Invalid index in key: " & indexStr & " - " & err.msg
+          )
+        )
+      indices.add(idx.Natural)
 
   # Delete leaf metadata and decrement refcounts (two-phase atomic)
   if indices.len > 0:
@@ -363,19 +367,27 @@ proc withTmpOverlay*(
   ##
 
   trace "Starting temporary overlay operation"
-  let tmpCid = ?await self.createTmpOverlay()
+
+  var completed = false
+
+  without tmpCid =? (await self.createTmpOverlay()), err:
+    error "Unable to create temporary overlay", exc = err.msg
+    return failure(err)
 
   trace "Temporary overlay created", tmpCid
+
+  defer:
+    if not completed:
+      if dropErr =? (await noCancel self.dropOverlay(tmpCid)).errorOption:
+        error "Unable to drop tmp overlay on error", exc = dropErr.msg
 
   let bodyRes = await body(tmpCid)
 
   without realCid =? bodyRes, err:
     error "Body failed to return real tree CID", error = err.msg
-    if dropErr =? (await self.dropOverlay(tmpCid)).errorOption:
-      error "Unable to drop tmp overlay on error", exc = dropErr.msg
-      return failure(dropErr)
     return failure(err)
 
+  completed = true
   trace "Body completed successfully, finalizing overlay", realCid, tmpCid
   if finalErr =? (
     await self.finalizeOverlay(tmpCid, realCid, status = OverlayStatus.Completed.some)
@@ -383,4 +395,4 @@ proc withTmpOverlay*(
     error "Unable to finalize tmp overlay", exc = finalErr.msg
     return failure(finalErr)
 
-  return bodyRes
+  bodyRes

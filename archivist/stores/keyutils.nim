@@ -54,6 +54,6 @@ proc blockMetaKeyQuery*(): ?!Key =
 proc blockLeafKey*(treeCid: Cid, index: Natural): ?!Key =
   (BlockLeafKey / $treeCid).flatMap((k: Key) => k / $index)
 
-proc blockProofQueryKey*(treeCid: Cid): ?!Key =
+proc blockLeafQueryKey*(treeCid: Cid): ?!Key =
   ## Query key for iterating all leafs under a tree: /meta/leafs/{treeCid}/*
   Key.init(?(BlockLeafKey / $treeCid / "*"))
