@@ -397,6 +397,8 @@ proc validateBlockDelivery(self: BlockExcEngine, bd: BlockDelivery): ?!void =
 proc blocksDeliveryHandler*(
     self: BlockExcEngine, peer: PeerId, blocksDelivery: seq[BlockDelivery]
 ) {.async: (raises: [CancelledError]).} =
+  # TODO: this should not be here, the engine should just resolve the future,
+  # and let the caller do the validation and storing
   trace "Received blocks from peer", peer, blocks = (blocksDelivery.mapIt(it.address))
 
   var validatedBlocksDelivery: seq[BlockDelivery]
