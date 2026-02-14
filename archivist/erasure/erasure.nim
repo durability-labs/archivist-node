@@ -478,8 +478,7 @@ proc encode*(
 
   let treeCid =
     if manifest.protected:
-      ?await withOverlay(
-        self.repoStore,
+      ?await self.repoStore.withOverlay(
         manifest.treeCid,
         body = proc(): Future[?!Cid] {.
             closure, gcsafe, async: (raises: [CancelledError])
@@ -490,15 +489,13 @@ proc encode*(
         ,
       )
     else:
-      ?await withTmpOverlay(
-        self.repoStore,
+      ?await self.repoStore.withTmpOverlay(
         body = proc(
             tmpCid: Cid
         ): Future[?!Cid] {.closure, gcsafe, async: (raises: [CancelledError]).} =
           let cids = ?await self.encodeData(sourceManifest.treeCid, tmpCid, params)
 
           await treeAndProofs(cids, tmpCid)
-        ,
       )
 
   let protected = Manifest.new(
@@ -698,27 +695,26 @@ proc repair*(
     emptyCid = ?emptyCid(encoded.version, encoded.hcodec, encoded.codec)
     params = EncodingParams.initFromEncoded(encoded, emptyCid)
 
-  let (cids, _) =
-    ?await withOverlay(
-      self.repoStore,
-      encoded.originalTreeCid,
-      status = Repairing.some,
-      body = proc(): Future[?!(ref seq[Cid], seq[Natural])] {.
-          closure, async: (raises: [CancelledError], raw: true)
-      .} =
-        self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params),
-    )
+  ?await self.repoStore.withOverlay(
+    encoded.originalTreeCid,
+    status = Repairing.some,
+    body = proc(): Future[?!void] {.
+        closure, async: (raises: [CancelledError])
+    .} =
+      let
+        (cids, _) =
+          ?await self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params)
+        tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
+        treeCid = ?tree.rootCid
 
-  let
-    tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
-    treeCid = ?tree.rootCid
+      if treeCid != encoded.originalTreeCid:
+        return failure(
+          "Original tree root differs from the tree root computed out of recovered data"
+        )
 
-  if treeCid != encoded.originalTreeCid:
-    return failure(
-      "Original tree root differs from the tree root computed out of recovered data"
-    )
-
-  ?await self.repoStore.putAllProofs(tree)
+      await self.repoStore.putAllProofs(tree)
+    ,
+  )
 
   # TODO: We don't get valid parity data from leopard,
   # so we need to do full re-encoding to get parity

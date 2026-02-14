@@ -404,14 +404,6 @@ proc store*(
   ##
   info "Storing data"
 
-  var cleanupTmp = true
-  let tmpTreeCid = ?await self.repoStore.createTmpOverlay()
-  defer:
-    await stream.close()
-    if cleanupTmp:
-      if err =? (await self.repoStore.dropOverlay(tmpTreeCid)).errorOption:
-        trace "Unable to drop temporary overlay", tmpTreeCid, err = err.msg
-
   let
     hcodec = Sha256HashCodec
     dataCodec = BlockCodec
@@ -420,42 +412,50 @@ proc store*(
   var
     index = 0
     cids: seq[Cid]
-  while (let chunk = ?await chunker.getBytes(); chunk.len > 0):
-    let
-      mhash = ?MultiHash.digest($hcodec, chunk).mapFailure
-      cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
-      blk = ?bt.Block.new(cid, chunk, verify = false)
 
-    cids.add(cid)
-    ?await self.repoStore.putLeafAndBlock(tmpTreeCid, blk, index)
-    index.inc
+  let treeCid =
+    ?await self.repoStore.withTmpOverlay(
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, gcsafe, async: (raises: [CancelledError]).} =
+        while (let chunk = ?await chunker.getBytes(); chunk.len > 0):
+          let
+            mhash = ?MultiHash.digest($hcodec, chunk).mapFailure
+            cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
+            blk = ?bt.Block.new(cid, chunk, verify = false)
 
-  let
-    tree = ?ArchivistTree.init(cids)
-    treeCid = ?tree.rootCid(CIDv1, dataCodec)
-    manifest = Manifest.new(
-      treeCid = treeCid,
-      blockSize = blockSize,
-      datasetSize = NBytes(chunker.offset),
-      version = CIDv1,
-      hcodec = hcodec,
-      codec = dataCodec,
-      filename = filename,
-      mimetype = mimetype,
+          cids.add(cid)
+          ?await self.repoStore.putLeafAndBlock(tmpCid, blk, index)
+          index.inc
+
+        let
+          tree = ?ArchivistTree.init(cids)
+          treeCid = ?tree.rootCid(CIDv1, dataCodec)
+
+        # TODO: Once we have progressive tree building we can get rid of the
+        # separate proofs putting and just put leafs directly in the same
+        # putLeafAndBlock call as we build the tree
+        for index, cid in cids:
+          ?await self.repoStore.putCidAndProof(
+            treeCid, index, cid, ?tree.getProof(index)
+          )
+
+        success treeCid
     )
+
+  let manifest = Manifest.new(
+    treeCid = treeCid,
+    blockSize = blockSize,
+    datasetSize = NBytes(chunker.offset),
+    version = CIDv1,
+    hcodec = hcodec,
+    codec = dataCodec,
+    filename = filename,
+    mimetype = mimetype,
+  )
 
   # store the manifest
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
-
-  # move tmp overlay leafs to final treeCid
-  ?await self.repoStore.finalizeOverlay(tmpTreeCid, treeCid, status = Completed.some)
-  cleanupTmp = false # temp overlay has been finalized, no need to clean up
-
-  # TODO: Once we have progressive tree building we can get rid of the
-  # separate proofs putting and just put leafs directly in the same
-  # putLeafAndBlock call as we build the tree
-  for index, cid in cids:
-    ?await self.repoStore.putCidAndProof(treeCid, index, cid, ?tree.getProof(index))
 
   info "Stored data",
     manifestCid = manifestBlk.cid,
