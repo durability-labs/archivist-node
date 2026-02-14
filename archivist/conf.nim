@@ -235,7 +235,7 @@ type
 
     overlayTtl* {.
       desc: "Default block timeout in seconds - 0 disables the ttl",
-      defaultValue: DefaultOverlayTtl,
+      defaultValue: DefaultOverlayTtl.seconds,
       defaultValueDesc: $DefaultOverlayTtl,
       name: "block-ttl",
       abbr: "t"
