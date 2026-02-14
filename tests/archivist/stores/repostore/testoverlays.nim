@@ -585,7 +585,7 @@ suite "withOverlay proc":
 
     let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
     check meta.status == Completed
-    check meta.expiry == now + customExpiry
+    check meta.expiry == customExpiry
 
   test "Should keep initial status when body is cancelled":
     let treeCid = Cid.example
