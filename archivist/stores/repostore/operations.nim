@@ -310,7 +310,24 @@ proc putOrUpdateLeafBlockMeta*(
 
       trace "Processing record", key = record.key
       if BlockLeafKey.ancestor(record.key):
-        record.val = (?catch(leafsMap[record.key])).val
+        let incomingLeafRec = ?toRecord[LeafMetadata](?catch(leafsMap[record.key]))
+        var currentLeafRec = ?toRecord[LeafMetadata](record)
+
+        currentLeafRec.val.deleted = incomingLeafRec.val.deleted
+        currentLeafRec.val.blkCid = incomingLeafRec.val.blkCid
+
+        let
+          hasCurrentProof =
+            (not currentLeafRec.val.proof.isNil) and
+            currentLeafRec.val.proof.path.len > 0
+          hasIncomingProof =
+            (not incomingLeafRec.val.proof.isNil) and
+            incomingLeafRec.val.proof.path.len > 0
+
+        if hasIncomingProof or not hasCurrentProof:
+          currentLeafRec.val.proof = incomingLeafRec.val.proof
+
+        record = currentLeafRec.toRaw
       elif BlocksMetaKey.ancestor(record.key):
         var blockMeta = ?toRecord[BlockMetadata](record)
         # Count only new leaf references (leaves NOT in conflict set)
