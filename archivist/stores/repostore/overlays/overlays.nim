@@ -13,6 +13,7 @@
 import std/algorithm
 import std/oids
 import std/strutils
+import std/sugar
 
 import pkg/chronos
 import pkg/kvstore
@@ -189,7 +190,7 @@ proc createOrUpdateOverlay*(
     treeCid: Cid,
     status = OverlayStatus.none,
     blocks = BitSeq.init(0),
-    expiry = ZeroDuration.seconds,
+    expiry = ZeroSeconds,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   without var overlay =? (await self.getOverlayMetadata(treeCid)), err:
     if not (err of KVStoreKeyNotFound):
@@ -202,15 +203,14 @@ proc createOrUpdateOverlay*(
   overlay.status = status |? overlay.status
 
   let expiryTime =
-    self.clock.now() +
-    (if expiry == ZeroDuration.seconds: self.overlayTtl.seconds else: expiry)
+    self.clock.now() + (if expiry == ZeroSeconds: self.overlayTtl else: expiry)
 
   overlay.expiry = expiryTime
 
   await self.putOverlayMetadata(treeCid, overlay)
 
 proc createTmpOverlay*(
-    self: RepoStore, expiry = ZeroDuration
+    self: RepoStore, expiry = ZeroSeconds
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
   let
     oid = genOid()
@@ -220,8 +220,7 @@ proc createTmpOverlay*(
     tmpTreeCid = ?Cid.init(CIDv1, BlockCodec, mhash).mapFailure
 
   let expiryTime =
-    self.clock.now() +
-    (if expiry == ZeroDuration: self.overlayTtl.seconds else: expiry.seconds)
+    self.clock.now() + (if expiry == ZeroSeconds: self.overlayTtl else: expiry)
 
   ?await self.putOverlayMetadata(
     tmpTreeCid,
@@ -280,7 +279,7 @@ proc finalizeOverlay*(
     self: RepoStore,
     tmpCid, realTreeCid: Cid,
     status = OverlayStatus.none,
-    expiry = ZeroDuration.seconds,
+    expiry = ZeroSeconds,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Promote a temp overlay to a real overlay.
   ##
@@ -296,7 +295,7 @@ proc finalizeOverlay*(
 
   trace "Finalizing temp overlay"
 
-  # Move leaf records: /meta/leafs/{tmpCid}/* → /meta/leafs/{realTreeCid}/*
+  # Move leaf records: /meta/leafs/{tmpCid}/* -> /meta/leafs/{realTreeCid}/*
   let
     oldLeafPrefix = ?(BlockLeafKey / $tmpCid)
     newLeafPrefix = ?(BlockLeafKey / $realTreeCid)
@@ -307,8 +306,7 @@ proc finalizeOverlay*(
   var meta = ?await self.getOverlayMetadata(tmpCid)
 
   let expiryTime =
-    self.clock.now() +
-    (if expiry == ZeroDuration.seconds: self.overlayTtl.seconds else: expiry)
+    self.clock.now() + (if expiry == ZeroSeconds: self.overlayTtl else: expiry)
 
   meta.expiry = expiryTime
   meta.status = status |? meta.status
@@ -318,3 +316,71 @@ proc finalizeOverlay*(
 
   trace "Temp overlay finalized successfully"
   success()
+
+proc withOverlay*[T](
+    self: RepoStore,
+    treeCid: Cid,
+    status = OverlayStatus.none,
+    expiry = ZeroSeconds,
+    body: proc(): Future[?!T] {.closure, gcsafe, async: (raises: [CancelledError]).},
+): Future[?!T] {.async: (raises: [CancelledError]).} =
+  ## Create or update overlay with initial state and expiry.
+  ##
+
+  logScope:
+    treeCid = treeCid
+    status = status
+
+  trace "Starting overlay operation"
+  if initErr =? (
+    await self.createOrUpdateOverlay(treeCid, status, BitSeq.init(0), expiry)
+  ).errorOption:
+    error "Unable to create/update overlay metadata", exc = initErr.msg
+    return failure(initErr)
+
+  let
+    bodyRes = await body()
+    finalState = if bodyRes.isOk: Completed.some else: Failure.some
+
+  if finalErr =? (
+    await self.createOrUpdateOverlay(treeCid, finalState, BitSeq.init(0), expiry)
+  ).errorOption:
+    error "Unable to set overlay final state", exc = finalErr.msg
+    return failure(finalErr)
+
+  trace "Overlay operation completed", finalState
+
+  return bodyRes
+
+proc withTmpOverlay*(
+    self: RepoStore,
+    body: proc(tmpCid: Cid): Future[?!Cid] {.
+      closure, gcsafe, async: (raises: [CancelledError])
+    .},
+): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+  ## Create a temporary overlay, run body, finalize or drop.
+  ## Body must return ?!Cid (the real treeCid).
+  ##
+
+  trace "Starting temporary overlay operation"
+  let tmpCid = ?await self.createTmpOverlay()
+
+  trace "Temporary overlay created", tmpCid
+
+  let bodyRes = await body(tmpCid)
+
+  without realCid =? bodyRes, err:
+    error "Body failed to return real tree CID", error = err.msg
+    if dropErr =? (await self.dropOverlay(tmpCid)).errorOption:
+      error "Unable to drop tmp overlay on error", exc = dropErr.msg
+      return failure(dropErr)
+    return failure(err)
+
+  trace "Body completed successfully, finalizing overlay", realCid, tmpCid
+  if finalErr =? (
+    await self.finalizeOverlay(tmpCid, realCid, status = OverlayStatus.Completed.some)
+  ).errorOption:
+    error "Unable to finalize tmp overlay", exc = finalErr.msg
+    return failure(finalErr)
+
+  return bodyRes

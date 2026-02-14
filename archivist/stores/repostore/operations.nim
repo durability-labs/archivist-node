@@ -383,6 +383,7 @@ proc delLeafBlockMetadata*(
   trace "Deleting leaf and block metadata"
 
   let
+    overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
     # TODO: This is highly ineficient under the current schema, but I
     # want to ge this working first.
     #
@@ -435,9 +436,7 @@ proc delLeafBlockMetadata*(
         )
     )
 
-  var
-    overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
-    blockBits = BitSeq.init(uniqueIdxs.max() + 1)
+  var blockBits = BitSeq.init(uniqueIdxs.max() + 1)
 
   blockBits.combineSafe(overlayMeta.val.blocks)
   for i in uniqueIdxs:

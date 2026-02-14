@@ -68,7 +68,7 @@ suite "OverlayMetadata codecs":
 
   test "Should roundtrip all overlay statuses":
     for status in [
-      OverlayStatus.Error, OverlayStatus.Storing, OverlayStatus.Completed,
+      OverlayStatus.Failure, OverlayStatus.Storing, OverlayStatus.Completed,
       OverlayStatus.Deleting,
     ]:
       let meta = OverlayMetadata(status: status, expiry: 11, blocks: BitSeq.init(0))
@@ -187,7 +187,7 @@ suite "Overlay creation":
     ).tryGet()
 
     let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
-    check meta.expiry == now + DefaultOverlayTtl.seconds
+    check meta.expiry == now + DefaultOverlayTtl
 
   test "Should create unique tmp overlays":
     let tmpCid1 = (await repo.createTmpOverlay()).tryGet()
@@ -205,7 +205,7 @@ suite "Overlay creation":
     let tmpCid = (await repo.createTmpOverlay()).tryGet()
     let meta = (await repo.getOverlayMetadata(tmpCid)).tryGet()
 
-    check meta.expiry == now + DefaultOverlayTtl.seconds
+    check meta.expiry == now + DefaultOverlayTtl
 
 suite "Overlay listing":
   var
@@ -236,7 +236,7 @@ suite "Overlay listing":
       cid2 = createTestBlock(22).cid
       cid3 = createTestBlock(23).cid
 
-    for (cid, status) in [(cid1, Completed), (cid2, Storing), (cid3, Error)]:
+    for (cid, status) in [(cid1, Completed), (cid2, Storing), (cid3, Failure)]:
       (
         await repo.createOrUpdateOverlay(
           treeCid = cid, status = status.some, blocks = BitSeq.init(1)
@@ -474,3 +474,237 @@ suite "Overlay lifecycle":
     check gotBlock.cid == blk.cid
     check gotProof.index == proof.index
     check gotProof.nleaves == proof.nleaves
+
+suite "withOverlay proc":
+  var
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
+    mockClock: MockClock
+    repo: RepoStore
+
+  let now: SecondsSince1970 = 123
+
+  setup:
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    mockClock = MockClock.new()
+    mockClock.set(now)
+    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 2000'nb)
+
+  teardown:
+    (await repoDs.close()).tryGet
+    (await metaDs.close()).tryGet
+    tp.shutdown()
+
+  test "Should create overlay before running body":
+    let treeCid = Cid.example
+    var statusDuringBody = Failure
+
+    let res = await withOverlay(
+      repo,
+      treeCid,
+      status = Storing.some,
+      body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+        let meta = ?await repo.getOverlayMetadata(treeCid)
+        statusDuringBody = meta.status
+        success(),
+    )
+
+    check res.isOk
+    check statusDuringBody == Storing
+
+    let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta.status == Completed
+
+  test "Should set completed state on async body success":
+    let treeCid = Cid.example
+
+    let res = await withOverlay(
+      repo,
+      treeCid,
+      status = Storing.some,
+      body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+        success(),
+    )
+
+    check res.isOk
+
+    let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta.status == Completed
+
+  test "Should set failure state on async body failure":
+    let treeCid = Cid.example
+
+    let res = await withOverlay(
+      repo,
+      treeCid,
+      status = Storing.some,
+      body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+        failure(newException(ValueError, "body failed")),
+    )
+
+    check res.isErr
+    check res.error of ValueError
+
+    let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta.status == Failure
+
+  test "Should preserve typed body result":
+    let treeCid = Cid.example
+
+    let res = await withOverlay(
+      repo,
+      treeCid,
+      status = Storing.some,
+      body = proc(): Future[?!int] {.closure, async: (raises: [CancelledError]).} =
+        success(42),
+    )
+
+    check res.isOk
+    check res.get == 42
+
+    let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta.status == Completed
+
+  test "Should use custom expiry for final overlay metadata":
+    let
+      treeCid = Cid.example
+      customExpiry: SecondsSince1970 = 500
+
+    let res = await withOverlay(
+      repo,
+      treeCid,
+      expiry = customExpiry,
+      body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+        success(),
+    )
+
+    check res.isOk
+
+    let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta.status == Completed
+    check meta.expiry == now + customExpiry
+
+suite "withTmpOverlay proc":
+  var
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
+    mockClock: MockClock
+    repo: RepoStore
+
+  let now: SecondsSince1970 = 123
+
+  setup:
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    mockClock = MockClock.new()
+    mockClock.set(now)
+    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 2000'nb)
+
+  teardown:
+    (await repoDs.close()).tryGet
+    (await metaDs.close()).tryGet
+    tp.shutdown()
+
+  test "Should create tmp overlay before running body":
+    let realTreeCid = Cid.example
+    var statusDuringBody = Failure
+
+    let res = await withTmpOverlay(
+      repo,
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+        let tmpMeta = ?await repo.getOverlayMetadata(tmpCid)
+        statusDuringBody = tmpMeta.status
+        success(realTreeCid),
+    )
+
+    check res.isOk
+    check res.get == realTreeCid
+    check statusDuringBody == Storing
+
+    let realMeta = (await repo.getOverlayMetadata(realTreeCid)).tryGet()
+    check realMeta.status == Completed
+
+  test "Should finalize tmp overlay and move leaves to real tree":
+    let
+      blk = createTestBlock(130)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      realTreeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+    var capturedTmpCid: Cid
+
+    let res = await withTmpOverlay(
+      repo,
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+        capturedTmpCid = tmpCid
+        ?await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+        success(realTreeCid),
+    )
+
+    check res.isOk
+    check res.get == realTreeCid
+
+    let leaf = (await repo.getLeafMetadata(realTreeCid, 0.Natural)).tryGet()
+    check leaf.blkCid == blk.cid
+
+    let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
+    check tmpMetaRes.isErr
+    check tmpMetaRes.error() of KVStoreKeyNotFound
+
+    let realMeta = (await repo.getOverlayMetadata(realTreeCid)).tryGet()
+    check realMeta.status == Completed
+
+  test "Should drop tmp overlay metadata on body failure":
+    var capturedTmpCid: Cid
+
+    let res = await withTmpOverlay(
+      repo,
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+        capturedTmpCid = tmpCid
+        Cid.failure("encode failed"),
+    )
+
+    check res.isErr
+    check "encode failed" in res.error.msg
+
+    let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
+    check tmpMetaRes.isErr
+    check tmpMetaRes.error() of KVStoreKeyNotFound
+
+  test "Should drop tmp overlay and cleanup stored leafs on body failure":
+    let
+      blk = createTestBlock(131)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      proof = tree.getProof(0).tryGet()
+    var capturedTmpCid: Cid
+
+    let res = await withTmpOverlay(
+      repo,
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+        capturedTmpCid = tmpCid
+        ?await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+        Cid.failure("encode failed after storing"),
+    )
+
+    check res.isErr
+    check "encode failed after storing" in res.error.msg
+
+    let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
+    check tmpMetaRes.isErr
+    check tmpMetaRes.error() of KVStoreKeyNotFound
+
+    let tmpLeafRes = await repo.getLeafMetadata(capturedTmpCid, 0.Natural)
+    check tmpLeafRes.isErr
+    check tmpLeafRes.error() of BlockNotFoundError

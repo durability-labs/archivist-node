@@ -21,8 +21,9 @@ import ../../systemclock
 import ../../units
 
 const
-  DefaultOverlayTtl* = 30.days
+  DefaultOverlayTtl* = SecondsSince1970 30.days.seconds # ttl in seconds
   DefaultQuotaBytes* = 20.GiBs
+  ZeroSeconds* = SecondsSince1970 0
 
 type
   QuotaNotEnoughError* = object of ArchivistError
@@ -35,7 +36,7 @@ type
     quotaMaxBytes*: NBytes
     quotaUsage*: QuotaUsage
     totalBlocks*: Natural
-    overlayTtl*: Duration
+    overlayTtl*: SecondsSince1970
     started*: bool
 
   QuotaUsage* {.serialize.} = object
@@ -53,8 +54,9 @@ type
     proof*: ArchivistProof
 
   OverlayStatus* {.serialize.} = enum
-    Error ## Unrecoverable error
+    Failure ## Unrecoverable error
     Storing ## Upload/Download in progress
+    Repairing ## Repair in progress
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
 

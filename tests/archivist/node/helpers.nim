@@ -7,6 +7,8 @@ import pkg/archivist/archivisttypes
 import pkg/archivist/chunker
 import pkg/archivist/stores
 
+import pkg/archivist/clock
+
 import ../../asynctest
 
 type CountingStore* = ref object of NetworkStore
@@ -26,6 +28,9 @@ method getBlock*(
 
 proc toTimesDuration*(d: chronos.Duration): times.Duration =
   initDuration(seconds = d.seconds)
+
+proc toTimesDuration*(d: SecondsSince1970): times.Duration =
+  initDuration(seconds = d)
 
 proc drain*(
     stream: LPStream | Result[lpstream.LPStream, ref CatchableError]

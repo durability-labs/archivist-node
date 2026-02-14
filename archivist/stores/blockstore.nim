@@ -63,6 +63,7 @@ method getBlock*(
   ## Get a block from the blockstore — routes to leaf or cid variant
   ##
 
+  trace "Getting block by address", address
   if address.leaf:
     self.getBlock(address.treeCid, address.index)
   else:

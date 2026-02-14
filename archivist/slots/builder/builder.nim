@@ -232,19 +232,25 @@ proc buildSlot*[SomeTree, SomeHash](
     return failure(e)
 
   trace "Storing slot tree", treeCid, slotIndex, leaves = tree.leavesCount
-  ?await self.repoStore.createOrUpdateOverlay(treeCid, Storing.some)
-  for i, leaf in tree.leaves:
-    without cellCid =? leaf.toCellCid, e:
-      error "Failed to get CID for slot cell", e = e.msg
-      return failure(e)
+  ?await withOverlay(
+    self.repoStore,
+    treeCid,
+    status = Storing.some,
+    body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+      for i, leaf in tree.leaves:
+        without cellCid =? leaf.toCellCid, e:
+          error "Failed to get CID for slot cell", e = e.msg
+          return failure(e)
 
-    without proof =? tree.getProof(i) and encodableProof =? proof.toEncodableProof, e:
-      error "Failed to get proof for slot tree", e = e.msg
-      return failure(e)
+        without proof =? tree.getProof(i) and encodableProof =? proof.toEncodableProof,
+          e:
+          error "Failed to get proof for slot tree", e = e.msg
+          return failure(e)
 
-    ?await self.repoStore.putCidAndProof(treeCid, i, cellCid, encodableProof)
+        ?await self.repoStore.putCidAndProof(treeCid, i, cellCid, encodableProof)
+      success(),
+  )
 
-  ?await self.repoStore.createOrUpdateOverlay(treeCid, Completed.some)
   tree.root()
 
 func buildVerifyTree*[SomeTree, SomeHash](

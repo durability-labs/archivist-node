@@ -286,20 +286,9 @@ proc streamEntireDataset(
           self.taskpool,
         )
 
-        if err =? (
-          await self.repoStore.createOrUpdateOverlay(manifest.treeCid, Storing.some)
-        ).errorOption:
-          error "Unable to create overlay", manifestCid, exc = err.msg
-          return
-
         if err =? (await erasure.decode(manifest)).errorOption:
           error "Unable to erasure decode manifest", manifestCid, exc = err.msg
           return
-
-        if err =? (
-          await self.repoStore.createOrUpdateOverlay(manifest.treeCid, Completed.some)
-        ).errorOption:
-          error "Unable to update overlay", manifestCid, exc = err.msg
       except CatchableError as exc:
         trace "Error erasure decoding manifest", manifestCid, exc = exc.msg
 
@@ -521,9 +510,6 @@ proc ensureProtectedManifest(
     encodedManifest = ?await erasure.encode(manifest, ecK, ecM)
     manifestBlk = ?await self.repoStore.storeManifest(encodedManifest)
 
-  # Mark overlay as completed
-  ?await self.repoStore.createOrUpdateOverlay(encodedManifest.treeCid, Completed.some)
-
   success encodedManifest
 
 proc ensureVerifiableManifest(
@@ -663,7 +649,6 @@ proc storeSlot*(
     slotSize = slotSize
 
   trace "Received a request to store a slot"
-
   without manifest =? (await self.fetchManifest(cid, expiry)), err:
     error "Unable to fetch manifest for cid", cid, err = err.msg
     return failure(err)
