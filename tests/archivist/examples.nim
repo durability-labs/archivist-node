@@ -6,7 +6,7 @@ import pkg/stint
 import pkg/archivist/rng
 import pkg/archivist/stores
 import pkg/archivist/blocktype as bt
-# import pkg/archivist/marketplace/sales # Commented out for kvstore migration
+import pkg/archivist/marketplace/sales
 import pkg/archivist/merkletree
 import pkg/archivist/manifest
 import ../examples
