@@ -418,7 +418,12 @@ proc store*(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, gcsafe, async: (raises: [CancelledError]).} =
-        while (let chunk = ?await chunker.getBytes(); chunk.len > 0):
+        while true:
+          let chunk = ?await chunker.getBytes()
+          if chunk.len == 0:
+            trace "Chunker finished reading stream", read = NBytes(chunker.offset)
+            break
+
           let
             mhash = ?MultiHash.digest($hcodec, chunk).mapFailure
             cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
@@ -437,7 +442,7 @@ proc store*(
         # putLeafAndBlock call as we build the tree
         for index, cid in cids:
           ?await self.repoStore.putCidAndProof(
-            treeCid, index, cid, ?tree.getProof(index)
+            tmpCid, index, cid, ?tree.getProof(index)
           )
 
         success treeCid
