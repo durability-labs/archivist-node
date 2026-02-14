@@ -2,7 +2,10 @@ import std/json
 import std/sequtils
 import std/strutils
 import pkg/asynctest/chronos/unittest2
+import pkg/libp2p/cid
+import pkg/libp2p/multihash
 import pkg/questionable
+import pkg/archivist/archivisttypes
 import ../../testbed
 
 suite "Node datasets":
@@ -48,6 +51,12 @@ suite "Node datasets":
     except HttpError as error:
       check "404" in error.msg
 
-  test "node allows deletion of absent dataset":
-    let cid = "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA"
-    await testbed.api(node).delete(cid)
+  test "node returns 404 when deleting absent dataset":
+    let
+      mhash = MultiHash.digest("sha2-256", @[0'u8]).tryGet()
+      cid = Cid.init(CIDv1, ManifestCodec, mhash).tryGet()
+    try:
+      await testbed.api(node).delete($cid)
+      fail()
+    except HttpError as error:
+      check "404" in error.msg
