@@ -286,8 +286,8 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
     cid: Cid, resp: HttpResponseRef
   ) -> RestApiResponse:
     ## Deletes either a single block or an entire dataset
-    ## from the local node. Does nothing and returns 204
-    ## if the dataset is not locally available.
+    ## from the local node. Returns 404 if the dataset
+    ## is not locally available.
     ##
     var headers = buildCorsHeaders("DELETE", allowedOrigin)
 
@@ -295,6 +295,8 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       return RestApiResponse.error(Http400, $cid.error(), headers = headers)
 
     if err =? (await node.delete(cid.get())).errorOption:
+      if err of BlockNotFoundError:
+        return RestApiResponse.error(Http404, err.msg, headers = headers)
       return RestApiResponse.error(Http500, err.msg, headers = headers)
 
     if corsOrigin =? allowedOrigin:

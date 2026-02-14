@@ -269,7 +269,12 @@ method delBlock*(
     trace "Skipping empty Cid"
     return success()
 
-  if (?await self.blockRefCount(cid)) > 0.Natural:
+  without refCount =? (await self.blockRefCount(cid)), err:
+    if err of KVStoreKeyNotFound:
+      return failure(newException(BlockNotFoundError, err.msg))
+    return failure(err)
+
+  if refCount > 0.Natural:
     return
       failure("Directly deleting a block that is part of a dataset is not allowed.")
 
