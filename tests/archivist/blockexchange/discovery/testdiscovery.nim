@@ -87,7 +87,18 @@ suite "Block Advertising and Discovery":
     switch.mount(network)
 
   teardown:
-    await discovery.stop()
+    if not engine.isNil:
+      await engine.stop()
+
+    if not switch.isNil:
+      await switch.stop()
+
+    if not localStore.isNil:
+      await localStore.close()
+
+    if not discovery.isNil:
+      await discovery.stop()
+
     tp.shutdown()
 
   test "Should discover want list":
@@ -174,9 +185,11 @@ suite "E2E - Multiple Nodes Discovery":
     manifests: seq[Manifest]
     mBlocks: seq[bt.Block]
     trees: seq[ArchivistTree]
-    tps: seq[Taskpool]
+    tp: Taskpool
 
   setup:
+    tp = Taskpool.new(num_threads = 4)
+
     for _ in 0 ..< 4:
       let chunker = RandomChunker.new(Rng.instance(), size = 4096, chunkSize = 256)
       var blocks = newSeq[bt.Block]()
@@ -196,7 +209,6 @@ suite "E2E - Multiple Nodes Discovery":
         blockDiscovery = MockDiscovery.new()
         wallet = WalletRef.example
         network = BlockExcNetwork.new(s)
-        tp = Taskpool.new(num_threads = 4)
         localStore = RepoStore.new(
           SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
           SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
@@ -220,20 +232,28 @@ suite "E2E - Multiple Nodes Discovery":
         )
         networkStore = NetworkStore.new(engine, localStore)
 
-      tps.add(tp)
       s.mount(network)
       switch.add(s)
       blockexc.add(networkStore)
 
   teardown:
-    for tp in tps.mitems:
+    for bs in blockexc:
+      if not bs.engine.isNil:
+        await bs.engine.stop()
+
+      await bs.close()
+
+    for s in switch:
+      await s.stop()
+
+    if not tp.isNil:
       tp.shutdown()
+
     switch = @[]
     blockexc = @[]
     manifests = @[]
     mBlocks = @[]
     trees = @[]
-    tps = @[]
 
   test "E2E - Should advertise and discover blocks":
     # Distribute the manifests and trees amongst 1..3
