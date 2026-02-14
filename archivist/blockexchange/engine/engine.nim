@@ -412,20 +412,20 @@ proc blocksDeliveryHandler*(
         warn "Block validation failed", msg = err.msg
         continue
 
-      if err =? (await self.localStore.putBlock(bd.blk)).errorOption:
-        error "Unable to store block", err = err.msg
-        continue
-
       if bd.address.leaf:
         without proof =? bd.proof:
           warn "Proof expected for a leaf block delivery"
           continue
         if err =? (
-          await self.localStore.putCidAndProof(
-            bd.address.treeCid, bd.address.index, bd.blk.cid, proof
+          await self.localStore.putLeafAndBlock(
+            bd.address.treeCid, bd.blk, bd.address.index, proof
           )
         ).errorOption:
-          warn "Unable to store proof and cid for a block"
+          error "Unable to store leaf block", err = err.msg
+          continue
+      else:
+        if err =? (await self.localStore.putBlock(bd.blk)).errorOption:
+          error "Unable to store block", err = err.msg
           continue
     except CatchableError as exc:
       warn "Error handling block delivery", error = exc.msg
