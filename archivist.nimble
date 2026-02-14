@@ -11,6 +11,16 @@ import "./vendor/nimble/deps.nims"
 before build:
   exec "nim vendor" / "nimble" / "install.nims"
 
+task update, "Sync submodules to pinned commits (safe)":
+  exec "git submodule sync --recursive"
+  exec "git submodule update --init --recursive"
+
+task updateUnsafe, "Reset and clean submodules to pinned commits (destructive)":
+  exec "git submodule sync --recursive"
+  exec "git submodule foreach --recursive 'git reset --hard'"
+  exec "git submodule foreach --recursive 'git clean -fdx'"
+  exec "git submodule update --init --recursive --force"
+
 task test, "Run node tests":
   exec "nim c -r tests" / "testNode"
 
