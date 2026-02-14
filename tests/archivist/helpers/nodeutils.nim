@@ -246,10 +246,14 @@ proc connectNodes*(cluster: NodesCluster) {.async.} =
 proc cleanup*(cluster: NodesCluster) {.async.} =
   for component in cluster.components:
     if component.node != nil:
-      await component.node.switch.stop()
-      await component.node.stop()
+      try:
+        await component.node.switch.stop()
+        await component.node.stop()
+      except CatchableError:
+        discard
 
   for component in cluster.components:
-    await component.localStore.close()
+    if not component.localStore.isNil:
+      await component.localStore.close()
 
   cluster.taskpool.shutdown()

@@ -208,10 +208,11 @@ proc start*(d: Discovery) {.async: (raises: []).} =
     error "Error starting discovery", exc = exc.msg
 
 proc stop*(d: Discovery) {.async: (raises: []).} =
-  try:
-    await noCancel d.protocol.closeWait()
-  except CatchableError as exc:
-    error "Error stopping discovery", exc = exc.msg
+  if not d.protocol.isNil and not d.protocol.transport.isNil:
+    try:
+      await noCancel d.protocol.closeWait()
+    except CatchableError as exc:
+      error "Error stopping discovery", exc = exc.msg
 
 proc new*(
     T: type Discovery,
