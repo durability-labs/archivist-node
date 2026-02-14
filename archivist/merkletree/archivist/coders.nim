@@ -34,6 +34,9 @@ proc encode*(self: ArchivistTree): seq[byte] =
   pb.buffer
 
 proc decode*(_: type ArchivistTree, data: openArray[byte]): ?!ArchivistTree =
+  if data.len == 0:
+    return success nil
+
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var leavesCount: uint64
@@ -75,6 +78,9 @@ proc encode*(self: ArchivistProof): seq[byte] =
   pb.buffer
 
 proc decode*(_: type ArchivistProof, data: openArray[byte]): ?!ArchivistProof =
+  if data.len == 0:
+    return success(ArchivistProof(nil))
+
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var index: uint64
