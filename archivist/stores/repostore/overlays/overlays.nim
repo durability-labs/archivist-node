@@ -202,7 +202,10 @@ proc createOrUpdateOverlay*(
   overlay.status = status |? overlay.status
 
   let expiryTime =
-    if expiry == ZeroSeconds: self.clock.now() + self.overlayTtl else: expiry
+    if expiry == ZeroSeconds:
+      self.clock.now() + self.overlayTtl
+    else:
+      expiry
 
   overlay.expiry = expiryTime
 
@@ -219,7 +222,10 @@ proc createTmpOverlay*(
     tmpTreeCid = ?Cid.init(CIDv1, BlockCodec, mhash).mapFailure
 
   let expiryTime =
-    if expiry == ZeroSeconds: self.clock.now() + self.overlayTtl else: expiry
+    if expiry == ZeroSeconds:
+      self.clock.now() + self.overlayTtl
+    else:
+      expiry
 
   ?await self.putOverlayMetadata(
     tmpTreeCid,
@@ -310,7 +316,10 @@ proc finalizeOverlay*(
   var meta = ?await self.getOverlayMetadata(tmpCid)
 
   let expiryTime =
-    if expiry == ZeroSeconds: self.clock.now() + self.overlayTtl else: expiry
+    if expiry == ZeroSeconds:
+      self.clock.now() + self.overlayTtl
+    else:
+      expiry
 
   meta.expiry = expiryTime
   meta.status = status |? meta.status
