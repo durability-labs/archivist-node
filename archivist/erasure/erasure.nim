@@ -698,9 +698,7 @@ proc repair*(
   ?await self.repoStore.withOverlay(
     encoded.originalTreeCid,
     status = Repairing.some,
-    body = proc(): Future[?!void] {.
-        closure, async: (raises: [CancelledError])
-    .} =
+    body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
       let
         (cids, _) =
           ?await self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params)
