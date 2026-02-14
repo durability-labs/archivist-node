@@ -35,7 +35,7 @@ proc encode*(self: ArchivistTree): seq[byte] =
 
 proc decode*(_: type ArchivistTree, data: openArray[byte]): ?!ArchivistTree =
   if data.len == 0:
-    return success nil
+    return success nil.ArchivistTree
 
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
