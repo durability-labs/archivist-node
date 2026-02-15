@@ -21,6 +21,7 @@ import ../../asynctest
 import ../helpers
 import ../helpers/mockclock
 import ../examples
+import ./commonstoretests
 
 suite "Test RepoStore start/stop":
   var
@@ -568,40 +569,15 @@ suite "RepoStore":
     check restoredLeaf.blkCid == blk.cid
     check restoredLeaf.deleted == false
 
-# commonBlockStoreTests(
-#   "RepoStore Sql backend",
-#   proc(): BlockStore =
-#     let tp = Taskpool.new()
-#     BlockStore(
-#       RepoStore.new(
-#         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
-#         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
-#         clock = MockClock.new(),
-#       )
-#     ),
-# )
-
-# const path = currentSourcePath().parentDir / "test"
-
-# proc before() {.async.} =
-#   createDir(path)
-
-# proc after() {.async.} =
-#   removeDir(path)
-
-# let depth = path.split(DirSep).len
-
-# commonBlockStoreTests(
-#   "RepoStore FS backend",
-#   proc(): BlockStore =
-#     let tp = Taskpool.new()
-#     BlockStore(
-#       RepoStore.new(
-#         FSKVStore.new(path, depth = depth, tp = tp).tryGet(),
-#         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
-#         clock = MockClock.new(),
-#       )
-#     ),
-#   before = before,
-#   after = after,
-# )
+commonBlockStoreTests(
+  "RepoStore Sql backend",
+  proc(): BlockStore =
+    let tp = Taskpool.new()
+    BlockStore(
+      RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        clock = MockClock.new(),
+      )
+    ),
+)
