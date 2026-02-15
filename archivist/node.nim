@@ -350,6 +350,9 @@ proc retrieve*(
 
     return await self.streamSingleBlock(cid)
 
+  # track manifest CID in overlay for cleanup
+  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, manifestCid = cid.some)
+
   await self.streamEntireDataset(manifest, cid)
 
 proc deleteSingleBlock(
@@ -470,6 +473,11 @@ proc store*(
 
   # store the manifest
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
+
+  # track manifest CID in overlay for cleanup
+  ?await self.repoStore.createOrUpdateOverlay(
+    treeCid, manifestCid = manifestBlk.cid.some
+  )
 
   info "Stored data",
     manifestCid = manifestBlk.cid,
@@ -670,6 +678,9 @@ proc storeSlot*(
   if err =? validateVerifiableManifest(manifest, slotSize).errorOption:
     error "Validation of verifiable manifest failed", err = err.msg
     return failure(err)
+
+  # track manifest CID in overlay for cleanup
+  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, manifestCid = cid.some)
 
   if err =? (await self.updateExpiry(manifest, expiry)).errorOption:
     error "Unable to update manifest expiry", cid, err = err.msg

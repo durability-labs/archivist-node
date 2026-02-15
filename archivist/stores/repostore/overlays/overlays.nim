@@ -190,6 +190,7 @@ proc createOrUpdateOverlay*(
     status = OverlayStatus.none,
     blocks = BitSeq.init(0),
     expiry = ZeroSeconds,
+    manifestCid: ?Cid = Cid.none,
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   without var overlay =? (await self.getOverlayMetadata(treeCid)), err:
     if not (err of KVStoreKeyNotFound):
@@ -200,6 +201,9 @@ proc createOrUpdateOverlay*(
 
   overlay.blocks.combineSafe(blocks)
   overlay.status = status |? overlay.status
+
+  if manifestCid.isSome:
+    overlay.manifestCid = manifestCid
 
   if expiry != ZeroSeconds:
     overlay.expiry = expiry
@@ -262,6 +266,11 @@ proc dropOverlay*(
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)
 
+  # Read overlay metadata to get manifestCid before deletion
+  var manifestCid: ?Cid
+  if meta =? (await self.getOverlayMetadata(treeCid)):
+    manifestCid = meta.manifestCid
+
   # Query all leaf records for this tree
   let
     queryKey = ?blockLeafQueryKey(treeCid)
@@ -289,6 +298,13 @@ proc dropOverlay*(
 
   # Delete overlay metadata
   ?await self.deleteOverlayMetadata(treeCid)
+
+  # Delete manifest block if tracked
+  if cid =? manifestCid:
+    let skipped = ?await self.tryDeleteBlocks(cid)
+    if skipped.len > 0:
+      warn "Manifest block was not deleted", manifestCid = cid
+
   trace "Overlay dropped successfully"
 
   success()

@@ -79,6 +79,7 @@ type
     status*: OverlayStatus
     expiry*: SecondsSince1970 # overlay expiration
     blocks*: BitSeq # bitmap of currently stored blocks
+    manifestCid*: ?Cid # CID of the manifest block (for cleanup)
 
 func quotaUsedBytes*(self: RepoStore): NBytes =
   self.quotaUsage.used
