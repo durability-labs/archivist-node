@@ -70,12 +70,25 @@ type
     Full ## Delete both slots and dataset
     None ## Keep everything
 
+  BitSeqInconsistency* = enum
+    ## Reasons for BitSeq inconsistency between overlay and leaf metadata
+    BitSetButLeafDeleted ## Bit is set in BitSeq but leaf is marked deleted
+    LeafExistsButBitNotSet ## Leaf exists and not deleted but bit not set in BitSeq
+    BitSetButNoLeafMetadata ## Bit is set in BitSeq but no leaf metadata exists
+    InvalidKeyFormat ## Key format is invalid
+
   OverlayMetadata* {.serialize.} = object
     ## Transient local state for an overlay
     ##
     ##   - protected=false -> original dataset
     ##   - protected=true, verifiable=false -> protected dataset
     ##   - protected=true, verifiable=true -> slot
+    ##
+    ## BitSeq invariants (blocks field):
+    ## - BitSeq length = max_index_stored + 1 (dynamically grows)
+    ## - Bit i is set IFF leaf metadata exists at index i AND is not deleted
+    ## - BitSeq is used for fast-path rejection in hasBlock/getBlock operations
+    ## - Metadata (leaf + block records) is source of truth; BitSeq is a hint
     status*: OverlayStatus
     expiry*: SecondsSince1970 # overlay expiration
     blocks*: BitSeq # bitmap of currently stored blocks

@@ -393,6 +393,15 @@ proc delLeafBlockMetadata*(
   ## - If a crash occurs in between, refCounts stay consistent
   ## We then delete leafs and blocks who's refcount is 0.
   ##
+  ## Optimized: First checks overlay BitSeq for fast-path rejection.
+  ## If none of the indices to delete have bits set, returns early.
+  ##
+  ## TODO: This is highly inefficient under the current schema.
+  ## To optimize this we need to avoid O(N) leaf -> block
+  ## scans (which end up being O(N^2), since we retrieve the same amount of
+  ## block metadata), we can do this by packing multiple leafs into a single
+  ## key (sharding the tree storage essentially), this becomes relevant as well
+  ## when we flatten the tree
 
   logScope:
     treeCid = treeCid
@@ -401,17 +410,16 @@ proc delLeafBlockMetadata*(
 
   let
     overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
-    # TODO: This is highly ineficient under the current schema, but I
-    # want to ge this working first.
-    #
-    # To optimize this we need to avoid O(N) leaf -> block
-    # scans (which endup being O(N^2), since we retrieve the same amount of
-    # block metadata), we can do this by packing multiple leafs into a single
-    # key (sharding the tree storage essentially), this becomes relevant as well
-    # when we flatten the tree
+    bits = overlayMeta.val.blocks
     uniqueIdxs = index.deduplicate()
+
+  if not uniqueIdxs.anyIt(it < bits.len and bits[it]):
+    trace "No bits set in BitSeq for indices to delete, fast-path return"
+    return success()
+
+  # Continue with existing logic
+  let
     leafKeys = uniqueIdxs.mapIt(?blockLeafKey(treeCid, it))
-    # Get the leafs
     leafsMeta =
       (?await self.metaDs.get(leafKeys, LeafMetadata)).filterIt(not it.val.deleted)
     updateLeafsRecs = leafsMeta.mapIt(
@@ -454,7 +462,6 @@ proc delLeafBlockMetadata*(
     )
 
   var blockBits = BitSeq.init(uniqueIdxs.max() + 1)
-
   blockBits.combineSafe(overlayMeta.val.blocks)
   for i in uniqueIdxs:
     blockBits.clearBit(i)
@@ -573,3 +580,50 @@ proc getLeafMetadata*(
       return failure(err)
 
   success(leafMd.val)
+
+proc verifyOverlayBitSeqConsistency*(
+    self: RepoStore, treeCid: Cid
+): Future[?!seq[(Natural, BitSeqInconsistency)]] {.async: (raises: [CancelledError]).} =
+  ## Verify that the overlay BitSeq is consistent with leaf metadata.
+  ##
+  ## Returns a sequence of (index, reason) for each inconsistency found.
+  ## An empty sequence means the overlay is consistent.
+  ##
+  ## Consistency rules:
+  ## - If bit i is set in BitSeq, leaf metadata must exist at index i and not be deleted
+  ## - If leaf metadata exists at index i and is not deleted, bit i must be set in BitSeq
+  ##
+  ## Note: This is an expensive operation that queries all leaf metadata.
+  ## Use for debugging and testing only.
+  ##
+
+  var inconsistencies: seq[(Natural, BitSeqInconsistency)]
+
+  let
+    overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
+    bits = overlayMeta.val.blocks
+    iter =
+      ?(await query(self.metaDs, Query.init(?blockLeafQueryKey(treeCid)), LeafMetadata))
+
+  var leafIndices: HashSet[Natural]
+  for recordFut in iter:
+    if record =? ?catch(?(await recordFut)):
+      let indexStr = record.key.value
+      without idx =? parseInt(indexStr).catch, err:
+        inconsistencies.add((0.Natural, InvalidKeyFormat))
+        trace "Invalid leaf metadata key format", key = record.key
+        continue
+      leafIndices.incl(idx.Natural)
+
+      if record.val.deleted:
+        if idx < bits.len and bits[idx]:
+          inconsistencies.add((idx.Natural, BitSetButLeafDeleted))
+      else:
+        if idx >= bits.len or not bits[idx]:
+          inconsistencies.add((idx.Natural, LeafExistsButBitNotSet))
+
+  for i in 0 ..< bits.len:
+    if bits[i] and i notin leafIndices:
+      inconsistencies.add((i.Natural, BitSetButNoLeafMetadata))
+
+  success(inconsistencies)

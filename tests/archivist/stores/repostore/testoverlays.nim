@@ -1,5 +1,6 @@
 import std/sequtils
 import std/strutils
+import std/random
 
 import pkg/questionable
 import pkg/questionable/results
@@ -844,3 +845,253 @@ suite "withTmpOverlay proc":
     let blkRes = await repo.getBlock(blk.cid)
     check blkRes.isErr
     check blkRes.error() of BlockNotFoundError
+
+suite "BitSeq optimization tests":
+  ## Tests for BitSeq-based optimizations in overlay operations.
+  ## Verifies that BitSeq is correctly maintained and used for fast-path rejection.
+  ##
+  var
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
+    mockClock: MockClock
+    repo: RepoStore
+
+  let now: SecondsSince1970 = 1000
+
+  setup:
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    mockClock = MockClock.new()
+    mockClock.set(now)
+    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 10000'nb)
+
+  teardown:
+    (await repoDs.close()).tryGet
+    (await metaDs.close()).tryGet
+    tp.shutdown()
+
+  test "hasBlock returns false when bit not set in BitSeq":
+    let
+      blk = createTestBlock(100)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+
+    let hasBlockRes = await repo.hasBlock(treeCid, 0.Natural)
+    check hasBlockRes.tryGet() == false
+
+  test "hasBlock returns true when bit set and block exists":
+    let
+      blk = createTestBlock(101)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    let hasBlockRes = await repo.hasBlock(treeCid, 0.Natural)
+    check hasBlockRes.tryGet() == true
+
+  test "hasBlock returns false for index beyond BitSeq length":
+    let
+      blk = createTestBlock(102)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    let hasBlockRes = await repo.hasBlock(treeCid, 10.Natural)
+    check hasBlockRes.tryGet() == false
+
+  test "BitSeq updated correctly after putLeafsAndBlocks":
+    let
+      blk1 = createTestBlock(103)
+      blk2 = createTestBlock(104)
+      (_, tree) = makeManifestAndTree(@[blk1, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk1, 0.Natural, proof1)])).tryGet()
+
+    let meta1 = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta1.blocks.len >= 1
+    check meta1.blocks[0] == true
+
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk2, 1.Natural, proof2)])).tryGet()
+
+    let meta2 = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta2.blocks.len >= 2
+    check meta2.blocks[0] == true
+    check meta2.blocks[1] == true
+
+  test "BitSeq updated correctly after delLeafBlockMetadata":
+    let
+      blk1 = createTestBlock(105)
+      blk2 = createTestBlock(106)
+      (_, tree) = makeManifestAndTree(@[blk1, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+
+    (
+      await repo.putLeafsAndBlocks(
+        treeCid, @[(blk1, 0.Natural, proof1), (blk2, 1.Natural, proof2)]
+      )
+    ).tryGet()
+
+    let metaBefore = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check metaBefore.blocks.len >= 2
+    check metaBefore.blocks[0] == true
+    check metaBefore.blocks[1] == true
+
+    (await repo.delLeafBlockMetadata(treeCid, @[0.Natural])).tryGet()
+
+    let metaAfter = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check metaAfter.blocks.len >= 2
+    check metaAfter.blocks[0] == false
+    check metaAfter.blocks[1] == true
+
+  test "BitSeq consistency verified after operations":
+    let
+      blk = createTestBlock(107)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    let inconsistencies = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
+    check inconsistencies.len == 0
+
+  test "BitSeq consistency verified after delete":
+    let
+      blk = createTestBlock(108)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.delLeafBlockMetadata(treeCid, @[0.Natural])).tryGet()
+
+    let inconsistencies = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
+    check inconsistencies.len == 0
+
+  test "Shared blocks across overlays maintain correct BitSeq":
+    let
+      shared = createTestBlock(200)
+      (_, tree1) = makeManifestAndTree(@[shared]).tryGet()
+      treeCid1 = tree1.rootCid.tryGet()
+      proof1 = tree1.getProof(0).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid1, status = Completed.some)).tryGet()
+    (await repo.putLeafsAndBlocks(treeCid1, @[(shared, 0.Natural, proof1)])).tryGet()
+
+    let meta1 = (await repo.getOverlayMetadata(treeCid1)).tryGet()
+    check meta1.blocks[0] == true
+
+    let refCount = (await repo.blockRefCount(shared.cid)).tryGet()
+    check refCount == 1.Natural
+
+    (await repo.dropOverlay(treeCid1)).tryGet()
+
+    let blkRes = await repo.getBlock(shared.cid)
+    check blkRes.isErr
+
+  test "Multiple sequential put/delete maintains BitSeq consistency":
+    let
+      blk1 = createTestBlock(109)
+      blk2 = createTestBlock(110)
+      blk3 = createTestBlock(111)
+      (_, tree) = makeManifestAndTree(@[blk1, blk2, blk3]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+      proof3 = tree.getProof(2).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+
+    (
+      await repo.putLeafsAndBlocks(
+        treeCid, @[(blk1, 0.Natural, proof1), (blk2, 1.Natural, proof2)]
+      )
+    ).tryGet()
+    let inconsistencies1 = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
+    check inconsistencies1.len == 0
+
+    (await repo.delLeafBlockMetadata(treeCid, @[0.Natural])).tryGet()
+    let inconsistencies2 = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
+    check inconsistencies2.len == 0
+
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk3, 2.Natural, proof3)])).tryGet()
+    let inconsistencies3 = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
+    check inconsistencies3.len == 0
+
+  test "hasBlock fast-path avoids store hit for non-existent index":
+    let
+      blk = createTestBlock(112)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+
+    let hasBlockRes = await repo.hasBlock(treeCid, 5.Natural)
+    check hasBlockRes.tryGet() == false
+
+    let leafRes = await repo.getLeafMetadata(treeCid, 5.Natural)
+    check leafRes.isErr
+    check leafRes.error() of BlockNotFoundError
+
+  test "Stress: random put/delete maintains BitSeq consistency":
+    const Iterations = 20
+    const MaxBlocks = 10
+
+    var
+      blocks: seq[bt.Block]
+      proofs: seq[ArchivistProof]
+      treeCid: Cid
+
+    for i in 0 ..< MaxBlocks:
+      let blk = createTestBlock(200 + i)
+      blocks.add(blk)
+
+    let (_, tree) = makeManifestAndTree(blocks).tryGet()
+    treeCid = tree.rootCid.tryGet()
+
+    for i in 0 ..< MaxBlocks:
+      proofs.add(tree.getProof(i).tryGet())
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+
+    var indicesAdded: HashSet[Natural]
+    for iter in 0 ..< Iterations:
+      let op = rand(1)
+      case op
+      of 0:
+        let idx = rand(MaxBlocks - 1).Natural
+        if idx notin indicesAdded:
+          (await repo.putLeafsAndBlocks(treeCid, @[(blocks[idx], idx, proofs[idx])])).tryGet()
+          indicesAdded.incl(idx)
+      else:
+        if indicesAdded.len > 0:
+          let indicesSeq = indicesAdded.toSeq
+          let randIdx = rand(indicesSeq.len - 1)
+          let idx = indicesSeq[randIdx]
+          (await repo.delLeafBlockMetadata(treeCid, @[idx])).tryGet()
+          indicesAdded.excl(idx)
+
+      let inconsistencies =
+        (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
+      check inconsistencies.len == 0
