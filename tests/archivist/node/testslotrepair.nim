@@ -35,7 +35,7 @@ proc flatten[T](s: seq[seq[T]]): seq[T] =
     t &= ss
   return t
 
-asyncchecksuite "Test Node - Slot Repair":
+suite "Test Node - Slot Repair":
   let
     numNodes = 12
     config = NodeConfig(
@@ -59,6 +59,7 @@ asyncchecksuite "Test Node - Slot Repair":
     cluster = generateNodes(numNodes, config = config)
     nodes = cluster.nodes
     localStores = cluster.localStores
+    await connectNodes(cluster)
 
   teardown:
     await cluster.cleanup()
