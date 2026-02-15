@@ -159,45 +159,52 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
+    expiry = ZeroSeconds,
 ): Future[?!void] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Fetch blocks in batches of `batchSize`
   ##
 
-  # TODO: doesn't work if callee is annotated with async
-  # let
-  #   iter = iter.map(
-  #     (i: int) => self.networkStore.getBlock(BlockAddress.init(cid, i))
-  #   )
+  await self.repoStore.withOverlay(
+    cid,
+    status = Storing.some,
+    expiry = expiry,
+    body = proc(): Future[?!void] {.closure, gcsafe, async: (raises: [CancelledError]).} =
+      # TODO: doesn't work if callee is annotated with async
+      # let
+      #   iter = iter.map(
+      #     (i: int) => self.networkStore.getBlock(BlockAddress.init(cid, i))
+      #   )
 
-  while not iter.finished:
-    var blockFutures: seq[Future[?!bt.Block]]
-    for i in 0 ..< batchSize:
-      if not iter.finished:
-        let address = BlockAddress.init(cid, iter.next())
-        if not (await address in self.networkStore) or fetchLocal:
-          blockFutures.add(self.networkStore.getBlock(address))
+      while not iter.finished:
+        var blockFutures: seq[Future[?!bt.Block]]
+        for i in 0 ..< batchSize:
+          if not iter.finished:
+            let address = BlockAddress.init(cid, iter.next())
+            if not (await address in self.networkStore) or fetchLocal:
+              blockFutures.add(self.networkStore.getBlock(address))
 
-    if blockFutures.len == 0:
-      continue
+        if blockFutures.len == 0:
+          continue
 
-    without blockResults =? await allFinishedValues[?!bt.Block](blockFutures), err:
-      trace "Some blocks failed to fetch", err = err.msg
-      return failure(err)
+        without blockResults =? await allFinishedValues[?!bt.Block](blockFutures), err:
+          trace "Some blocks failed to fetch", err = err.msg
+          return failure(err)
 
-    let blocks = blockResults.filterIt(it.isSuccess()).mapIt(it.value)
+        let blocks = blockResults.filterIt(it.isSuccess()).mapIt(it.value)
 
-    let numOfFailedBlocks = blockResults.len - blocks.len
-    if numOfFailedBlocks > 0:
-      return
-        failure("Some blocks failed (Result) to fetch (" & $numOfFailedBlocks & ")")
+        let numOfFailedBlocks = blockResults.len - blocks.len
+        if numOfFailedBlocks > 0:
+          return
+            failure("Some blocks failed (Result) to fetch (" & $numOfFailedBlocks & ")")
 
-    if not onBatch.isNil and batchErr =? (await onBatch(blocks)).errorOption:
-      return failure(batchErr)
+        if not onBatch.isNil and batchErr =? (await onBatch(blocks)).errorOption:
+          return failure(batchErr)
 
-    if not iter.finished:
-      await sleepAsync(1.millis)
+        if not iter.finished:
+          await sleepAsync(1.millis)
 
-  success()
+      success(),
+  )
 
 proc fetchBatched*(
     self: ArchivistNodeRef,
@@ -205,6 +212,7 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
+    expiry = ZeroSeconds,
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Fetch manifest in batches of `batchSize`
   ##
@@ -213,7 +221,7 @@ proc fetchBatched*(
     size = batchSize, blocksCount = manifest.blocksCount
 
   let iter = Iter[int].new(0 ..< manifest.blocksCount)
-  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal)
+  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal, expiry)
 
 proc fetchDatasetAsync*(
     self: ArchivistNodeRef, manifest: Manifest, fetchLocal = true
@@ -235,7 +243,18 @@ proc fetchDatasetAsyncTask*(self: ArchivistNodeRef, manifest: Manifest) =
   ## Start fetching a dataset in the background.
   ## The task will be tracked and cleaned up on node shutdown.
   ##
-  self.trackedFutures.track(self.fetchDatasetAsync(manifest, fetchLocal = false))
+  proc run(): Future[void] {.async: (raises: []).} =
+    try:
+      if err =? (
+        await self.fetchBatched(
+          manifest = manifest, batchSize = DefaultFetchBatch, fetchLocal = false
+        )
+      ).errorOption:
+        error "Unable to fetch dataset", err = err.msg
+    except CancelledError as exc:
+      trace "Dataset fetch cancelled", exc = exc.msg
+
+  self.trackedFutures.track(run())
 
 proc streamSingleBlock(
     self: ArchivistNodeRef, cid: Cid
@@ -272,10 +291,11 @@ proc streamEntireDataset(
   var jobs: seq[Future[void]]
   let stream = LPStream(StoreStream.new(self.networkStore, manifest, pad = false))
   if manifest.protected:
-    # Retrieve, decode and save to the local store all EС groups
+    # For protected manifests, erasure.decode owns the overlay lifecycle
+    # via its own withOverlay(treeCid, Storing) call. It also fetches all
+    # blocks via networkStore.getBlock, so no separate fetch job is needed.
     proc erasureJob(): Future[void] {.async: (raises: []).} =
       try:
-        # Spawn an erasure decoding job
         let erasure = Erasure.new(
           self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
           self.taskpool,
@@ -288,8 +308,19 @@ proc streamEntireDataset(
         trace "Error erasure decoding manifest", manifestCid, exc = exc.msg
 
     jobs.add(erasureJob())
+  else:
+    proc fetchJob(): Future[void] {.async: (raises: []).} =
+      try:
+        if err =? (
+          await self.fetchBatched(
+            manifest = manifest, batchSize = DefaultFetchBatch, fetchLocal = false
+          )
+        ).errorOption:
+          error "Unable to fetch blocks", err = err.msg
+      except CancelledError as exc:
+        trace "Cancelled fetching blocks", exc = exc.msg
 
-  jobs.add(self.fetchDatasetAsync(manifest, fetchLocal = false))
+    jobs.add(fetchJob())
 
   # Monitor stream completion and cancel background jobs when done
   proc monitorStream() {.async: (raises: []).} =
@@ -683,7 +714,8 @@ proc storeSlot*(
         error "Unable to get slot block after repair"
         return failure(err)
   else:
-    if err =? (await self.fetchBatched(manifest.treeCid, blksIter)).errorOption:
+    if err =?
+        (await self.fetchBatched(manifest.treeCid, blksIter, expiry = expiry)).errorOption:
       error "Unable to fetch blocks", err = err.msg
       return failure(err)
 
