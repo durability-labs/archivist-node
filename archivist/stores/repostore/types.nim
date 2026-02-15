@@ -7,6 +7,8 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+import std/sets
+
 import pkg/chronos
 import pkg/kvstore
 import pkg/libp2p/cid
@@ -38,6 +40,7 @@ type
     totalBlocks*: Natural
     overlayTtl*: SecondsSince1970
     started*: bool
+    deletingLock*: HashSet[Cid]
 
   QuotaUsage* {.serialize.} = object
     used*: NBytes
@@ -54,6 +57,7 @@ type
     proof*: ArchivistProof
 
   OverlayStatus* {.serialize.} = enum
+    Pending ## Initial state, not yet active
     Failure ## Unrecoverable error
     Storing ## Upload/Download in progress
     Repairing ## Repair in progress

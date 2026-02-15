@@ -243,9 +243,20 @@ proc dropOverlay*(
   ## delLeafBlockMetadata to decrement refcounts and delete blocks at
   ## refCount=0, then deletes the overlay metadata record.
   ##
+  ## Uses a runtime lock to prevent concurrent deletions of the same
+  ## overlay. Returns success if deletion is already in progress.
+  ##
 
   logScope:
     treeCid = treeCid
+
+  if treeCid in self.deletingLock:
+    trace "Overlay deletion already in progress, skipping"
+    return success()
+
+  self.deletingLock.incl(treeCid)
+  defer:
+    self.deletingLock.excl(treeCid)
 
   trace "Dropping overlay and cleaning up blocks"
 

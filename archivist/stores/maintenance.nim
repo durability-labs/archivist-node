@@ -8,7 +8,7 @@
 ## those terms.
 
 ## Store maintenance module
-## Looks for and removes expired blocks from blockstores.
+## Scans overlays for expiration and drops expired ones.
 
 {.push raises: [].}
 
@@ -35,8 +35,6 @@ type BlockMaintainer* = ref object of RootObj
   interval: Duration
   timer: Timer
   clock: Clock
-  numberOfBlocksPerInterval: int
-  offset: int
 
 proc new*(
     T: type BlockMaintainer,
@@ -48,65 +46,49 @@ proc new*(
 ): BlockMaintainer =
   ## Create new BlockMaintainer instance
   ##
-  ## Call `start` to begin looking for for expired blocks
+  ## Call `start` to begin scanning for expired overlays
   ##
-  BlockMaintainer(
-    repoStore: repoStore,
-    interval: interval,
-    numberOfBlocksPerInterval: numberOfBlocksPerInterval,
-    timer: timer,
-    clock: clock,
-    offset: 0,
-  )
+  BlockMaintainer(repoStore: repoStore, interval: interval, timer: timer, clock: clock)
 
-proc deleteExpiredBlock(
-    self: BlockMaintainer, cid: Cid
-): Future[void] {.async: (raises: [CancelledError]).} =
-  if error =? (await self.repoStore.delBlock(cid)).errorOption:
-    warn "Unable to delete block from repoStore", error = error.msg
-
-# proc processBlockExpiration(
-#     self: BlockMaintainer, be: BlockExpiration
-# ): Future[void] {.async: (raises: [CancelledError]).} =
-#   if be.expiry < self.clock.now:
-#     await self.deleteExpiredBlock(be.cid)
-#   else:
-#     inc self.offset
-
-proc runBlockCheck(
+proc dropExpiredOverlays(
     self: BlockMaintainer
 ): Future[void] {.async: (raises: [CancelledError]).} =
-  discard
-  # let expirations = await self.repoStore.getBlockExpirations(
-  #   maxNumber = self.numberOfBlocksPerInterval, offset = self.offset
-  # )
+  without iter =? (await self.repoStore.listOverlays()), err:
+    warn "Unable to list overlays", err = err.msg
+    return
 
-  # without iter =? expirations, err:
-  #   warn "Unable to obtain blockExpirations iterator from repoStore", err = err.msg
-  #   return
+  let now = self.clock.now
 
-  # var numberReceived = 0
-  # for beFut in iter:
-  #   without be =? (await beFut), err:
-  #     warn "Unable to obtain blockExpiration from iterator", err = err.msg
-  #     continue
-  #   inc numberReceived
-  #   await self.processBlockExpiration(be)
-  #   await sleepAsync(1.millis) # cooperative scheduling
+  for cidFut in iter:
+    without treeCid =? (await cidFut), err:
+      warn "Unable to get overlay CID from iterator", err = err.msg
+      continue
 
-  # # If we received fewer blockExpirations from the iterator than we asked for,
-  # # We're at the end of the dataset and should start from 0 next time.
-  # if numberReceived < self.numberOfBlocksPerInterval:
-  #   self.offset = 0
-  #   trace "Cycle completed"
+    without meta =? (await self.repoStore.getOverlayMetadata(treeCid)), err:
+      warn "Unable to get overlay metadata", treeCid, err = err.msg
+      continue
+
+    # Deleting - finish cleanup, if delete in progress, dropOverlay will
+    # no-op
+    # Failure - always drop
+    # Any other status - check expiry
+    let shouldDrop =
+      meta.status == Deleting or meta.status == Failure or
+      (meta.expiry > 0 and meta.expiry < now)
+
+    if shouldDrop:
+      trace "Dropping overlay", treeCid, status = meta.status, expiry = meta.expiry
+      if err =? (await self.repoStore.dropOverlay(treeCid)).errorOption:
+        error "Error dropping overlay", treeCid, status = meta.status, err = err.msg
+
+    await sleepAsync(1.millis) # cooperative scheduling
 
 proc start*(self: BlockMaintainer) =
   proc onTimer(): Future[void] {.async: (raises: []).} =
     try:
-      await self.runBlockCheck()
+      await self.dropExpiredOverlays()
     except CancelledError as err:
-      trace "Running block check in block maintenance timer callback cancelled: ",
-        err = err.msg
+      trace "Maintenance timer callback cancelled", err = err.msg
 
   self.timer.start(onTimer, self.interval)
 
