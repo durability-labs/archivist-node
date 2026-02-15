@@ -159,7 +159,6 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
-    expiry = ZeroSeconds,
 ): Future[?!void] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Fetch blocks in batches of `batchSize`
   ##
@@ -167,7 +166,6 @@ proc fetchBatched*(
   await self.repoStore.withOverlay(
     cid,
     status = Storing.some,
-    expiry = expiry,
     body = proc(): Future[?!void] {.closure, gcsafe, async: (raises: [CancelledError]).} =
       # TODO: doesn't work if callee is annotated with async
       # let
@@ -212,7 +210,6 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
-    expiry = ZeroSeconds,
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Fetch manifest in batches of `batchSize`
   ##
@@ -221,7 +218,7 @@ proc fetchBatched*(
     size = batchSize, blocksCount = manifest.blocksCount
 
   let iter = Iter[int].new(0 ..< manifest.blocksCount)
-  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal, expiry)
+  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal)
 
 proc fetchDatasetAsync*(
     self: ArchivistNodeRef, manifest: Manifest, fetchLocal = true
@@ -714,8 +711,7 @@ proc storeSlot*(
         error "Unable to get slot block after repair"
         return failure(err)
   else:
-    if err =?
-        (await self.fetchBatched(manifest.treeCid, blksIter, expiry = expiry)).errorOption:
+    if err =? (await self.fetchBatched(manifest.treeCid, blksIter)).errorOption:
       error "Unable to fetch blocks", err = err.msg
       return failure(err)
 

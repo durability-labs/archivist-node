@@ -201,13 +201,10 @@ proc createOrUpdateOverlay*(
   overlay.blocks.combineSafe(blocks)
   overlay.status = status |? overlay.status
 
-  let expiryTime =
-    if expiry == ZeroSeconds:
-      self.clock.now() + self.overlayTtl
-    else:
-      expiry
-
-  overlay.expiry = expiryTime
+  if expiry != ZeroSeconds:
+    overlay.expiry = expiry
+  elif overlay.expiry == ZeroSeconds:
+    overlay.expiry = self.clock.now() + self.overlayTtl
 
   await self.putOverlayMetadata(treeCid, overlay)
 
