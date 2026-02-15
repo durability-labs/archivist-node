@@ -247,8 +247,8 @@ proc cleanup*(cluster: NodesCluster) {.async.} =
   for component in cluster.components:
     if component.node != nil:
       try:
-        await component.node.switch.stop()
         await component.node.stop()
+        await component.node.switch.stop()
       except CatchableError:
         discard
 
