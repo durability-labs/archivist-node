@@ -425,6 +425,9 @@ proc store*(
     index = 0
     cids: seq[Cid]
 
+  defer:
+    await stream.close()
+
   let treeCid =
     ?await self.repoStore.withTmpOverlay(
       body = proc(
