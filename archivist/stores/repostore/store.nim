@@ -38,6 +38,43 @@ logScope:
 # BlockStore API
 ###########################################################
 
+proc getBlocksBitmap*(
+    self: RepoStore, treeCid: Cid
+): Future[?!BitSeq] {.async: (raises: [CancelledError]).} =
+  ## Get the overlay BitSeq for a given tree CID.
+  ##
+  ## Returns the bitmap of stored block indices. Use for batch
+  ## presence checks (e.g., in fetchBatched) to avoid per-block
+  ## overlay metadata fetches. Returns empty BitSeq if overlay
+  ## doesn't exist.
+  ##
+
+  without overlayMeta =? await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata),
+    err:
+    if err of KVStoreKeyNotFound:
+      return success(BitSeq.init(0))
+    return failure(err)
+
+  success(overlayMeta.val.blocks)
+
+proc checkBitmap*(
+    self: RepoStore, treeCid: Cid, index: Natural
+): Future[?!bool] {.async: (raises: [CancelledError]).} =
+  ## Check if the overlay BitSeq has the bit set for the given index.
+  ##
+  ## Returns true if the bit is set or if the overlay doesn't exist
+  ## (caller should proceed with normal lookup). Returns false if the
+  ## bit is not set (block is definitely absent — caller can fast-reject).
+  ##
+
+  let bits = ?await self.getBlocksBitmap(treeCid)
+
+  if index >= bits.len or not bits[index]:
+    trace "Block not in overlay BitSeq, fast-path rejection", treeCid, index
+    return success(false)
+
+  success(true)
+
 method getBlock*(
     self: RepoStore, cid: Cid
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
@@ -66,6 +103,15 @@ method getBlock*(
 method getBlockAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!(Block, ArchivistProof)] {.async: (raises: [CancelledError]).} =
+  ## Get a block and its proof by tree CID and index.
+  ##
+  ## Optimized: First checks overlay BitSeq for fast-path rejection.
+  ## If bit not set in BitSeq, returns BlockNotFoundError immediately.
+  ##
+
+  if not (?await self.checkBitmap(treeCid, index)):
+    return failure(newException(BlockNotFoundError, "index not in overlay"))
+
   let
     leafMd = ?await self.getLeafMetadata(treeCid, index)
     blk = ?await self.getBlock(leafMd.blkCid)
@@ -81,15 +127,7 @@ method getBlock*(
   ## If bit not set in BitSeq, returns BlockNotFoundError immediately.
   ##
 
-  logScope:
-    treeCid = treeCid
-    index = index
-
-  let overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
-  let bits = overlayMeta.val.blocks
-
-  if index >= bits.len or not bits[index]:
-    trace "Block not in overlay BitSeq, fast-path rejection"
+  if not (?await self.checkBitmap(treeCid, index)):
     return failure(newException(BlockNotFoundError, "index not in overlay"))
 
   let leafMd = ?await self.getLeafMetadata(treeCid, index)
@@ -336,15 +374,7 @@ method hasBlock*(
   ## hitting leaf metadata or blockstore.
   ##
 
-  logScope:
-    treeCid = treeCid
-    index = index
-
-  let overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
-  let bits = overlayMeta.val.blocks
-
-  if index >= bits.len or not bits[index]:
-    trace "Block not in overlay BitSeq, fast-path rejection"
+  if not (?await self.checkBitmap(treeCid, index)):
     return success(false)
 
   without leafMd =? await self.getLeafMetadata(treeCid, index), err:

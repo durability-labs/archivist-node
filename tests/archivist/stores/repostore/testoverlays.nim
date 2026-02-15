@@ -1095,3 +1095,70 @@ suite "BitSeq optimization tests":
       let inconsistencies =
         (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
       check inconsistencies.len == 0
+
+  test "BitSeq preserved through finalizeOverlay (temp to real)":
+    let
+      blk1 = createTestBlock(300)
+      blk2 = createTestBlock(301)
+      (_, tree) = makeManifestAndTree(@[blk1, blk2]).tryGet()
+      realTreeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+    var capturedTmpCid: Cid
+
+    let res = await withTmpOverlay(
+      repo,
+      body = proc(
+          tmpCid: Cid
+      ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+        capturedTmpCid = tmpCid
+        ?await repo.putLeafsAndBlocks(
+          tmpCid, @[(blk1, 0.Natural, proof1), (blk2, 1.Natural, proof2)]
+        )
+        success(realTreeCid),
+    )
+
+    check res.isOk
+
+    # Bitmap should be correct on the real overlay after finalize
+    let realMeta = (await repo.getOverlayMetadata(realTreeCid)).tryGet()
+    check realMeta.blocks.len >= 2
+    check realMeta.blocks[0] == true
+    check realMeta.blocks[1] == true
+
+    # Verify full consistency
+    let inconsistencies =
+      (await repo.verifyOverlayBitSeqConsistency(realTreeCid)).tryGet()
+    check inconsistencies.len == 0
+
+    # Tmp overlay should be gone
+    let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
+    check tmpMetaRes.isErr
+
+  test "BitSeq correct after re-insert of deleted block (resurrection)":
+    let
+      blk = createTestBlock(302)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+
+    # Insert
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    let meta1 = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta1.blocks[0] == true
+
+    # Delete
+    (await repo.delLeafBlockMetadata(treeCid, @[0.Natural])).tryGet()
+    let meta2 = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta2.blocks[0] == false
+
+    # Re-insert (resurrection)
+    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    let meta3 = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    check meta3.blocks[0] == true
+
+    # Full consistency check
+    let inconsistencies = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
+    check inconsistencies.len == 0
