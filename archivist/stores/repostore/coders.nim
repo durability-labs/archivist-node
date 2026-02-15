@@ -6,36 +6,120 @@
 ## at your option.
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
+
+## Protobuf serialization for RepoStore metadata types
 ##
+## ```protobuf
+## message QuotaUsage {
+##   uint64 used = 1;       # NBytes
+##   uint64 reserved = 2;   # NBytes
+## }
+##
+## message BlockMetadata {
+##   bytes  cid = 1;        # Cid bytes
+##   uint64 size = 2;       # NBytes
+##   uint64 refCount = 3;   # Natural
+## }
+##
+## message LeafMetadata {
+##   uint32 deleted = 1;    # bool as uint
+##   bytes  blkCid = 2;     # Cid bytes
+##   bytes  proof = 3;      # ArchivistProof bytes (optional)
+## }
+## ```
+
+{.push raises: [].}
 
 import std/sugar
-import pkg/libp2p/cid
-import pkg/serde/json
-import pkg/stew/byteutils
+import pkg/libp2p/[cid, protobuf/minprotobuf]
+import pkg/questionable/results
 import pkg/stew/endians2
 
 import ./types
 import ../../errors
 import ../../merkletree
-import ../../utils/json
 
 proc encode*(t: QuotaUsage): seq[byte] =
-  t.toJson().toBytes()
+  var pb = initProtoBuffer()
+  pb.write(1, t.used.uint64)
+  pb.write(2, t.reserved.uint64)
+  pb.finish()
+  pb.buffer
 
 proc decode*(T: type QuotaUsage, bytes: openArray[byte]): ?!T =
-  T.fromJson(bytes)
+  var
+    pb = initProtoBuffer(bytes)
+    used: uint64
+    reserved: uint64
+
+  if pb.getField(1, used).isErr:
+    return failure("Unable to decode `used` from QuotaUsage")
+
+  if pb.getField(2, reserved).isErr:
+    return failure("Unable to decode `reserved` from QuotaUsage")
+
+  success QuotaUsage(used: used.NBytes, reserved: reserved.NBytes)
 
 proc encode*(t: BlockMetadata): seq[byte] =
-  t.toJson().toBytes()
+  var pb = initProtoBuffer()
+  pb.write(1, t.cid.data.buffer)
+  pb.write(2, t.size.uint64)
+  pb.write(3, t.refCount.uint64)
+  pb.finish()
+  pb.buffer
 
 proc decode*(T: type BlockMetadata, bytes: openArray[byte]): ?!T =
-  T.fromJson(bytes)
+  var
+    pb = initProtoBuffer(bytes)
+    cidBytes: seq[byte]
+    size: uint64
+    refCount: uint64
+
+  if pb.getField(1, cidBytes).isErr:
+    return failure("Unable to decode `cid` from BlockMetadata")
+
+  if pb.getField(2, size).isErr:
+    return failure("Unable to decode `size` from BlockMetadata")
+
+  if pb.getField(3, refCount).isErr:
+    return failure("Unable to decode `refCount` from BlockMetadata")
+
+  let blkCid = ?Cid.init(cidBytes).mapFailure
+
+  success BlockMetadata(cid: blkCid, size: size.NBytes, refCount: refCount.Natural)
 
 proc encode*(t: LeafMetadata): seq[byte] =
-  t.toJson().toBytes()
+  var pb = initProtoBuffer()
+  pb.write(1, t.deleted.uint32)
+  pb.write(2, t.blkCid.data.buffer)
+
+  let proofBytes = t.proof.encode()
+  if proofBytes.len > 0:
+    pb.write(3, proofBytes)
+
+  pb.finish()
+  pb.buffer
 
 proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
-  T.fromJson(bytes)
+  var
+    pb = initProtoBuffer(bytes)
+    deleted: uint32
+    blkCidBytes: seq[byte]
+    proofBytes: seq[byte]
+
+  if pb.getField(1, deleted).isErr:
+    return failure("Unable to decode `deleted` from LeafMetadata")
+
+  if pb.getField(2, blkCidBytes).isErr:
+    return failure("Unable to decode `blkCid` from LeafMetadata")
+
+  discard pb.getField(3, proofBytes) # Optional field
+
+  let
+    blkCid = ?Cid.init(blkCidBytes).mapFailure
+    proof = ?ArchivistProof.decode(proofBytes)
+
+  success LeafMetadata(deleted: deleted.bool, blkCid: blkCid, proof: proof)
 
 proc encode*(i: uint64): seq[byte] =
   @(i.toBytesBE)

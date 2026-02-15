@@ -6,11 +6,13 @@ import pkg/questionable
 import pkg/questionable/results
 
 import pkg/archivist/clock
+import pkg/archivist/merkletree
 import pkg/archivist/stores/repostore/types
 import pkg/archivist/stores/repostore/coders
 
 import ../../helpers
 import ../../examples
+import ../../merkletree/helpers as mhelpers
 
 suite "Test coders":
   proc rand(T: type NBytes): T =
@@ -43,3 +45,25 @@ suite "Test coders":
     for val in newSeqWith(100, rand(BlockMetadata)):
       check:
         success(val) == BlockMetadata.decode(encode(val))
+
+  test "LeafMetadata encode/decode":
+    let
+      nodes = @[newSeqWith(32, rand(byte)), newSeqWith(32, rand(byte))]
+      proof = ArchivistProof.init(index = 0, nleaves = 4, nodes = nodes).tryGet()
+      val = LeafMetadata(deleted: false, blkCid: Cid.example, proof: proof)
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
+
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == val.blkCid
+      decoded.proof == val.proof
+
+  test "LeafMetadata encode/decode with nil proof":
+    let
+      val = LeafMetadata(deleted: true, blkCid: Cid.example, proof: nil)
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
+
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == val.blkCid
+      decoded.proof.isNil
