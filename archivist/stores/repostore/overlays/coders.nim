@@ -11,9 +11,9 @@
 ## ```protobuf
 ## message OverlayMetadata {
 ##   uint32 status = 1;      # OverlayStatus enum
-##   bytes manifest = 2;     # Cid bytes (optional, none for temp overlays)
-##   int64 expiry = 3;       # SecondsSince1970
-##   bytes blocks = 4;       # Bitmap (bit N = block N present)
+##   uint64 expiry = 2;      # SecondsSince1970
+##   bytes  blocks = 3;      # Bitmap (bit N = block N present)
+##   bytes  manifestCid = 4; # Cid bytes (optional, for cleanup)
 ## }
 ## ```
 
@@ -40,6 +40,9 @@ proc encode*(meta: OverlayMetadata): seq[byte] =
   if blocksBytes.len > 0:
     pb.write(3, blocksBytes)
 
+  if manifestCid =? meta.manifestCid:
+    pb.write(4, manifestCid.data.buffer)
+
   pb.finish()
   pb.buffer
 
@@ -50,9 +53,9 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
   var
     pb = initProtoBuffer(data)
     status: uint32
-    manifest: seq[byte]
     expiry: uint64
     blocks: seq[byte]
+    manifestCidBytes: seq[byte]
 
   if pb.getField(1, status).isErr:
     return failure("Unable to decode `status` from OverlayMetadata")
@@ -61,15 +64,17 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
     return failure("Unable to decode `expiry` from OverlayMetadata")
 
   discard pb.getField(3, blocks) # Optional field
+  discard pb.getField(4, manifestCidBytes) # Optional field
 
-  let cidOpt =
-    if manifest.len > 0:
-      (?Cid.init(manifest).mapFailure).some
+  let manifestCid: ?Cid =
+    if manifestCidBytes.len > 0:
+      (?Cid.init(manifestCidBytes).mapFailure).some
     else:
       Cid.none
 
-  let meta = OverlayMetadata(
-    status: OverlayStatus(status), expiry: expiry.int64, blocks: BitSeq blocks
+  success OverlayMetadata(
+    status: OverlayStatus(status),
+    expiry: expiry.int64,
+    blocks: BitSeq blocks,
+    manifestCid: manifestCid,
   )
-
-  success meta
