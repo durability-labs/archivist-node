@@ -61,5 +61,6 @@ method now*(clock: OnChainClock): SecondsSince1970 =
 
 method waitUntil*(clock: OnChainClock, time: SecondsSince1970) {.async.} =
   while (let difference = time - clock.now(); difference > 0):
+    trace "clock waitUntil sleeping", targetTime = time, currentTime = clock.now(), difference
     clock.newBlock.clear()
     discard await clock.newBlock.wait().withTimeout(chronos.seconds(difference))

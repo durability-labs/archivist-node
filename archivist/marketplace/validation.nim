@@ -42,8 +42,10 @@ proc waitUntilNextPeriod(validation: Validation) {.async.} =
   let period = validation.getCurrentPeriod()
   let periodicity = validation.marketplace.periodicity
   let periodEnd = periodicity.periodEnd(period)
-  trace "Waiting until next period", currentPeriod = period
-  await validation.clock.waitUntil((periodEnd + 1).toSecondsSince1970)
+  let targetTime = (periodEnd + 1).toSecondsSince1970
+  trace "Waiting until next period", currentPeriod = period, periodEnd, targetTime, now = validation.clock.now()
+  await validation.clock.waitUntil(targetTime)
+  trace "Finished waiting for next period", now = validation.clock.now()
 
 func groupIndexForSlotId*(slotId: SlotId, validationGroups: ValidationGroups): uint16 =
   let a = slotId.toArray
