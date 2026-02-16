@@ -42,6 +42,10 @@ task format, "Format code using NPH":
   exec findExe("nph") & " tests/"
   exec findExe("nph") & " tools/"
 
+task buildE2e, "Build E2E test binary with custom name":
+  exec "nim c -d:release -d:danger --out:build/archivist_e2e archivist.nim"
+  echo "Built: build/archivist_e2e"
+
 task syncModules, "Sync submodules to pinned commits (safe)":
   exec "git submodule sync --recursive"
   exec "git submodule update --init --recursive"
