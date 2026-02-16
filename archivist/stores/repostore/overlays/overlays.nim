@@ -184,20 +184,16 @@ proc listOverlaysByExpiry*(
 
   success metadata
 
-proc createOrUpdateOverlay*(
+proc mergeOverlay(
     self: RepoStore,
-    treeCid: Cid,
-    status = OverlayStatus.none,
-    blocks = BitSeq.init(0),
-    expiry = ZeroSeconds,
-    manifestCid: ?Cid = Cid.none,
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without var overlay =? (await self.getOverlayMetadata(treeCid)), err:
-    if not (err of KVStoreKeyNotFound):
-      trace "Error fetching overlay metadata for update",
-        treeCid = treeCid, error = err.msg
-      return failure(err)
-    overlay = OverlayMetadata()
+    overlay: var OverlayMetadata,
+    status: ?OverlayStatus,
+    blocks: BitSeq,
+    expiry: SecondsSince1970,
+    manifestCid: ?Cid,
+) =
+  ## Apply merge logic: OR-combine blocks, fallback status, conditional fields.
+  ##
 
   overlay.blocks.combineSafe(blocks)
   overlay.status = status |? overlay.status
@@ -210,7 +206,43 @@ proc createOrUpdateOverlay*(
   elif overlay.expiry == ZeroSeconds:
     overlay.expiry = self.clock.now() + self.overlayTtl
 
-  await self.putOverlayMetadata(treeCid, overlay)
+proc createOrUpdateOverlay*(
+    self: RepoStore,
+    treeCid: Cid,
+    status = OverlayStatus.none,
+    blocks = BitSeq.init(0),
+    expiry = ZeroSeconds,
+    manifestCid: ?Cid = Cid.none,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  let key = ?overlayKey(treeCid)
+
+  # Read full KVRecord (preserving CAS token) so the first put attempt
+  # uses the correct token instead of token=0 (insert-only mode)
+  without var record =? (await self.metaDs.get(key, OverlayMetadata)), err:
+    if not (err of KVStoreKeyNotFound):
+      trace "Error fetching overlay metadata for update",
+        treeCid = treeCid, error = err.msg
+      return failure(err)
+    record = KVRecord[OverlayMetadata].init(key, OverlayMetadata())
+
+  self.mergeOverlay(record.val, status, blocks, expiry, manifestCid)
+
+  # CAS put with merge-aware retry: on conflict, re-read current state
+  # and re-apply merge with original inputs instead of blindly overwriting
+  ?await self.metaDs.tryPut(
+    record,
+    maxRetries = 10,
+    proc(
+        failed: seq[KVRecord[OverlayMetadata]]
+    ): Future[?!seq[KVRecord[OverlayMetadata]]] {.async: (raises: [CancelledError]).} =
+      var records = ?await self.metaDs.get(failed.mapIt(it.key), OverlayMetadata)
+      self.mergeOverlay(records[0].val, status, blocks, expiry, manifestCid)
+      success records
+    ,
+  )
+
+  trace "Overlay metadata stored", treeCid = treeCid, status = record.val.status
+  success()
 
 proc createTmpOverlay*(
     self: RepoStore, expiry = ZeroSeconds
