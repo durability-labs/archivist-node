@@ -68,7 +68,7 @@ suite "BlockMaintainer":
   test "Should not drop overlays that have not expired":
     let treeCid = Cid.example
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some, expiry = 200)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some, expiry = 200)).tryGet()
 
     maintainer.start()
     await mockTimer.invokeCallback()
@@ -79,7 +79,7 @@ suite "BlockMaintainer":
   test "Should drop overlay that has expired":
     let treeCid = Cid.example
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some, expiry = 50)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some, expiry = 50)).tryGet()
 
     maintainer.start()
     await mockTimer.invokeCallback()
@@ -111,9 +111,9 @@ suite "BlockMaintainer":
         )
         .tryGet()
 
-    (await repo.createOrUpdateOverlay(cid1, status = Completed.some, expiry = 50)).tryGet()
-    (await repo.createOrUpdateOverlay(cid2, status = Completed.some, expiry = 200)).tryGet()
-    (await repo.createOrUpdateOverlay(cid3, status = Completed.some, expiry = 90)).tryGet()
+    (await repo.putOverlayMetadata(cid1, status = Completed.some, expiry = 50)).tryGet()
+    (await repo.putOverlayMetadata(cid2, status = Completed.some, expiry = 200)).tryGet()
+    (await repo.putOverlayMetadata(cid3, status = Completed.some, expiry = 90)).tryGet()
 
     maintainer.start()
     await mockTimer.invokeCallback()
@@ -127,7 +127,7 @@ suite "BlockMaintainer":
     let treeCid = Cid.example
     # ZeroSeconds triggers default TTL: now() + overlayTtl
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some, expiry = 0)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some, expiry = 0)).tryGet()
 
     # Clock is still at 100, well before the default TTL expiry
     maintainer.start()
@@ -139,7 +139,7 @@ suite "BlockMaintainer":
   test "Should drop overlay in Failure status":
     let treeCid = Cid.example
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Failure.some, expiry = 200)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Failure.some, expiry = 200)).tryGet()
     maintainer.start()
 
     await mockTimer.invokeCallback()
@@ -148,7 +148,7 @@ suite "BlockMaintainer":
   test "Should drop overlay left in Deleting status (crash leftover)":
     let treeCid = Cid.example
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Deleting.some, expiry = 200)).tryGet()
 
     maintainer.start()
     await mockTimer.invokeCallback()
@@ -158,7 +158,7 @@ suite "BlockMaintainer":
   test "Should skip overlay actively being deleted (runtime lock)":
     let treeCid = Cid.example
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Deleting.some, expiry = 200)).tryGet()
 
     # Simulate an active deletion by holding the lock
     repo.deletingLock.incl(treeCid)
@@ -174,7 +174,7 @@ suite "BlockMaintainer":
   test "Should drop expired Pending overlay":
     let treeCid = Cid.example
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Pending.some, expiry = 50)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Pending.some, expiry = 50)).tryGet()
 
     maintainer.start()
     await mockTimer.invokeCallback()
@@ -184,7 +184,7 @@ suite "BlockMaintainer":
   test "Should not drop non-expired Pending overlay":
     let treeCid = Cid.example
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Pending.some, expiry = 200)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Pending.some, expiry = 200)).tryGet()
 
     maintainer.start()
     await mockTimer.invokeCallback()

@@ -38,7 +38,7 @@ proc putBlockWithOverlay(
   blocks.setBit(0)
 
   (
-    await repo.createOrUpdateOverlay(
+    await repo.putOverlayMetadata(
       treeCid = treeCid, status = Completed.some, blocks = blocks
     )
   ).tryGet()
@@ -109,7 +109,11 @@ suite "Overlay CRUD":
 
     let meta = OverlayMetadata(status: Completed, expiry: now + 100, blocks: bits)
 
-    (await repo.putOverlayMetadata(treeCid, meta)).tryGet()
+    (
+      await repo.putOverlayMetadata(
+        treeCid, status = meta.status.some, blocks = meta.blocks, expiry = meta.expiry
+      )
+    ).tryGet()
     let got = (await repo.getOverlayMetadata(treeCid)).tryGet()
 
     check got.status == meta.status
@@ -121,12 +125,26 @@ suite "Overlay CRUD":
 
     let meta1 =
       OverlayMetadata(status: Storing, expiry: now + 1, blocks: BitSeq.init(1))
-    (await repo.putOverlayMetadata(treeCid, meta1)).tryGet()
+    (
+      await repo.putOverlayMetadata(
+        treeCid,
+        status = meta1.status.some,
+        blocks = meta1.blocks,
+        expiry = meta1.expiry,
+      )
+    ).tryGet()
 
     var bits = BitSeq.init(2)
     bits.setBit(1)
     let meta2 = OverlayMetadata(status: Completed, expiry: now + 2, blocks: bits)
-    (await repo.putOverlayMetadata(treeCid, meta2)).tryGet()
+    (
+      await repo.putOverlayMetadata(
+        treeCid,
+        status = meta2.status.some,
+        blocks = meta2.blocks,
+        expiry = meta2.expiry,
+      )
+    ).tryGet()
 
     let got = (await repo.getOverlayMetadata(treeCid)).tryGet()
     check got.status == meta2.status
@@ -138,7 +156,11 @@ suite "Overlay CRUD":
     let meta =
       OverlayMetadata(status: Completed, expiry: now + 10, blocks: BitSeq.init(0))
 
-    (await repo.putOverlayMetadata(treeCid, meta)).tryGet()
+    (
+      await repo.putOverlayMetadata(
+        treeCid, status = meta.status.some, blocks = meta.blocks, expiry = meta.expiry
+      )
+    ).tryGet()
     (await repo.deleteOverlayMetadata(treeCid)).tryGet()
 
     let res = await repo.getOverlayMetadata(treeCid)
@@ -182,7 +204,7 @@ suite "Overlay creation":
     let blocks = BitSeq.init(0)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Storing.some, blocks = blocks
       )
     ).tryGet()
@@ -239,7 +261,7 @@ suite "Overlay listing":
 
     for (cid, status) in [(cid1, Completed), (cid2, Storing), (cid3, Failure)]:
       (
-        await repo.createOrUpdateOverlay(
+        await repo.putOverlayMetadata(
           treeCid = cid, status = status.some, blocks = BitSeq.init(1)
         )
       ).tryGet()
@@ -266,7 +288,7 @@ suite "Overlay listing":
 
     for (cid, status) in [(cid1, Completed), (cid2, Storing), (cid3, Completed)]:
       (
-        await repo.createOrUpdateOverlay(
+        await repo.putOverlayMetadata(
           treeCid = cid, status = status.some, blocks = BitSeq.init(1)
         )
       ).tryGet()
@@ -283,7 +305,7 @@ suite "Overlay listing":
     let cid = createTestBlock(41).cid
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = cid, status = Completed.some, blocks = BitSeq.init(1)
       )
     ).tryGet()
@@ -303,7 +325,7 @@ suite "Overlay listing":
       (cid1, Storing.some), (cid2, Storing.some), (cid3, Storing.some)
     ]:
       (
-        await repo.createOrUpdateOverlay(
+        await repo.putOverlayMetadata(
           treeCid = cid, status = status, blocks = BitSeq.init(1), expiry = 50
         )
       ).tryGet()
@@ -323,7 +345,7 @@ suite "Overlay listing":
 
     for cid in [cid1, cid2, cid3, cid4]:
       (
-        await repo.createOrUpdateOverlay(
+        await repo.putOverlayMetadata(
           treeCid = cid, status = Completed.some, blocks = BitSeq.init(1)
         )
       ).tryGet()
@@ -389,13 +411,13 @@ suite "Overlay lifecycle":
       proof2 = tree2.getProof(1).tryGet()
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid1, status = Completed.some, blocks = BitSeq.init(2)
       )
     ).tryGet()
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid2, status = Completed.some, blocks = BitSeq.init(2)
       )
     ).tryGet()
@@ -414,7 +436,7 @@ suite "Overlay lifecycle":
     let treeCid = Cid.example
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Storing.some, blocks = BitSeq.init(0)
       )
     ).tryGet()
@@ -879,7 +901,7 @@ suite "BitSeq optimization tests":
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
 
     let hasBlockRes = await repo.hasBlock(treeCid, 0.Natural)
     check hasBlockRes.tryGet() == false
@@ -891,7 +913,7 @@ suite "BitSeq optimization tests":
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
     (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
 
     let hasBlockRes = await repo.hasBlock(treeCid, 0.Natural)
@@ -904,7 +926,7 @@ suite "BitSeq optimization tests":
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
     (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
 
     let hasBlockRes = await repo.hasBlock(treeCid, 10.Natural)
@@ -919,7 +941,7 @@ suite "BitSeq optimization tests":
       proof1 = tree.getProof(0).tryGet()
       proof2 = tree.getProof(1).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
     (await repo.putLeafsAndBlocks(treeCid, @[(blk1, 0.Natural, proof1)])).tryGet()
 
     let meta1 = (await repo.getOverlayMetadata(treeCid)).tryGet()
@@ -942,7 +964,7 @@ suite "BitSeq optimization tests":
       proof1 = tree.getProof(0).tryGet()
       proof2 = tree.getProof(1).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
 
     (
       await repo.putLeafsAndBlocks(
@@ -969,7 +991,7 @@ suite "BitSeq optimization tests":
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
     (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
 
     let inconsistencies = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
@@ -982,7 +1004,7 @@ suite "BitSeq optimization tests":
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
     (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
     (await repo.delLeafBlockMetadata(treeCid, @[0.Natural])).tryGet()
 
@@ -996,7 +1018,7 @@ suite "BitSeq optimization tests":
       treeCid1 = tree1.rootCid.tryGet()
       proof1 = tree1.getProof(0).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid1, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid1, status = Completed.some)).tryGet()
     (await repo.putLeafsAndBlocks(treeCid1, @[(shared, 0.Natural, proof1)])).tryGet()
 
     let meta1 = (await repo.getOverlayMetadata(treeCid1)).tryGet()
@@ -1021,7 +1043,7 @@ suite "BitSeq optimization tests":
       proof2 = tree.getProof(1).tryGet()
       proof3 = tree.getProof(2).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
 
     (
       await repo.putLeafsAndBlocks(
@@ -1045,7 +1067,7 @@ suite "BitSeq optimization tests":
       (_, tree) = makeManifestAndTree(@[blk]).tryGet()
       treeCid = tree.rootCid.tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
 
     let hasBlockRes = await repo.hasBlock(treeCid, 5.Natural)
     check hasBlockRes.tryGet() == false
@@ -1073,7 +1095,7 @@ suite "BitSeq optimization tests":
     for i in 0 ..< MaxBlocks:
       proofs.add(tree.getProof(i).tryGet())
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
 
     var indicesAdded: HashSet[Natural]
     for iter in 0 ..< Iterations:
@@ -1142,7 +1164,7 @@ suite "BitSeq optimization tests":
       treeCid = tree.rootCid.tryGet()
       proof = tree.getProof(0).tryGet()
 
-    (await repo.createOrUpdateOverlay(treeCid, status = Completed.some)).tryGet()
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
 
     # Insert
     (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()

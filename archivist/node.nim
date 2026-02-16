@@ -140,7 +140,7 @@ proc connect*(
 proc updateExpiry*(
     self: ArchivistNodeRef, manifest: Manifest, expiry: SecondsSince1970
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, expiry = expiry)
+  ?await self.repoStore.putOverlayMetadata(manifest.treeCid, expiry = expiry)
   return success()
 
 proc updateExpiry*(
@@ -351,7 +351,7 @@ proc retrieve*(
     return await self.streamSingleBlock(cid)
 
   # track manifest CID in overlay for cleanup
-  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, manifestCid = cid.some)
+  ?await self.repoStore.putOverlayMetadata(manifest.treeCid, manifestCid = cid.some)
 
   await self.streamEntireDataset(manifest, cid)
 
@@ -478,7 +478,7 @@ proc store*(
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
 
   # track manifest CID in overlay for cleanup
-  ?await self.repoStore.createOrUpdateOverlay(
+  ?await self.repoStore.putOverlayMetadata(
     treeCid, manifestCid = manifestBlk.cid.some
   )
 
@@ -683,7 +683,7 @@ proc storeSlot*(
     return failure(err)
 
   # track manifest CID in overlay for cleanup
-  ?await self.repoStore.createOrUpdateOverlay(manifest.treeCid, manifestCid = cid.some)
+  ?await self.repoStore.putOverlayMetadata(manifest.treeCid, manifestCid = cid.some)
 
   if err =? (await self.updateExpiry(manifest, expiry)).errorOption:
     error "Unable to update manifest expiry", cid, err = err.msg

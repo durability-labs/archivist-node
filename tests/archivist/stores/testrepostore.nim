@@ -110,7 +110,7 @@ suite "RepoStore":
     blocks.setBit(0)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
@@ -224,7 +224,7 @@ suite "RepoStore":
     var blocks = BitSeq.init(2)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
@@ -294,7 +294,7 @@ suite "RepoStore":
     blocks.setBit(0)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet
@@ -317,7 +317,7 @@ suite "RepoStore":
     blocks.setBit(0)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet
@@ -347,7 +347,7 @@ suite "RepoStore":
     blocks1.setBit(1)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid1, status = Completed.some, blocks = blocks1
       )
     ).tryGet()
@@ -373,7 +373,7 @@ suite "RepoStore":
     blocks2.setBit(1)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid2, status = Completed.some, blocks = blocks2
       )
     ).tryGet()
@@ -415,7 +415,7 @@ suite "RepoStore":
     var blocks = BitSeq.init(1)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
@@ -443,7 +443,7 @@ suite "RepoStore":
     blocks.setBit(0)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
@@ -467,7 +467,7 @@ suite "RepoStore":
     var blocks = BitSeq.init(10)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
@@ -501,7 +501,7 @@ suite "RepoStore":
     blocks.setBit(5)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
@@ -544,7 +544,7 @@ suite "RepoStore":
     blocks.setBit(0)
 
     (
-      await repo.createOrUpdateOverlay(
+      await repo.putOverlayMetadata(
         treeCid = treeCid, status = Completed.some, blocks = blocks
       )
     ).tryGet()
