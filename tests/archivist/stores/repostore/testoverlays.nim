@@ -125,6 +125,7 @@ suite "Overlay CRUD":
 
     let meta1 =
       OverlayMetadata(status: Storing, expiry: now + 1, blocks: BitSeq.init(1))
+
     (
       await repo.putOverlayMetadata(
         treeCid,
@@ -137,6 +138,7 @@ suite "Overlay CRUD":
     var bits = BitSeq.init(2)
     bits.setBit(1)
     let meta2 = OverlayMetadata(status: Completed, expiry: now + 2, blocks: bits)
+
     (
       await repo.putOverlayMetadata(
         treeCid,

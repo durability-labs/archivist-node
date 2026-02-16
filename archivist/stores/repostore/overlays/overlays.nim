@@ -279,8 +279,7 @@ proc dropOverlay*(
 
   trace "Dropping overlay and cleaning up blocks"
 
-  if err =?
-      (await self.putOverlayMetadata(treeCid, status = Deleting.some)).errorOption:
+  if err =? (await self.putOverlayMetadata(treeCid, status = Deleting.some)).errorOption:
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)
 
@@ -395,9 +394,8 @@ proc withOverlay*[T](
     status = status
 
   trace "Starting overlay operation"
-  if initErr =? (
-    await self.putOverlayMetadata(treeCid, status, BitSeq.init(0), expiry)
-  ).errorOption:
+  if initErr =?
+      (await self.putOverlayMetadata(treeCid, status, BitSeq.init(0), expiry)).errorOption:
     error "Unable to create/update overlay metadata", exc = initErr.msg
     return failure(initErr)
 
