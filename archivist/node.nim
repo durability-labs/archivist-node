@@ -478,9 +478,7 @@ proc store*(
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
 
   # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlayMetadata(
-    treeCid, manifestCid = manifestBlk.cid.some
-  )
+  ?await self.repoStore.putOverlayMetadata(treeCid, manifestCid = manifestBlk.cid.some)
 
   info "Stored data",
     manifestCid = manifestBlk.cid,
