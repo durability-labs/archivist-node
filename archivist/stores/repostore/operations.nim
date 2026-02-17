@@ -257,12 +257,10 @@ proc putOrUpdateLeafBlockMeta*(
       leafKey = ?blockLeafKey(treeCid, index)
 
     var
-      blkRec = KVRecord[BlockMetadata].init(
-        blkKey, BlockMetadata(refCount: 1, cid: blkCid)
-      )
-      leafRec = KVRecord[LeafMetadata].init(
-        leafKey, LeafMetadata(blkCid: blkCid, proof: proof)
-      )
+      blkRec =
+        KVRecord[BlockMetadata].init(blkKey, BlockMetadata(refCount: 1, cid: blkCid))
+      leafRec =
+        KVRecord[LeafMetadata].init(leafKey, LeafMetadata(blkCid: blkCid, proof: proof))
 
     # we only increase refcount for **NEW LEAFS**, if a leaf
     # already exists, we skip the refCount.inc, thus we make
@@ -366,11 +364,7 @@ proc putOrUpdateLeafBlockMeta*(
   success()
 
 proc putOrUpdateLeafBlockMeta*(
-    self: RepoStore,
-    treeCid: Cid,
-    index: Natural,
-    blkCid: Cid,
-    proof: ArchivistProof,
+    self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   self.putOrUpdateLeafBlockMeta(treeCid, @[(index, blkCid, proof)])
 

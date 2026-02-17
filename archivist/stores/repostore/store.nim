@@ -291,8 +291,7 @@ method putBlock*(
 
   if err =? (
     await self.metaDs.put(
-      ?blockMetaKey(blk.cid),
-      BlockMetadata(refCount: 0, cid: blk.cid),
+      ?blockMetaKey(blk.cid), BlockMetadata(refCount: 0, cid: blk.cid)
     )
   ).errorOption:
     if err of KVConflictError:

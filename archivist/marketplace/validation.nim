@@ -43,7 +43,8 @@ proc waitUntilNextPeriod(validation: Validation) {.async.} =
   let periodicity = validation.marketplace.periodicity
   let periodEnd = periodicity.periodEnd(period)
   let targetTime = (periodEnd + 1).toSecondsSince1970
-  trace "Waiting until next period", currentPeriod = period, periodEnd, targetTime, now = validation.clock.now()
+  trace "Waiting until next period",
+    currentPeriod = period, periodEnd, targetTime, now = validation.clock.now()
   await validation.clock.waitUntil(targetTime)
   trace "Finished waiting for next period", now = validation.clock.now()
 
