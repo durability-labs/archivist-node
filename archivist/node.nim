@@ -455,10 +455,11 @@ proc store*(
         # TODO: Once we have progressive tree building we can get rid of the
         # separate proofs putting and just put leafs directly in the same
         # putLeafAndBlock call as we build the tree
+        var proofItems: seq[(Natural, Cid, ArchivistProof)]
         for index, cid in cids:
-          ?await self.repoStore.putCidAndProof(
-            tmpCid, index, cid, ?tree.getProof(index)
-          )
+          proofItems.add((index.Natural, cid, ?tree.getProof(index)))
+
+        ?await self.repoStore.putCidsAndProofs(tmpCid, proofItems)
 
         success treeCid
     )

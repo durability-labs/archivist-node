@@ -237,6 +237,7 @@ proc buildSlot*[SomeTree, SomeHash](
     treeCid,
     status = Storing.some,
     body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+      var proofItems: seq[(Natural, Cid, ArchivistProof)]
       for i, leaf in tree.leaves:
         without cellCid =? leaf.toCellCid, e:
           error "Failed to get CID for slot cell", e = e.msg
@@ -247,7 +248,9 @@ proc buildSlot*[SomeTree, SomeHash](
           error "Failed to get proof for slot tree", e = e.msg
           return failure(e)
 
-        ?await self.repoStore.putCidAndProof(treeCid, i, cellCid, encodableProof)
+        proofItems.add((i.Natural, cellCid, encodableProof))
+
+      ?await self.repoStore.putCidsAndProofs(treeCid, proofItems)
       success(),
   )
 

@@ -470,8 +470,11 @@ proc encode*(
       tree = ?ArchivistTree.init(cids[])
       treeCid = ?tree.rootCid
 
+    var proofItems: seq[(Natural, Cid, ArchivistProof)]
     for index, cid in cids[]:
-      ?await self.repoStore.putCidAndProof(targetCid, index, cid, ?tree.getProof(index))
+      proofItems.add((index.Natural, cid, ?tree.getProof(index)))
+
+    ?await self.repoStore.putCidsAndProofs(targetCid, proofItems)
 
     trace "Tree and proofs stored", treeCid, blocks = blocks, parity = parity
     success treeCid

@@ -153,6 +153,27 @@ method putCidAndProof*(
 
   return success()
 
+method putCidsAndProofs*(
+    self: RepoStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Put multiple CIDs and proofs as a batch
+  ##
+
+  logScope:
+    treeCid = treeCid
+    totalItems = items.len
+
+  trace "Storing batch Leaf and Block Metadata"
+
+  if items.len == 0:
+    return success()
+
+  if err =? (await self.putOrUpdateLeafBlockMeta(treeCid, items)).errorOption:
+    trace "Unable to store batch Leaf and Block Metadata", err = err.msg
+    return failure(err)
+
+  return success()
+
 method getCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural
 ): Future[?!(Cid, ArchivistProof)] {.async: (raises: [CancelledError]).} =

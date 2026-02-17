@@ -16,6 +16,8 @@ import pkg/metrics
 import pkg/questionable
 import pkg/questionable/results
 
+import pkg/libp2p/cid
+
 import ./blockstore
 import ../utils/asynciter
 import ../merkletree
@@ -25,6 +27,7 @@ proc putSomeProofs*(
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   let treeCid = ?tree.rootCid
 
+  var items: seq[(Natural, Cid, ArchivistProof)]
   for i in iter:
     if i notin 0 ..< tree.leavesCount:
       return failure(
@@ -36,8 +39,9 @@ proc putSomeProofs*(
       blkCid = ?tree.getLeafCid(i)
       proof = ?tree.getProof(i)
 
-    ?await store.putCidAndProof(treeCid, i, blkCid, proof)
+    items.add((i.Natural, blkCid, proof))
 
+  ?await store.putCidsAndProofs(treeCid, items)
   success()
 
 proc putSomeProofs*(

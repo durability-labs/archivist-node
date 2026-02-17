@@ -99,6 +99,11 @@ method putCidAndProof*(
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   self.localStore.putCidAndProof(treeCid, index, blockCid, proof)
 
+method putCidsAndProofs*(
+    self: NetworkStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  self.localStore.putCidsAndProofs(treeCid, items)
+
 method getCidAndProof*(
     self: NetworkStore, treeCid: Cid, index: Natural
 ): Future[?!(Cid, ArchivistProof)] {.async: (raw: true, raises: [CancelledError]).} =
