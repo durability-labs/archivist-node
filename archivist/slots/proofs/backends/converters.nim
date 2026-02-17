@@ -65,8 +65,8 @@ func toG1*(g: NimGroth16G1): G1Point =
     x: array[32, byte]
     y: array[32, byte]
 
-  assert x.marshal(g.x, Endianness.littleEndian)
-  assert y.marshal(g.y, Endianness.littleEndian)
+  doAssert x.marshal(g.x, Endianness.littleEndian)
+  doAssert y.marshal(g.y, Endianness.littleEndian)
 
   G1Point(x: UInt256.fromBytesLE(x), y: UInt256.fromBytesLE(y))
 
@@ -75,10 +75,10 @@ func toG2*(g: NimGroth16G2): G2Point =
     x: array[2, array[32, byte]]
     y: array[2, array[32, byte]]
 
-  assert x[0].marshal(g.x.coords[0], Endianness.littleEndian)
-  assert x[1].marshal(g.x.coords[1], Endianness.littleEndian)
-  assert y[0].marshal(g.y.coords[0], Endianness.littleEndian)
-  assert y[1].marshal(g.y.coords[1], Endianness.littleEndian)
+  doAssert x[0].marshal(g.x.coords[0], Endianness.littleEndian)
+  doAssert x[1].marshal(g.x.coords[1], Endianness.littleEndian)
+  doAssert y[0].marshal(g.y.coords[0], Endianness.littleEndian)
+  doAssert y[1].marshal(g.y.coords[1], Endianness.littleEndian)
 
   G2Point(
     x: Fp2Element(real: UInt256.fromBytesLE(x[0]), imag: UInt256.fromBytesLE(x[1])),
