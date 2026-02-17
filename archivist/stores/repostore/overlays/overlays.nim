@@ -334,9 +334,10 @@ proc finalizeOverlay*(
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Promote a temp overlay to a real overlay.
   ##
-  ## Moves all leaf records from /meta/leafs/{tmpCid}/* to
-  ## /meta/leafs/{realTreeCid}/* using a native key-prefix move,
-  ## then moves the overlay metadata record.
+  ## Atomically moves all leaf records and overlay metadata from
+  ## tmpCid to realTreeCid in a single transaction, then updates
+  ## the overlay metadata (expiry/status) as a separate CAS operation.
+  ##
   ## Block metadata is unchanged (keyed by blkCid, not treeCid).
   ##
 
@@ -346,35 +347,32 @@ proc finalizeOverlay*(
 
   trace "Finalizing temp overlay"
 
-  # Move leaf records: /meta/leafs/{tmpCid}/* -> /meta/leafs/{realTreeCid}/*
-  let
-    oldLeafPrefix = ?(BlockLeafKey / $tmpCid)
-    newLeafPrefix = ?(BlockLeafKey / $realTreeCid)
+  # Atomically move both leaf records and overlay metadata
+  if err =? (
+    await self.metaDs.moveKeysAtomic(
+      @[
+        (?(BlockLeafKey / $tmpCid), ?(BlockLeafKey / $realTreeCid)),
+        (?overlayKey(tmpCid), ?overlayKey(realTreeCid)),
+      ]
+    )
+  ).errorOption:
+    error "Unable to move overlay metadata atomically", exc = err.msg
+    return failure(err)
 
-  ?await self.metaDs.moveKeysAtomic(oldLeafPrefix, newLeafPrefix)
-
-  # Move overlay metadata (single record — use put+delete)
-  var meta = ?await self.getOverlayMetadata(tmpCid)
-
+  # Update overlay metadata (expiry/status) at the new location.
+  # This is a separate CAS operation — if it fails, data is safe
+  # (everything is already at realTreeCid) and retry will find it.
   let expiryTime =
     if expiry == ZeroSeconds:
       self.clock.now() + self.overlayTtl
     else:
       expiry
 
-  meta.expiry = expiryTime
-  meta.status = status |? meta.status
-
-  # Use merge-aware putOverlayMetadata with full meta - wrap status in some()
-  # so it gets properly merged instead of being treated as "no change"
-  ?await self.putOverlayMetadata(
-    realTreeCid,
-    status = meta.status.some,
-    blocks = meta.blocks,
-    expiry = meta.expiry,
-    manifestCid = meta.manifestCid,
-  )
-  ?await self.deleteOverlayMetadata(tmpCid)
+  if err =? (
+    await self.putOverlayMetadata(realTreeCid, status = status, expiry = expiryTime)
+  ).errorOption:
+    error "Unable to update overlay metadata after finalization", exc = err.msg
+    return failure(err)
 
   trace "Temp overlay finalized successfully"
   success()
