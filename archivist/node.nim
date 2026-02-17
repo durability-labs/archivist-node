@@ -165,7 +165,7 @@ proc fetchBatched*(
 
   await self.repoStore.withOverlay(
     cid,
-    status = Storing.some,
+    status = Downloading.some,
     body = proc(): Future[?!void] {.closure, gcsafe, async: (raises: [CancelledError]).} =
       # TODO: doesn't work if callee is annotated with async
       # let

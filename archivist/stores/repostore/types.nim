@@ -59,6 +59,7 @@ type
     Pending ## Initial state, not yet active
     Failure ## Unrecoverable error
     Storing ## Upload/Download in progress
+    Downloading ## Download in progress (active)
     Repairing ## Repair in progress
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
