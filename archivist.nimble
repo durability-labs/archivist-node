@@ -11,7 +11,7 @@ import "./vendor/nimble/deps.nims"
 before build:
   exec "nim vendor" / "nimble" / "install.nims"
 
-task sync, "Sync submodules to pinned commits (safe)":
+task syncModules, "Sync submodules to pinned commits (safe)":
   exec "git submodule sync --recursive"
   exec "git submodule update --init --recursive"
 
@@ -51,6 +51,16 @@ task format, "Format code using NPH":
   exec findExe("nph") & " archivist/"
   exec findExe("nph") & " tests/"
   exec findExe("nph") & " tools/"
+
+task syncModules, "Sync submodules to pinned commits (safe)":
+  exec "git submodule sync --recursive"
+  exec "git submodule update --init --recursive"
+
+task syncUnsafe, "Reset and clean submodules to pinned commits (destructive)":
+  exec "git submodule sync --recursive"
+  exec "git submodule foreach --recursive 'git reset --hard'"
+  exec "git submodule foreach --recursive 'git clean -fdx'"
+  exec "git submodule update --init --recursive --force"
 
 task addDep, "Add vendored Nim dependency (git submodule)":
   addDepTask(thisDir())
