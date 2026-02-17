@@ -137,9 +137,7 @@ proc updateCounters*(
   success()
 
 proc deleteBlocksMetaRecs*(
-    self: RepoStore,
-    blocksMeta: seq[KVRecord[BlockMetadata]],
-    blockSize = DefaultBlockSize,
+    self: RepoStore, blocksMeta: seq[KVRecord[BlockMetadata]]
 ): Future[?!seq[KVRecord[BlockMetadata]]] {.async: (raises: [CancelledError]).} =
   ## Delete blocks and metadata for refCount == 0
   ##
@@ -198,7 +196,7 @@ proc delFromBlocksStore*(
   return success skipped.mapIt(?Cid.init(it.value).mapFailure)
 
 proc tryDeleteBlocks*(
-    self: RepoStore, cids: seq[Cid], blockSize = DefaultBlockSize
+    self: RepoStore, cids: seq[Cid]
 ): Future[?!seq[Cid]] {.async: (raises: [CancelledError]).} =
   ## We only delete the block if no metadata is present
   ## OR the refCount is 0
@@ -232,17 +230,12 @@ proc tryDeleteBlocks*(
   )
 
 proc tryDeleteBlocks*(
-    self: RepoStore, cid: Cid, blockSize = DefaultBlockSize
+    self: RepoStore, cid: Cid
 ): Future[?!seq[Cid]] {.async: (raises: [CancelledError], raw: true).} =
   self.tryDeleteBlocks(@[cid])
 
-type BlockLeafTuple* =
-  tuple[
-    index: Natural, blkCid: Cid, proof: ArchivistProof, blockSize = DefaultBlockSize
-  ]
-
 proc putOrUpdateLeafBlockMeta*(
-    self: RepoStore, treeCid: Cid, blocks: seq[BlockLeafTuple]
+    self: RepoStore, treeCid: Cid, blocks: seq[(Natural, Cid, ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Put or update lef and block metadata
   ##
@@ -256,26 +249,26 @@ proc putOrUpdateLeafBlockMeta*(
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
-    blocksBits = BitSeq.init(blocks.mapIt(it.index).max() + 1)
+    blocksBits = BitSeq.init(blocks.mapIt(it[0]).max() + 1)
 
-  for item in blocks:
+  for (index, blkCid, proof) in blocks:
     let
-      blkKey = ?blockMetaKey(item.blkCid)
-      leafKey = ?blockLeafKey(treeCid, item.index)
+      blkKey = ?blockMetaKey(blkCid)
+      leafKey = ?blockLeafKey(treeCid, index)
 
     var
       blkRec = KVRecord[BlockMetadata].init(
-        blkKey, BlockMetadata(refCount: 1, cid: item.blkCid, size: item.blockSize)
+        blkKey, BlockMetadata(refCount: 1, cid: blkCid)
       )
       leafRec = KVRecord[LeafMetadata].init(
-        leafKey, LeafMetadata(blkCid: item.blkCid, proof: item.proof)
+        leafKey, LeafMetadata(blkCid: blkCid, proof: proof)
       )
 
     # we only increase refcount for **NEW LEAFS**, if a leaf
     # already exists, we skip the refCount.inc, thus we make
     # a mapping of block rec -> leaf rec to be able to filter
     # out inserts from updates
-    blocksBits.setBit(item.index)
+    blocksBits.setBit(index)
     leafsMap[leafKey] = leafRec.toRaw
     blkToLeafMap.withValue(blkKey, pairs):
       pairs[][1].incl(leafRec.toRaw)
@@ -378,9 +371,8 @@ proc putOrUpdateLeafBlockMeta*(
     index: Natural,
     blkCid: Cid,
     proof: ArchivistProof,
-    blockSize = DefaultBlockSize,
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
-  self.putOrUpdateLeafBlockMeta(treeCid, @[(index, blkCid, proof, blockSize)])
+  self.putOrUpdateLeafBlockMeta(treeCid, @[(index, blkCid, proof)])
 
 proc delLeafBlockMetadata*(
     self: RepoStore, treeCid: Cid, index: seq[Natural]
@@ -453,11 +445,7 @@ proc delLeafBlockMetadata*(
           blkToLeafIndices.getOrDefault(it.key, initHashSet[Natural]()).len
 
         it.fromRecord(
-          BlockMetadata(
-            refCount: max(0, it.val.refCount - leafCount),
-            cid: it.val.cid,
-            size: it.val.size,
-          )
+          BlockMetadata(refCount: max(0, it.val.refCount - leafCount), cid: it.val.cid)
         )
     )
 

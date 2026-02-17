@@ -48,7 +48,6 @@ type
 
   BlockMetadata* {.serialize.} = object
     cid*: Cid
-    size*: NBytes
     refCount*: Natural
 
   LeafMetadata* {.serialize.} = object

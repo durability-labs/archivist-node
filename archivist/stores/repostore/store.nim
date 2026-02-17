@@ -205,7 +205,7 @@ method putLeafsAndBlocks*(
       if not blk.cid.isEmpty:
         totalSize += blk.data.len
         uniqeBlks.incl(blk)
-      (idx, blk.cid, proof, blk.data.len.NBytes)
+      (idx, blk.cid, proof)
 
   trace "Putting blocks", actualBlocks = blocks.len, totalSize
 
@@ -292,7 +292,7 @@ method putBlock*(
   if err =? (
     await self.metaDs.put(
       ?blockMetaKey(blk.cid),
-      BlockMetadata(refCount: 0, cid: blk.cid, size: blk.data.len.NBytes),
+      BlockMetadata(refCount: 0, cid: blk.cid),
     )
   ).errorOption:
     if err of KVConflictError:

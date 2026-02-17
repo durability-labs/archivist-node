@@ -63,8 +63,7 @@ proc decode*(T: type QuotaUsage, bytes: openArray[byte]): ?!T =
 proc encode*(t: BlockMetadata): seq[byte] =
   var pb = initProtoBuffer()
   pb.write(1, t.cid.data.buffer)
-  pb.write(2, t.size.uint64)
-  pb.write(3, t.refCount.uint64)
+  pb.write(2, t.refCount.uint64)
   pb.finish()
   pb.buffer
 
@@ -72,21 +71,17 @@ proc decode*(T: type BlockMetadata, bytes: openArray[byte]): ?!T =
   var
     pb = initProtoBuffer(bytes)
     cidBytes: seq[byte]
-    size: uint64
     refCount: uint64
 
   if pb.getField(1, cidBytes).isErr:
     return failure("Unable to decode `cid` from BlockMetadata")
 
-  if pb.getField(2, size).isErr:
-    return failure("Unable to decode `size` from BlockMetadata")
-
-  if pb.getField(3, refCount).isErr:
+  if pb.getField(2, refCount).isErr:
     return failure("Unable to decode `refCount` from BlockMetadata")
 
   let blkCid = ?Cid.init(cidBytes).mapFailure
 
-  success BlockMetadata(cid: blkCid, size: size.NBytes, refCount: refCount.Natural)
+  success BlockMetadata(cid: blkCid, refCount: refCount.Natural)
 
 proc encode*(t: LeafMetadata): seq[byte] =
   var pb = initProtoBuffer()
