@@ -29,7 +29,7 @@ suite "Test coders":
     Cid.example
 
   proc rand(T: type BlockMetadata): T =
-    BlockMetadata(cid: rand(Cid), size: rand(NBytes), refCount: rand(Natural))
+    BlockMetadata(cid: rand(Cid), refCount: rand(Natural))
 
   test "Natural encode/decode":
     for val in newSeqWith(100, rand(Natural)) & @[Natural.low, Natural.high]:
