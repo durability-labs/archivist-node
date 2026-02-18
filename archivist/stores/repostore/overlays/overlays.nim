@@ -356,6 +356,17 @@ proc finalizeOverlay*(
       ]
     )
   ).errorOption:
+    if err of KVConflictError:
+      # Destination already has the data (content-addressed guarantee).
+      # Nothing was moved — tmp is still intact. Drop it cleanly.
+      trace "Overlay already exists at realTreeCid, dropping tmp"
+      if dropErr =? (
+        await noCancel self.metaDs.dropPrefix(
+          @[?(BlockLeafKey / $tmpCid), ?overlayKey(tmpCid)]
+        )
+      ).errorOption:
+        error "Unable to drop tmp overlay after finalize conflict", exc = dropErr.msg
+      return success()
     error "Unable to move overlay metadata atomically", exc = err.msg
     return failure(err)
 
@@ -433,7 +444,12 @@ proc withTmpOverlay*(
 
   defer:
     if not completed:
-      if dropErr =? (await noCancel self.dropOverlay(tmpCid)).errorOption:
+      # Tmp overlays have no refcount associations yet — safe to drop directly
+      if dropErr =? (
+        await noCancel self.metaDs.dropPrefix(
+          @[?(BlockLeafKey / $tmpCid), ?overlayKey(tmpCid)]
+        )
+      ).errorOption:
         error "Unable to drop tmp overlay on error", exc = dropErr.msg
 
   let bodyRes = await body(tmpCid)
