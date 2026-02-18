@@ -986,9 +986,9 @@
             "uid": "cfdges8mgrvggd"
           },
           "editorMode": "code",
-          "expr": "node_memory_MemTotal_bytes{}",
+          "expr": "process_virtual_memory_bytes{}",
           "instant": false,
-          "legendFormat": "Total",
+          "legendFormat": "Virtual Memory",
           "range": true,
           "refId": "A"
         },
@@ -998,9 +998,9 @@
             "uid": "cfdges8mgrvggd"
           },
           "editorMode": "code",
-          "expr": "node_memory_MemTotal_bytes{} - node_memory_MemFree_bytes{} - node_memory_Cached_bytes{} - node_memory_Buffers_bytes{}",
+          "expr": "process_resident_memory_bytes{}",
           "instant": false,
-          "legendFormat": "Used",
+          "legendFormat": "Resident Memory (RSS)",
           "range": true,
           "refId": "B"
         }
