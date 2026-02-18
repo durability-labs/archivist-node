@@ -122,7 +122,7 @@
 	url = https://github.com/status-im/nim-eth
 [submodule "vendor/nimble/json_rpc"]
 	path = vendor/nimble/json_rpc
-	url = https://github.com/status-im/nim-json-rpc
+	url = https://github.com/durability-labs/nim-json-rpc
 [submodule "vendor/nimble/serde"]
 	path = vendor/nimble/serde
 	url = https://github.com/durability-labs/nim-serde

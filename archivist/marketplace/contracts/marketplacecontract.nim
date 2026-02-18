@@ -14,6 +14,7 @@ export requests
 
 type
   MarketplaceContract* = ref object of Contract
+  RequestId = requests.RequestId
 
   Marketplace_RepairRewardPercentageTooHigh* = object of SolidityError
   Marketplace_SlashPercentageTooHigh* = object of SolidityError
