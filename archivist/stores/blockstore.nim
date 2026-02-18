@@ -112,6 +112,26 @@ method putLeafAndBlock*(
 
   await self.putLeafsAndBlocks(treeCid, @[(blk, index, proof)])
 
+method putOrUpdateCellLeafBlock*(
+    self: BlockStore, treeCid: Cid, items: seq[(Block, Cid, Natural, ArchivistProof)]
+): Future[?!void] {.base, async: (raises: [CancelledError]).} =
+  ## Put multiple leafs and blocks as a batch (primary method)
+  ##
+
+  raiseAssert("putLeafsAndBlocks not implemented!")
+
+method putOrUpdateCellLeafBlock*(
+    self: BlockStore, treeCid: Cid, blk: Block, index: Natural, proof: ArchivistProof
+): Future[?!void] {.base, async: (raises: [CancelledError]).} =
+  ## Puts a leaf and block, for temporal leafs
+  ## treeCid is a unique temporary hash and proof
+  ## is nil (or none when changed to optional)
+  ##
+  ## NOTE: Wrapper for putLeafsAndBlocks - implements single-item logic
+  ## by calling batch with @[item]
+
+  await self.putLeafsAndBlocks(treeCid, @[(blk, index, proof)])
+
 method putCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural, blockCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
@@ -231,6 +251,15 @@ method putCidsAndProofs*(
   ##
 
   raiseAssert("putCidsAndProofs not implemented!")
+
+method putCidsAndProofs*(
+    self: BlockStore, treeCid: Cid, items: seq[(Natural, Cid, Cid, ArchivistProof)]
+): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  ## Put multiple cell CIDs and proofs as a batch for slot proof trees.
+  ## Each item is (index, cellCid, blkCid, proof).
+  ##
+
+  raiseAssert("putCidsAndProofs (cell variant) not implemented!")
 
 method getCidsAndProofs*(
     self: BlockStore, treeCid: Cid, indices: seq[Natural]

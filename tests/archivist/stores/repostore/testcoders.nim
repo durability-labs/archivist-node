@@ -2,11 +2,13 @@ import std/random
 
 import pkg/unittest2
 import pkg/stew/objects
+import pkg/stew/byteutils
 import pkg/questionable
 import pkg/questionable/results
 
 import pkg/archivist/clock
 import pkg/archivist/merkletree
+import pkg/archivist/blocktype as bt
 import pkg/archivist/stores/repostore/types
 import pkg/archivist/stores/repostore/coders
 
@@ -67,3 +69,32 @@ suite "Test coders":
       decoded.deleted == val.deleted
       decoded.blkCid == val.blkCid
       decoded.proof.isNil
+
+  test "LeafMetadata encode/decode with cell variant":
+    # Create two different CIDs using blocks
+    let
+      blkCid = bt.Block.new("block data".toBytes).tryGet().cid
+      cellCid = bt.Block.new("cell data".toBytes).tryGet().cid
+      nodes = @[newSeqWith(32, rand(byte)), newSeqWith(32, rand(byte))]
+      proof = ArchivistProof.init(index = 1, nleaves = 8, nodes = nodes).tryGet()
+      val = LeafMetadata(
+        deleted: false, blkCid: blkCid, proof: proof, isCell: true, cellCid: cellCid
+      )
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
+
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == blkCid
+      decoded.proof == val.proof
+      decoded.isCell == true
+      decoded.cellCid == cellCid
+
+  test "LeafMetadata cell variant backwards compatible (non-cell decodes correctly)":
+    let
+      val = LeafMetadata(deleted: false, blkCid: Cid.example, proof: nil)
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
+
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == val.blkCid
+      decoded.isCell == false

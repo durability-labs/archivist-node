@@ -92,6 +92,9 @@ proc encode*(t: LeafMetadata): seq[byte] =
   if proofBytes.len > 0:
     pb.write(3, proofBytes)
 
+  if t.isCell:
+    pb.write(4, t.cellCid.data.buffer)
+
   pb.finish()
   pb.buffer
 
@@ -101,6 +104,7 @@ proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
     deleted: uint32
     blkCidBytes: seq[byte]
     proofBytes: seq[byte]
+    cellCidBytes: seq[byte]
 
   if pb.getField(1, deleted).isErr:
     return failure("Unable to decode `deleted` from LeafMetadata")
@@ -109,12 +113,23 @@ proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
     return failure("Unable to decode `blkCid` from LeafMetadata")
 
   discard pb.getField(3, proofBytes) # Optional field
+  discard pb.getField(4, cellCidBytes) # Optional field (cell leaves only)
 
   let
     blkCid = ?Cid.init(blkCidBytes).mapFailure
     proof = ?ArchivistProof.decode(proofBytes)
 
-  success LeafMetadata(deleted: deleted.bool, blkCid: blkCid, proof: proof)
+  if cellCidBytes.len > 0:
+    let cellCid = ?Cid.init(cellCidBytes).mapFailure
+    success LeafMetadata(
+      deleted: deleted.bool,
+      blkCid: blkCid,
+      proof: proof,
+      isCell: true,
+      cellCid: cellCid,
+    )
+  else:
+    success LeafMetadata(deleted: deleted.bool, blkCid: blkCid, proof: proof)
 
 proc encode*(i: uint64): seq[byte] =
   @(i.toBytesBE)

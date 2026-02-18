@@ -25,6 +25,7 @@ import ../merkletree/helpers
 
 import pkg/archivist/indexingstrategy {.all.}
 import pkg/archivist/slots {.all.}
+import pkg/archivist/stores/repostore/operations
 
 privateAccess(Poseidon2Builder) # enable access to private fields
 privateAccess(Manifest) # enable access to private fields
@@ -353,3 +354,131 @@ suite "Slot builder":
     check:
       builder.slotRoots == verificationBuilder.slotRoots
       builder.verifyRoot == verificationBuilder.verifyRoot
+
+suite "Cell-aware slot building":
+  ## Tests for slot building that verify cell leaves are stored correctly
+  ## with separate cellCid and blkCid for proper refcount handling.
+  ##
+  let
+    blockSize = NBytes 1024
+    cellSize = NBytes 64
+    ecK = 2
+    ecM = 1
+
+    numSlots = ecK + ecM
+    numDatasetBlocks = 3
+    numTotalBlocks = calcEcBlocksCount(numDatasetBlocks, ecK, ecM)
+    originalDatasetSize = numDatasetBlocks * blockSize.int
+    totalDatasetSize = numTotalBlocks * blockSize.int
+
+    numSlotBlocks = numTotalBlocks div numSlots
+    numBlockCells = (blockSize div cellSize).int
+    numSlotCells = numSlotBlocks * numBlockCells
+    pow2SlotCells = nextPowerOfTwo(numSlotCells)
+    numPadSlotBlocks = (pow2SlotCells div numBlockCells) - numSlotBlocks
+
+    emptyDigest = SpongeMerkle.digest(newSeq[byte](blockSize.int), cellSize.int)
+
+  var
+    datasetBlocks: seq[bt.Block]
+    localStore: RepoStore
+    manifest: Manifest
+    protectedManifest: Manifest
+    tp: Taskpool
+
+  setup:
+    tp = Taskpool.new(num_threads = 4)
+    let
+      repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+
+    localStore = RepoStore.new(repoDs, metaDs)
+    let chunker =
+      RandomChunker.new(Rng.instance(), size = totalDatasetSize, chunkSize = blockSize)
+    datasetBlocks = await chunker.createBlocks()
+
+    (manifest, protectedManifest) = await createProtectedManifest(
+      datasetBlocks, localStore, numDatasetBlocks, ecK, ecM, blockSize,
+      originalDatasetSize, totalDatasetSize,
+    )
+
+  teardown:
+    await localStore.close()
+    tp.shutdown()
+    reset(datasetBlocks)
+    reset(localStore)
+    reset(manifest)
+    reset(protectedManifest)
+
+  test "buildSlot stores cell leaves with correct cellCid and blkCid":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotCid = slotRoot.toSlotCid().tryGet()
+
+    # Verify that leaf metadata has cell flag set
+    for i in 0 ..< protectedManifest.numSlotBlocks:
+      let leaf = (await localStore.getLeafMetadata(slotCid, i.Natural)).tryGet()
+      check:
+        leaf.isCell == true
+        leaf.blkCid != Cid() # blkCid should point to a real block
+
+  test "buildSlot stores proofs for pad blocks with empty blkCid":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotCid = slotRoot.toSlotCid().tryGet()
+
+    # ALL positions (including pad blocks) should have leaf metadata
+    let numRealBlocks = protectedManifest.numSlotBlocks
+    let numTotalSlotBlocks = builder.numSlotBlocks
+
+    # Check that all positions have metadata
+    for i in 0 ..< numTotalSlotBlocks:
+      let leafRes = await localStore.getLeafMetadata(slotCid, i.Natural)
+      check leafRes.isOk
+
+    # If there are pad blocks, their blkCid should be empty CID
+    if numTotalSlotBlocks > numRealBlocks:
+      for i in numRealBlocks ..< numTotalSlotBlocks:
+        let leaf = (await localStore.getLeafMetadata(slotCid, i.Natural)).tryGet()
+        check leaf.blkCid.isEmpty
+
+  test "buildSlot increments refcount on blkCid, not cellCid":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    # Build one slot
+    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotCid = slotRoot.toSlotCid().tryGet()
+
+    # Get the first block's CID and check its refcount
+    let leaf = (await localStore.getLeafMetadata(slotCid, 0.Natural)).tryGet()
+    let blkRefCount = (await localStore.blockRefCount(leaf.blkCid)).tryGet()
+
+    # Refcount should be at least 1 (this slot references it)
+    check blkRefCount >= 1
+
+    # Cell CID should not have a block metadata entry
+    let cellRefCountRes = await localStore.blockRefCount(leaf.cellCid)
+    check cellRefCountRes.isErr or cellRefCountRes.tryGet() == 0
+
+  test "Multiple slots referencing same block increment refcount correctly":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    # Build all slots
+    (await builder.buildSlots()).tryGet()
+
+    # Get refcount on first dataset block
+    let firstBlockCid = datasetBlocks[0].cid
+    let refCount = (await localStore.blockRefCount(firstBlockCid)).tryGet()
+
+    # Refcount should be 1 (block is referenced by one slot in EC distribution)
+    check refCount >= 1

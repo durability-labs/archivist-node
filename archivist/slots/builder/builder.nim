@@ -27,6 +27,7 @@ import ../../manifest
 import ../../merkletree
 import ../../utils/asynciter
 import ../../indexingstrategy
+import ../../archivisttypes
 
 import ../converters
 
@@ -237,9 +238,9 @@ proc buildSlot*[SomeTree, SomeHash](
     treeCid,
     status = Storing.some,
     body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
-      var proofItems: seq[(Natural, Cid, ArchivistProof)]
-      for i, leaf in tree.leaves:
-        without cellCid =? leaf.toCellCid, e:
+      var proofItems: seq[(Natural, Cid, Cid, ArchivistProof)]
+      for i, blkIdx in ?self.slotIndicesIter(slotIndex):
+        without cellCid =? tree.leaves[i].toCellCid, e:
           error "Failed to get CID for slot cell", e = e.msg
           return failure(e)
 
@@ -248,7 +249,16 @@ proc buildSlot*[SomeTree, SomeHash](
           error "Failed to get proof for slot tree", e = e.msg
           return failure(e)
 
-        proofItems.add((i.Natural, cellCid, encodableProof))
+        # For pad blocks, use empty CID for blkCid since there's no real block
+        # TODO: make sure we do this as a batch, single get/put are very costly
+        # with CAS semantics
+        let blkCid =
+          if blkIdx >= self.manifest.numSlotBlocks:
+            ?emptyCid(self.manifest.version, self.manifest.hcodec, BlockCodec)
+          else:
+            ?await self.repoStore.getCid(self.manifest.treeCid, blkIdx)
+
+        proofItems.add((i.Natural, cellCid, blkCid, encodableProof))
 
       ?await self.repoStore.putCidsAndProofs(treeCid, proofItems)
       success(),

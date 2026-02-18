@@ -54,6 +54,11 @@ type
     deleted*: bool
     blkCid*: Cid
     proof*: ArchivistProof
+    case isCell*: bool
+    of true:
+      cellCid*: Cid
+    else:
+      discard
 
   OverlayStatus* {.serialize.} = enum
     Pending ## Initial state, not yet active

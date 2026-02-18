@@ -9,6 +9,7 @@
 
 import std/sets
 import std/tables
+import std/options
 
 import pkg/chronos
 import pkg/kvstore
@@ -234,10 +235,25 @@ proc tryDeleteBlocks*(
 ): Future[?!seq[Cid]] {.async: (raises: [CancelledError], raw: true).} =
   self.tryDeleteBlocks(@[cid])
 
-proc putOrUpdateLeafBlockMeta*(
-    self: RepoStore, treeCid: Cid, blocks: seq[(Natural, Cid, ArchivistProof)]
+type BlockLeafTuple =
+  tuple[index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ArchivistProof]
+
+proc putOrUpdateLeafBlockMetaImpl(
+    self: RepoStore, treeCid: Cid, blocks: seq[BlockLeafTuple]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Put or update lef and block metadata
+  ## Core implementation for leaf and block metadata writes.
+  ##
+  ## When the cellCid is set, we treat the leaf as a cell leaf,
+  ## and the index and treeCid corresponds to the cell index and
+  ## tree of the slot, when it isn't set, this is a regular block
+  ## leaf and it's index is the index of the leaf in a regular top
+  ## level tree.
+  ##
+  ## The main difference is that multipl cells point to the same block,
+  ## so they might inc the same block's refCount several times.
+  ##
+  ## All writes — leaf records, block refcounts, and overlay BitSeq — happen
+  ## in a single atomic transaction, so no partial state is ever visible.
   ##
 
   # Fetch existing overlay to get correct BitSeq length
@@ -251,16 +267,27 @@ proc putOrUpdateLeafBlockMeta*(
     leafsMap: Table[Key, RawKVRecord]
     blocksBits = BitSeq.init(blocks.mapIt(it[0]).max() + 1)
 
-  for (index, blkCid, proof) in blocks:
+  for (index, blkCid, cellCid, proof) in blocks:
     let
       blkKey = ?blockMetaKey(blkCid)
       leafKey = ?blockLeafKey(treeCid, index)
 
+    let isCell = cellCid.isSome
     var
       blkRec =
         KVRecord[BlockMetadata].init(blkKey, BlockMetadata(refCount: 1, cid: blkCid))
       leafRec =
-        KVRecord[LeafMetadata].init(leafKey, LeafMetadata(blkCid: blkCid, proof: proof))
+        if isCell:
+          KVRecord[LeafMetadata].init(
+            leafKey,
+            LeafMetadata(
+              blkCid: blkCid, proof: proof, isCell: true, cellCid: cellCid.get()
+            ),
+          )
+        else:
+          KVRecord[LeafMetadata].init(
+            leafKey, LeafMetadata(blkCid: blkCid, proof: proof)
+          )
 
     # we only increase refcount for **NEW LEAFS**, if a leaf
     # already exists, we skip the refCount.inc, thus we make
@@ -268,12 +295,15 @@ proc putOrUpdateLeafBlockMeta*(
     # out inserts from updates
     blocksBits.setBit(index)
     leafsMap[leafKey] = leafRec.toRaw
-    blkToLeafMap.withValue(blkKey, pairs):
-      pairs[][1].incl(leafRec.toRaw)
-      blkRec.val.refCount = max(1, pairs[][1].len)
-      pairs[][0] = blkRec.toRaw
-    do:
-      blkToLeafMap[blkKey] = (blkRec.toRaw, [leafRec.toRaw].toHashSet)
+
+    # Skip block metadata for empty blkCid (pad blocks)
+    if not blkCid.isEmpty:
+      blkToLeafMap.withValue(blkKey, pairs):
+        pairs[][1].incl(leafRec.toRaw)
+        blkRec.val.refCount = max(1, pairs[][1].len)
+        pairs[][0] = blkRec.toRaw
+      do:
+        blkToLeafMap[blkKey] = (blkRec.toRaw, [leafRec.toRaw].toHashSet)
 
   var combinedBlocks = existingOverlay.blocks
   combinedBlocks.combineSafe(blocksBits)
@@ -287,7 +317,6 @@ proc putOrUpdateLeafBlockMeta*(
   proc putLeafAndBlockMetaAtomic(
       records: seq[RawKVRecord], conflicts: seq[Key]
   ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
-    # Then, filter to only block meta keys in conflicts
     var records = records.mapIt((it.key, it)).toTable
     let
       refreshed = ?await self.metaDs.get(conflicts)
@@ -353,7 +382,7 @@ proc putOrUpdateLeafBlockMeta*(
     success toSeq(records.values)
 
   let updates =
-    @[overlayMeta] & blkToLeafMap.values.toSeq.mapIt(@[it[0]] & toSeq(it[1])).concat
+    @[overlayMeta] & blkToLeafMap.values.toSeq.mapIt(it[0]) & leafsMap.values.toSeq
   trace "Put or update leaf and block metadata", treeCid, recordsCount = updates.len
   if err =? (
     await self.metaDs.tryPutAtomic(updates, maxRetries = 10, putLeafAndBlockMetaAtomic)
@@ -364,9 +393,36 @@ proc putOrUpdateLeafBlockMeta*(
   success()
 
 proc putOrUpdateLeafBlockMeta*(
+    self: RepoStore, treeCid: Cid, blocks: seq[(Natural, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
+  ## Put or update leaf and block metadata (plain blocks).
+  ##
+  self.putOrUpdateLeafBlockMetaImpl(
+    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2]))
+  )
+
+proc putOrUpdateLeafBlockMeta*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   self.putOrUpdateLeafBlockMeta(treeCid, @[(index, blkCid, proof)])
+
+proc putOrUpdateCellLeafBlockMeta*(
+    self: RepoStore, treeCid: Cid, blocks: seq[(Natural, Cid, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
+  ## Put or update leaf and block metadata for slot proof cell leaves.
+  ##
+  ## Each item is (index, blkCid, blkCid, proof):
+  ##   - cellCid: the cell digest (stored as LeafMetadata.cellIndex)
+  ##   - blkCid:  the actual block CID (refcount key, LeafMetadata.blkCid)
+  ##
+  ## All updates (leaf record with cellIndex, block refcount, overlay BitSeq)
+  ## are committed in a single atomic transaction.
+  ##
+
+  self.putOrUpdateLeafBlockMetaImpl(
+    treeCid,
+    blocks.mapIt((index: it[0], blkCid: it[2], cellCid: it[1].some, proof: it[3])),
+  )
 
 proc delLeafBlockMetadata*(
     self: RepoStore, treeCid: Cid, index: seq[Natural]
@@ -410,24 +466,35 @@ proc delLeafBlockMetadata*(
       (?await self.metaDs.get(leafKeys, LeafMetadata)).filterIt(not it.val.deleted)
     updateLeafsRecs = leafsMeta.mapIt(
       it.fromRecord(
-        LeafMetadata(blkCid: it.val.blkCid, proof: it.val.proof, deleted: true)
+        if it.val.isCell:
+          LeafMetadata(
+            blkCid: it.val.blkCid,
+            proof: it.val.proof,
+            deleted: true,
+            isCell: true,
+            cellCid: it.val.cellCid,
+          )
+        else:
+          LeafMetadata(blkCid: it.val.blkCid, proof: it.val.proof, deleted: true)
       )
     )
 
   # Build aggregation table: block key -> set of leaf indices
   # This ensures we correctly decrement refCount when multiple leaves
   # reference the same block
+  # Skip empty blkCid (pad blocks) - no block metadata to decrement
   var blkToLeafIndices: Table[Key, HashSet[Natural]]
   for leafMeta in leafsMeta:
-    let
-      blkKey = ?blockMetaKey(leafMeta.val.blkCid)
-      # Extract index from leaf key: /meta/leafs/{treeCid}/{index}
-      idx = ?catch(parseInt(leafMeta.key.value))
+    if not leafMeta.val.blkCid.isEmpty:
+      let
+        blkKey = ?blockMetaKey(leafMeta.val.blkCid)
+        # Extract index from leaf key: /meta/leafs/{treeCid}/{index}
+        idx = ?catch(parseInt(leafMeta.key.value))
 
-    blkToLeafIndices.withValue(blkKey, indices):
-      indices[].incl(idx.Natural)
-    do:
-      blkToLeafIndices[blkKey] = [idx.Natural].toHashSet
+      blkToLeafIndices.withValue(blkKey, indices):
+        indices[].incl(idx.Natural)
+      do:
+        blkToLeafIndices[blkKey] = [idx.Natural].toHashSet
 
   # Get unique block keys and build update records with correct refCount decrement
   let

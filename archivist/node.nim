@@ -11,7 +11,6 @@
 
 import std/options
 import std/sequtils
-import std/strformat
 import std/sugar
 import times
 
@@ -56,7 +55,9 @@ export logutils
 logScope:
   topics = "archivist node"
 
-const DefaultFetchBatch = 10
+const
+  DefaultFetchBatch = 10
+  DefaultStoreBatch* = 500 ## Number of blocks to batch when storing data
 
 type
   ArchivistNode* = object
@@ -410,9 +411,12 @@ proc store*(
     filename: ?string = string.none,
     mimetype: ?string = string.none,
     blockSize = DefaultBlockSize,
+    storeBatchSize = DefaultStoreBatch,
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
   ## Save stream contents as dataset with given blockSize
   ## to nodes's BlockStore, and return Cid of its manifest
+  ##
+  ## Blocks are batched for efficient storage (storeBatchSize blocks per batch).
   ##
   info "Storing data"
 
@@ -424,9 +428,27 @@ proc store*(
   var
     index = 0
     cids: seq[Cid]
+    blockBatch: seq[(bt.Block, Natural)] ## (block, index) pairs for batching
 
   defer:
     await stream.close()
+
+  proc flushBatch(tmpCid: Cid): Future[?!void] {.async: (raises: [CancelledError]).} =
+    ## Flush accumulated blocks to storage using batched putLeafsAndBlocks
+    if blockBatch.len == 0:
+      return success()
+
+    trace "Flushing block batch", count = blockBatch.len
+
+    # Convert to the format expected by putLeafsAndBlocks: (Block, Natural, ArchivistProof)
+    # We don't have proofs yet (built after tree construction), so use nil
+    var items: seq[(bt.Block, Natural, ArchivistProof)]
+    for (blk, idx) in blockBatch:
+      items.add((blk, idx, nil))
+
+    ?await self.repoStore.putLeafsAndBlocks(tmpCid, items)
+    blockBatch.setLen(0) # Clear batch
+    success()
 
   let treeCid =
     ?await self.repoStore.withTmpOverlay(
@@ -445,8 +467,15 @@ proc store*(
             blk = ?bt.Block.new(cid, chunk, verify = false)
 
           cids.add(cid)
-          ?await self.repoStore.putLeafAndBlock(tmpCid, blk, index)
+          blockBatch.add((blk, index.Natural))
           index.inc
+
+          # Flush batch when full
+          if blockBatch.len >= storeBatchSize:
+            ?await flushBatch(tmpCid)
+
+        # Flush any remaining blocks
+        ?await flushBatch(tmpCid)
 
         let
           tree = ?ArchivistTree.init(cids)

@@ -11,7 +11,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/oids
 import std/strutils
 import std/sugar
 

@@ -12,6 +12,8 @@
 import pkg/libp2p/crypto/crypto
 import pkg/bearssl/rand
 
+export rand
+
 type
   RngSampleError = object of CatchableError
   Rng* = ref HmacDrbgContext

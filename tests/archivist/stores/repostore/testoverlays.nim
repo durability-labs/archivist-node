@@ -10,6 +10,7 @@ import pkg/stew/byteutils
 import pkg/stew/bitseqs
 import pkg/kvstore
 import pkg/taskpools
+import pkg/libp2p/multicodec
 
 import pkg/archivist/stores
 import pkg/archivist/stores/repostore/operations
@@ -17,6 +18,7 @@ import pkg/archivist/stores/repostore/overlays/coders
 import pkg/archivist/blocktype as bt
 import pkg/archivist/clock
 import pkg/archivist/utils
+import pkg/archivist/archivisttypes
 
 import pkg/archivist/merkletree/archivist
 
@@ -499,6 +501,93 @@ suite "Overlay lifecycle":
     check gotBlock.cid == blk.cid
     check gotProof.index == proof.index
     check gotProof.nleaves == proof.nleaves
+
+  test "finalizeOverlay succeeds when destination leaf exists (content-addressed idempotency)":
+    # When destination already has the same data, finalizeOverlay returns success
+    # because the content-addressed guarantee means we're done.
+    # The tmp overlay is dropped cleanly.
+    let
+      blk = createTestBlock(127)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      realTreeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+      tmpCid = (await repo.createTmpOverlay()).tryGet()
+
+    # Pre-populate destination with the SAME block at same index
+    (await repo.putOverlayMetadata(realTreeCid, status = Storing.some)).tryGet()
+    (await repo.putLeafsAndBlocks(realTreeCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    # Put same data in tmp overlay
+    (await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    # Finalize should succeed (idempotent operation)
+    let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
+    check res.isOk
+
+    # Tmp overlay should be gone (dropped cleanly)
+    let tmpMetaRes = await repo.getOverlayMetadata(tmpCid)
+    check tmpMetaRes.isErr
+
+    # Destination should still have the data
+    let realLeaf = (await repo.getLeafMetadata(realTreeCid, 0.Natural)).tryGet()
+    check realLeaf.blkCid == blk.cid
+
+  test "finalizeOverlay handles conflict with different data at same index":
+    # When destination has different data, finalizeOverlay still succeeds
+    # because it assumes content-addressed storage (same CID = same data).
+    # The moveKeysAtomic detects the conflict and the code handles it.
+    let
+      blk = createTestBlock(128)
+      existingBlk = createTestBlock(129)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      realTreeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+      tmpCid = (await repo.createTmpOverlay()).tryGet()
+
+    # Pre-populate destination with a different block at same index
+    (await repo.putOverlayMetadata(realTreeCid, status = Storing.some)).tryGet()
+    let
+      (_, existingTree) = makeManifestAndTree(@[existingBlk]).tryGet()
+      existingProof = existingTree.getProof(0).tryGet()
+
+    (
+      await repo.putLeafsAndBlocks(
+        realTreeCid, @[(existingBlk, 0.Natural, existingProof)]
+      )
+    ).tryGet()
+
+    # Put different data in tmp overlay
+    (await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+
+    # Finalize should succeed (KVConflictError is caught and handled)
+    let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
+    check res.isOk
+
+    # Tmp overlay should be gone (dropped on conflict)
+    let tmpMetaRes = await repo.getOverlayMetadata(tmpCid)
+    check tmpMetaRes.isErr
+
+    # Destination should be unchanged (original data preserved)
+    let realLeaf = (await repo.getLeafMetadata(realTreeCid, 0.Natural)).tryGet()
+    check realLeaf.blkCid == existingBlk.cid
+
+  test "finalizeOverlay succeeds when destination metadata exists":
+    let
+      blk = createTestBlock(129)
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      realTreeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+      tmpCid = (await repo.createTmpOverlay()).tryGet()
+
+    # Create destination with metadata but no leaf data
+    (await repo.putOverlayMetadata(realTreeCid, status = Completed.some)).tryGet()
+
+    (await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+    let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
+
+    # Should succeed since there's no conflicting leaf data
+    # (metadata merge is handled by the overlay system)
+    check res.isOk
 
 suite "withOverlay proc":
   var
@@ -1186,3 +1275,490 @@ suite "BitSeq optimization tests":
     # Full consistency check
     let inconsistencies = (await repo.verifyOverlayBitSeqConsistency(treeCid)).tryGet()
     check inconsistencies.len == 0
+
+suite "Cell-aware leaf metadata":
+  ## Tests for slot proof cell leaves that store cellCid separately from blkCid.
+  ## This ensures refcounts track real blocks, not Poseidon2 cell digests.
+  ##
+  var
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
+    mockClock: MockClock
+    repo: RepoStore
+
+  let now: SecondsSince1970 = 123
+
+  setup:
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    mockClock = MockClock.new()
+    mockClock.set(now)
+    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 10000'nb)
+
+  teardown:
+    (await repoDs.close()).tryGet
+    (await metaDs.close()).tryGet
+    tp.shutdown()
+
+  test "putCidsAndProofs stores cell leaf with correct blkCid for refcount":
+    let
+      blk = createTestBlock(400)
+      # Create a different CID for the cell (simulating Poseidon2 digest)
+      cellCid = bt.Block.new("cell data".toBytes).tryGet().cid
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store using 4-tuple (index, cellCid, blkCid, proof)
+    (await repo.putCidsAndProofs(treeCid, @[(0.Natural, cellCid, blk.cid, proof)])).tryGet()
+
+    let
+      leaf = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+      blkRefCount = (await repo.blockRefCount(blk.cid)).tryGet()
+
+    check:
+      leaf.isCell == true
+      leaf.cellCid == cellCid
+      leaf.blkCid == blk.cid # blkCid points to real block
+      blkRefCount == 1 # Refcount on real block, not cellCid
+
+  test "putCidsAndProofs increments refcount only on blkCid, not cellCid":
+    let
+      blk1 = createTestBlock(401)
+      blk2 = createTestBlock(402)
+      cellCid1 = bt.Block.new("cell1".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      (_, tree) = makeManifestAndTree(@[blk1, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store two cell leaves referencing different blocks
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, blk1.cid, proof1),
+          (1.Natural, cellCid2, blk2.cid, proof2),
+        ],
+      )
+    ).tryGet()
+
+    let
+      blkRefCount1 = (await repo.blockRefCount(blk1.cid)).tryGet()
+      blkRefCount2 = (await repo.blockRefCount(blk2.cid)).tryGet()
+      # Cell CIDs should NOT have block metadata (no refcount entries)
+      cellRefCountRes1 = await repo.blockRefCount(cellCid1)
+      cellRefCountRes2 = await repo.blockRefCount(cellCid2)
+
+    check:
+      blkRefCount1 == 1
+      blkRefCount2 == 1
+      cellRefCountRes1.isErr # No metadata for cell CIDs
+      cellRefCountRes2.isErr
+
+  test "delLeafBlockMetadata decrements refcount on blkCid for cell leaves":
+    let
+      blk1 = createTestBlock(403)
+      blk2 = createTestBlock(404)
+        # Second block (not used for refcount, just tree structure)
+      cellCid1 = bt.Block.new("cell data".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      (_, tree) = makeManifestAndTree(@[blk1, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+    # Store two cell leaves referencing the same block (blk1)
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, blk1.cid, proof1),
+          (1.Natural, cellCid2, blk1.cid, proof2),
+        ],
+      )
+    ).tryGet()
+
+    let refCountBefore = (await repo.blockRefCount(blk1.cid)).tryGet()
+    check refCountBefore == 2
+
+    # Delete one cell leaf
+    (await repo.delLeafBlockMetadata(treeCid, @[0.Natural])).tryGet()
+
+    let refCountAfter = (await repo.blockRefCount(blk1.cid)).tryGet()
+    check refCountAfter == 1
+
+  test "Multiple cell leaves referencing same block increment refcount correctly":
+    let
+      blk = createTestBlock(404)
+      cellCid1 = bt.Block.new("cell1".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      blk2 = createTestBlock(405)
+      (_, tree) = makeManifestAndTree(@[blk, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Two cell leaves reference the same block (blk) at different indices
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, blk.cid, proof1), (1.Natural, cellCid2, blk.cid, proof2)
+        ],
+      )
+    ).tryGet()
+
+    let refCount = (await repo.blockRefCount(blk.cid)).tryGet()
+    check refCount == 2
+
+  test "Cell leaves and regular leaves can coexist on same overlay":
+    let
+      blk1 = createTestBlock(410)
+      blk2 = createTestBlock(411)
+      cellCid = bt.Block.new("cell".toBytes).tryGet().cid
+      (_, tree) = makeManifestAndTree(@[blk1, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store a cell leaf using 4-tuple API
+    (await repo.putCidsAndProofs(treeCid, @[(0.Natural, cellCid, blk1.cid, proof1)])).tryGet()
+    # Store a regular leaf using 3-tuple API (no cellCid)
+    (await repo.putCidsAndProofs(treeCid, @[(1.Natural, blk2.cid, proof2)])).tryGet()
+
+    let
+      leaf1 = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+      leaf2 = (await repo.getLeafMetadata(treeCid, 1.Natural)).tryGet()
+
+    check:
+      leaf1.isCell == true
+      leaf1.cellCid == cellCid
+      leaf1.blkCid == blk1.cid
+      leaf2.isCell == false # Regular leaf (no cellCid)
+
+suite "Slot overlay lifecycle":
+  ## Tests for slot tree overlay creation and cell-aware metadata storage.
+  ## Verifies that slot proof trees store correct cell metadata and refcounts.
+  ##
+  var
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
+    mockClock: MockClock
+    repo: RepoStore
+
+  let now: SecondsSince1970 = 123
+
+  setup:
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    mockClock = MockClock.new()
+    mockClock.set(now)
+    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 10000'nb)
+
+  teardown:
+    (await repoDs.close()).tryGet
+    (await metaDs.close()).tryGet
+    tp.shutdown()
+
+  test "Slot tree overlay stores cell CIDs with correct blkCid refcount":
+    let
+      blk1 = createTestBlock(600)
+      blk2 = createTestBlock(601)
+      # Create distinct cell CIDs (simulating Poseidon2 digests)
+      cellCid1 = bt.Block.new("cell1".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      (_, tree) = makeManifestAndTree(@[blk1, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store slot proof items: (index, cellCid, blkCid, proof)
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, blk1.cid, proof1),
+          (1.Natural, cellCid2, blk2.cid, proof2),
+        ],
+      )
+    ).tryGet()
+
+    let
+      leaf1 = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+      leaf2 = (await repo.getLeafMetadata(treeCid, 1.Natural)).tryGet()
+      refCount1 = (await repo.blockRefCount(blk1.cid)).tryGet()
+      refCount2 = (await repo.blockRefCount(blk2.cid)).tryGet()
+
+    check:
+      # Cell metadata stored correctly
+      leaf1.isCell == true
+      leaf1.cellCid == cellCid1
+      leaf1.blkCid == blk1.cid
+      leaf2.isCell == true
+      leaf2.cellCid == cellCid2
+      leaf2.blkCid == blk2.cid
+      # Refcounts on real blocks, not cell CIDs
+      refCount1 == 1
+      refCount2 == 1
+
+  test "Multiple slots referencing same block increment refcount correctly":
+    let
+      blk = createTestBlock(610)
+      cellCid1 = bt.Block.new("cell1".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      blk2 = createTestBlock(611) # Second block for tree structure
+      (_, tree) = makeManifestAndTree(@[blk, blk2]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Two cell entries reference the same block
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, blk.cid, proof1), (1.Natural, cellCid2, blk.cid, proof2)
+        ],
+      )
+    ).tryGet()
+
+    let refCount = (await repo.blockRefCount(blk.cid)).tryGet()
+    check refCount == 2
+
+suite "Empty blkCid (pad block) handling":
+  ## Tests for handling empty blkCid in leaf metadata.
+  ## This is used for pad blocks in slot trees where proofs need to be stored
+  ## but there's no actual block to reference.
+
+  var
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
+    mockClock: MockClock
+    repo: RepoStore
+
+  let now: SecondsSince1970 = 123
+
+  setup:
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    mockClock = MockClock.new()
+    mockClock.set(now)
+    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 10000'nb)
+
+  teardown:
+    (await repoDs.close()).tryGet
+    (await metaDs.close()).tryGet
+    tp.shutdown()
+
+  test "putCidsAndProofs with empty blkCid stores leaf but no block metadata":
+    let
+      blk = createTestBlock(700)
+      cellCid = bt.Block.new("cell".toBytes).tryGet().cid
+      emptyBlkCid = emptyCid(CIDv1, multiCodec("sha2-256"), BlockCodec).tryGet()
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store with empty blkCid (simulating a pad block)
+
+    (await repo.putCidsAndProofs(treeCid, @[(0.Natural, cellCid, emptyBlkCid, proof)])).tryGet()
+
+    # Leaf metadata should exist
+    let leaf = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+    check:
+      leaf.isCell == true
+      leaf.cellCid == cellCid
+      leaf.blkCid == emptyBlkCid
+      leaf.blkCid.isEmpty == true
+
+    # Block metadata should NOT exist for empty CID
+    let refCountRes = await repo.blockRefCount(emptyBlkCid)
+    check refCountRes.isErr
+
+  test "Multiple empty blkCid leaves don't corrupt refcount":
+    let
+      blk = createTestBlock(701)
+      cellCid1 = bt.Block.new("cell1".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      emptyBlkCid = emptyCid(CIDv1, multiCodec("sha2-256"), BlockCodec).tryGet()
+      (_, tree) = makeManifestAndTree(@[blk, blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store two leaves with empty blkCid
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, emptyBlkCid, proof1),
+          (1.Natural, cellCid2, emptyBlkCid, proof2),
+        ],
+      )
+    ).tryGet()
+
+    # Both leaves should exist
+    let
+      leaf1 = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+      leaf2 = (await repo.getLeafMetadata(treeCid, 1.Natural)).tryGet()
+
+    check:
+      leaf1.blkCid.isEmpty == true
+      leaf2.blkCid.isEmpty == true
+
+    # No block metadata should exist for empty CID
+    let refCountRes = await repo.blockRefCount(emptyBlkCid)
+    check refCountRes.isErr
+
+  test "Mix of empty and real blkCid works correctly":
+    let
+      realBlk = createTestBlock(702)
+      cellCid1 = bt.Block.new("cell1".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      emptyBlkCid = emptyCid(CIDv1, multiCodec("sha2-256"), BlockCodec).tryGet()
+      (_, tree) = makeManifestAndTree(@[realBlk, realBlk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store one with real blkCid, one with empty
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, realBlk.cid, proof1),
+          (1.Natural, cellCid2, emptyBlkCid, proof2),
+        ],
+      )
+    ).tryGet()
+
+    let
+      leaf1 = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+      leaf2 = (await repo.getLeafMetadata(treeCid, 1.Natural)).tryGet()
+      realRefCount = (await repo.blockRefCount(realBlk.cid)).tryGet()
+
+    check:
+      leaf1.blkCid == realBlk.cid
+      leaf1.blkCid.isEmpty == false
+      leaf2.blkCid.isEmpty == true
+      # Only real block has refcount
+      realRefCount == 1
+
+  test "Delete leaf with empty blkCid works without error":
+    let
+      blk = createTestBlock(703)
+      cellCid = bt.Block.new("cell".toBytes).tryGet().cid
+      emptyBlkCid = emptyCid(CIDv1, multiCodec("sha2-256"), BlockCodec).tryGet()
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store with empty blkCid
+
+    (await repo.putCidsAndProofs(treeCid, @[(0.Natural, cellCid, emptyBlkCid, proof)])).tryGet()
+
+    # Verify leaf exists before delete
+    let leafBefore = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+    check leafBefore.blkCid.isEmpty == true
+
+    # Delete should succeed even with empty blkCid (no block metadata to decrement)
+    (await repo.delLeafBlockMetadata(treeCid, @[0.Natural])).tryGet()
+
+    # Leaf should be fully deleted (delLeafBlockMetadata removes it)
+    let leafRes = await repo.getLeafMetadata(treeCid, 0.Natural)
+    check leafRes.isErr
+
+  test "Delete mix of empty and real blkCid decrements only real block":
+    let
+      realBlk = createTestBlock(704)
+      cellCid1 = bt.Block.new("cell1".toBytes).tryGet().cid
+      cellCid2 = bt.Block.new("cell2".toBytes).tryGet().cid
+      emptyBlkCid = emptyCid(CIDv1, multiCodec("sha2-256"), BlockCodec).tryGet()
+      (_, tree) = makeManifestAndTree(@[realBlk, realBlk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof1 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(1).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Store one real, one empty
+
+    (
+      await repo.putCidsAndProofs(
+        treeCid,
+        @[
+          (0.Natural, cellCid1, realBlk.cid, proof1),
+          (1.Natural, cellCid2, emptyBlkCid, proof2),
+        ],
+      )
+    ).tryGet()
+
+    let refCountBefore = (await repo.blockRefCount(realBlk.cid)).tryGet()
+    check refCountBefore == 1
+
+    # Delete both - should only decrement real block, no error for empty blkCid
+    (await repo.delLeafBlockMetadata(treeCid, @[0.Natural, 1.Natural])).tryGet()
+
+    # Block metadata is deleted when refCount hits 0
+    let refCountAfter = await repo.blockRefCount(realBlk.cid)
+    check refCountAfter.isErr # Block metadata deleted
+
+  test "putLeafsAndBlocks with empty blkCid in proof context works":
+    # Test the regular (non-cell) leaf path with empty blkCid
+    let
+      blk = createTestBlock(705)
+      emptyBlkCid = emptyCid(CIDv1, multiCodec("sha2-256"), BlockCodec).tryGet()
+      (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    (await repo.putOverlayMetadata(treeCid, status = Completed.some)).tryGet()
+
+    # Create a block with empty CID
+    let emptyBlk = bt.Block.new(newSeq[byte](0)).tryGet()
+    check emptyBlk.cid.isEmpty == true
+
+    # Store with the empty block
+    (await repo.putLeafsAndBlocks(treeCid, @[(emptyBlk, 0.Natural, proof)])).tryGet()
+
+    # Leaf should exist with empty blkCid
+    let leaf = (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
+    check:
+      leaf.blkCid.isEmpty == true
+      leaf.isCell == false
