@@ -83,7 +83,7 @@
 	url = https://github.com/durability-labs/nim-poseidon2
 [submodule "vendor/nimble/libp2p"]
 	path = vendor/nimble/libp2p
-	url = https://github.com/durability-labs/nim-libp2p
+	url = https://github.com/vacp2p/nim-libp2p
 [submodule "vendor/nimble/stint"]
 	path = vendor/nimble/stint
 	url = https://github.com/durability-labs/nim-stint
@@ -157,3 +157,6 @@
 [submodule "vendor/nimble/nat_traversal"]
 	path = vendor/nimble/nat_traversal
 	url = https://github.com/durability-labs/nim-nat-traversal.git
+[submodule "vendor/nimble/lsquic"]
+	path = vendor/nimble/lsquic
+	url = https://github.com/vacp2p/nim-lsquic.git
