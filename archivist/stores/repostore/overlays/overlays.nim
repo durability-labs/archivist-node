@@ -35,6 +35,7 @@ import ../../queryiterhelper
 import ../../../utils
 import ../../../errors
 import ../../../logutils
+import ../../../rng
 
 export coders
 
@@ -231,11 +232,10 @@ proc listOverlaysByExpiry*(
 proc createTmpOverlay*(
     self: RepoStore, expiry = ZeroSeconds
 ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+  var randomBytes: array[32, byte]
+  Rng.instance[].generate(randomBytes)
   let
-    oid = genOid()
-    oidStr = $oid # 24-char hex string
-    mhash =
-      ?MultiHash.digest($Sha256HashCodec, oidStr.toOpenArrayByte(0, oidStr.high)).mapFailure
+    mhash = ?MultiHash.digest($Sha256HashCodec, randomBytes).mapFailure
     tmpTreeCid = ?Cid.init(CIDv1, BlockCodec, mhash).mapFailure
 
   let expiryTime =
