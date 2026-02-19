@@ -44,10 +44,6 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let marketplace = agent.context.marketplace
-
-  error "Sale error",
-    error = state.error.msgDetail,
-    requestId = data.requestId,
     slotIndex = data.slotIndex
 
   try:

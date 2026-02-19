@@ -233,8 +233,7 @@ proc buildSlot*[SomeTree, SomeHash](
     return failure(e)
 
   trace "Storing slot tree", treeCid, slotIndex, leaves = tree.leavesCount
-  ?await withOverlay(
-    self.repoStore,
+  ?await self.repoStore.withOverlay(
     treeCid,
     status = Storing.some,
     body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =

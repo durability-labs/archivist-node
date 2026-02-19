@@ -813,6 +813,43 @@ proc proveSlot*(
     warn "Prover not enabled"
     failure "Prover not enabled"
 
+proc deleteSlot*(
+    self: ArchivistNodeRef, cid: Cid, slotIdx: uint64
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Handle slot failure - mark overlay as failed so maintenance will drop it
+  ##
+  logScope:
+    cid = $cid
+    slot = slotIdx
+
+  trace "Marking slot as failed"
+
+  let manifest = ?await self.fetchManifest(cid)
+  if not manifest.verifiable:
+    warn "Attempting to fail a slot with a non-verifiable manifest", cid, slotIdx
+
+  let slotCid = manifest.slotRoots[slotIdx]
+
+  # Mark slot overlay as Failure so maintenance will drop it and cleanup manifest
+  if err =? (
+    await self.repoStore.putOverlayMetadata(
+      slotCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
+    )
+  ).errorOption:
+    warn "Error marking slot overlay failed", err = err.msg
+
+  # Mark tree overlay as Failure so maintenance will drop it and cleanup manifest
+  if err =? (
+    await self.repoStore.putOverlayMetadata(
+      manifest.treeCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
+    )
+  ).errorOption:
+    warn "Error marking tree overlay failed", err = err.msg
+
+  trace "Slot marked as failed"
+
+  return success()
+
 proc start*(self: ArchivistNodeRef) {.async.} =
   if not self.engine.isNil:
     await self.engine.start()

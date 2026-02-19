@@ -645,8 +645,7 @@ proc decode*(
     cids: ref seq[Cid]
     recoveredIndices: seq[Natural]
 
-  ?await withOverlay(
-    self.repoStore,
+  ?await self.repoStore.withOverlay(
     encoded.treeCid,
     status = Storing.some,
     body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =

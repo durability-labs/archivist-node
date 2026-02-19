@@ -255,3 +255,9 @@ func decode*(_: type Manifest, blk: Block): ?!Manifest =
     return failure "Cid not a manifest codec"
 
   Manifest.decode(blk.data)
+
+func toBlock*(manifest: Manifest): ?!Block =
+  Block.new(data = ?manifest.encode(), codec = ManifestCodec)
+
+func toCid*(manifest: Manifest): ?!Cid =
+  success (?manifest.toBlock).cid

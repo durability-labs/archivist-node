@@ -513,13 +513,20 @@ proc release*(
 proc storeManifest*(
     self: RepoStore, manifest: Manifest
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
-  let
-    encodedVerifiable = ?manifest.encode()
-    blk = ?Block.new(data = encodedVerifiable, codec = ManifestCodec)
+  let manifestBlk = ?manifest.toBlock
 
-  ?await self.putBlock(blk)
-  trace "Stored manifest block", cid = blk.cid
-  success blk
+  if err =? (
+    await self.putOverlayMetadata(
+      treeCid = manifest.treeCid, manifestCid = manifestBlk.cid.some
+    )
+  ).errorOption:
+    trace "Unable to set manifestCid for overlay metadata",
+      treeCid = manifest.treeCid, manifestCid = manifestBlk.cid
+    return failure(err)
+
+  ?await self.putBlock(manifestBlk)
+  trace "Stored manifest block", cid = manifestBlk.cid
+  success manifestBlk
 
 proc start*(
     self: RepoStore

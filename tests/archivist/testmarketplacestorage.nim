@@ -98,3 +98,41 @@ suite "Marketplace storage interface implementation":
       cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
     )
     await checkOverlayExpiry(cid, expiry)
+
+  test "deleteSlot marks overlay as Failure":
+    let
+      cid = await storeVerifiableData()
+      localStore = temporary.localStore
+      manifestBlock = !await localStore.getBlock(cid)
+      manifest = !Manifest.decode(manifestBlock)
+      expiry = getTime().toUnix + 42
+
+    !await storage.storeSlot(
+      cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
+    )
+
+    !await storage.deleteSlot(cid, 0)
+
+    # Check that slot overlay status is now Failure
+    let slotCid = manifest.slotRoots[0]
+    let metadata = !await localStore.getOverlayMetadata(slotCid)
+    check metadata.status == OverlayStatus.Failure
+
+  test "deleteSlot marks overlay as Failure for different slot indices":
+    let
+      cid = await storeVerifiableData()
+      localStore = temporary.localStore
+      manifestBlock = !await localStore.getBlock(cid)
+      manifest = !Manifest.decode(manifestBlock)
+      expiry = getTime().toUnix + 42
+
+    !await storage.storeSlot(
+      cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
+    )
+
+    !await storage.deleteSlot(cid, 1)
+
+    # Check that slot overlay status is now Failure
+    let slotCid = manifest.slotRoots[1]
+    let metadata = !await localStore.getOverlayMetadata(slotCid)
+    check metadata.status == OverlayStatus.Failure

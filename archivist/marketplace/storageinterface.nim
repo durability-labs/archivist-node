@@ -34,3 +34,8 @@ method updateSlotExpiry*(
     storage: StorageInterface, cid: Cid, slotIndex: uint64, expiry: StorageTimestamp
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =
   raiseAssert "not implemented"
+
+method deleteSlot*(
+    storage: StorageInterface, cid: Cid, slotIndex: uint64
+): Future[?!void] {.base, async: (raises: [CancelledError]).} =
+  raiseAssert "not implemented"
