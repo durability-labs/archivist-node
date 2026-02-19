@@ -444,11 +444,7 @@ proc withTmpOverlay*(
   defer:
     if not completed:
       # Tmp overlays have no refcount associations yet — safe to drop directly
-      if dropErr =? (
-        await noCancel self.metaDs.dropPrefix(
-          @[?(BlockLeafKey / $tmpCid), ?overlayKey(tmpCid)]
-        )
-      ).errorOption:
+      if dropErr =? (await noCancel self.dropOverlay(tmpCid)).errorOption:
         error "Unable to drop tmp overlay on error", exc = dropErr.msg
 
   let bodyRes = await body(tmpCid)
