@@ -616,8 +616,7 @@ suite "withOverlay proc":
     let treeCid = Cid.example
     var statusDuringBody = Failure
 
-    let res = await withOverlay(
-      repo,
+    let res = await repo.withOverlay(
       treeCid,
       status = Storing.some,
       body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
@@ -635,8 +634,7 @@ suite "withOverlay proc":
   test "Should set completed state on async body success":
     let treeCid = Cid.example
 
-    let res = await withOverlay(
-      repo,
+    let res = await repo.withOverlay(
       treeCid,
       status = Storing.some,
       body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
@@ -651,8 +649,7 @@ suite "withOverlay proc":
   test "Should set failure state on async body failure":
     let treeCid = Cid.example
 
-    let res = await withOverlay(
-      repo,
+    let res = await repo.withOverlay(
       treeCid,
       status = Storing.some,
       body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
@@ -668,8 +665,7 @@ suite "withOverlay proc":
   test "Should preserve typed body result":
     let treeCid = Cid.example
 
-    let res = await withOverlay(
-      repo,
+    let res = await repo.withOverlay(
       treeCid,
       status = Storing.some,
       body = proc(): Future[?!int] {.closure, async: (raises: [CancelledError]).} =
@@ -687,8 +683,7 @@ suite "withOverlay proc":
       treeCid = Cid.example
       customExpiry: SecondsSince1970 = 500
 
-    let res = await withOverlay(
-      repo,
+    let res = await repo.withOverlay(
       treeCid,
       expiry = customExpiry,
       body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
@@ -705,8 +700,7 @@ suite "withOverlay proc":
     let treeCid = Cid.example
     var bodyStarted = newFuture[void]("withOverlay.cancel.started")
 
-    let op = withOverlay(
-      repo,
+    let op = repo.withOverlay(
       treeCid,
       status = Repairing.some,
       body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
@@ -719,11 +713,8 @@ suite "withOverlay proc":
     await bodyStarted.wait(500.millis)
     await op.cancelAndWait()
 
-    try:
+    expect CancelledError:
       discard await op
-      check false
-    except CatchableError as exc:
-      check exc of CancelledError
 
     let meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
     check meta.status == Repairing
@@ -736,8 +727,7 @@ suite "withOverlay proc":
       proof = tree.getProof(0).tryGet()
     var writeDone = newFuture[void]("withOverlay.cancel.writeDone")
 
-    let op = withOverlay(
-      repo,
+    let op = repo.withOverlay(
       treeCid,
       status = Storing.some,
       body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
@@ -751,11 +741,8 @@ suite "withOverlay proc":
     await writeDone.wait(500.millis)
     await op.cancelAndWait()
 
-    try:
+    expect CancelledError:
       discard await op
-      check false
-    except CatchableError as exc:
-      check exc of CancelledError
 
     let
       meta = (await repo.getOverlayMetadata(treeCid)).tryGet()
@@ -790,14 +777,13 @@ suite "withTmpOverlay proc":
     let realTreeCid = Cid.example
     var statusDuringBody = Failure
 
-    let res = await withTmpOverlay(
-      repo,
+    let res = await repo.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
         let tmpMeta = ?await repo.getOverlayMetadata(tmpCid)
         statusDuringBody = tmpMeta.status
-        success(realTreeCid),
+        success(realTreeCid)
     )
 
     check res.isOk
@@ -815,14 +801,13 @@ suite "withTmpOverlay proc":
       proof = tree.getProof(0).tryGet()
     var capturedTmpCid: Cid
 
-    let res = await withTmpOverlay(
-      repo,
+    let res = await repo.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
         capturedTmpCid = tmpCid
         ?await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])
-        success(realTreeCid),
+        success(realTreeCid)
     )
 
     check res.isOk
@@ -841,13 +826,12 @@ suite "withTmpOverlay proc":
   test "Should drop tmp overlay metadata on body failure":
     var capturedTmpCid: Cid
 
-    let res = await withTmpOverlay(
-      repo,
+    let res = await repo.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
         capturedTmpCid = tmpCid
-        Cid.failure("encode failed"),
+        Cid.failure("encode failed")
     )
 
     check res.isErr
@@ -864,14 +848,13 @@ suite "withTmpOverlay proc":
       proof = tree.getProof(0).tryGet()
     var capturedTmpCid: Cid
 
-    let res = await withTmpOverlay(
-      repo,
+    let res = await repo.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
         capturedTmpCid = tmpCid
         ?await repo.putLeafsAndBlocks(tmpCid, @[(blk, 0.Natural, proof)])
-        Cid.failure("encode failed after storing"),
+        Cid.failure("encode failed after storing")
     )
 
     check res.isErr
@@ -891,8 +874,7 @@ suite "withTmpOverlay proc":
       capturedTmpCid: Cid
       bodyStarted = newFuture[void]("withTmpOverlay.cancel.started")
 
-    let op = withTmpOverlay(
-      repo,
+    let op = repo.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
@@ -900,17 +882,14 @@ suite "withTmpOverlay proc":
         if not bodyStarted.finished:
           bodyStarted.complete()
         await sleepAsync(10.seconds)
-        success(realTreeCid),
+        success(realTreeCid)
     )
 
     await bodyStarted.wait(500.millis)
     await op.cancelAndWait()
 
-    try:
+    expect CancelledError:
       discard await op
-      check false
-    except CatchableError as exc:
-      check exc of CancelledError
 
     let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
     check tmpMetaRes.isErr
@@ -921,12 +900,12 @@ suite "withTmpOverlay proc":
       blk = createTestBlock(133)
       (_, tree) = makeManifestAndTree(@[blk]).tryGet()
       proof = tree.getProof(0).tryGet()
+
     var
       capturedTmpCid: Cid
       writeDone = newFuture[void]("withTmpOverlay.cancel.writeDone")
 
-    let op = withTmpOverlay(
-      repo,
+    let op = repo.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
@@ -935,17 +914,14 @@ suite "withTmpOverlay proc":
         if not writeDone.finished:
           writeDone.complete()
         await sleepAsync(10.seconds)
-        success(tmpCid),
+        success(tmpCid)
     )
 
     await writeDone.wait(500.millis)
     await op.cancelAndWait()
 
-    try:
+    expect CancelledError:
       discard await op
-      check false
-    except CatchableError as exc:
-      check exc of CancelledError
 
     let tmpMetaRes = await repo.getOverlayMetadata(capturedTmpCid)
     check tmpMetaRes.isErr
@@ -1219,8 +1195,7 @@ suite "BitSeq optimization tests":
       proof2 = tree.getProof(1).tryGet()
     var capturedTmpCid: Cid
 
-    let res = await withTmpOverlay(
-      repo,
+    let res = await repo.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
@@ -1228,7 +1203,7 @@ suite "BitSeq optimization tests":
         ?await repo.putLeafsAndBlocks(
           tmpCid, @[(blk1, 0.Natural, proof1), (blk2, 1.Natural, proof2)]
         )
-        success(realTreeCid),
+        success(realTreeCid)
     )
 
     check res.isOk
