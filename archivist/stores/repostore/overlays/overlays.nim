@@ -359,11 +359,7 @@ proc finalizeOverlay*(
       # Destination already has the data (content-addressed guarantee).
       # Nothing was moved — tmp is still intact. Drop it cleanly.
       trace "Overlay already exists at realTreeCid, dropping tmp"
-      if dropErr =? (
-        await noCancel self.metaDs.dropPrefix(
-          @[?(BlockLeafKey / $tmpCid), ?overlayKey(tmpCid)]
-        )
-      ).errorOption:
+      if dropErr =? (await noCancel self.dropOverlay(tmpCid)).errorOption:
         error "Unable to drop tmp overlay after finalize conflict", exc = dropErr.msg
       return success()
     error "Unable to move overlay metadata atomically", exc = err.msg
