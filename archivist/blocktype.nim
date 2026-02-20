@@ -104,6 +104,22 @@ func new*(
   Block(cid: cid, data: @data).success
 
 proc new*(
+    T: type Block,
+    data: sink seq[byte],
+    version = CIDv1,
+    mcodec = Sha256HashCodec,
+    codec = BlockCodec,
+): ?!Block =
+  ## Sink overload -- avoids copying when caller can transfer ownership.
+  ##
+
+  let
+    hash = ?MultiHash.digest($mcodec, data).mapFailure
+    cid = ?Cid.init(version, codec, hash).mapFailure
+
+  Block(cid: cid, data: move data).success
+
+proc new*(
     T: type Block, cid: Cid, data: openArray[byte], verify: bool = true
 ): ?!Block =
   ## creates a new block for both storage and network IO
@@ -118,6 +134,20 @@ proc new*(
       return "Cid doesn't match the data".failure
 
   return Block(cid: cid, data: @data).success
+
+proc new*(T: type Block, cid: Cid, data: sink seq[byte], verify: bool = true): ?!Block =
+  ## Sink overload -- avoids copying when caller can transfer ownership.
+  ##
+
+  if verify:
+    let
+      mhash = ?cid.mhash.mapFailure
+      computedMhash = ?MultiHash.digest($mhash.mcodec, data).mapFailure
+      computedCid = ?Cid.init(cid.cidver, cid.mcodec, computedMhash).mapFailure
+    if computedCid != cid:
+      return "Cid doesn't match the data".failure
+
+  return Block(cid: cid, data: move data).success
 
 proc emptyBlock*(version: CidVersion, hcodec: MultiCodec): ?!Block =
   emptyCid(version, hcodec, BlockCodec).flatMap(
