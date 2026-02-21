@@ -10,6 +10,7 @@
 {.push raises: [].}
 
 import std/sets
+import std/tables
 
 import pkg/chronos
 import pkg/kvstore
@@ -133,6 +134,73 @@ method getBlock*(
   let leafMd = ?await self.getLeafMetadata(treeCid, index)
   await self.getBlock(leafMd.blkCid)
 
+method getBlocks*(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Natural, Block)]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks by tree CID and indices as a batch.
+  ##
+  ## Fetches overlay bitmap once, filters indices, then batch-fetches
+  ## leaf metadata and block data in two round-trips total.
+  ## Missing blocks are silently omitted from the result.
+  ##
+  ## The returned sequence preserves the order in which indices where
+  ## requrested, skipped/not found indices are empty/nil (for ref types)
+  ## and have to be none/some for object types
+  ##
+
+  if indices.len == 0:
+    return success(newSeq[(Natural, Block)]())
+
+  logScope:
+    treeCid = treeCid
+    count = indices.len
+
+  trace "Batch getting blocks"
+
+  # Fetch overlay bitmap once for all indices
+  let bits = ?await self.getBlocksBitmap(treeCid)
+
+  # Filter to indices present in bitmap
+  var presentIndices: seq[Natural]
+  for idx in indices:
+    if idx < bits.len and bits[idx]:
+      presentIndices.add(idx)
+
+  if presentIndices.len == 0:
+    return success(newSeq[(Natural, Block)]())
+
+  # Batch-fetch leaf metadata for all present indices
+  var leafKeys: seq[Key]
+  for idx in presentIndices:
+    leafKeys.add(?blockLeafKey(treeCid, idx))
+
+  let leafRecords = ?await self.metaDs.get(leafKeys, LeafMetadata)
+
+  # Collect block data keys from leaf records.
+  # leafRecords may be a subset of leafKeys (missing silently skipped).
+  var keyToCidIndex: Table[Key, (Natural, Cid)]
+  for record in leafRecords:
+    let
+      blkCid = record.val.blkCid
+      index = ?catch(parseInt(record.key.value))
+      key = ?makePrefixKey(self.postFixLen, blkCid)
+
+    keyToCidIndex[key] = (index.Natural, blkCid)
+
+  if keyToCidIndex.len == 0:
+    return success(newSeq[(Natural, Block)]())
+
+  # Batch-fetch block data from FS.
+  let blkRecords = ?await self.repoDs.get(toSeq(keyToCidIndex.keys))
+
+  var blocks: seq[(Natural, Block)]
+  for record in blkRecords:
+    let (idx, cid) = ?catch(keyToCidIndex[record.key])
+    blocks.add((idx, ?Block.new(cid, record.val, verify = false)))
+
+  trace "Batch got blocks", found = blocks.len
+  success(blocks)
+
 method putCidAndProof*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
@@ -241,17 +309,20 @@ method putLeafsAndBlocks*(
 
   trace "Writting blocks to disc", actualBlocks = blocks.len
   # Write blocks to FS (best effort, idempotent)
-  let
+  # Build records and capture sizes before moving into put
+  var
     records = uniqeBlks.mapIt(
       RawKVRecord.init(?makePrefixKey(self.postFixLen, it.cid), it.data)
     )
-    skipped = (?await self.repoDs.put(records)).toHashSet
+    keySizes = records.mapIt((it.key, it.val.len))
+
+  let skipped = (?await self.repoDs.put(move(records))).toHashSet
 
   # Count only unique blocks that were successfully written
   var newBlocks, newBytes = 0
-  for record in records:
-    if record.key notin skipped:
-      newBytes += record.val.len
+  for (key, size) in keySizes:
+    if key notin skipped:
+      newBytes += size
       newBlocks += 1
 
   if newBlocks > 0:
