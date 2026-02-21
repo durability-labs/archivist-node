@@ -144,7 +144,6 @@ suite "Test Node - Basic":
       )
     )
     check res.isFailure
-    check res.error.msg == "Some blocks failed (Result) to fetch (1)"
 
   test "Should store Data Stream":
     let

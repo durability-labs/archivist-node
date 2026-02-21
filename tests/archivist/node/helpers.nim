@@ -21,10 +21,10 @@ proc new*(
   result = CountingStore(engine: engine, localStore: localStore)
 
 method getBlock*(
-    self: CountingStore, address: BlockAddress
+    self: CountingStore, treeCid: Cid, index: Natural
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
-  self.lookups.mgetOrPut(address.cid, 0).inc
-  await procCall getBlock(NetworkStore(self), address)
+  self.lookups.mgetOrPut(treeCid, 0).inc
+  await procCall getBlock(NetworkStore(self), treeCid, index)
 
 proc toTimesDuration*(d: chronos.Duration): times.Duration =
   initDuration(seconds = d.seconds)
