@@ -7,7 +7,6 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import std/sugar
 import pkg/questionable/results
 import pkg/kvstore
 import pkg/libp2p
@@ -29,13 +28,14 @@ const
   QuotaUsedKey* = (QuotaKey / "used").tryGet
   QuotaReservedKey* = (QuotaKey / "reserved").tryGet
 
-func makePrefixKey*(postFixLen: int, cid: Cid): ?!Key =
-  let cidKey = ?Key.init(($cid)[^postFixLen ..^ 1] & "/" & $cid)
-
+func makePrefixKey*(postFixLen: int, cid: Cid): ?!Key {.inline.} =
+  let cidStr = $cid
   if ?cid.isManifest:
-    success ArchivistManifestKey / cidKey
+    Key.init(
+      ArchivistManifestNamespace & "/" & cidStr[^postFixLen ..^ 1] & "/" & cidStr
+    )
   else:
-    success ArchivistBlocksKey / cidKey
+    Key.init(ArchivistBlocksNamespace & "/" & cidStr[^postFixLen ..^ 1] & "/" & cidStr)
 
 func overlayKey*(treeCid: Cid): ?!Key =
   ## Key for dataset overlay metadata: /meta/datasets/{treeCid}
@@ -45,15 +45,18 @@ func overlayQueryKey*(): ?!Key =
   ## Query key for iterating all datasets: /meta/datasets/*
   Key.init(?(ArchivistOverlaysKey / "*"))
 
-proc blockMetaKey*(cid: Cid): ?!Key =
-  BlocksMetaKey / $cid
+func blockMetaKey*(cid: Cid): ?!Key {.inline.} =
+  Key.init(ArchivistBlocksMetaNamespace & "/" & $cid)
 
 proc blockMetaKeyQuery*(): ?!Key =
   Key.init(?(BlocksMetaKey / "*"))
 
-proc blockLeafKey*(treeCid: Cid, index: Natural): ?!Key =
-  (BlockLeafKey / $treeCid).flatMap((k: Key) => k / $index)
+func blockLeafKey*(treeCid: Cid, index: Natural): ?!Key {.inline.} =
+  Key.init(ArchivistBlockLeafNamespace & "/" & $treeCid & "/" & $index)
 
-proc blockLeafQueryKey*(treeCid: Cid): ?!Key =
+func blockLeafKey*(treeCidStr: string, index: Natural): ?!Key {.inline.} =
+  Key.init(ArchivistBlockLeafNamespace & "/" & treeCidStr & "/" & $index)
+
+func blockLeafQueryKey*(treeCid: Cid): ?!Key =
   ## Query key for iterating all leafs under a tree: /meta/leafs/{treeCid}/*
   Key.init(?(BlockLeafKey / $treeCid / "*"))
