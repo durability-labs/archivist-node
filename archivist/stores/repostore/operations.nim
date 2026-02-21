@@ -261,6 +261,7 @@ proc putOrUpdateLeafBlockMetaImpl(
   let
     existingOverlayRec = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
     existingOverlay = existingOverlayRec.val
+    treeCidStr = $treeCid
 
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
@@ -270,7 +271,7 @@ proc putOrUpdateLeafBlockMetaImpl(
   for (index, blkCid, cellCid, proof) in blocks:
     let
       blkKey = ?blockMetaKey(blkCid)
-      leafKey = ?blockLeafKey(treeCid, index)
+      leafKey = ?blockLeafKey(treeCidStr, index)
 
     let isCell = cellCid.isSome
     var
@@ -461,7 +462,8 @@ proc delLeafBlockMetadata*(
 
   # Continue with existing logic
   let
-    leafKeys = uniqueIdxs.mapIt(?blockLeafKey(treeCid, it))
+    treeCidStr = $treeCid
+    leafKeys = uniqueIdxs.mapIt(?blockLeafKey(treeCidStr, it))
     leafsMeta =
       (?await self.metaDs.get(leafKeys, LeafMetadata)).filterIt(not it.val.deleted)
     updateLeafsRecs = leafsMeta.mapIt(
