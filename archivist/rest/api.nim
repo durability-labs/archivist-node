@@ -45,6 +45,8 @@ logScope:
 declareCounter(archivist_api_uploads, "archivist API uploads")
 declareCounter(archivist_api_downloads, "archivist API downloads")
 
+const DefaultStreamBatch* = 16 # Number of blocks to fetch per stream read
+
 proc validate(pattern: string, value: string): int {.gcsafe, raises: [Defect].} =
   0
 
@@ -123,7 +125,7 @@ proc retrieveCid(
 
     while not stream.atEof:
       var
-        buff = newSeqUninitialized[byte](DefaultBlockSize.int)
+        buff = newSeqUninitialized[byte](DefaultStreamBatch * DefaultBlockSize.int)
         len = await stream.readOnce(addr buff[0], buff.len)
 
       buff.setLen(len)
