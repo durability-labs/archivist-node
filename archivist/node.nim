@@ -57,7 +57,7 @@ logScope:
 
 const
   DefaultFetchBatch = 10
-  DefaultStoreBatch* = 500 ## Number of blocks to batch when storing data
+  DefaultStoreBatch* = 1000 ## Number of blocks to batch when storing data
 
 type
   ArchivistNode* = object
@@ -114,7 +114,7 @@ proc fetchManifest*(
 
   trace "Retrieving manifest for cid", cid
 
-  without blk =? await self.networkStore.getBlock(BlockAddress.init(cid)), err:
+  without blk =? await self.networkStore.getBlock(cid), err:
     trace "Error retrieve manifest block", cid, err = err.msg
     return failure err
 
@@ -171,36 +171,33 @@ proc fetchBatched*(
       # TODO: doesn't work if callee is annotated with async
       # let
       #   iter = iter.map(
-      #     (i: int) => self.networkStore.getBlock(BlockAddress.init(cid, i))
+      #     (i: int) => self.networkStore.getBlock(cid, i)
       #   )
 
       while not iter.finished:
-        var blockFutures: seq[Future[?!bt.Block]]
+        var batchIndices: seq[Natural]
         for i in 0 ..< batchSize:
           if not iter.finished:
-            let address = BlockAddress.init(cid, iter.next())
-            if not (await address in self.networkStore) or fetchLocal:
-              blockFutures.add(self.networkStore.getBlock(address))
+            let idx = iter.next()
+            if not (?await self.networkStore.hasBlock(cid, idx)) or fetchLocal:
+              batchIndices.add(idx.Natural)
 
-        if blockFutures.len == 0:
+        if batchIndices.len == 0:
           continue
 
-        without blockResults =? await allFinishedValues[?!bt.Block](blockFutures), err:
+        without blocks =? (await self.networkStore.getBlocks(cid, batchIndices)), err:
           trace "Some blocks failed to fetch", err = err.msg
           return failure(err)
 
-        let blocks = blockResults.filterIt(it.isSuccess()).mapIt(it.value)
+        if blocks.len != batchIndices.len:
+          return failure(
+            "Some blocks failed to fetch (" & $(batchIndices.len - blocks.len) &
+              " missing)"
+          )
 
-        let numOfFailedBlocks = blockResults.len - blocks.len
-        if numOfFailedBlocks > 0:
-          return
-            failure("Some blocks failed (Result) to fetch (" & $numOfFailedBlocks & ")")
-
-        if not onBatch.isNil and batchErr =? (await onBatch(blocks)).errorOption:
+        if not onBatch.isNil and
+            batchErr =? (await onBatch(blocks.mapIt(it[1]))).errorOption:
           return failure(batchErr)
-
-        if not iter.finished:
-          await sleepAsync(1.millis)
 
       success(),
   )
@@ -263,7 +260,7 @@ proc streamSingleBlock(
 
   let stream = BufferStream.new()
 
-  without blk =? (await self.networkStore.getBlock(BlockAddress.init(cid))), err:
+  without blk =? (await self.networkStore.getBlock(cid)), err:
     return failure(err)
 
   proc streamOneBlock(): Future[void] {.async: (raises: []).} =
