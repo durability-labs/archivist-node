@@ -168,18 +168,23 @@ proc fetchBatched*(
     cid,
     status = Downloading.some,
     body = proc(): Future[?!void] {.closure, gcsafe, async: (raises: [CancelledError]).} =
-      # TODO: doesn't work if callee is annotated with async
-      # let
-      #   iter = iter.map(
-      #     (i: int) => self.networkStore.getBlock(cid, i)
-      #   )
+      # When fetchLocal = false, fetch bitmap once to filter already-present blocks
+      # in memory. This avoids O(N) per-block SQLite lookups (hasBlock ->
+      # getBlocksBitmap) and replaces them with a single bitmap fetch upfront.
+      # When fetchLocal = true we include all indices regardless, so no check needed.
+      let bits =
+        if not fetchLocal:
+          ?await self.repoStore.getBlocksBitmap(cid)
+        else:
+          BitSeq.init(0)
 
       while not iter.finished:
         var batchIndices: seq[Natural]
         for i in 0 ..< batchSize:
           if not iter.finished:
             let idx = iter.next()
-            if not (?await self.networkStore.hasBlock(cid, idx)) or fetchLocal:
+            # Include index if fetchLocal is set, or if it's not yet in the bitmap
+            if fetchLocal or idx >= bits.len or not bits[idx]:
               batchIndices.add(idx.Natural)
 
         if batchIndices.len == 0:
