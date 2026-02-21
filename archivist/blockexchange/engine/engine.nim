@@ -12,6 +12,7 @@ import std/sets
 import std/options
 import std/algorithm
 import std/sugar
+import std/tables
 
 import pkg/chronos
 import pkg/libp2p/[cid, switch, multihash, multicodec]
@@ -401,7 +402,12 @@ proc blocksDeliveryHandler*(
   # and let the caller do the validation and storing
   trace "Received blocks from peer", peer, blocks = (blocksDelivery.mapIt(it.address))
 
-  var validatedBlocksDelivery: seq[BlockDelivery]
+  # Validate all deliveries and separate leaf vs non-leaf
+  var
+    validatedBlocksDelivery: seq[BlockDelivery]
+    leafByTree: Table[Cid, seq[(Block, Natural, ArchivistProof)]]
+    nonLeafDeliveries: seq[BlockDelivery]
+
   for bd in blocksDelivery:
     logScope:
       peer = peer
@@ -416,22 +422,33 @@ proc blocksDeliveryHandler*(
         without proof =? bd.proof:
           warn "Proof expected for a leaf block delivery"
           continue
-        if err =? (
-          await self.localStore.putLeafAndBlock(
-            bd.address.treeCid, bd.blk, bd.address.index, proof
-          )
-        ).errorOption:
-          error "Unable to store leaf block", err = err.msg
-          continue
+
+        leafByTree.withValue(bd.address.treeCid, slot):
+          slot[].add((bd.blk, bd.address.index, proof))
+        do:
+          leafByTree[bd.address.treeCid] = @[(bd.blk, bd.address.index, proof)]
       else:
-        if err =? (await self.localStore.putBlock(bd.blk)).errorOption:
-          error "Unable to store block", err = err.msg
-          continue
+        nonLeafDeliveries.add(bd)
     except CatchableError as exc:
       warn "Error handling block delivery", error = exc.msg
       continue
 
     validatedBlocksDelivery.add(bd)
+
+  # Batch write leaf blocks grouped by treeCid
+  for treeCid, items in leafByTree:
+    if err =? (await self.localStore.putLeafsAndBlocks(treeCid, items)).errorOption:
+      error "Unable to store leaf blocks", treeCid, err = err.msg
+      # Remove failed leaves from validatedBlocksDelivery
+      validatedBlocksDelivery.keepItIf(
+        not (it.address.leaf and it.address.treeCid == treeCid)
+      )
+
+  # Write non-leaf blocks sequentially
+  for bd in nonLeafDeliveries:
+    if err =? (await self.localStore.putBlock(bd.blk)).errorOption:
+      error "Unable to store block", err = err.msg
+      validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
 
   archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
 
@@ -472,7 +489,11 @@ proc wantListHandler*(
         let
           have =
             try:
-              await e.address in self.localStore
+              if e.address.leaf:
+                (await self.localStore.hasBlock(e.address.treeCid, e.address.index)) |?
+                  false
+              else:
+                (await self.localStore.hasBlock(e.address.cid)) |? false
             except CatchableError:
               # TODO: should not be necessary once we have proper exception tracking on the BlockStore interface
               false
@@ -620,7 +641,7 @@ proc taskHandler*(
             )
         )
       else:
-        (await self.localStore.getBlock(e.address)).map(
+        (await self.localStore.getBlock(e.address.cid)).map(
           (blk: Block) =>
             BlockDelivery(address: e.address, blk: blk, proof: ArchivistProof.none)
         )
