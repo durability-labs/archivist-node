@@ -10,6 +10,7 @@
 {.push raises: [].}
 
 import std/sequtils
+import std/sets
 
 import pkg/chronos
 import pkg/libp2p
@@ -34,15 +35,18 @@ type NetworkStore* = ref object of BlockStore
   localStore*: BlockStore # local block store
 
 method getBlock*(
-    self: NetworkStore, address: BlockAddress
+    self: NetworkStore, cid: Cid
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
-  without blk =? (await self.localStore.getBlock(address)), err:
+  ## Get a block from the blockstore
+  ##
+
+  without blk =? (await self.localStore.getBlock(cid)), err:
     if not (err of BlockNotFoundError):
-      error "Error getting block from local store", address, err = err.msg
+      error "Error getting block from local store", cid, err = err.msg
       return failure err
 
-    without newBlock =? (await self.engine.requestBlock(address)), err:
-      error "Unable to get block from exchange engine", address, err = err.msg
+    without newBlock =? (await self.engine.requestBlock(BlockAddress.init(cid))), err:
+      error "Unable to get block from exchange engine", cid, err = err.msg
       return failure err
 
     return success newBlock
@@ -50,23 +54,72 @@ method getBlock*(
   return success blk
 
 method getBlock*(
-    self: NetworkStore, cid: Cid
-): Future[?!Block] {.async: (raw: true, raises: [CancelledError]).} =
-  ## Get a block from the blockstore
-  ##
-
-  self.getBlock(BlockAddress.init(cid))
-
-method getBlock*(
     self: NetworkStore, treeCid: Cid, index: Natural
-): Future[?!Block] {.async: (raw: true, raises: [CancelledError]).} =
+): Future[?!Block] {.async: (raises: [CancelledError]).} =
   ## Get a block from the blockstore
   ##
 
-  self.getBlock(BlockAddress.init(treeCid, index))
+  without blk =? (await self.localStore.getBlock(treeCid, index)), err:
+    if not (err of BlockNotFoundError):
+      error "Error getting block from local store", treeCid, index, err = err.msg
+      return failure err
 
-method completeBlock*(self: NetworkStore, address: BlockAddress, blk: Block) =
-  self.engine.completeBlock(address, blk)
+    without newBlock =?
+      (await self.engine.requestBlock(BlockAddress.init(treeCid, index))), err:
+      error "Unable to get block from exchange engine", treeCid, index, err = err.msg
+      return failure err
+
+    return success newBlock
+
+  return success blk
+
+method getBlocks*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Natural, Block)]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks by tree CID and indices.
+  ##
+  ## Fetches all locally available blocks in one batch call.
+  ## For any missing blocks, falls back to individual network requests
+  ## (concurrent, one per missing index).
+  ##
+
+  let
+    indices = indices.toHashSet.toSeq
+    localBlocks = ?await self.localStore.getBlocks(treeCid, indices)
+
+  trace "Got local blocks", count = localBlocks.len
+
+  # If all indices returned, we're done
+  if localBlocks.len == indices.len:
+    return success(localBlocks)
+
+  # check get the diff of the still to retrieve indices from the network
+  var
+    toRequestIdxs = (indices.toHashSet - localBlocks.mapIt(it[0]).toHashSet).toSeq
+    requests: seq[Future[?!Block]]
+
+  for idx in toRequestIdxs:
+    requests.add(self.engine.requestBlock(BlockAddress.init(treeCid, idx)))
+
+  var allBlocks = localBlocks
+  while requests.len > 0:
+    let
+      fut = ?catch(await one(requests))
+      idx = requests.find(fut)
+      originalIdx = toRequestIdxs[idx]
+    requests.del(idx)
+    toRequestIdxs.del(idx)
+
+    without blk =? catch(?await fut), err:
+      error "Unable to get block from exchange engine", treeCid, err = err.msg
+      continue
+
+    allBlocks.add((originalIdx, blk))
+
+  success allBlocks
+
+method completeBlock*(self: NetworkStore, treeCid: Cid, index: Natural, blk: Block) =
+  self.engine.completeBlock(BlockAddress.init(treeCid, index), blk)
 
 method putBlock*(
     self: NetworkStore, blk: Block, ttl = Duration.none
