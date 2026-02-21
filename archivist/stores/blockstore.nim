@@ -57,20 +57,8 @@ method getCid*(
 
   raiseAssert("getCid by treecid not implemented!")
 
-method getBlock*(
-    self: BlockStore, address: BlockAddress
-): Future[?!Block] {.base, async: (raw: true, raises: [CancelledError]), gcsafe.} =
-  ## Get a block from the blockstore — routes to leaf or cid variant
-  ##
-
-  trace "Getting block by address", address
-  if address.leaf:
-    self.getBlock(address.treeCid, address.index)
-  else:
-    self.getBlock(address.cid)
-
 method completeBlock*(
-    self: BlockStore, address: BlockAddress, blk: Block
+    self: BlockStore, treeCid: Cid, index: Natural, blk: Block
 ) {.base, gcsafe.} =
   discard
 
@@ -173,28 +161,12 @@ method putBlocks*(
   raiseAssert("putBlocks not implemented!")
 
 method getBlocks*(
-    self: BlockStore, addresses: seq[BlockAddress]
-): Future[?!seq[Block]] {.base, async: (raises: [CancelledError]), gcsafe.} =
-  ## Get multiple blocks from the blockstore as a batch
-  ##
-
-  raiseAssert("getBlocks by addresses not implemented!")
-
-method getBlocks*(
     self: BlockStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[Block]] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!seq[(Natural, Block)]] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Get multiple blocks by tree CID and indices as a batch
   ##
 
   raiseAssert("getBlocks by treeCid not implemented!")
-
-method delBlocks*(
-    self: BlockStore, addresses: seq[BlockAddress]
-): Future[?!void] {.base, async: (raises: [CancelledError]), gcsafe.} =
-  ## Delete multiple blocks from the blockstore as a batch
-  ##
-
-  raiseAssert("delBlocks by addresses not implemented!")
 
 method delBlocks*(
     self: BlockStore, treeCid: Cid, indices: seq[Natural]
@@ -211,28 +183,6 @@ method getBlockRange*(
   ##
 
   raiseAssert("getBlockRange not implemented!")
-
-method getBlockAndProof*(
-    self: BlockStore, address: BlockAddress
-): Future[?!(Block, ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
-  ## Get a block and proof by BlockAddress — requires leaf address
-  ##
-
-  if not address.leaf:
-    return
-      failure(newException(ArchivistError, "getBlockAndProof requires a leaf address"))
-
-  await self.getBlockAndProof(address.treeCid, address.index)
-
-method getBlocksAndProofs*(
-    self: BlockStore, addresses: seq[BlockAddress]
-): Future[?!seq[(Block, ArchivistProof)]] {.
-    base, async: (raises: [CancelledError]), gcsafe
-.} =
-  ## Get multiple blocks and proofs as a batch
-  ##
-
-  raiseAssert("getBlocksAndProofs by addresses not implemented!")
 
 method getBlocksAndProofs*(
     self: BlockStore, treeCid: Cid, indices: seq[Natural]
@@ -312,10 +262,6 @@ proc contains*(
   return (await self.hasBlock(blk)) |? false
 
 proc contains*(
-    self: BlockStore, address: BlockAddress
+    self: BlockStore, treeCid: Cid, index: Natural
 ): Future[bool] {.async: (raises: [CancelledError]), gcsafe.} =
-  return
-    if address.leaf:
-      (await self.hasBlock(address.treeCid, address.index)) |? false
-    else:
-      (await self.hasBlock(address.cid)) |? false
+  return (await self.hasBlock(treeCid, index)) |? false
