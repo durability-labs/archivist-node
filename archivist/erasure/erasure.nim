@@ -133,7 +133,7 @@ proc getPendingBlocks(
 
   for blockIndex in indices:
     # request blocks from the store
-    let fut = self.networkStore.getBlock(BlockAddress.init(treeCid, blockIndex))
+    let fut = self.networkStore.getBlock(treeCid, blockIndex)
     pendingBlocks.add(attachIndex(fut, blockIndex))
 
   proc isFinished(): bool =
@@ -616,7 +616,7 @@ proc decodeInternal(
           return failure(error)
 
         trace "Recovered block", cid = blk.cid, index = i
-        self.networkStore.completeBlock(BlockAddress.init(encodedTreeCid, idx), blk)
+        self.networkStore.completeBlock(encodedTreeCid, idx, blk)
 
         cids[idx] = blk.cid
         blocks.add((blk, idx.Natural, nil))
