@@ -91,9 +91,14 @@ method readOnce*(
 
   # Prefetch all blocks in range as a batch
   let indices = (firstBlock .. lastBlock).mapIt(it.Natural)
+  trace "Requesting indices from store", indices
   without blocks =? (await self.store.getBlocks(treeCid, indices)).tryGet.catch, err:
     trace "Unable to get blocks from store", err = err.msg
     raise newLPStreamReadError(err)
+
+  if blocks.len == 0:
+    trace "No blocks returned from store!"
+    raise newLPStreamReadError(newException(IOError, "No blocks returned from store!"))
 
   # Build a lookup table from block CID to block data for ordered copying
   # We copy block by block in index order using single-block getBlock fallback
@@ -113,11 +118,14 @@ method readOnce*(
         err = err.msg
       raise newLPStreamReadError(err)
 
+    trace "Read block", cid = blk.cid
+
     let
       blockOffset = (self.offset + read) mod blockSize
       readBytes =
         min([self.size - self.offset - read, nbytes - read, blockSize - blockOffset])
 
+    trace "Read bytes", readBytes
     if readBytes <= 0:
       break
 

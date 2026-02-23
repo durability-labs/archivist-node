@@ -53,8 +53,13 @@ proc getBlocksBitmap*(
   without overlayMeta =? await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata),
     err:
     if err of KVStoreKeyNotFound:
+      trace "Overlay not found, returning empty", treeCid
       return success(BitSeq.init(0))
+
     return failure(err)
+
+  trace "Overlay found",
+    treeCid, bitmapLen = overlayMeta.val.blocks.len, rawBytes = overlayMeta.val.blocks
 
   success(overlayMeta.val.blocks)
 
@@ -175,6 +180,9 @@ method getBlocks*(
     leafKeys.add(?blockLeafKey(treeCid, idx))
 
   let leafRecords = ?await self.metaDs.get(leafKeys, LeafMetadata)
+
+  trace "Leaf metadata fetched",
+    treeCid, leafKeysLen = leafKeys.len, leafRecordsLen = leafRecords.len
 
   # Collect block data keys from leaf records.
   # leafRecords may be a subset of leafKeys (missing silently skipped).

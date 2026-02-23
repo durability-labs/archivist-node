@@ -258,10 +258,14 @@ proc putOrUpdateLeafBlockMetaImpl(
 
   # Fetch existing overlay to get correct BitSeq length
   # (overlay must exist before putLeafsAndBlocks is called)
+  trace "Fetching existing overlay", treeCid = treeCid, blocksCount = blocks.len
+
   let
     existingOverlayRec = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
     existingOverlay = existingOverlayRec.val
     treeCidStr = $treeCid
+
+  trace "Got existing overlay", treeCid, existingBitmapLen = existingOverlay.blocks.len
 
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
