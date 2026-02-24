@@ -189,9 +189,12 @@ proc new*(
       case config.repoKind
       of repoFS:
         KVStore(
-          FSKVStore.new($config.dataDir, tp, depth = 5).expect(
-            "Should create repo file data store!"
-          )
+          FSKVStore.new(
+            $config.dataDir, tp, depth = 5,
+            directIO = config.fsDirectIO,
+            fsyncFile = config.fsFsyncFile,
+            fsyncDir = config.fsFsyncDir,
+          ).expect("Should create repo file data store!")
         )
       of repoSQLite:
         KVStore(

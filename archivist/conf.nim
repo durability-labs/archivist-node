@@ -225,6 +225,30 @@ type
       name: "repo-kind"
     .}: RepoKind
 
+    fsDirectIO* {.
+      desc: "Use O_DIRECT for filesystem writes (bypass page cache). " &
+        "FS backend only. May cause EINVAL on some platforms.",
+      defaultValue: false,
+      defaultValueDesc: "false",
+      name: "fs-direct-io"
+    .}: bool
+
+    fsFsyncFile* {.
+      desc: "Fsync files after write in filesystem backend. " &
+        "FS backend only.",
+      defaultValue: true,
+      defaultValueDesc: "true",
+      name: "fs-fsync-file"
+    .}: bool
+
+    fsFsyncDir* {.
+      desc: "Fsync parent directory after rename/delete in filesystem backend. " &
+        "FS backend only.",
+      defaultValue: true,
+      defaultValueDesc: "true",
+      name: "fs-fsync-dir"
+    .}: bool
+
     storageQuota* {.
       desc: "The size of the total storage quota dedicated to the node",
       defaultValue: DefaultQuotaBytes,

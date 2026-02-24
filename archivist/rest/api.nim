@@ -45,7 +45,7 @@ logScope:
 declareCounter(archivist_api_uploads, "archivist API uploads")
 declareCounter(archivist_api_downloads, "archivist API downloads")
 
-const DefaultStreamBatch* = 16 # Number of blocks to fetch per stream read
+const DefaultStreamBatch* = 128 # Number of blocks to fetch per stream read
 
 proc validate(pattern: string, value: string): int {.gcsafe, raises: [Defect].} =
   0
