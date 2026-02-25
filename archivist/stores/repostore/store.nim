@@ -77,7 +77,7 @@ proc checkBitmap*(
   ##
   ## Returns true if the bit is set or if the overlay doesn't exist
   ## (caller should proceed with normal lookup). Returns false if the
-  ## bit is not set (block is definitely absent — caller can fast-reject).
+  ## bit is not set (block is definitely absent - caller can fast-reject).
   ##
 
   let bits = ?await self.getBlocksBitmap(treeCid)

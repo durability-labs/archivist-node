@@ -135,7 +135,7 @@ proc start*(b: Advertiser) {.async: (raises: []).} =
 
   # The advertiser is expected to be started only once.
   if b.advertiserRunning:
-    raiseAssert "Advertiser can only be started once — this should not happen"
+    raiseAssert "Advertiser can only be started once - this should not happen"
 
   proc onBlock(cid: Cid) {.async: (raises: []).} =
     try:

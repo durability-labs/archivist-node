@@ -132,8 +132,8 @@ proc deleteOverlayMetadata*(
   ##
 
   let key = ?overlayKey(treeCid)
-  ?await self.metaDs.delete(?await self.metaDs.get(key))
   self.overlayCache.del(key)
+  ?await self.metaDs.delete(?await self.metaDs.get(key))
   trace "Overlay metadata deleted", treeCid = treeCid
   success()
 
@@ -352,6 +352,9 @@ proc finalizeOverlay*(
 
   trace "Finalizing temp overlay"
 
+  # tmpCid overlay moved to realTreeCid - evict stale cache entry
+  self.overlayCache.del(?overlayKey(tmpCid))
+
   # Atomically move both leaf records and overlay metadata
   if err =? (
     await self.metaDs.moveKeysAtomic(
@@ -363,7 +366,7 @@ proc finalizeOverlay*(
   ).errorOption:
     if err of KVConflictError:
       # Destination already has the data (content-addressed guarantee).
-      # Nothing was moved — tmp is still intact. Drop it cleanly.
+      # Nothing was moved - tmp is still intact. Drop it cleanly.
       trace "Overlay already exists at realTreeCid, dropping tmp"
       if dropErr =? (await noCancel self.dropOverlay(tmpCid)).errorOption:
         error "Unable to drop tmp overlay after finalize conflict", exc = dropErr.msg
@@ -371,11 +374,8 @@ proc finalizeOverlay*(
     error "Unable to move overlay metadata atomically", exc = err.msg
     return failure(err)
 
-  # tmpCid overlay moved to realTreeCid -- evict stale cache entry
-  self.overlayCache.del(?overlayKey(tmpCid))
-
   # Update overlay metadata (expiry/status) at the new location.
-  # This is a separate CAS operation — if it fails, data is safe
+  # This is a separate CAS operation - if it fails, data is safe
   # (everything is already at realTreeCid) and retry will find it.
   let expiryTime =
     if expiry == ZeroSeconds:
@@ -448,7 +448,7 @@ proc withTmpOverlay*(
 
   defer:
     if not completed:
-      # Tmp overlays have no refcount associations yet — safe to drop directly
+      # Tmp overlays have no refcount associations yet - safe to drop directly
       if dropErr =? (await noCancel self.dropOverlay(tmpCid)).errorOption:
         error "Unable to drop tmp overlay on error", exc = dropErr.msg
 

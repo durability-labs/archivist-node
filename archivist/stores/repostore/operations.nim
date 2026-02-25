@@ -252,7 +252,7 @@ proc putOrUpdateLeafBlockMetaImpl(
   ## The main difference is that multipl cells point to the same block,
   ## so they might inc the same block's refCount several times.
   ##
-  ## All writes — leaf records, block refcounts, and overlay BitSeq — happen
+  ## All writes - leaf records, block refcounts, and overlay BitSeq - happen
   ## in a single atomic transaction, so no partial state is ever visible.
   ##
 
@@ -262,10 +262,10 @@ proc putOrUpdateLeafBlockMetaImpl(
 
   let
     existingOverlayRec = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
-    existingOverlay = existingOverlayRec.val
     treeCidStr = $treeCid
 
-  trace "Got existing overlay", treeCid, existingBitmapLen = existingOverlay.blocks.len
+  var overlayMeta = existingOverlayRec.val
+  trace "Got existing overlay", treeCid, existingBitmapLen = overlayMeta.blocks.len
 
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
@@ -310,12 +310,7 @@ proc putOrUpdateLeafBlockMetaImpl(
       do:
         blkToLeafMap[blkKey] = (blkRec.toRaw, [leafRec.toRaw].toHashSet)
 
-  var combinedBlocks = existingOverlay.blocks
-  combinedBlocks.combineSafe(blocksBits)
-
-  var overlayMeta = OverlayMetadata(
-    blocks: combinedBlocks, status: Storing, expiry: existingOverlay.expiry
-  )
+  overlayMeta.blocks.combineSafe(blocksBits)
 
   proc putLeafAndBlockMetaAtomic(
       records: seq[RawKVRecord], conflicts: seq[Key]
@@ -374,9 +369,9 @@ proc putOrUpdateLeafBlockMetaImpl(
           record = blockMeta.toRaw
       elif ArchivistOverlaysKey.ancestor(record.key):
         var overlayMetaRec = ?toRecord[OverlayMetadata](record)
-        overlayMeta.blocks.combineSafe(overlayMetaRec.val.blocks)
-        overlayMetaRec.val = overlayMeta
+        overlayMetaRec.val.blocks.combineSafe(overlayMeta.blocks)
         trace "Updated overlay meta", overlay = overlayMetaRec.val
+        overlayMeta = overlayMetaRec.val
         record = overlayMetaRec.toRaw
 
       # update records
@@ -461,10 +456,10 @@ proc delLeafBlockMetadata*(
 
   let
     existingOverlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
-    bits = existingOverlayMeta.val.blocks
     uniqueIdxs = index.deduplicate()
 
-  if not uniqueIdxs.anyIt(it < bits.len and bits[it]):
+  var overlayMeta = existingOverlayMeta.val
+  if not uniqueIdxs.anyIt(it < overlayMeta.blocks.len and overlayMeta.blocks[it]):
     trace "No bits set in BitSeq for indices to delete, fast-path return"
     return success()
 
@@ -521,13 +516,14 @@ proc delLeafBlockMetadata*(
     )
 
   var blockBits = BitSeq.init(uniqueIdxs.max() + 1)
-  blockBits.combineSafe(existingOverlayMeta.val.blocks)
+  blockBits.combineSafe(overlayMeta.blocks)
   for i in uniqueIdxs:
     blockBits.clearBit(i)
 
   let deleteExpiry = self.clock.now()
-  var newOverlayMeta =
-    OverlayMetadata(blocks: blockBits, status: Deleting, expiry: deleteExpiry)
+  overlayMeta.status = Deleting
+  overlayMeta.expiry = deleteExpiry
+  overlayMeta.blocks = blockBits
 
   proc atomicUpdateDelMeta(
       records: seq[RawKVRecord], conflicts: seq[Key]
@@ -560,12 +556,16 @@ proc delLeafBlockMetadata*(
         var overlayMetaRec = ?toRecord[OverlayMetadata](record)
         # Re-apply clearBit operations on fresh overlay data
         # to avoid clobbering concurrent updates
-        newOverlayMeta.blocks.combineSafe(overlayMetaRec.val.blocks)
+        overlayMetaRec.val.blocks.combineSafe(overlayMeta.blocks)
         for i in uniqueIdxs:
-          newOverlayMeta.blocks.clearBit(i)
+          overlayMetaRec.val.blocks.clearBit(i)
 
-        overlayMetaRec.val = newOverlayMeta
+        overlayMetaRec.val.status = Deleting
+        overlayMetaRec.val.expiry = deleteExpiry
+        overlayMetaRec.val.blocks = blockBits
+
         trace "Updated overlay meta for delete", overlay = overlayMetaRec.val
+        overlayMeta = overlayMetaRec.val
         record = overlayMetaRec.toRaw
       else:
         return failure(
@@ -579,14 +579,14 @@ proc delLeafBlockMetadata*(
     success toSeq(records.values)
 
   ?await self.metaDs.tryPutAtomic(
-    @[existingOverlayMeta.fromRecord(newOverlayMeta).toRaw] &
+    @[existingOverlayMeta.fromRecord(overlayMeta).toRaw] &
       updateLeafsRecs.mapIt(it.toRaw) & updateBlksRecs.mapIt(it.toRaw),
     maxRetries = 10,
     atomicUpdateDelMeta,
   )
 
   # Write-through: cache the final overlay after delete
-  self.overlayCache[?overlayKey(treeCid)] = newOverlayMeta
+  self.overlayCache[?overlayKey(treeCid)] = overlayMeta
 
   let
     toDeleteLeafMeta =
