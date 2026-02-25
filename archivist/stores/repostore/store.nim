@@ -50,17 +50,24 @@ proc getBlocksBitmap*(
   ## doesn't exist.
   ##
 
-  without overlayMeta =? await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata),
-    err:
+  let key = ?overlayKey(treeCid)
+
+  self.overlayCache.withValue(key, cached):
+    trace "Overlay cache hit", treeCid
+    return success(cached[].blocks)
+
+  without overlayMeta =? await self.metaDs.get(key, OverlayMetadata), err:
     if err of KVStoreKeyNotFound:
       trace "Overlay not found, returning empty", treeCid
       return success(BitSeq.init(0))
-
     return failure(err)
 
-  trace "Overlay found",
-    treeCid, bitmapLen = overlayMeta.val.blocks.len, rawBytes = overlayMeta.val.blocks
-
+  # Re-check cache: a concurrent write may have populated it while we awaited
+  self.overlayCache.withValue(key, fresher):
+    trace "Overlay cache populated during await, using cached", treeCid
+    return success(fresher[].blocks)
+  self.overlayCache[key] = overlayMeta.val
+  trace "Overlay found", treeCid, bitmapLen = overlayMeta.val.blocks.len
   success(overlayMeta.val.blocks)
 
 proc checkBitmap*(

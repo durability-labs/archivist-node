@@ -13,6 +13,7 @@
 import std/algorithm
 import std/strutils
 import std/sugar
+import std/tables
 
 import pkg/chronos
 import pkg/kvstore
@@ -95,7 +96,7 @@ proc putOverlayMetadata*(
     record = KVRecord[OverlayMetadata].init(key, OverlayMetadata())
 
   self.mergeOverlay(record.val, status, blocks, expiry, manifestCid)
-
+  var cachedOverlay = record.val
   ?await self.metaDs.tryPut(
     record,
     maxRetries = 10,
@@ -104,11 +105,14 @@ proc putOverlayMetadata*(
     ): Future[?!seq[KVRecord[OverlayMetadata]]] {.async: (raises: [CancelledError]).} =
       var records = ?await self.metaDs.get(failed.mapIt(it.key), OverlayMetadata)
       self.mergeOverlay(records[0].val, status, blocks, expiry, manifestCid)
+      cachedOverlay = records[0].val
       success records
     ,
   )
 
-  trace "Overlay metadata stored", treeCid = treeCid, status = record.val.status
+  # Write-through: cache the final merged overlay
+  self.overlayCache[key] = cachedOverlay
+  trace "Overlay metadata stored", treeCid = treeCid, status = cachedOverlay.status
   success()
 
 proc getOverlayMetadata*(
@@ -127,7 +131,9 @@ proc deleteOverlayMetadata*(
   ## Delete overlay metadata
   ##
 
-  ?await self.metaDs.delete(?await self.metaDs.get(?overlayKey(treeCid)))
+  let key = ?overlayKey(treeCid)
+  ?await self.metaDs.delete(?await self.metaDs.get(key))
+  self.overlayCache.del(key)
   trace "Overlay metadata deleted", treeCid = treeCid
   success()
 
@@ -364,6 +370,9 @@ proc finalizeOverlay*(
       return success()
     error "Unable to move overlay metadata atomically", exc = err.msg
     return failure(err)
+
+  # tmpCid overlay moved to realTreeCid -- evict stale cache entry
+  self.overlayCache.del(?overlayKey(tmpCid))
 
   # Update overlay metadata (expiry/status) at the new location.
   # This is a separate CAS operation — if it fails, data is safe
