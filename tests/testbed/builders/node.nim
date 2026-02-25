@@ -277,6 +277,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--block-ttl=" & $blockTtl)
   if blockMaintenanceInterval =? builder.blockMaintenanceInterval:
     arguments.add("--block-mi=" & $blockMaintenanceInterval)
+  arguments.add("--circuit-dir=" & builder.dataDirResolved / "circuits")
   let dataDir = builder.dataDirResolved
   let address = builder.apiBindAddressResolved
   let port = await builder.apiPortResolved

@@ -17,9 +17,7 @@ suite "Validator":
     discard await testbed.node.validator.start()
     let failed = await testbed.marketplace.recordRequestFailed()
     let request = await testbed.request.start(node)
-    echo "DEBUG: Request started, waiting for failure..."
     await failed.waitForRequestFailed(request.id)
-    echo "DEBUG: Request marked as failed!"
 
   test "validator marks proofs as missing when using validation groups":
     let node = await testbed.node.log("archivist", "validator").persistence.start()
