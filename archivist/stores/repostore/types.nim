@@ -8,6 +8,7 @@
 ## those terms.
 
 import std/sets
+import std/tables
 
 import pkg/chronos
 import pkg/kvstore
@@ -41,6 +42,7 @@ type
     overlayTtl*: SecondsSince1970
     started*: bool
     deletingLock*: HashSet[Cid]
+    overlayCache*: Table[Key, OverlayMetadata]
 
   QuotaUsage* {.serialize.} = object
     used*: NBytes
