@@ -55,6 +55,49 @@ export logutils
 logScope:
   topics = "archivist node"
 
+# Upload pipeline metrics
+declareHistogram(
+  archivist_upload_read_duration_seconds,
+  "Time spent reading chunks from HTTP stream",
+  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
+)
+
+declareHistogram(
+  archivist_upload_hash_duration_seconds,
+  "Time spent hashing chunks",
+  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
+)
+
+declareHistogram(
+  archivist_upload_write_duration_seconds,
+  "Time spent writing batches to storage",
+  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
+)
+
+declareHistogram(
+  archivist_upload_tree_duration_seconds,
+  "Time spent building Merkle tree",
+  buckets = [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
+
+declareHistogram(
+  archivist_upload_proofs_duration_seconds,
+  "Time spent generating and storing proofs",
+  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
+)
+
+declareHistogram(
+  archivist_upload_total_duration_seconds,
+  "Total upload time",
+  buckets = [1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0],
+)
+
+declareHistogram(
+  archivist_upload_batch_flush_duration_seconds,
+  "Time to flush a single batch",
+  buckets = [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
+
 const
   DefaultFetchBatch = 10
   DefaultStoreBatch* = 1000 ## Number of blocks to batch when storing data
@@ -427,36 +470,70 @@ proc store*(
     dataCodec = BlockCodec
     chunker = LPStreamChunker.new(stream, chunkSize = blockSize)
 
-  var
-    index = 0
-    cids: seq[Cid]
-    blockBatch: seq[(bt.Block, Natural)] ## (block, index) pairs for batching
-
   defer:
     await stream.close()
 
-  proc flushBatch(tmpCid: Cid): Future[?!void] {.async: (raises: [CancelledError]).} =
-    ## Flush accumulated blocks to storage using batched putLeafsAndBlocks
-    if blockBatch.len == 0:
+  proc flushBatch(
+      tmpCid: Cid, batch: seq[(bt.Block, Natural)]
+  ): Future[?!void] {.async: (raises: [CancelledError]).} =
+    ## Flush a batch of blocks to storage using batched putLeafsAndBlocks
+    if batch.len == 0:
       return success()
 
-    trace "Flushing block batch", count = blockBatch.len
+    let batchStart = Moment.now()
+    trace "Flushing block batch", count = batch.len
 
     # Convert to the format expected by putLeafsAndBlocks: (Block, Natural, ArchivistProof)
     # We don't have proofs yet (built after tree construction), so use nil
     var items: seq[(bt.Block, Natural, ArchivistProof)]
-    for (blk, idx) in blockBatch:
+    for (blk, idx) in batch:
       items.add((blk, idx, nil))
 
     ?await self.repoStore.putLeafsAndBlocks(tmpCid, items)
-    blockBatch.setLen(0) # Clear batch
+    let batchDone = Moment.now()
+    trace "Batch flush complete",
+      duration = $(batchDone - batchStart), items = items.len
+
+    archivist_upload_batch_flush_duration_seconds.observe(
+      (batchDone - batchStart).milliseconds.float64 / 1000.0
+    )
     success()
+
+  const MaxInFlightBatches = 4
+    ## Maximum concurrent batch flushes for bounded parallelism
 
   let treeCid =
     ?await self.repoStore.withTmpOverlay(
       body = proc(
           tmpCid: Cid
       ): Future[?!Cid] {.closure, gcsafe, async: (raises: [CancelledError]).} =
+        var
+          index = 0
+          cids: seq[Cid]
+          inFlight: seq[Future[?!void]] ## Track in-flight batch flushes
+          blockBatch: seq[(bt.Block, Natural)] ## (block, index) pairs for batching
+
+        proc fireBoundedBatch(
+            batch: seq[(bt.Block, Natural)]
+        ): Future[?!void] {.async: (raises: [CancelledError]).} =
+          # wait if at capacity before launching new batch
+          if inFlight.len >= MaxInFlightBatches:
+            # Remove first future and await it (cleanup before await to avoid leak)
+            let fut = ?catch(await one(inFlight))
+            inFlight.keepItIf(FutureBase(it) != FutureBase(fut))
+            ?catch(?await fut)
+
+          # Launch batch flush without awaiting (adds to window)
+          inFlight.add(flushBatch(tmpCid, batch))
+
+          success()
+
+        defer:
+          if inFlight.len > 0:
+            warn "Early exit, cancelling outstanding upload batches",
+              batches = inFlight.len
+            await allFutures(inFlight.mapIt(it.cancelAndWait()))
+
         while true:
           let chunk = ?await chunker.getBytes()
           if chunk.len == 0:
@@ -474,10 +551,18 @@ proc store*(
 
           # Flush batch when full
           if blockBatch.len >= storeBatchSize:
-            ?await flushBatch(tmpCid)
+            ?await fireBoundedBatch(blockBatch)
+            blockBatch.setLen(0)
 
-        # Flush any remaining blocks
-        ?await flushBatch(tmpCid)
+        # Flush batch on last iteration
+        if blockBatch.len > 0:
+          ?await fireBoundedBatch(blockBatch)
+          blockBatch.setLen(0)
+
+        await allFutures(inFlight)
+        # return the first failed fut
+        discard inFlight.mapIt(?catch(it.read))
+        inFlight.setLen(0)
 
         let
           tree = ?ArchivistTree.init(cids)
