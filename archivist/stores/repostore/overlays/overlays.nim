@@ -132,8 +132,9 @@ proc deleteOverlayMetadata*(
   ##
 
   let key = ?overlayKey(treeCid)
-  self.overlayCache.del(key)
   ?await self.metaDs.delete(?await self.metaDs.get(key))
+  self.overlayCache.del(key)
+
   trace "Overlay metadata deleted", treeCid = treeCid
   success()
 
@@ -352,8 +353,8 @@ proc finalizeOverlay*(
 
   trace "Finalizing temp overlay"
 
-  # tmpCid overlay moved to realTreeCid - evict stale cache entry
-  self.overlayCache.del(?overlayKey(tmpCid))
+  defer:
+    self.overlayCache.del(?overlayKey(tmpCid))
 
   # Atomically move both leaf records and overlay metadata
   if err =? (
