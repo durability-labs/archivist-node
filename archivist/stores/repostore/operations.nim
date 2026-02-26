@@ -562,7 +562,6 @@ proc delLeafBlockMetadata*(
 
         overlayMetaRec.val.status = Deleting
         overlayMetaRec.val.expiry = deleteExpiry
-        overlayMetaRec.val.blocks = blockBits
 
         trace "Updated overlay meta for delete", overlay = overlayMetaRec.val
         overlayMeta = overlayMetaRec.val
