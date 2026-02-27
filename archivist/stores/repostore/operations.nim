@@ -238,7 +238,7 @@ proc tryDeleteBlocks*(
 type BlockLeafTuple =
   tuple[index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ArchivistProof]
 
-proc putOrUpdateLeafBlockMetaImpl(
+proc putLeafBlockMetaImpl(
     self: RepoStore, treeCid: Cid, blocks: seq[BlockLeafTuple]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Core implementation for leaf and block metadata writes.
@@ -249,15 +249,17 @@ proc putOrUpdateLeafBlockMetaImpl(
   ## leaf and it's index is the index of the leaf in a regular top
   ## level tree.
   ##
-  ## The main difference is that multipl cells point to the same block,
-  ## so they might inc the same block's refCount several times.
+  ## The main difference apart from representing different types of
+  # objects, is that multiple cells point to the same block,
+  ## so they might increment the same block's refCount several times.
   ##
-  ## All writes - leaf records, block refcounts, and overlay BitSeq - happen
-  ## in a single atomic transaction, so no partial state is ever visible.
+  ## All writes - leaf records, block refcounts, and overlay BitSeq -
+  ## happen in a single atomic transaction, so no partial state is ever
+  ## visible per batch.
   ##
 
   # Fetch existing overlay to get correct BitSeq length
-  # (overlay must exist before putLeafsAndBlocks is called)
+  # (overlay must exist before putBlocks is called)
   trace "Fetching existing overlay", treeCid = treeCid, blocksCount = blocks.len
 
   let
@@ -391,39 +393,37 @@ proc putOrUpdateLeafBlockMetaImpl(
     trace "Unable to put or update leaf and block metadata", error = err.msg
     return failure(err)
 
-  # Write-through: cache the final overlay
+  # cache the final overlay
   self.overlayCache[?overlayKey(treeCid)] = overlayMeta
 
   success()
 
-proc putOrUpdateLeafBlockMeta*(
+proc putLeafBlockMeta*(
     self: RepoStore, treeCid: Cid, blocks: seq[(Natural, Cid, ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   ## Put or update leaf and block metadata (plain blocks).
   ##
-  self.putOrUpdateLeafBlockMetaImpl(
-    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2]))
-  )
+  self.putLeafBlockMetaImpl(treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2])))
 
-proc putOrUpdateLeafBlockMeta*(
+proc putLeafBlockMeta*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
-  self.putOrUpdateLeafBlockMeta(treeCid, @[(index, blkCid, proof)])
+  self.putLeafBlockMeta(treeCid, @[(index, blkCid, proof)])
 
-proc putOrUpdateCellLeafBlockMeta*(
+proc putCellLeafBlockMeta*(
     self: RepoStore, treeCid: Cid, blocks: seq[(Natural, Cid, Cid, ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   ## Put or update leaf and block metadata for slot proof cell leaves.
   ##
   ## Each item is (index, blkCid, blkCid, proof):
-  ##   - cellCid: the cell digest (stored as LeafMetadata.cellIndex)
+  ##   - cellCid: the cell digest (stored as LeafMetadata.cellCid)
   ##   - blkCid:  the actual block CID (refcount key, LeafMetadata.blkCid)
   ##
-  ## All updates (leaf record with cellIndex, block refcount, overlay BitSeq)
+  ## All updates (leaf record with cellCid, block refcount, overlay BitSeq)
   ## are committed in a single atomic transaction.
   ##
 
-  self.putOrUpdateLeafBlockMetaImpl(
+  self.putLeafBlockMetaImpl(
     treeCid,
     blocks.mapIt((index: it[0], blkCid: it[2], cellCid: it[1].some, proof: it[3])),
   )
@@ -640,9 +640,9 @@ proc getLeafMetadata*(
 
   success(leafMd.val)
 
-proc verifyOverlayBitSeqConsistency*(
+proc verifyBlockBitState*(
     self: RepoStore, treeCid: Cid
-): Future[?!seq[(Natural, BitSeqInconsistency)]] {.async: (raises: [CancelledError]).} =
+): Future[?!seq[(Natural, BlockBitState)]] {.async: (raises: [CancelledError]).} =
   ## Verify that the overlay BitSeq is consistent with leaf metadata.
   ##
   ## Returns a sequence of (index, reason) for each inconsistency found.
@@ -656,7 +656,7 @@ proc verifyOverlayBitSeqConsistency*(
   ## Use for debugging and testing only.
   ##
 
-  var inconsistencies: seq[(Natural, BitSeqInconsistency)]
+  var states: seq[(Natural, BlockBitState)]
 
   let
     overlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
@@ -669,20 +669,20 @@ proc verifyOverlayBitSeqConsistency*(
     if record =? ?catch(?(await recordFut)):
       let indexStr = record.key.value
       without idx =? parseInt(indexStr).catch, err:
-        inconsistencies.add((0.Natural, InvalidKeyFormat))
+        states.add((0.Natural, InvalidKeyFormat))
         trace "Invalid leaf metadata key format", key = record.key
         continue
       leafIndices.incl(idx.Natural)
 
       if record.val.deleted:
         if idx < bits.len and bits[idx]:
-          inconsistencies.add((idx.Natural, BitSetButLeafDeleted))
+          states.add((idx.Natural, BitSetButLeafDeleted))
       else:
         if idx >= bits.len or not bits[idx]:
-          inconsistencies.add((idx.Natural, LeafExistsButBitNotSet))
+          states.add((idx.Natural, LeafExistsButBitNotSet))
 
   for i in 0 ..< bits.len:
     if bits[i] and i notin leafIndices:
-      inconsistencies.add((i.Natural, BitSetButNoLeafMetadata))
+      states.add((i.Natural, BitSetButNoLeafMetadata))
 
-  success(inconsistencies)
+  success(states)

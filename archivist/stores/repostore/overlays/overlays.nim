@@ -12,7 +12,6 @@
 
 import std/algorithm
 import std/strutils
-import std/sugar
 import std/tables
 
 import pkg/chronos
@@ -66,7 +65,7 @@ proc mergeOverlay(
   elif overlay.expiry == ZeroSeconds:
     overlay.expiry = self.clock.now() + self.overlayTtl
 
-proc putOverlayMetadata*(
+proc putOverlay*(
     self: RepoStore,
     treeCid: Cid,
     status: ?OverlayStatus = OverlayStatus.none,
@@ -115,7 +114,7 @@ proc putOverlayMetadata*(
   trace "Overlay metadata stored", treeCid = treeCid, status = cachedOverlay.status
   success()
 
-proc getOverlayMetadata*(
+proc getOverlay*(
     self: RepoStore, treeCid: Cid
 ): Future[?!OverlayMetadata] {.async: (raises: [CancelledError]).} =
   ## Get overlay metadata for a dataset.
@@ -125,7 +124,7 @@ proc getOverlayMetadata*(
   trace "OverlayMetadata loaded", treeCid = treeCid, status = meta.val.status
   success meta.val
 
-proc deleteOverlayMetadata*(
+proc deleteOverlay*(
     self: RepoStore, treeCid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Delete overlay metadata
@@ -250,7 +249,7 @@ proc createTmpOverlay*(
     else:
       expiry
 
-  ?await self.putOverlayMetadata(
+  ?await self.putOverlay(
     tmpTreeCid,
     status = OverlayStatus.Storing.some,
     blocks = BitSeq.init(0),
@@ -285,13 +284,13 @@ proc dropOverlay*(
 
   trace "Dropping overlay and cleaning up blocks"
 
-  if err =? (await self.putOverlayMetadata(treeCid, status = Deleting.some)).errorOption:
+  if err =? (await self.putOverlay(treeCid, status = Deleting.some)).errorOption:
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)
 
   # Read overlay metadata to get manifestCid before deletion
   var manifestCid: ?Cid
-  if meta =? (await self.getOverlayMetadata(treeCid)):
+  if meta =? (await self.getOverlay(treeCid)):
     manifestCid = meta.manifestCid
 
   # Query all leaf records for this tree
@@ -320,7 +319,7 @@ proc dropOverlay*(
     trace "Deleted leaf metadata and updated refcounts", count = indices.len
 
   # Delete overlay metadata
-  ?await self.deleteOverlayMetadata(treeCid)
+  ?await self.deleteOverlay(treeCid)
 
   # Delete manifest block if tracked
   if cid =? manifestCid:
@@ -384,9 +383,8 @@ proc finalizeOverlay*(
     else:
       expiry
 
-  if err =? (
-    await self.putOverlayMetadata(realTreeCid, status = status, expiry = expiryTime)
-  ).errorOption:
+  if err =?
+      (await self.putOverlay(realTreeCid, status = status, expiry = expiryTime)).errorOption:
     error "Unable to update overlay metadata after finalization", exc = err.msg
     return failure(err)
 
@@ -409,7 +407,7 @@ proc withOverlay*[T](
 
   trace "Starting overlay operation"
   if initErr =?
-      (await self.putOverlayMetadata(treeCid, status, BitSeq.init(0), expiry)).errorOption:
+      (await self.putOverlay(treeCid, status, BitSeq.init(0), expiry)).errorOption:
     error "Unable to create/update overlay metadata", exc = initErr.msg
     return failure(initErr)
 
@@ -417,9 +415,8 @@ proc withOverlay*[T](
     bodyRes = await body()
     finalState = if bodyRes.isOk: Completed.some else: Failure.some
 
-  if finalErr =? (
-    await self.putOverlayMetadata(treeCid, finalState, BitSeq.init(0), expiry)
-  ).errorOption:
+  if finalErr =?
+      (await self.putOverlay(treeCid, finalState, BitSeq.init(0), expiry)).errorOption:
     error "Unable to set overlay final state", exc = finalErr.msg
     return failure(finalErr)
 

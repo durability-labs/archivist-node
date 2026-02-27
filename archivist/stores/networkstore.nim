@@ -16,10 +16,10 @@ import pkg/chronos
 import pkg/libp2p
 import pkg/questionable/results
 
-import ../clock
 import ../blocktype
 import ../blockexchange
 import ../logutils
+import ../manifest
 import ../merkletree
 import ../utils/asyncheapqueue
 import ../utils/safeasynciter
@@ -33,6 +33,54 @@ logScope:
 type NetworkStore* = ref object of BlockStore
   engine*: BlockExcEngine # blockexc decision engine
   localStore*: BlockStore # local block store
+
+method getBlocks*(
+    self: NetworkStore, cids: seq[Cid]
+): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks by CID (no tree context).
+  ##
+  ## Fetches all locally available blocks in one batch call.
+  ## For any missing blocks, falls back to individual network requests
+  ## (concurrent, one per missing CID).
+  ##
+
+  let
+    uniqueCids = cids.toHashSet.toSeq
+    localBlocks = ?await self.localStore.getBlocks(uniqueCids)
+
+  if localBlocks.len == uniqueCids.len:
+    return success(localBlocks)
+
+  # Find CIDs not returned locally
+  let localCids = localBlocks.mapIt(it.cid).toHashSet
+  var
+    toRequestCids = (uniqueCids.toHashSet - localCids).toSeq
+    requests: seq[Future[?!Block]]
+
+  for cid in toRequestCids:
+    requests.add(self.engine.requestBlock(BlockAddress.init(cid)))
+
+  var allBlocks = localBlocks
+  while requests.len > 0:
+    without completedFut =? catch(await one(requests)), err:
+      if err of CancelledError:
+        raise (ref CancelledError)(err)
+      error "Unable to get block from exchange engine", err = err.msg
+      break
+
+    let idx = requests.find(completedFut)
+    requests.del(idx)
+    toRequestCids.del(idx)
+
+    without blk =? catch(?await completedFut), err:
+      if err of CancelledError:
+        raise (ref CancelledError)(err)
+      error "Unable to get block from exchange engine", err = err.msg
+      continue
+
+    allBlocks.add(blk)
+
+  success(allBlocks)
 
 method getBlock*(
     self: NetworkStore, cid: Cid
@@ -103,14 +151,21 @@ method getBlocks*(
 
   var allBlocks = localBlocks
   while requests.len > 0:
+    without completedFut =? catch(await one(requests)), err:
+      if err of CancelledError:
+        raise (ref CancelledError)(err)
+      error "Unable to get block from exchange engine", treeCid, err = err.msg
+      break
+
     let
-      fut = ?catch(await one(requests))
-      idx = requests.find(fut)
+      idx = requests.find(completedFut)
       originalIdx = toRequestIdxs[idx]
     requests.del(idx)
     toRequestIdxs.del(idx)
 
-    without blk =? catch(?await fut), err:
+    without blk =? catch(?await completedFut), err:
+      if err of CancelledError:
+        raise (ref CancelledError)(err)
       error "Unable to get block from exchange engine", treeCid, err = err.msg
       continue
 
@@ -133,58 +188,20 @@ method putBlock*(
   await self.engine.resolveBlocks(@[blk])
   return success()
 
-method putLeafsAndBlocks*(
+method putBlocks*(
     self: NetworkStore, treeCid: Cid, items: seq[(Block, Natural, ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Store leafs and blocks locally and notify the network
   ##
 
-  ?await self.localStore.putLeafsAndBlocks(treeCid, items)
+  ?await self.localStore.putBlocks(treeCid, items)
   await self.engine.resolveBlocks(items.mapIt(it[0]))
   return success()
-
-method putCidAndProof*(
-    self: NetworkStore,
-    treeCid: Cid,
-    index: Natural,
-    blockCid: Cid,
-    proof: ArchivistProof,
-): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
-  self.localStore.putCidAndProof(treeCid, index, blockCid, proof)
 
 method putCidsAndProofs*(
     self: NetworkStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   self.localStore.putCidsAndProofs(treeCid, items)
-
-method putCidsAndProofs*(
-    self: NetworkStore, treeCid: Cid, items: seq[(Natural, Cid, Cid, ArchivistProof)]
-): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
-  self.localStore.putCidsAndProofs(treeCid, items)
-
-method getCidAndProof*(
-    self: NetworkStore, treeCid: Cid, index: Natural
-): Future[?!(Cid, ArchivistProof)] {.async: (raw: true, raises: [CancelledError]).} =
-  ## Get a block CID and proof from the blockstore
-  ##
-
-  self.localStore.getCidAndProof(treeCid, index)
-
-method getBlockAndProof*(
-    self: NetworkStore, treeCid: Cid, index: Natural
-): Future[?!(Block, ArchivistProof)] {.async: (raw: true, raises: [CancelledError]).} =
-  ## Get a block and proof from the local store
-  ##
-
-  self.localStore.getBlockAndProof(treeCid, index)
-
-method delBlock*(
-    self: NetworkStore, treeCid: Cid, index: Natural
-): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
-  ## Delete a block by tree CID and index
-  ##
-
-  self.localStore.delBlock(treeCid, index)
 
 method listBlocks*(
     self: NetworkStore, blockType = BlockType.Manifest
@@ -211,13 +228,70 @@ method hasBlock*(
   trace "Checking network store for block existence", cid
   return await self.localStore.hasBlock(cid)
 
-method hasBlock*(
-    self: NetworkStore, tree: Cid, index: Natural
-): Future[?!bool] {.async: (raises: [CancelledError]).} =
-  ## Check if the block exists in the blockstore
+method hasBlocks*(
+    self: NetworkStore, tree: Cid, indices: seq[Natural]
+): Future[?!seq[(Natural, bool)]] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Check if multiple blocks exist in the blockstore
   ##
-  trace "Checking network store for block existence", tree, index
-  return await self.localStore.hasBlock(tree, index)
+  self.localStore.hasBlocks(tree, indices)
+
+method storeManifest*(
+    self: NetworkStore, manifest: Manifest
+): Future[?!Block] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Store a manifest to the blockstore
+  ##
+  self.localStore.storeManifest(manifest)
+
+method fetchManifest*(
+    self: NetworkStore, cid: Cid
+): Future[?!Manifest] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Fetch a manifest from the blockstore by CID
+  ##
+  self.localStore.fetchManifest(cid)
+
+method getCid*(
+    self: NetworkStore, treeCid: Cid, index: Natural
+): Future[?!Cid] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get a block CID given a tree and index
+  ##
+  self.localStore.getCid(treeCid, index)
+
+method putCellCidsAndProofs*(
+    self: NetworkStore, treeCid: Cid, items: seq[(Natural, Cid, Cid, ArchivistProof)]
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Put multiple cell CIDs and proofs as a batch
+  ##
+  self.localStore.putCellCidsAndProofs(treeCid, items)
+
+method delBlocks*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Delete multiple blocks by tree CID and indices
+  ##
+  self.localStore.delBlocks(treeCid, indices)
+
+method getBlocksAndProofs*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Natural, Block, ArchivistProof)]] {.
+    async: (raw: true, raises: [CancelledError])
+.} =
+  ## Get multiple blocks and proofs
+  ##
+  self.localStore.getBlocksAndProofs(treeCid, indices)
+
+method getCidsAndProofs*(
+    self: NetworkStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Cid, ArchivistProof)]] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Get multiple CIDs and proofs
+  ##
+  self.localStore.getCidsAndProofs(treeCid, indices)
+
+method putBlocks*(
+    self: NetworkStore, treeCid: Cid, blocks: seq[(Natural, Block)]
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Put multiple blocks without proofs
+  ##
+  self.localStore.putBlocks(treeCid, blocks)
 
 method close*(self: NetworkStore): Future[void] {.async: (raises: []).} =
   ## Close the underlying local blockstore
