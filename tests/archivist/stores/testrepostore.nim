@@ -656,7 +656,11 @@ suite "Test RepoStore Batch Operations":
     blocks.setBit(1)
     blocks.setBit(2)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let
       proof0 = tree.getProof(0).tryGet()
@@ -666,12 +670,17 @@ suite "Test RepoStore Batch Operations":
     (
       await repoStore.putBlocks(
         treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+        @[
+          (dataset[0], 0.Natural, proof0),
+          (dataset[1], 1.Natural, proof1),
+          (dataset[2], 2.Natural, proof2),
+        ],
       )
     ).tryGet()
 
     # Retrieve all three blocks
-    let unsorted = (await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted =
+      (await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
     let results = unsorted.sortedByIt(it[0])
 
     check results.len == 3
@@ -691,7 +700,11 @@ suite "Test RepoStore Batch Operations":
     var blocks = BitSeq.init(1)
     blocks.setBit(0)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let proof = tree.getProof(0).tryGet()
     (await repoStore.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof)])).tryGet()
@@ -712,7 +725,11 @@ suite "Test RepoStore Batch Operations":
     blocks.setBit(1)
     blocks.setBit(2)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let
       proof0 = tree.getProof(0).tryGet()
@@ -722,12 +739,18 @@ suite "Test RepoStore Batch Operations":
     (
       await repoStore.putBlocks(
         treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+        @[
+          (dataset[0], 0.Natural, proof0),
+          (dataset[1], 1.Natural, proof1),
+          (dataset[2], 2.Natural, proof2),
+        ],
       )
     ).tryGet()
 
     # Request indices 0,1,2,5 (5 is missing)
-    let results = (await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural, 5.Natural])).tryGet()
+    let results = (
+      await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural, 5.Natural])
+    ).tryGet()
 
     # Should return only 0,1,2
     check results.len == 3
@@ -743,7 +766,11 @@ suite "Test RepoStore Batch Operations":
     blocks.setBit(0)
     blocks.setBit(1)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let
       proof0 = tree.getProof(0).tryGet()
@@ -751,13 +778,13 @@ suite "Test RepoStore Batch Operations":
 
     (
       await repoStore.putBlocks(
-        treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1)],
+        treeCid, @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1)]
       )
     ).tryGet()
 
     # Request indices beyond bitmap length
-    let results = (await repoStore.getBlocks(treeCid, @[0.Natural, 5.Natural, 10.Natural])).tryGet()
+    let results =
+      (await repoStore.getBlocks(treeCid, @[0.Natural, 5.Natural, 10.Natural])).tryGet()
 
     # Should return only index 0
     check results.len == 1
@@ -775,7 +802,11 @@ suite "Test RepoStore Batch Operations":
     blocks.setBit(1)
     blocks.setBit(2)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let
       proof0 = tree.getProof(0).tryGet()
@@ -785,12 +816,18 @@ suite "Test RepoStore Batch Operations":
     (
       await repoStore.putBlocks(
         treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+        @[
+          (dataset[0], 0.Natural, proof0),
+          (dataset[1], 1.Natural, proof1),
+          (dataset[2], 2.Natural, proof2),
+        ],
       )
     ).tryGet()
 
     # Retrieve blocks with proofs
-    let unsorted = (await repoStore.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted = (
+      await repoStore.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])
+    ).tryGet()
     let results = unsorted.sortedByIt(it[0])
 
     check results.len == 3
@@ -813,13 +850,18 @@ suite "Test RepoStore Batch Operations":
     var blocks = BitSeq.init(1)
     blocks.setBit(0)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let proof = tree.getProof(0).tryGet()
     (await repoStore.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof)])).tryGet()
 
     # Request empty indices
-    let results = (await repoStore.getBlocksAndProofs(treeCid, newSeq[Natural]())).tryGet()
+    let results =
+      (await repoStore.getBlocksAndProofs(treeCid, newSeq[Natural]())).tryGet()
 
     check results.len == 0
 
@@ -835,7 +877,11 @@ suite "Test RepoStore Batch Operations":
     blocks.setBit(1)
     blocks.setBit(2)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let
       proof0 = tree.getProof(0).tryGet()
@@ -845,12 +891,17 @@ suite "Test RepoStore Batch Operations":
     (
       await repoStore.putBlocks(
         treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+        @[
+          (dataset[0], 0.Natural, proof0),
+          (dataset[1], 1.Natural, proof1),
+          (dataset[2], 2.Natural, proof2),
+        ],
       )
     ).tryGet()
 
     # Check which blocks exist
-    let unsorted = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted =
+      (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
     let results = unsorted.sortedByIt(it[0])
 
     check results.len == 3
@@ -871,7 +922,11 @@ suite "Test RepoStore Batch Operations":
     blocks.setBit(0)
     blocks.setBit(2)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let
       proof0 = tree.getProof(0).tryGet()
@@ -879,13 +934,13 @@ suite "Test RepoStore Batch Operations":
 
     (
       await repoStore.putBlocks(
-        treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[2], 2.Natural, proof2)],
+        treeCid, @[(dataset[0], 0.Natural, proof0), (dataset[2], 2.Natural, proof2)]
       )
     ).tryGet()
 
     # Check indices 0,1,2 - only 0 and 2 exist
-    let unsorted2 = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted2 =
+      (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
     let results = unsorted2.sortedByIt(it[0])
 
     check results.len == 3
@@ -908,7 +963,11 @@ suite "Test RepoStore Batch Operations":
     blocks.setBit(1)
     blocks.setBit(2)
 
-    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+    (
+      await repoStore.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks
+      )
+    ).tryGet()
 
     let
       proof0 = tree.getProof(0).tryGet()
@@ -918,7 +977,11 @@ suite "Test RepoStore Batch Operations":
     (
       await repoStore.putBlocks(
         treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+        @[
+          (dataset[0], 0.Natural, proof0),
+          (dataset[1], 1.Natural, proof1),
+          (dataset[2], 2.Natural, proof2),
+        ],
       )
     ).tryGet()
 

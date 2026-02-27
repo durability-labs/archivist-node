@@ -287,9 +287,7 @@ proc putLeafBlockMetaImpl(
         if cCid =? cellCid:
           KVRecord[LeafMetadata].init(
             leafKey,
-            LeafMetadata(
-              blkCid: blkCid, proof: proof, isCell: true, cellCid: cCid
-            ),
+            LeafMetadata(blkCid: blkCid, proof: proof, isCell: true, cellCid: cCid),
           )
         else:
           KVRecord[LeafMetadata].init(

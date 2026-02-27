@@ -113,7 +113,6 @@ type
     ## - Bits are cleared in delLeafBlockMetadata (atomic with metadata)
     ## - On FS miss for a set bit, callers treat as absent
     ##
-
     status*: OverlayStatus
     expiry*: SecondsSince1970 # overlay expiration
     blocks*: BitSeq # bitmap of currently stored blocks
