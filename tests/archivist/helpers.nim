@@ -3,6 +3,7 @@ import std/sequtils
 import pkg/chronos
 import pkg/libp2p
 import pkg/libp2p/varint
+import pkg/stew/bitseqs
 import pkg/archivist/blocktype
 import pkg/archivist/stores
 import pkg/archivist/manifest
@@ -89,7 +90,7 @@ proc storeDataGetManifest*(
   let tmpTreeCid = ?await store.createTmpOverlay()
 
   for i, blk in blocks:
-    ?await store.putLeafAndBlock(tmpTreeCid, blk, i)
+    ?await store.putBlock(tmpTreeCid, blk, i)
 
   let
     (manifest, tree) = ?makeManifestAndTree(blocks)
@@ -155,3 +156,60 @@ proc corruptBlocks*(
       bytePos.add(ii)
       blk.data[ii] = byte 0
   return pos
+
+proc makeBitSeq*(len: int, setBits: seq[int] = @[]): BitSeq =
+  ## Create a BitSeq with specified bits set.
+  ## If setBits is empty, all bits are set.
+  ##
+  var bits = BitSeq.init(len)
+  if setBits.len == 0:
+    for i in 0 ..< len:
+      bits.setBit(i)
+  else:
+    for i in setBits:
+      if i < len:
+        bits.setBit(i)
+  bits
+
+proc storeBlocksWithOverlay*(
+    store: RepoStore,
+    treeCid: Cid,
+    blocks: seq[Block],
+    tree: ArchivistTree,
+    indices: seq[int] = @[],
+    status: ?OverlayStatus = OverlayStatus.Completed.some,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store blocks with overlay context.
+  ## Creates overlay, stores blocks with proofs.
+  ## If indices is empty, all blocks are stored.
+  ##
+  let
+    idx =
+      if indices.len == 0:
+        toSeq(0 ..< blocks.len)
+      else:
+        indices
+    bits = makeBitSeq(blocks.len, idx)
+
+  ?await store.putOverlay(treeCid, status, bits)
+
+  var items: seq[(Block, Natural, ArchivistProof)]
+  for i in idx:
+    let proof = ?tree.getProof(i)
+    items.add((blocks[i], i.Natural, proof))
+
+  ?await store.putBlocks(treeCid, items)
+
+  success()
+
+proc storeBlocksWithOverlay*(
+    store: RepoStore,
+    treeCid: Cid,
+    blocks: seq[Block],
+    tree: ArchivistTree,
+    indices: openArray[int],
+    status: ?OverlayStatus = OverlayStatus.Completed.some,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store blocks with overlay context (openArray variant).
+  ##
+  await storeBlocksWithOverlay(store, treeCid, blocks, tree, @indices, status)

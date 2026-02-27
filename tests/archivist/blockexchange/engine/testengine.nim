@@ -6,6 +6,7 @@ import pkg/stew/byteutils
 import pkg/chronos
 import pkg/libp2p/errors
 import pkg/libp2p/routing_record
+import pkg/stew/bitseqs
 import pkg/archivistdht/discv5/protocol as discv5
 
 import pkg/kvstore
@@ -17,6 +18,8 @@ import pkg/archivist/stores
 import pkg/archivist/chunker
 import pkg/archivist/discovery
 import pkg/archivist/blocktype
+import pkg/archivist/manifest
+import pkg/archivist/merkletree
 import pkg/archivist/utils/asyncheapqueue
 
 import ../../../asynctest
@@ -40,6 +43,9 @@ asyncchecksuite "NetworkStore engine basic":
     pendingBlocks: PendingBlocksManager
     blocks: seq[Block]
     done: Future[void]
+    manifest: Manifest
+    tree: ArchivistTree
+    treeCid: Cid
     tp: Taskpool
 
   setup:
@@ -60,6 +66,8 @@ asyncchecksuite "NetworkStore engine basic":
 
       blocks.add(Block.new(chunk).tryGet())
 
+    (manifest, tree) = makeManifestAndTree(blocks).tryGet()
+    treeCid = tree.rootCid.tryGet()
     done = newFuture[void]()
 
   test "Should send want list to new peers":
@@ -81,8 +89,10 @@ asyncchecksuite "NetworkStore engine basic":
         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
         SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
       )
-    for blk in blocks:
-      (await localStore.putBlock(blk)).tryGet()
+
+    # Store blocks with overlay context
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
+
     let
       discovery = DiscoveryEngine.new(
         localStore, peerStore, network, blockDiscovery, pendingBlocks
@@ -94,6 +104,7 @@ asyncchecksuite "NetworkStore engine basic":
 
     for b in blocks:
       discard engine.pendingBlocks.getWantHandle(b.cid)
+
     await engine.setupPeer(peerId)
 
     await done.wait(100.millis)
@@ -147,8 +158,11 @@ asyncchecksuite "NetworkStore engine handlers":
     discovery: DiscoveryEngine
     advertiser: Advertiser
     peerCtx: BlockExcPeerCtx
-    localStore: BlockStore
+    localStore: RepoStore
     blocks: seq[Block]
+    manifest: Manifest
+    tree: ArchivistTree
+    treeCid: Cid
     tp: Taskpool
 
   setup:
@@ -162,6 +176,8 @@ asyncchecksuite "NetworkStore engine handlers":
 
       blocks.add(Block.new(chunk).tryGet())
 
+    (manifest, tree) = makeManifestAndTree(blocks).tryGet()
+    treeCid = tree.rootCid.tryGet()
     seckey = PrivateKey.random(rng[]).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     wallet = WalletRef.example
@@ -219,7 +235,8 @@ asyncchecksuite "NetworkStore engine handlers":
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
 
-    await allFuturesThrowing(allFinished(blocks.mapIt(localStore.putBlock(it))))
+    # Store blocks with tree context
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
 
     await engine.wantListHandler(peerId, wantList)
     await done
@@ -265,13 +282,47 @@ asyncchecksuite "NetworkStore engine handlers":
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
 
-    (await engine.localStore.putBlock(blocks[0])).tryGet()
-    (await engine.localStore.putBlock(blocks[1])).tryGet()
+    # Store first two blocks with tree context
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree, @[0, 1])).tryGet()
+
     await engine.wantListHandler(peerId, wantList)
 
     await done
 
-  test "Should store blocks in local store":
+  test "Should store leaf blocks in local store":
+    # Create overlay and store blocks with tree context
+    let indices = toSeq(0 ..< blocks.len)
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
+
+    # Create pending handles for leaf addresses
+    let pending =
+      indices.mapIt(engine.pendingBlocks.getWantHandle(BlockAddress.init(treeCid, it)))
+
+    # Create leaf deliveries with proofs
+    let blocksDelivery = indices.mapIt(
+      BlockDelivery(
+        blk: blocks[it],
+        address: BlockAddress.init(treeCid, it),
+        proof: tree.getProof(it).tryGet().some,
+      )
+    )
+
+    # Install NOP for want list cancellations so they don't cause a crash
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(sendWantCancellations: NopSendWantCancellationsProc)
+    )
+
+    await engine.blocksDeliveryHandler(peerId, blocksDelivery)
+    let resolved = await allFinished(pending)
+    check resolved.mapIt(it.read) == blocks
+
+    # Verify blocks are persisted with tree-aware hasBlock
+    for i in indices:
+      let present = await engine.localStore.hasBlock(treeCid, i)
+      check present.tryGet()
+
+  test "Should resolve non-leaf block deliveries without persistence":
+    # Non-leaf deliveries are validated and resolved but NOT persisted
     let pending = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
 
     let blocksDelivery = blocks.mapIt(BlockDelivery(blk: it, address: it.address))
@@ -284,6 +335,8 @@ asyncchecksuite "NetworkStore engine handlers":
     await engine.blocksDeliveryHandler(peerId, blocksDelivery)
     let resolved = await allFinished(pending)
     check resolved.mapIt(it.read) == blocks
+
+    # Non-leaf deliveries are NOT persisted - hasBlock should fail
     for b in blocks:
       let present = await engine.localStore.hasBlock(b.cid)
       check present.tryGet()
@@ -567,12 +620,15 @@ asyncchecksuite "Task Handler":
     engine: BlockExcEngine
     discovery: DiscoveryEngine
     advertiser: Advertiser
-    localStore: BlockStore
+    localStore: RepoStore
     tp: Taskpool
 
     peersCtx: seq[BlockExcPeerCtx]
     peers: seq[PeerId]
     blocks: seq[Block]
+    manifest: Manifest
+    tree: ArchivistTree
+    treeCid: Cid
 
   setup:
     rng = Rng.instance()
@@ -584,6 +640,8 @@ asyncchecksuite "Task Handler":
 
       blocks.add(Block.new(chunk).tryGet())
 
+    (manifest, tree) = makeManifestAndTree(blocks).tryGet()
+    treeCid = tree.rootCid.tryGet()
     seckey = PrivateKey.random(rng[]).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     wallet = WalletRef.example
@@ -629,8 +687,9 @@ asyncchecksuite "Task Handler":
         blocksDelivery[1].address == blocks[0].address
         blocksDelivery[0].address == blocks[1].address
 
-    for blk in blocks:
-      (await engine.localStore.putBlock(blk)).tryGet()
+    # Store blocks with tree context
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
+
     engine.network.request.sendBlocksDelivery = sendBlocksDelivery
 
     # second block to send by priority
@@ -663,8 +722,9 @@ asyncchecksuite "Task Handler":
     ) {.async: (raises: [CancelledError]).} =
       check peersCtx[0].peerWants[0].inFlight
 
-    for blk in blocks:
-      (await engine.localStore.putBlock(blk)).tryGet()
+    # Store blocks with tree context
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
+
     engine.network.request.sendBlocksDelivery = sendBlocksDelivery
 
     peersCtx[0].peerWants.add(
@@ -709,8 +769,9 @@ asyncchecksuite "Task Handler":
           Presence(address: missing[0].address, have: false),
         ]
 
-    for blk in blocks:
-      (await engine.localStore.putBlock(blk)).tryGet()
+    # Store blocks with tree context
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
+
     engine.network.request.sendPresence = sendPresence
 
     # have block
