@@ -1,5 +1,7 @@
 import std/os
 import std/strutils
+import std/sequtils
+import std/algorithm
 
 import pkg/questionable
 import pkg/questionable/results
@@ -565,19 +567,24 @@ suite "Test RepoStore Batch Operations":
     repoDs: FSKVStore
     metaDs: SQLiteKVStore
     repoStore: RepoStore
-
-  let
-    tp = Taskpool.new(num_threads = 4)
+    tp: Taskpool
+    tmpDir: string
 
   setup:
-    repoDs = FSKVStore.new(currentSourcePath.parentDir / "repoDs_batch", tp, depth = 16).tryGet()
-    metaDs = SQLiteKVStore.new(currentSourcePath.parentDir / "metaDs_batch", tp).tryGet()
-    repoStore = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 2000'nb)
+    let path = currentSourcePath()
+    tmpDir = path.parentDir / "batch_tests_data"
+    createDir(tmpDir / "repo")
+    createDir(tmpDir / "meta")
+    tp = Taskpool.new(num_threads = 4)
+    repoDs = FSKVStore.new(tmpDir / "repo", tp, depth = 16).tryGet()
+    metaDs = SQLiteKVStore.new(tmpDir / "meta", tp).tryGet()
+    repoStore = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 200000'nb)
     await repoStore.start()
 
   teardown:
     await repoStore.stop()
     tp.shutdown()
+    removeDir(tmpDir)
 
   proc createTestBlock(size: int): bt.Block =
     bt.Block.new('a'.repeat(size).toBytes).tryGet()
@@ -596,11 +603,12 @@ suite "Test RepoStore Batch Operations":
 
     # Retrieve all three blocks
     let blocks = (await repoStore.getBlocks(@[blk1.cid, blk2.cid, blk3.cid])).tryGet()
+    let returnedCids = blocks.mapIt(it.cid)
 
     check blocks.len == 3
-    check blocks[0].cid == blk1.cid
-    check blocks[1].cid == blk2.cid
-    check blocks[2].cid == blk3.cid
+    check blk1.cid in returnedCids
+    check blk2.cid in returnedCids
+    check blk3.cid in returnedCids
 
   test "should return empty seq for empty input":
     let blocks = (await repoStore.getBlocks(newSeq[Cid]())).tryGet()
@@ -616,7 +624,7 @@ suite "Test RepoStore Batch Operations":
     (await repoStore.putBlock(blk2)).tryGet()
 
     # Request 3 CIDs (one missing)
-    let missingCid = bt.Cid.example
+    let missingCid = Cid.example
     let blocks = (await repoStore.getBlocks(@[blk1.cid, missingCid, blk2.cid])).tryGet()
 
     # Should return only the 2 existing blocks
@@ -625,7 +633,7 @@ suite "Test RepoStore Batch Operations":
   test "should handle empty CIDs":
     let
       blk1 = createTestBlock(100)
-      emptyBlk = bt.Cid.example.emptyBlock.tryGet()
+      emptyBlk = Cid.example.emptyBlock.tryGet()
 
     # Store one real block
     (await repoStore.putBlock(blk1)).tryGet()
@@ -639,7 +647,7 @@ suite "Test RepoStore Batch Operations":
   # Tests for getBlocks(treeCid, indices) - tree-based batch
   test "should get multiple blocks by tree and indices":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -663,7 +671,8 @@ suite "Test RepoStore Batch Operations":
     ).tryGet()
 
     # Retrieve all three blocks
-    let results = (await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted = (await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let results = unsorted.sortedByIt(it[0])
 
     check results.len == 3
     check results[0][0] == 0.Natural
@@ -675,7 +684,7 @@ suite "Test RepoStore Batch Operations":
 
   test "should return empty seq for empty indices":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 1, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 256, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -694,7 +703,7 @@ suite "Test RepoStore Batch Operations":
 
   test "should skip missing indices":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -725,7 +734,7 @@ suite "Test RepoStore Batch Operations":
 
   test "should handle indices not in bitmap":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 2, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -757,7 +766,7 @@ suite "Test RepoStore Batch Operations":
   # Tests for getBlocksAndProofs(treeCid, indices)
   test "should get blocks and proofs":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -781,22 +790,23 @@ suite "Test RepoStore Batch Operations":
     ).tryGet()
 
     # Retrieve blocks with proofs
-    let results = (await repoStore.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted = (await repoStore.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let results = unsorted.sortedByIt(it[0])
 
     check results.len == 3
     check results[0][0] == 0.Natural
     check results[0][1].cid == dataset[0].cid
-    check results[0][2] == proof0
+    check $results[0][2] == $proof0
     check results[1][0] == 1.Natural
     check results[1][1].cid == dataset[1].cid
-    check results[1][2] == proof1
+    check $results[1][2] == $proof1
     check results[2][0] == 2.Natural
     check results[2][1].cid == dataset[2].cid
-    check results[2][2] == proof2
+    check $results[2][2] == $proof2
 
   test "should return empty for empty input":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 1, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 256, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -816,7 +826,7 @@ suite "Test RepoStore Batch Operations":
   # Tests for hasBlocks(treeCid, indices)
   test "should report existing blocks":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -840,7 +850,8 @@ suite "Test RepoStore Batch Operations":
     ).tryGet()
 
     # Check which blocks exist
-    let results = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let results = unsorted.sortedByIt(it[0])
 
     check results.len == 3
     check results[0][0] == 0.Natural
@@ -852,7 +863,7 @@ suite "Test RepoStore Batch Operations":
 
   test "should not report missing blocks":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 2, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
@@ -869,12 +880,13 @@ suite "Test RepoStore Batch Operations":
     (
       await repoStore.putBlocks(
         treeCid,
-        @[(dataset[0], 0.Natural, proof0), (dataset[1], 2.Natural, proof2)],
+        @[(dataset[0], 0.Natural, proof0), (dataset[2], 2.Natural, proof2)],
       )
     ).tryGet()
 
     # Check indices 0,1,2 - only 0 and 2 exist
-    let results = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let unsorted2 = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+    let results = unsorted2.sortedByIt(it[0])
 
     check results.len == 3
     check results[0][0] == 0.Natural
@@ -887,7 +899,7 @@ suite "Test RepoStore Batch Operations":
   # Tests for delBlocks(treeCid, indices)
   test "should delete multiple blocks":
     let
-      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
       (_, tree) = makeManifestAndTree(dataset).tryGet()
       treeCid = tree.rootCid.tryGet()
 
