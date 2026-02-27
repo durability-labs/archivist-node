@@ -444,8 +444,14 @@ proc blocksDeliveryHandler*(
         not (it.address.leaf and it.address.treeCid == treeCid)
       )
 
-  # Write non-leaf blocks sequentially
+  # Write non-leaf blocks sequentially - this should only be manifests after #94
   for bd in nonLeafDeliveries:
+    without isManifest =? bd.blk.cid.isManifest, err:
+      error "Reseived a non-leaf block that isn't a manifest!", err = err.msg
+      validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
+      continue
+
+    # TODO: The putBlock here should be replace by something like
     if err =? (await self.localStore.putBlock(bd.blk)).errorOption:
       error "Unable to store block", err = err.msg
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
@@ -635,9 +641,9 @@ proc taskHandler*(
     proc localLookup(e: WantListEntry): Future[?!BlockDelivery] {.async.} =
       if e.address.leaf:
         (await self.localStore.getBlockAndProof(e.address.treeCid, e.address.index)).map(
-          (blkAndProof: (Block, ArchivistProof)) =>
+          (blkAndProof: (Natural, Block, ArchivistProof)) =>
             BlockDelivery(
-              address: e.address, blk: blkAndProof[0], proof: blkAndProof[1].some
+              address: e.address, blk: blkAndProof[1], proof: blkAndProof[2].some
             )
         )
       else:
