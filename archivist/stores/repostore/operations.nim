@@ -7,9 +7,10 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+{.push raises: [].}
+
 import std/sets
 import std/tables
-import std/options
 
 import pkg/chronos
 import pkg/kvstore
@@ -279,16 +280,15 @@ proc putLeafBlockMetaImpl(
       blkKey = ?blockMetaKey(blkCid)
       leafKey = ?blockLeafKey(treeCidStr, index)
 
-    let isCell = cellCid.isSome
     var
       blkRec =
         KVRecord[BlockMetadata].init(blkKey, BlockMetadata(refCount: 1, cid: blkCid))
       leafRec =
-        if isCell:
+        if cCid =? cellCid:
           KVRecord[LeafMetadata].init(
             leafKey,
             LeafMetadata(
-              blkCid: blkCid, proof: proof, isCell: true, cellCid: cellCid.get()
+              blkCid: blkCid, proof: proof, isCell: true, cellCid: cCid
             ),
           )
         else:

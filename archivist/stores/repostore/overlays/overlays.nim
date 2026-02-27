@@ -41,8 +41,6 @@ export coders
 logScope:
   topics = "archivist repostore overlays"
 
-const DefaultTmpOverlayTtl = 3.days # Default ttl for tmp overlays
-
 proc mergeOverlay(
     self: RepoStore,
     overlay: var OverlayMetadata,

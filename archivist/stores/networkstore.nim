@@ -72,9 +72,10 @@ method getBlocks*(
     requests.del(idx)
     toRequestCids.del(idx)
 
-    without blk =? catch(?await completedFut), err:
+    without blk =? catch(await completedFut).flatten, err:
       if err of CancelledError:
         raise (ref CancelledError)(err)
+          # need to wrap, otherwise it will be reinterpreted as CatchableError
       error "Unable to get block from exchange engine", err = err.msg
       continue
 
@@ -163,7 +164,7 @@ method getBlocks*(
     requests.del(idx)
     toRequestIdxs.del(idx)
 
-    without blk =? catch(?await completedFut), err:
+    without blk =? catch(await completedFut).flatten, err:
       if err of CancelledError:
         raise (ref CancelledError)(err)
       error "Unable to get block from exchange engine", treeCid, err = err.msg
@@ -272,12 +273,71 @@ method delBlocks*(
 
 method getBlocksAndProofs*(
     self: NetworkStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[(Natural, Block, ArchivistProof)]] {.
-    async: (raw: true, raises: [CancelledError])
-.} =
-  ## Get multiple blocks and proofs
+): Future[?!seq[(Natural, Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+  ## Get multiple blocks and proofs.
   ##
-  self.localStore.getBlocksAndProofs(treeCid, indices)
+  ## Fetches all locally available blocks in one batch call.
+  ## For any missing blocks, falls back to individual network requests
+  ## (concurrent, one per missing index). After the engine persists a
+  ## network-fetched block, we retrieve the proof from the local store.
+  ##
+  ## TODO: The engine should return both block and proof directly via a
+  ## future signaling mechanism, with the caller handling persistence.
+  ## Currently the engine persists internally, so we must re-query the
+  ## store for the proof after each network fetch.
+  ##
+
+  let
+    indices = indices.toHashSet.toSeq
+    localBlocks = ?await self.localStore.getBlocksAndProofs(treeCid, indices)
+
+  trace "Got local blocks and proofs", count = localBlocks.len
+
+  # If all indices returned, we're done
+  if localBlocks.len == indices.len:
+    return success(localBlocks)
+
+  # Check the diff of the still to retrieve indices from the network
+  var
+    toRequestIdxs = (indices.toHashSet - localBlocks.mapIt(it[0]).toHashSet).toSeq
+    requests: seq[Future[?!Block]]
+
+  for idx in toRequestIdxs:
+    requests.add(self.engine.requestBlock(BlockAddress.init(treeCid, idx)))
+
+  var allBlocks = localBlocks
+  while requests.len > 0:
+    without completedFut =? catch(await one(requests)), err:
+      if err of CancelledError:
+        raise (ref CancelledError)(err)
+      error "Unable to get block from exchange engine", treeCid, err = err.msg
+      break
+
+    let
+      idx = requests.find(completedFut)
+      originalIdx = toRequestIdxs[idx]
+    requests.del(idx)
+    toRequestIdxs.del(idx)
+
+    without blk =? catch(await completedFut).flatten, err:
+      if err of CancelledError:
+        raise (ref CancelledError)(err)
+      error "Unable to get block from exchange engine", treeCid, err = err.msg
+      continue
+
+    # TODO: The engine should return (Block, ?Proof), but we haven't yet refactored that,
+    # however, it does persist it on disk, so we can fetch from the local store.
+    # Once the engine is properly refactored for batch requests and returning the correct
+    # combination of (Block, Proof), we'll need to change this.
+    let blockProof = ?await self.localStore.getBlocksAndProofs(treeCid, @[originalIdx])
+    if blockProof.len == 0:
+      warn "Skipping block and proof, couldn't resolve",
+        treeCid, index = originalIdx, cid = blk.cid
+      continue
+
+    allBlocks.add(blockProof[0])
+
+  success allBlocks
 
 method getCidsAndProofs*(
     self: NetworkStore, treeCid: Cid, indices: seq[Natural]

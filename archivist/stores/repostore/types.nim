@@ -91,11 +91,29 @@ type
     ##   - protected=true, verifiable=false -> protected dataset
     ##   - protected=true, verifiable=true -> slot
     ##
-    ## BitSeq invariants (blocks field):
-    ## - BitSeq length = max_index_stored + 1 (dynamically grows)
-    ## - Bit i is set IFF leaf metadata exists at index i AND is not deleted
-    ## - BitSeq is used for fast-path rejection in hasBlock/getBlock operations
-    ## - Metadata (leaf + block records) is source of truth; BitSeq is a hint
+    ## BitSeq semantics (blocks field):
+    ##
+    ## The bitmap is a bloom-filter-like optimization to avoid unnecessary
+    ## metadata/FS lookups:
+    ##
+    ##   - bit NOT set -> block is DEFINITELY absent (fast-path rejection)
+    ##   - bit SET     -> block is PROBABLY present (must verify via FS)
+    ##
+    ## The FS blob store is the ultimate source of truth - a block is
+    ## present if and only if it physically exists on disk. The bitmap
+    ## is set atomically with metadata before the FS write, so a crash
+    ## between metadata commit and FS write can leave a bit set for a
+    ## block that was never persisted. This is acceptable: the read path
+    ## falls through to FS, discovers the block is missing, and should
+    ## treat it as absent (and may clear the stale bit).
+    ##
+    ## Invariants:
+    ## - Length = max_index_stored + 1 (dynamically grows via combineSafe)
+    ## - Bits are set in putLeafBlockMetaImpl (atomic with metadata)
+    ## - Bits are cleared in delLeafBlockMetadata (atomic with metadata)
+    ## - On FS miss for a set bit, callers treat as absent
+    ##
+
     status*: OverlayStatus
     expiry*: SecondsSince1970 # overlay expiration
     blocks*: BitSeq # bitmap of currently stored blocks

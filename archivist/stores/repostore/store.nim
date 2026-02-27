@@ -352,7 +352,16 @@ method hasBlock*(
 method hasBlocks*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!seq[(Natural, bool)]] {.async: (raises: [CancelledError]).} =
-  ## Check if multiple blocks exist in the overlay and blockstore.
+  ## Check if multiple blocks exist in the overlay bitmap.
+  ##
+  ## We use the bitmap exclusively for fast checks. By
+  ## definition there is no guarantee that a block we
+  ## deemed as present may have been deleted between operations.
+  ## The ultimate source of truth is the blocks store itself -
+  ## either the block is on disk and it will be returned with
+  ## a getBlock* variant, or it isn't and it needs to be recovered
+  ## or downloaded. Results include the index for caller matching;
+  ## ordering is not guaranteed.
   ##
 
   if indices.len == 0:
@@ -361,17 +370,12 @@ method hasBlocks*(
   let
     indices = indices.deduplicate()
     bits = ?await self.getBlocksBitmap(treeCid)
-    toQuery = indices.filterIt(it >= bits.len or not bits[it])
-    keyToIndex = toQuery.mapIt((?blockLeafKey(treeCid, it), it)).toTable
-    leafsMd =
-      ?await self.metaDs.get(toQuery.mapIt(?blockLeafKey(treeCid, it)), LeafMetadata)
-    blkToLeafKey =
-      leafsMd.mapIt((?makePrefixKey(self.postFixLen, it.val.blkCid), it.key)).toTable
-    blocks = ?await self.repoDs.has(blkToLeafKey.keys.toSeq)
-    instore = blocks.mapIt(?catch(keyToIndex[blkToLeafKey[it]]))
-    exist = indices.toHashSet - (toQuery.toHashSet - instore.toHashSet)
 
-  success(indices.mapIt((it, it in exist)))
+  var results: seq[(Natural, bool)]
+  for idx in indices:
+    results.add((idx, idx < bits.len and bits[idx]))
+
+  success(results)
 
 method listBlocks*(
     self: RepoStore, blockType = BlockType.Manifest
