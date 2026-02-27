@@ -30,6 +30,7 @@ import pkg/libp2p/stream/bufferstream
 import pkg/libp2p/routing_record
 import pkg/libp2p/signed_envelope
 
+import ./metrics
 import ./chunker
 import ./slots
 import ./clock
@@ -54,49 +55,6 @@ export logutils
 
 logScope:
   topics = "archivist node"
-
-# Upload pipeline metrics
-declareHistogram(
-  archivist_upload_read_duration_seconds,
-  "Time spent reading chunks from HTTP stream",
-  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
-)
-
-declareHistogram(
-  archivist_upload_hash_duration_seconds,
-  "Time spent hashing chunks",
-  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
-)
-
-declareHistogram(
-  archivist_upload_write_duration_seconds,
-  "Time spent writing batches to storage",
-  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
-)
-
-declareHistogram(
-  archivist_upload_tree_duration_seconds,
-  "Time spent building Merkle tree",
-  buckets = [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-)
-
-declareHistogram(
-  archivist_upload_proofs_duration_seconds,
-  "Time spent generating and storing proofs",
-  buckets = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
-)
-
-declareHistogram(
-  archivist_upload_total_duration_seconds,
-  "Total upload time",
-  buckets = [1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0],
-)
-
-declareHistogram(
-  archivist_upload_batch_flush_duration_seconds,
-  "Time to flush a single batch",
-  buckets = [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-)
 
 const
   DefaultFetchBatch = 10
@@ -525,6 +483,8 @@ proc store*(
 
           # Launch batch flush without awaiting (adds to window)
           inFlight.add(flushBatch(tmpCid, batch))
+          archivist_upload_batches_total.inc()
+          archivist_upload_active_batches.set(inFlight.len.int64)
 
           success()
 
@@ -536,6 +496,7 @@ proc store*(
 
         while true:
           let chunk = ?await chunker.getBytes()
+          archivist_upload_bytes_total.inc(chunk.len.int64)
           if chunk.len == 0:
             trace "Chunker finished reading stream", read = NBytes(chunker.offset)
             break
@@ -545,13 +506,17 @@ proc store*(
             cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
             blk = ?bt.Block.new(cid, chunk, verify = false)
 
+          archivist_upload_blocks_total.inc()
           cids.add(cid)
           blockBatch.add((blk, index.Natural))
           index.inc
 
           # Flush batch when full
           if blockBatch.len >= storeBatchSize:
+            archivist_upload_active_batches.set(inFlight.len.int64)
             ?await fireBoundedBatch(blockBatch)
+            archivist_upload_batches_total.inc()
+            archivist_upload_active_batches.set(inFlight.len.int64)
             blockBatch.setLen(0)
 
         # Flush batch on last iteration
@@ -565,12 +530,17 @@ proc store*(
         inFlight.setLen(0)
 
         let
+          treeStart = Moment.now()
           tree = ?ArchivistTree.init(cids)
           treeCid = ?tree.rootCid(CIDv1, dataCodec)
+          treeDone = Moment.now()
+        archivist_upload_tree_build_duration_seconds.observe(
+          (treeDone - treeStart).milliseconds.float64 / 1000.0
+        )
 
         # TODO: Once we have progressive tree building we can get rid of the
         # separate proofs putting and just put leafs directly in the same
-        # putLeafAndBlock call as we build the tree
+        # putBlock call as we build the tree
         var proofItems: seq[(Natural, Cid, ArchivistProof)]
         for index, cid in cids:
           proofItems.add((index.Natural, cid, ?tree.getProof(index)))
