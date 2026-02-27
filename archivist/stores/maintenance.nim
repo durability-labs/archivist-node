@@ -68,7 +68,7 @@ proc dropExpiredOverlays(
       warn "Unable to get overlay CID from iterator", err = err.msg
       continue
 
-    without meta =? (await self.repoStore.getOverlayMetadata(treeCid)), err:
+    without meta =? (await self.repoStore.getOverlay(treeCid)), err:
       warn "Unable to get overlay metadata", treeCid, err = err.msg
       continue
 

@@ -10,7 +10,6 @@
 {.push raises: [].}
 
 import std/options
-import std/sugar
 import std/sequtils
 
 import pkg/results

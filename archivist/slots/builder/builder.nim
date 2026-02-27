@@ -259,7 +259,7 @@ proc buildSlot*[SomeTree, SomeHash](
 
         proofItems.add((i.Natural, cellCid, blkCid, encodableProof))
 
-      ?await self.repoStore.putCidsAndProofs(treeCid, proofItems)
+      ?await self.repoStore.putCellCidsAndProofs(treeCid, proofItems)
       success(),
   )
 

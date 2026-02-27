@@ -77,7 +77,7 @@ type
     Full ## Delete both slots and dataset
     None ## Keep everything
 
-  BitSeqInconsistency* = enum
+  BlockBitState* = enum
     ## Reasons for BitSeq inconsistency between overlay and leaf metadata
     BitSetButLeafDeleted ## Bit is set in BitSeq but leaf is marked deleted
     LeafExistsButBitNotSet ## Leaf exists and not deleted but bit not set in BitSeq

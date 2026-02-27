@@ -184,7 +184,7 @@ proc connect*(
 proc updateExpiry*(
     self: ArchivistNodeRef, manifest: Manifest, expiry: SecondsSince1970
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ?await self.repoStore.putOverlayMetadata(manifest.treeCid, expiry = expiry)
+  ?await self.repoStore.putOverlay(manifest.treeCid, expiry = expiry)
   return success()
 
 proc updateExpiry*(
@@ -397,7 +397,7 @@ proc retrieve*(
     return await self.streamSingleBlock(cid)
 
   # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlayMetadata(manifest.treeCid, manifestCid = cid.some)
+  ?await self.repoStore.putOverlay(manifest.treeCid, manifestCid = cid.some)
 
   await self.streamEntireDataset(manifest, cid)
 
@@ -476,20 +476,20 @@ proc store*(
   proc flushBatch(
       tmpCid: Cid, batch: seq[(bt.Block, Natural)]
   ): Future[?!void] {.async: (raises: [CancelledError]).} =
-    ## Flush a batch of blocks to storage using batched putLeafsAndBlocks
+    ## Flush a batch of blocks to storage using batched putBlocks
     if batch.len == 0:
       return success()
 
     let batchStart = Moment.now()
     trace "Flushing block batch", count = batch.len
 
-    # Convert to the format expected by putLeafsAndBlocks: (Block, Natural, ArchivistProof)
+    # Convert to the format expected by putBlocks: (Block, Natural, ArchivistProof)
     # We don't have proofs yet (built after tree construction), so use nil
     var items: seq[(bt.Block, Natural, ArchivistProof)]
     for (blk, idx) in batch:
       items.add((blk, idx, nil))
 
-    ?await self.repoStore.putLeafsAndBlocks(tmpCid, items)
+    ?await self.repoStore.putBlocks(tmpCid, items)
     let batchDone = Moment.now()
     trace "Batch flush complete",
       duration = $(batchDone - batchStart), items = items.len
@@ -595,7 +595,7 @@ proc store*(
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
 
   # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlayMetadata(treeCid, manifestCid = manifestBlk.cid.some)
+  ?await self.repoStore.putOverlay(treeCid, manifestCid = manifestBlk.cid.some)
 
   info "Stored data",
     manifestCid = manifestBlk.cid,
@@ -798,7 +798,7 @@ proc storeSlot*(
     return failure(err)
 
   # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlayMetadata(manifest.treeCid, manifestCid = cid.some)
+  ?await self.repoStore.putOverlay(manifest.treeCid, manifestCid = cid.some)
 
   if err =? (await self.updateExpiry(manifest, expiry)).errorOption:
     error "Unable to update manifest expiry", cid, err = err.msg
@@ -919,7 +919,7 @@ proc deleteSlot*(
 
   # Mark slot overlay as Failure so maintenance will drop it and cleanup manifest
   if err =? (
-    await self.repoStore.putOverlayMetadata(
+    await self.repoStore.putOverlay(
       slotCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
     )
   ).errorOption:
@@ -927,7 +927,7 @@ proc deleteSlot*(
 
   # Mark tree overlay as Failure so maintenance will drop it and cleanup manifest
   if err =? (
-    await self.repoStore.putOverlayMetadata(
+    await self.repoStore.putOverlay(
       manifest.treeCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
     )
   ).errorOption:

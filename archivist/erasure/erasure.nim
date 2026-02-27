@@ -434,7 +434,7 @@ proc encodeData(
       idx.inc(params.steps)
 
     trace "Storing parity blocks", count = blocks.len
-    ?await self.repoStore.putLeafsAndBlocks(tmpTreeCid, blocks)
+    ?await self.repoStore.putBlocks(tmpTreeCid, blocks)
 
   trace "Encoding complete", encodedBlocksCount = params.encodedBlocksCount
   success cids
@@ -623,7 +623,7 @@ proc decodeInternal(
         recoveredIndices.add(idx)
 
     trace "Storing recovered blocks", count = blocks.len
-    ?await self.repoStore.putLeafsAndBlocks(targetCid, blocks)
+    ?await self.repoStore.putBlocks(targetCid, blocks)
 
   return (cids, recoveredIndices).success
 

@@ -10,7 +10,6 @@
 
 {.push raises: [].}
 
-import std/enumerate
 import std/parseutils
 import std/options
 

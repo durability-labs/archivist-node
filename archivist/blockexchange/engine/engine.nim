@@ -437,7 +437,7 @@ proc blocksDeliveryHandler*(
 
   # Batch write leaf blocks grouped by treeCid
   for treeCid, items in leafByTree:
-    if err =? (await self.localStore.putLeafsAndBlocks(treeCid, items)).errorOption:
+    if err =? (await self.localStore.putBlocks(treeCid, items)).errorOption:
       error "Unable to store leaf blocks", treeCid, err = err.msg
       # Remove failed leaves from validatedBlocksDelivery
       validatedBlocksDelivery.keepItIf(

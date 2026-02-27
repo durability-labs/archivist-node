@@ -48,7 +48,7 @@ proc overlayCount(
 proc assertOverlayCompleted(
     repo: RepoStore, treeCid: Cid
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  let meta = ?await repo.getOverlayMetadata(treeCid)
+  let meta = ?await repo.getOverlay(treeCid)
   if meta.status != Completed:
     return failure("Expected Completed overlay status")
   success()

@@ -40,7 +40,7 @@ proc createProtectedManifest*(
   # Create overlay for dataset tree and store blocks + proofs
   let tmpDatasetCid = (await store.createTmpOverlay()).tryGet()
   for i, blk in datasetBlocks[0 ..< numDatasetBlocks]:
-    (await store.putLeafAndBlock(tmpDatasetCid, blk, i)).tryGet()
+    (await store.putBlock(tmpDatasetCid, blk, i)).tryGet()
   (await store.finalizeOverlay(tmpDatasetCid, datasetTreeCid)).tryGet()
   for index in 0 ..< numDatasetBlocks:
     let proof = datasetTree.getProof(index).tryGet()
@@ -49,7 +49,7 @@ proc createProtectedManifest*(
   # Create overlay for protected tree and store all blocks + proofs
   let tmpProtectedCid = (await store.createTmpOverlay()).tryGet()
   for i, blk in datasetBlocks:
-    (await store.putLeafAndBlock(tmpProtectedCid, blk, i)).tryGet()
+    (await store.putBlock(tmpProtectedCid, blk, i)).tryGet()
   (await store.finalizeOverlay(tmpProtectedCid, protectedTreeCid)).tryGet()
   for index, cid in cids:
     let proof = protectedTree.getProof(index).tryGet()
