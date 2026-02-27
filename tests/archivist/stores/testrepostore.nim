@@ -8,6 +8,7 @@ import pkg/chronos
 import pkg/stew/byteutils
 import pkg/stew/bitseqs
 import pkg/kvstore
+import pkg/kvstore/fsds
 import pkg/taskpools
 
 import pkg/archivist/chunker
@@ -23,21 +24,50 @@ import ../helpers/mockclock
 import ../examples
 import ./commonstoretests
 
+var testRepoStoreTmpDir {.threadvar.}: string
+
+commonBlockStoreTests(
+  "RepoStore Sql backend",
+  proc(): BlockStore =
+    let
+      tp = Taskpool.new()
+      tmpDir = getTempDir() / "repostore_tests"
+    testRepoStoreTmpDir = tmpDir
+    createDir(tmpDir / "repo")
+    createDir(tmpDir / "meta")
+
+    let
+      repoDs = FSKVStore.new(tmpDir / "repo", tp, depth = 16).tryGet()
+      metaDs = SQLiteKVStore.new(tmpDir / "meta", tp).tryGet()
+
+    let store = RepoStore.new(repoDs, metaDs, clock = MockClock.new())
+    BlockStore(store),
+  after = proc(): Future[void] {.async, gcsafe.} =
+    removeDir(testRepoStoreTmpDir),
+)
+
 suite "Test RepoStore start/stop":
   var
     tp: Taskpool
     repoDs: KVStore
     metaDs: KVStore
+    tmpDir: string
 
   setup:
+    let path = currentSourcePath()
+    tmpDir = path.parentDir / "tests_data"
+    createDir(tmpDir / "repo")
+    createDir(tmpDir / "meta")
+
     tp = Taskpool.new()
-    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
-    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    repoDs = FSKVStore.new(tmpDir / "repo", tp, depth = 16).tryGet()
+    metaDs = SQLiteKVStore.new(tmpDir / "meta", tp).tryGet()
 
   teardown:
     (await repoDs.close()).tryGet
     (await metaDs.close()).tryGet
     tp.shutdown()
+    removeDir(tmpDir)
 
   test "Should set started flag once started":
     let repo = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 200'nb)
@@ -76,13 +106,12 @@ suite "RepoStore":
   let now: SecondsSince1970 = 123
 
   setup:
-    # removeDir(basePathAbs)
-    # require(not dirExists(basePathAbs))
-    # createDir(basePathAbs)
+    createDir(basePathAbs / "repo")
+    createDir(basePathAbs / "meta")
 
     tp = Taskpool.new()
-    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
-    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    repoDs = FSKVStore.new(basePathAbs / "repo", tp, depth = 16).tryGet()
+    metaDs = SQLiteKVStore.new(basePathAbs / "meta", tp).tryGet()
     mockClock = MockClock.new()
     mockClock.set(now)
 
@@ -92,9 +121,7 @@ suite "RepoStore":
     (await repoDs.close()).tryGet
     (await metaDs.close()).tryGet
     tp.shutdown()
-
-    # removeDir(basePathAbs)
-    # require(not dirExists(basePathAbs))
+    removeDir(basePathAbs)
 
   proc createTestBlock(size: int): bt.Block =
     bt.Block.new('a'.repeat(size).toBytes).tryGet()
@@ -109,13 +136,9 @@ suite "RepoStore":
     var blocks = BitSeq.init(1)
     blocks.setBit(0)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet()
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
 
-    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
     success((treeCid, 0.Natural))
 
   test "Should update current used bytes on block put":
@@ -213,7 +236,7 @@ suite "RepoStore":
       repo.quotaUsedBytes == 0'nb
       repo.quotaReservedBytes == 100'nb
 
-  test "Should handle duplicate CIDs in same putLeafsAndBlocks batch correctly":
+  test "Should handle duplicate CIDs in same putBlocks batch correctly":
     let blk = createTestBlock(100)
 
     # Build manifest/tree with same block at indices 0 and 1
@@ -223,11 +246,7 @@ suite "RepoStore":
     # Create overlay
     var blocks = BitSeq.init(2)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet()
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
 
     # Get initial counters
     let
@@ -239,7 +258,7 @@ suite "RepoStore":
       proof1 = tree.getProof(1).tryGet()
 
     (
-      await repo.putLeafsAndBlocks(
+      await repo.putBlocks(
         treeCid, @[(blk, 0.Natural, proof0), (blk, 1.Natural, proof1)]
       )
     ).tryGet()
@@ -293,12 +312,8 @@ suite "RepoStore":
     var blocks = BitSeq.init(1)
     blocks.setBit(0)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet
-    (await repo.putLeafAndBlock(treeCid, blk, 0, proof)).tryGet
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet
+    (await repo.putBlock(treeCid, blk, 0, proof)).tryGet
     let err = (await repo.delBlock(blk.cid)).error()
     check err.msg ==
       "Directly deleting a block that is part of a dataset is not allowed."
@@ -316,12 +331,8 @@ suite "RepoStore":
     var blocks = BitSeq.init(1)
     blocks.setBit(0)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet
-    (await repo.putLeafAndBlock(treeCid, blk, 0, proof)).tryGet
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet
+    (await repo.putBlock(treeCid, blk, 0, proof)).tryGet
 
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
     check not (await blk.cid in repo)
@@ -347,7 +358,7 @@ suite "RepoStore":
     blocks1.setBit(1)
 
     (
-      await repo.putOverlayMetadata(
+      await repo.putOverlay(
         treeCid = treeCid1, status = Completed.some, blocks = blocks1
       )
     ).tryGet()
@@ -358,7 +369,7 @@ suite "RepoStore":
       proof1_1 = tree1.getProof(1).tryGet()
 
     (
-      await repo.putLeafsAndBlocks(
+      await repo.putBlocks(
         treeCid1,
         @[(blockPool[0], 0.Natural, proof1_0), (sharedBlock, 1.Natural, proof1_1)],
       )
@@ -373,7 +384,7 @@ suite "RepoStore":
     blocks2.setBit(1)
 
     (
-      await repo.putOverlayMetadata(
+      await repo.putOverlay(
         treeCid = treeCid2, status = Completed.some, blocks = blocks2
       )
     ).tryGet()
@@ -384,7 +395,7 @@ suite "RepoStore":
       proof2_1 = tree2.getProof(1).tryGet()
 
     (
-      await repo.putLeafsAndBlocks(
+      await repo.putBlocks(
         treeCid2,
         @[(sharedBlock, 0.Natural, proof2_0), (blockPool[2], 1.Natural, proof2_1)],
       )
@@ -414,13 +425,9 @@ suite "RepoStore":
 
     var blocks = BitSeq.init(1)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet()
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
 
-    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
 
     discard (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
 
@@ -442,19 +449,15 @@ suite "RepoStore":
     var blocks = BitSeq.init(1)
     blocks.setBit(0)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet()
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
 
-    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
 
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
-    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
     (await repo.delBlock(treeCid, 0.Natural)).tryGet()
 
-  test "Should handle non-contiguous indices in putLeafsAndBlocks (BitSeq length fix)":
+  test "Should handle non-contiguous indices in putBlocks (BitSeq length fix)":
     let
       repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes =
           2000'nb)
@@ -466,22 +469,18 @@ suite "RepoStore":
     # Create overlay with 10 blocks, but only insert at index 5
     var blocks = BitSeq.init(10)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet()
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
 
     # Put only index 5 (non-contiguous)
     let proof = tree.getProof(5).tryGet()
-    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 5.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 5.Natural, proof)])).tryGet()
 
     # Verify block was stored
     check (await repo.getBlock(blk.cid)).isOk
     check repo.quotaUsedBytes == 256.NBytes
 
     # Verify overlay has correct bit set
-    let overlayMeta = (await repo.getOverlayMetadata(treeCid)).tryGet()
+    let overlayMeta = (await repo.getOverlay(treeCid)).tryGet()
     check overlayMeta.blocks.len == 10
     check overlayMeta.blocks[5] == true
 
@@ -500,11 +499,7 @@ suite "RepoStore":
     blocks.setBit(3)
     blocks.setBit(5)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet()
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
 
     # Put same block at indices 1, 3, and 5
     let
@@ -513,7 +508,7 @@ suite "RepoStore":
       proof5 = tree.getProof(5).tryGet()
 
     (
-      await repo.putLeafsAndBlocks(
+      await repo.putBlocks(
         treeCid,
         @[(blk, 1.Natural, proof1), (blk, 3.Natural, proof3), (blk, 5.Natural, proof5)],
       )
@@ -543,14 +538,10 @@ suite "RepoStore":
     var blocks = BitSeq.init(1)
     blocks.setBit(0)
 
-    (
-      await repo.putOverlayMetadata(
-        treeCid = treeCid, status = Completed.some, blocks = blocks
-      )
-    ).tryGet()
+    (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
 
     # Put block first
-    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
     check (await repo.getBlock(blk.cid)).isOk
 
     # Delete block (marks leaf as deleted, but don't physically remove yet)
@@ -558,7 +549,7 @@ suite "RepoStore":
     check not (await blk.cid in repo)
 
     # Re-put the same block (should restore deleted leaf via resurrection logic)
-    (await repo.putLeafsAndBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
 
     # Verify block is back
     check (await repo.getBlock(blk.cid)).isOk
@@ -569,15 +560,365 @@ suite "RepoStore":
     check restoredLeaf.blkCid == blk.cid
     check restoredLeaf.deleted == false
 
-commonBlockStoreTests(
-  "RepoStore Sql backend",
-  proc(): BlockStore =
-    let tp = Taskpool.new()
-    BlockStore(
-      RepoStore.new(
-        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
-        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
-        clock = MockClock.new(),
+suite "Test RepoStore Batch Operations":
+  var
+    repoDs: FSKVStore
+    metaDs: SQLiteKVStore
+    repoStore: RepoStore
+
+  let
+    tp = Taskpool.new(num_threads = 4)
+
+  setup:
+    repoDs = FSKVStore.new(currentSourcePath.parentDir / "repoDs_batch", tp, depth = 16).tryGet()
+    metaDs = SQLiteKVStore.new(currentSourcePath.parentDir / "metaDs_batch", tp).tryGet()
+    repoStore = RepoStore.new(repoDs, metaDs, quotaMaxBytes = 2000'nb)
+    await repoStore.start()
+
+  teardown:
+    await repoStore.stop()
+    tp.shutdown()
+
+  proc createTestBlock(size: int): bt.Block =
+    bt.Block.new('a'.repeat(size).toBytes).tryGet()
+
+  # Tests for getBlocks(cids: seq[Cid]) - raw CID batch
+  test "should get multiple blocks by CID":
+    let
+      blk1 = createTestBlock(100)
+      blk2 = createTestBlock(150)
+      blk3 = createTestBlock(200)
+
+    # Store blocks using deprecated putBlock method
+    (await repoStore.putBlock(blk1)).tryGet()
+    (await repoStore.putBlock(blk2)).tryGet()
+    (await repoStore.putBlock(blk3)).tryGet()
+
+    # Retrieve all three blocks
+    let blocks = (await repoStore.getBlocks(@[blk1.cid, blk2.cid, blk3.cid])).tryGet()
+
+    check blocks.len == 3
+    check blocks[0].cid == blk1.cid
+    check blocks[1].cid == blk2.cid
+    check blocks[2].cid == blk3.cid
+
+  test "should return empty seq for empty input":
+    let blocks = (await repoStore.getBlocks(newSeq[Cid]())).tryGet()
+    check blocks.len == 0
+
+  test "should skip missing CIDs":
+    let
+      blk1 = createTestBlock(100)
+      blk2 = createTestBlock(150)
+
+    # Store only 2 blocks
+    (await repoStore.putBlock(blk1)).tryGet()
+    (await repoStore.putBlock(blk2)).tryGet()
+
+    # Request 3 CIDs (one missing)
+    let missingCid = bt.Cid.example
+    let blocks = (await repoStore.getBlocks(@[blk1.cid, missingCid, blk2.cid])).tryGet()
+
+    # Should return only the 2 existing blocks
+    check blocks.len == 2
+
+  test "should handle empty CIDs":
+    let
+      blk1 = createTestBlock(100)
+      emptyBlk = bt.Cid.example.emptyBlock.tryGet()
+
+    # Store one real block
+    (await repoStore.putBlock(blk1)).tryGet()
+
+    # Request real + empty CID
+    let blocks = (await repoStore.getBlocks(@[blk1.cid, emptyBlk.cid])).tryGet()
+
+    # Should return the real block and synthesized empty block
+    check blocks.len == 2
+
+  # Tests for getBlocks(treeCid, indices) - tree-based batch
+  test "should get multiple blocks by tree and indices":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(3)
+    blocks.setBit(0)
+    blocks.setBit(1)
+    blocks.setBit(2)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let
+      proof0 = tree.getProof(0).tryGet()
+      proof1 = tree.getProof(1).tryGet()
+      proof2 = tree.getProof(2).tryGet()
+
+    (
+      await repoStore.putBlocks(
+        treeCid,
+        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
       )
-    ),
-)
+    ).tryGet()
+
+    # Retrieve all three blocks
+    let results = (await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+
+    check results.len == 3
+    check results[0][0] == 0.Natural
+    check results[0][1].cid == dataset[0].cid
+    check results[1][0] == 1.Natural
+    check results[1][1].cid == dataset[1].cid
+    check results[2][0] == 2.Natural
+    check results[2][1].cid == dataset[2].cid
+
+  test "should return empty seq for empty indices":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 1, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(1)
+    blocks.setBit(0)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let proof = tree.getProof(0).tryGet()
+    (await repoStore.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof)])).tryGet()
+
+    # Request empty indices
+    let results = (await repoStore.getBlocks(treeCid, newSeq[Natural]())).tryGet()
+
+    check results.len == 0
+
+  test "should skip missing indices":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(3)
+    blocks.setBit(0)
+    blocks.setBit(1)
+    blocks.setBit(2)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let
+      proof0 = tree.getProof(0).tryGet()
+      proof1 = tree.getProof(1).tryGet()
+      proof2 = tree.getProof(2).tryGet()
+
+    (
+      await repoStore.putBlocks(
+        treeCid,
+        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+      )
+    ).tryGet()
+
+    # Request indices 0,1,2,5 (5 is missing)
+    let results = (await repoStore.getBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural, 5.Natural])).tryGet()
+
+    # Should return only 0,1,2
+    check results.len == 3
+
+  test "should handle indices not in bitmap":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 2, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    # Create overlay with only 2 blocks but request indices beyond
+    var blocks = BitSeq.init(2)
+    blocks.setBit(0)
+    blocks.setBit(1)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let
+      proof0 = tree.getProof(0).tryGet()
+      proof1 = tree.getProof(1).tryGet()
+
+    (
+      await repoStore.putBlocks(
+        treeCid,
+        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1)],
+      )
+    ).tryGet()
+
+    # Request indices beyond bitmap length
+    let results = (await repoStore.getBlocks(treeCid, @[0.Natural, 5.Natural, 10.Natural])).tryGet()
+
+    # Should return only index 0
+    check results.len == 1
+    check results[0][0] == 0.Natural
+
+  # Tests for getBlocksAndProofs(treeCid, indices)
+  test "should get blocks and proofs":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(3)
+    blocks.setBit(0)
+    blocks.setBit(1)
+    blocks.setBit(2)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let
+      proof0 = tree.getProof(0).tryGet()
+      proof1 = tree.getProof(1).tryGet()
+      proof2 = tree.getProof(2).tryGet()
+
+    (
+      await repoStore.putBlocks(
+        treeCid,
+        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+      )
+    ).tryGet()
+
+    # Retrieve blocks with proofs
+    let results = (await repoStore.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+
+    check results.len == 3
+    check results[0][0] == 0.Natural
+    check results[0][1].cid == dataset[0].cid
+    check results[0][2] == proof0
+    check results[1][0] == 1.Natural
+    check results[1][1].cid == dataset[1].cid
+    check results[1][2] == proof1
+    check results[2][0] == 2.Natural
+    check results[2][1].cid == dataset[2].cid
+    check results[2][2] == proof2
+
+  test "should return empty for empty input":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 1, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(1)
+    blocks.setBit(0)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let proof = tree.getProof(0).tryGet()
+    (await repoStore.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof)])).tryGet()
+
+    # Request empty indices
+    let results = (await repoStore.getBlocksAndProofs(treeCid, newSeq[Natural]())).tryGet()
+
+    check results.len == 0
+
+  # Tests for hasBlocks(treeCid, indices)
+  test "should report existing blocks":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(3)
+    blocks.setBit(0)
+    blocks.setBit(1)
+    blocks.setBit(2)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let
+      proof0 = tree.getProof(0).tryGet()
+      proof1 = tree.getProof(1).tryGet()
+      proof2 = tree.getProof(2).tryGet()
+
+    (
+      await repoStore.putBlocks(
+        treeCid,
+        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+      )
+    ).tryGet()
+
+    # Check which blocks exist
+    let results = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+
+    check results.len == 3
+    check results[0][0] == 0.Natural
+    check results[0][1] == true
+    check results[1][0] == 1.Natural
+    check results[1][1] == true
+    check results[2][0] == 2.Natural
+    check results[2][1] == true
+
+  test "should not report missing blocks":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 2, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(3)
+    blocks.setBit(0)
+    blocks.setBit(2)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let
+      proof0 = tree.getProof(0).tryGet()
+      proof2 = tree.getProof(2).tryGet()
+
+    (
+      await repoStore.putBlocks(
+        treeCid,
+        @[(dataset[0], 0.Natural, proof0), (dataset[1], 2.Natural, proof2)],
+      )
+    ).tryGet()
+
+    # Check indices 0,1,2 - only 0 and 2 exist
+    let results = (await repoStore.hasBlocks(treeCid, @[0.Natural, 1.Natural, 2.Natural])).tryGet()
+
+    check results.len == 3
+    check results[0][0] == 0.Natural
+    check results[0][1] == true
+    check results[1][0] == 1.Natural
+    check results[1][1] == false
+    check results[2][0] == 2.Natural
+    check results[2][1] == true
+
+  # Tests for delBlocks(treeCid, indices)
+  test "should delete multiple blocks":
+    let
+      dataset = (await makeRandomBlocks(datasetSize = 3, blockSize = 256'nb)).tryGet
+      (_, tree) = makeManifestAndTree(dataset).tryGet()
+      treeCid = tree.rootCid.tryGet()
+
+    var blocks = BitSeq.init(3)
+    blocks.setBit(0)
+    blocks.setBit(1)
+    blocks.setBit(2)
+
+    (await repoStore.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
+
+    let
+      proof0 = tree.getProof(0).tryGet()
+      proof1 = tree.getProof(1).tryGet()
+      proof2 = tree.getProof(2).tryGet()
+
+    (
+      await repoStore.putBlocks(
+        treeCid,
+        @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1), (dataset[2], 2.Natural, proof2)],
+      )
+    ).tryGet()
+
+    # Verify all blocks exist
+    check (await repoStore.hasBlock(treeCid, 0.Natural)).tryGet() == true
+    check (await repoStore.hasBlock(treeCid, 1.Natural)).tryGet() == true
+    check (await repoStore.hasBlock(treeCid, 2.Natural)).tryGet() == true
+
+    # Delete indices 0 and 2
+    (await repoStore.delBlocks(treeCid, @[0.Natural, 2.Natural])).tryGet()
+
+    # Verify only index 1 remains
+    check (await repoStore.hasBlock(treeCid, 0.Natural)).tryGet() == false
+    check (await repoStore.hasBlock(treeCid, 1.Natural)).tryGet() == true
+    check (await repoStore.hasBlock(treeCid, 2.Natural)).tryGet() == false
