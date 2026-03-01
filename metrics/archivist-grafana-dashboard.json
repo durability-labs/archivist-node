@@ -26,6 +26,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
+  "id": 743,
   "links": [],
   "panels": [
     {
@@ -44,7 +45,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfdges8mgrvggd"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -95,10 +96,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "archivist_inflight_discovery{}",
+          "expr": "archivistInflightDiscovery{}",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -110,7 +111,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfdges8mgrvggd"
+        "uid": "${datasource}"
       },
       "description": "Basic CPU info",
       "fieldConfig": {
@@ -459,7 +460,1392 @@
         ]
       },
       "gridPos": {
-        "h": 10,
+        "h": 6,
+        "w": 9,
+        "x": 0,
+        "y": 4
+      },
+      "id": 106,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "width": 250
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode=\"system\",node=~\"$node\",}[5m])) * 100",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 2,
+          "legendFormat": "Busy System - {{node}}",
+          "range": true,
+          "refId": "A",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode='user',node=~\"$node\"}[5m])) * 100",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 2,
+          "legendFormat": "Busy User - {{node}}",
+          "range": true,
+          "refId": "B",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode='iowait',node=~\"$node\"}[5m])) * 100",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "Busy Iowait - {{node}}",
+          "range": true,
+          "refId": "C",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode=~\".*irq\",node=~\"$node\"}[5m])) * 100",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "Busy IRQs - {{node}}",
+          "range": true,
+          "refId": "D",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode!='idle',mode!='user',mode!='system',mode!='iowait',mode!='irq',mode!='softirq',node=~\"$node\",}[5m])) * 100",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "Busy Other - {{node}}",
+          "range": true,
+          "refId": "E",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode='idle',node=~\"$node\"}[5m])) * 100",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "Idle - {{node}}",
+          "range": true,
+          "refId": "F",
+          "step": 240
+        }
+      ],
+      "title": "CPU Basic",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Basic memory usage",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 40,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "links": [],
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Apps"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#629E51",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Buffers"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#614D93",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cache"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6D1F62",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cached"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#511749",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Committed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Free"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0A437C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hardware Corrupted - Amount of RAM that the kernel identified as corrupted / not working"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CFFAFF",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Inactive"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#584477",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "PageTables"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0A50A1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Page_Tables"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0A50A1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RAM_Free"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E0F9D7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SWAP Used"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BF1B00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Slab"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#806EB7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Slab_Cache"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E0752D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Swap"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BF1B00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Swap Used"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BF1B00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Swap_Cache"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Swap_Free"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#2F575E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unused"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RAM Total"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E0F9D7",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RAM Cache + Buffer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#052B51",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RAM Free"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avaliable"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#DEDAF7",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 9,
+        "y": 4
+      },
+      "id": 107,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "width": 350
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "node_memory_MemTotal_bytes{node=~\"$node\"}",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 2,
+          "legendFormat": "RAM Total - {{node}}",
+          "range": true,
+          "refId": "A",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "node_memory_MemTotal_bytes{node=~\"$node\"} - node_memory_MemFree_bytes{node=~\"$node\"} - (node_memory_Cached_bytes{node=~\"$node\"} + node_memory_Buffers_bytes{node=~\"$node\"})",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 2,
+          "legendFormat": "RAM Used - {{node}}",
+          "range": true,
+          "refId": "B",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "node_memory_Cached_bytes{node=~\"$node\"} + node_memory_Buffers_bytes{node=~\"$node\"}",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "RAM Cache + Buffer - {{node}}",
+          "range": true,
+          "refId": "C",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "node_memory_MemFree_bytes{node=~\"$node\"}",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "RAM Free - {{node}}",
+          "range": true,
+          "refId": "D",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(node_memory_SwapTotal_bytes{node=~\"$node\"} - node_memory_SwapFree_bytes{node=~\"$node\"})",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "SWAP Used - {{node}}",
+          "range": true,
+          "refId": "E",
+          "step": 240
+        }
+      ],
+      "title": "Memory Basic",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Basic network info per interface",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 40,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "links": [],
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Recv_bytes_eth2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Recv_bytes_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0A50A1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Recv_drop_eth2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Recv_drop_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E0F9D7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Recv_errs_eth2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BF1B00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Recv_errs_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trans_bytes_eth2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trans_bytes_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0A50A1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trans_drop_eth2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trans_drop_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E0F9D7",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trans_errs_eth2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BF1B00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trans_errs_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "recv_bytes_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0A50A1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "recv_drop_eth0"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#99440A",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "recv_drop_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#967302",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "recv_errs_eth0"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BF1B00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "recv_errs_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#890F02",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trans_bytes_eth0"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trans_bytes_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0A50A1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trans_drop_eth0"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#99440A",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trans_drop_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#967302",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trans_errs_eth0"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BF1B00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trans_errs_lo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#890F02",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*trans.*/"
+            },
+            "properties": [
+              {
+                "id": "custom.transform",
+                "value": "negative-Y"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 7,
+        "x": 17,
+        "y": 4
+      },
+      "id": 108,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "irate(node_network_receive_bytes_total{node=~\"$node\"}[5m])*8",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "recv {{device}}",
+          "range": true,
+          "refId": "A",
+          "step": 240
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "irate(node_network_transmit_bytes_total{node=~\"$node\"}[5m])*8",
+          "format": "time_series",
+          "intervalFactor": 2,
+          "legendFormat": "trans {{device}} ",
+          "range": true,
+          "refId": "B",
+          "step": 240
+        }
+      ],
+      "title": "Network Traffic Basic",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "links": [],
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RSS"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nim GC mem total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nim GC mem used"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "rate(process_cpu_seconds_total{node=~\"$node\"}[2s]) * 100",
+          "hide": true,
+          "legendFormat": "CPU usage % - {{node}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "process_open_fds{node=~\"$node\"}",
+          "hide": true,
+          "legendFormat": "open file descriptors - {{node}} ",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "process_resident_memory_bytes{node=~\"$node\"}",
+          "hide": true,
+          "legendFormat": "RSS - {{node}}",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "nim_gc_mem_bytes{node=~\"$node\"}",
+          "hide": true,
+          "legendFormat": "Nim GC mem total - {{node}}",
+          "range": true,
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "nim_gc_mem_occupied_bytes{node=~\"$node\"}",
+          "hide": false,
+          "legendFormat": "Nim GC mem used - {{node}}",
+          "range": true,
+          "refId": "G"
+        }
+      ],
+      "title": "Resources - $node",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "hidden",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "links": [],
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*/"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "auto"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
         "w": 12,
         "x": 12,
         "y": 10
@@ -483,7 +1869,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nim_gc_heap_instance_occupied_bytes{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
@@ -509,7 +1895,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "description": "Shows the time each future (async proc) spent occupying the Chronos thread.",
           "fieldConfig": {
@@ -589,7 +1975,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "d32523fb-ef36-4856-b61a-b31e73a39fc2"
               },
               "editorMode": "code",
               "expr": "chronos_exec_time_with_children_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
@@ -605,7 +1991,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "description": "Shows the time each future (async proc) spent occupying the Chronos thread over a 60 second rolling window.",
           "fieldConfig": {
@@ -685,7 +2071,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "d32523fb-ef36-4856-b61a-b31e73a39fc2"
               },
               "editorMode": "code",
               "expr": "increase(chronos_exec_time_with_children_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
@@ -701,7 +2087,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "description": "The maximum time taken by a single call of an async proc. Does not take into account calls that have not yet completed.",
           "fieldConfig": {
@@ -781,7 +2167,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
               "expr": "chronos_single_exec_time_max{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
@@ -797,7 +2183,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "description": "",
           "fieldConfig": {
@@ -878,7 +2264,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
               "expr": "increase(chronos_call_count_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
@@ -894,7 +2280,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "description": "",
           "fieldConfig": {
@@ -976,7 +2362,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
               "expr": "chronos_call_count_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
@@ -1006,7 +2392,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1089,7 +2475,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by (pod) (archivist_api_uploads_total{node=~\"$node\",namespace=~\"$namespace\", pod=~\"$pod\"})",
@@ -1105,7 +2491,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1188,7 +2574,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by (pod) (archivist_api_downloads_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -1218,7 +2604,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1307,7 +2693,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (libp2p_peers{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -1319,7 +2705,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by (pod) (libp2p_pubsub_peers{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -1335,7 +2721,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1449,7 +2835,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod,type) (libp2p_open_streams{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -1462,7 +2848,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by (pod) (libp2p_open_streams{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -1475,7 +2861,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(type, dir, pod) (libp2p_open_streams{node=~\"$node\",namespace=~\"$namespace\", pod=~\"$pod\"})",
@@ -1492,7 +2878,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1581,10 +2967,10 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (rate(dht_message_requests_incoming_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[5m]))",
+              "expr": "rate(sum by (pod) (dht_message_requests_incoming_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}))",
               "legendFormat": "-> {{ pod }}",
               "range": true,
               "refId": "A"
@@ -1592,10 +2978,10 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (rate(dht_message_requests_outgoing_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[5m]))",
+              "expr": "- sum by (pod) (discovery_message_requests_outgoing_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
               "hide": false,
               "legendFormat": "<- {{ pod }}",
               "range": true,
@@ -1608,7 +2994,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1697,10 +3083,10 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (rate(dht_session_lru_cache_hits_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[5m]))",
+              "expr": "rate(sum by (pod) (dht_session_lru_cache_hits_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}))",
               "legendFormat": "hits - {{ pod }}",
               "range": true,
               "refId": "A"
@@ -1708,10 +3094,10 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (rate(dht_session_lru_cache_misses_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[5m]))",
+              "expr": "- sum by (pod) (discovery_session_lru_cache_misses_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
               "hide": false,
               "legendFormat": "misses - {{ pod }}",
               "range": true,
@@ -1724,7 +3110,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1810,10 +3196,10 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (dht_routing_table_nodes {node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (pod) (dht_routing_table_nodes {state=\"\", node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
               "instant": false,
               "legendFormat": "{{pod}}",
               "range": true,
@@ -1840,7 +3226,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1919,7 +3305,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_block_exchange_blocks_sent_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -1935,7 +3321,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2016,7 +3402,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "increase(archivist_block_exchange_blocks_sent_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
@@ -2032,7 +3418,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2111,7 +3497,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_block_exchange_want_have_lists_sent_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -2127,7 +3513,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2206,7 +3592,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "increase(archivist_block_exchange_want_have_lists_sent_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
@@ -2222,7 +3608,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2301,7 +3687,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_block_exchange_want_block_lists_sent_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -2317,7 +3703,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2398,7 +3784,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "increase(archivist_block_exchange_want_block_lists_sent_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
@@ -2414,7 +3800,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2493,7 +3879,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_block_exchange_want_have_lists_received_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -2509,7 +3895,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2588,7 +3974,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_block_exchange_want_block_lists_received_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -2618,7 +4004,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2701,7 +4087,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_repostore_blocks{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -2717,7 +4103,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2801,7 +4187,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_repostore_bytes_used{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -2817,7 +4203,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2901,7 +4287,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_repostore_bytes_reserved{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -2931,7 +4317,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3015,7 +4401,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_tryput_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3027,7 +4413,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_tryputatomic_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3039,7 +4425,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_trydelete_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3051,7 +4437,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_trydeleteatomic_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3067,7 +4453,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3151,7 +4537,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_tryput_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3163,7 +4549,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_tryputatomic_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3175,7 +4561,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_trydelete_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3187,7 +4573,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_trydeleteatomic_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3203,7 +4589,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3287,7 +4673,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_put_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3299,7 +4685,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_get_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3311,7 +4697,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_has_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3323,7 +4709,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_delete_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3335,7 +4721,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_putatomic_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3347,7 +4733,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_deleteatomic_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3359,7 +4745,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_move_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3371,7 +4757,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_query_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3387,7 +4773,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3471,7 +4857,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_put_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3483,7 +4869,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_delete_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3495,7 +4881,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_putatomic_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3507,7 +4893,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_putatomic_rollback_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3519,7 +4905,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_deleteatomic_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3531,7 +4917,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_deleteatomic_rollback_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3543,7 +4929,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_sql_moveatomic_error_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -3559,7 +4945,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3643,7 +5029,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3655,7 +5041,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3667,7 +5053,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3683,7 +5069,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3767,7 +5153,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3779,7 +5165,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3791,7 +5177,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3807,7 +5193,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3891,7 +5277,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3903,7 +5289,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3915,7 +5301,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -3931,7 +5317,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4015,7 +5401,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_move_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4027,7 +5413,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_move_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4039,7 +5425,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_move_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4055,7 +5441,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4139,7 +5525,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4151,7 +5537,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4163,7 +5549,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_putatomic_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4175,7 +5561,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_putatomic_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4191,7 +5577,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4275,7 +5661,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_sql_inflight_put{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -4287,7 +5673,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_sql_inflight_get{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -4299,7 +5685,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_sql_inflight_has{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -4311,7 +5697,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_sql_inflight_delete{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -4323,7 +5709,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_sql_inflight_putatomic{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -4335,7 +5721,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_sql_inflight_deleteatomic{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -4351,7 +5737,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4435,7 +5821,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4447,7 +5833,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4459,7 +5845,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4471,7 +5857,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4487,7 +5873,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4571,7 +5957,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_sql_active_iterators{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -4587,7 +5973,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4671,7 +6057,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_fs_put_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -4683,7 +6069,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_fs_get_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -4695,7 +6081,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_fs_has_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -4707,7 +6093,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_fs_delete_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -4719,7 +6105,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_fs_query_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -4735,7 +6121,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4819,7 +6205,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_fs_put_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -4831,7 +6217,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "rate(kvstore_fs_delete_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
@@ -4847,7 +6233,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -4931,7 +6317,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4943,7 +6329,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4955,7 +6341,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(kvstore_fs_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -4971,7 +6357,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5055,7 +6441,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5067,7 +6453,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5079,7 +6465,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(kvstore_fs_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5095,7 +6481,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5179,7 +6565,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5191,7 +6577,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5207,7 +6593,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5291,7 +6677,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_fs_inflight_put{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -5303,7 +6689,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_fs_inflight_get{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -5315,7 +6701,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_fs_inflight_has{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -5327,7 +6713,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_fs_inflight_delete{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -5343,7 +6729,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5427,7 +6813,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5439,7 +6825,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5451,7 +6837,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5463,7 +6849,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
@@ -5479,7 +6865,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5563,7 +6949,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "kvstore_fs_active_iterators{namespace=~\"$namespace\",pod=~\"$pod\"}",
@@ -5586,14 +6972,14 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 23
       },
       "id": 77,
       "panels": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5675,7 +7061,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_pending_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -5691,7 +7077,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5773,7 +7159,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_submitted_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -5789,7 +7175,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5871,7 +7257,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_started_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -5887,7 +7273,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -5969,7 +7355,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_finished_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -5985,7 +7371,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -6067,7 +7453,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_failed_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -6083,7 +7469,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -6165,7 +7551,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_cancelled_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -6181,7 +7567,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -6263,7 +7649,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_unknown_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -6279,7 +7665,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -6361,7 +7747,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_purchases_error_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -6384,14 +7770,14 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 24
       },
       "id": 109,
       "panels": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
@@ -6475,7 +7861,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "sum by(pod) (archivist_proofs_per_period{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
@@ -6498,18 +7884,66 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 25
       },
       "id": 62,
       "panels": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "bytes"
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percent"
             },
             "overrides": []
           },
@@ -6543,27 +7977,80 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "nim_gc_mem_occupied_bytes{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
-              "instant": false,
-              "legendFormat": "{{pod}}",
+              "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m]))",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "{{ pod }}",
               "range": true,
-              "refId": "A"
+              "refId": "A",
+              "useBackend": false
             }
           ],
-          "title": "GC Memory Occupied - $pod",
+          "title": "CPU Usage - $pod ",
           "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
             },
             "overrides": []
           },
@@ -6597,27 +8084,114 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "archivist_repostore_blocks{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
-              "instant": false,
-              "legendFormat": "{{pod}}",
+              "expr": "sum by(pod) (container_processes{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"})",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "Processes - {{ pod }}",
               "range": true,
-              "refId": "A"
+              "refId": "A",
+              "useBackend": false
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "disableTextWrap": false,
+              "editorMode": "code",
+              "expr": "sum by(pod) (container_threads{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"})",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "Threads - {{ pod }}",
+              "range": true,
+              "refId": "B",
+              "useBackend": false
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "disableTextWrap": false,
+              "editorMode": "code",
+              "expr": "sum by(pod) (container_sockets{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"})",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "Sockets - {{ pod }}",
+              "range": true,
+              "refId": "C",
+              "useBackend": false
             }
           ],
-          "title": "Repostore Blocks - $pod",
+          "title": "Processes - $pod ",
           "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "bytes"
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percent"
             },
             "overrides": []
           },
@@ -6651,27 +8225,80 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "nim_gc_heap_instance_occupied_bytes{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
-              "instant": false,
-              "legendFormat": "{{pod}} - {{type_name}}",
+              "expr": "sum by (pod) ((container_cpu_cfs_throttled_periods_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"} / container_cpu_cfs_periods_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}) * 100)",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "{{ pod }}",
               "range": true,
-              "refId": "A"
+              "refId": "A",
+              "useBackend": false
             }
           ],
-          "title": "GC Heap Instance - $pod",
+          "title": "CPU Throttling - $pod",
           "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "bytes"
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "decbytes"
             },
             "overrides": []
           },
@@ -6703,27 +8330,80 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "nim_gc_mem_bytes{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
-              "instant": false,
-              "legendFormat": "{{pod}}",
+              "expr": "sum(container_memory_working_set_bytes{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"}) by (pod)",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "{{ pod }}",
               "range": true,
-              "refId": "A"
+              "refId": "A",
+              "useBackend": false
             }
           ],
-          "title": "GC Memory Total - $pod",
+          "title": "Memory usage - $pod",
           "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "Bps"
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bps"
             },
             "overrides": []
           },
@@ -6755,39 +8435,97 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "rate(libp2p_network_bytes_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\",direction=\"in\"}[1m])",
-              "instant": false,
-              "legendFormat": "{{pod}} - in",
+              "expr": "sum by(pod) (rate(container_network_receive_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m])) * 8",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "-> {{ pod }}",
               "range": true,
-              "refId": "A"
+              "refId": "A",
+              "useBackend": false
             },
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "rate(libp2p_network_bytes_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\",direction=\"out\"}[1m])",
-              "instant": false,
-              "legendFormat": "{{pod}} - out",
+              "expr": "- sum by(pod) (rate(container_network_transmit_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m])) * 8",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "<- {{ pod }}",
               "range": true,
-              "refId": "B"
+              "refId": "B",
+              "useBackend": false
             }
           ],
-          "title": "Network Bytes - $pod",
+          "title": "Network I/O (1m avg) - $pod",
           "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "short"
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "Bps"
             },
             "overrides": []
           },
@@ -6819,27 +8557,97 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "libp2p_peers{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
-              "instant": false,
-              "legendFormat": "{{pod}}",
+              "expr": "sum by(pod) (rate(container_fs_reads_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m]))",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "Reads {{ pod }}",
               "range": true,
-              "refId": "A"
+              "refId": "A",
+              "useBackend": false
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "disableTextWrap": false,
+              "editorMode": "code",
+              "expr": "sum by(pod) (rate(container_fs_writes_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m]))",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "Writes {{ pod }}",
+              "range": true,
+              "refId": "B",
+              "useBackend": false
             }
           ],
-          "title": "Peer Count - $pod",
+          "title": "Disk Read/Writes - $pod",
           "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfdges8mgrvggd"
+            "uid": "${datasource}"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "ops"
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none"
             },
             "overrides": []
           },
@@ -6873,21 +8681,26 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "cfdges8mgrvggd"
+                "uid": "${datasource}"
               },
+              "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "rate(libp2p_successful_dials_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[1m])",
-              "instant": false,
-              "legendFormat": "{{pod}}",
+              "expr": "kube_pod_container_status_restarts_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "fullMetaSearch": false,
+              "hide": false,
+              "includeNullMetadata": true,
+              "interval": "",
+              "legendFormat": "{{ pod }}",
               "range": true,
-              "refId": "A"
+              "refId": "A",
+              "useBackend": false
             }
           ],
-          "title": "Successful Dials - $pod",
+          "title": "Restarts - $pod",
           "type": "timeseries"
         }
       ],
-      "title": "Process Resources",
+      "title": "Pods",
       "type": "row"
     }
   ],
@@ -6901,8 +8714,8 @@
     "list": [
       {
         "current": {
-          "text": "Prometheus",
-          "value": "cfdges8mgrvggd"
+          "text": "VictoriaMetrics",
+          "value": "${datasource}"
         },
         "includeAll": false,
         "label": "Datasource",
@@ -6922,7 +8735,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "cfdges8mgrvggd"
+          "uid": "${datasource}"
         },
         "definition": "label_values(process_virtual_memory_bytes,node)",
         "includeAll": true,
@@ -6932,7 +8745,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(archivist_repostore_blocks, node)",
+          "query": "label_values(process_virtual_memory_bytes,node)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -6950,7 +8763,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "cfdges8mgrvggd"
+          "uid": "${datasource}"
         },
         "definition": "label_values({node=~\"$node\"},namespace)",
         "includeAll": true,
@@ -6960,7 +8773,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(archivist_repostore_blocks{node=~\"$node\"}, namespace)",
+          "query": "label_values({node=~\"$node\"},namespace)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -6976,7 +8789,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "cfdges8mgrvggd"
+          "uid": "${datasource}"
         },
         "definition": "label_values({namespace=~\"$namespace\"},pod)",
         "includeAll": true,
@@ -6986,7 +8799,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(archivist_repostore_blocks{namespace=~\"$namespace\"}, pod)",
+          "query": "label_values({namespace=~\"$namespace\"},pod)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -7015,5 +8828,5 @@
   "timezone": "",
   "title": "Archivist node",
   "uid": "afaae7b4-5be1-4974-923e-2532131ba614",
-  "version": 8
+  "version": 3
 }
