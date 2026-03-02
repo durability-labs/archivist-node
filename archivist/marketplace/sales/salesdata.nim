@@ -9,3 +9,4 @@ type SalesData* = ref object
   slotIndex*: uint64
   cancelled*: Future[void]
   slotQueueItem*: ?SlotQueueItem
+  errorBackoffDelay*: Duration
