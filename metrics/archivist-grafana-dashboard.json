@@ -99,8 +99,8 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "archivistInflightDiscovery{}",
-          "legendFormat": "{{pod}}",
+          "expr": "archivist_inflight_discovery{instance=~\"$node\"}",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -490,11 +490,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode=\"system\",node=~\"$node\",}[5m])) * 100",
+          "expr": "sum by (instance)(irate(node_cpu_seconds_total{mode=\"system\",}[5m])) * 100",
           "format": "time_series",
           "hide": false,
           "intervalFactor": 2,
-          "legendFormat": "Busy System - {{node}}",
+          "legendFormat": "Busy System - {{instance}}",
           "range": true,
           "refId": "A",
           "step": 240
@@ -505,11 +505,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode='user',node=~\"$node\"}[5m])) * 100",
+          "expr": "sum by (instance)(irate(node_cpu_seconds_total{mode='user'}[5m])) * 100",
           "format": "time_series",
           "hide": false,
           "intervalFactor": 2,
-          "legendFormat": "Busy User - {{node}}",
+          "legendFormat": "Busy User - {{instance}}",
           "range": true,
           "refId": "B",
           "step": 240
@@ -520,10 +520,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode='iowait',node=~\"$node\"}[5m])) * 100",
+          "expr": "sum by (instance)(irate(node_cpu_seconds_total{mode='iowait'}[5m])) * 100",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "Busy Iowait - {{node}}",
+          "legendFormat": "Busy Iowait - {{instance}}",
           "range": true,
           "refId": "C",
           "step": 240
@@ -534,10 +534,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode=~\".*irq\",node=~\"$node\"}[5m])) * 100",
+          "expr": "sum by (instance)(irate(node_cpu_seconds_total{mode=~\".*irq\"}[5m])) * 100",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "Busy IRQs - {{node}}",
+          "legendFormat": "Busy IRQs - {{instance}}",
           "range": true,
           "refId": "D",
           "step": 240
@@ -548,10 +548,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode!='idle',mode!='user',mode!='system',mode!='iowait',mode!='irq',mode!='softirq',node=~\"$node\",}[5m])) * 100",
+          "expr": "sum by (instance)(irate(node_cpu_seconds_total{mode!='idle',mode!='user',mode!='system',mode!='iowait',mode!='irq',mode!='softirq',}[5m])) * 100",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "Busy Other - {{node}}",
+          "legendFormat": "Busy Other - {{instance}}",
           "range": true,
           "refId": "E",
           "step": 240
@@ -562,10 +562,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (node)(irate(node_cpu_seconds_total{mode='idle',node=~\"$node\"}[5m])) * 100",
+          "expr": "sum by (instance)(irate(node_cpu_seconds_total{mode='idle'}[5m])) * 100",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "Idle - {{node}}",
+          "legendFormat": "Idle - {{instance}}",
           "range": true,
           "refId": "F",
           "step": 240
@@ -1037,11 +1037,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_memory_MemTotal_bytes{node=~\"$node\"}",
+          "expr": "sum by (instance)(process_resident_memory_bytes{job=\"archivist-nodes\"})",
           "format": "time_series",
           "hide": false,
           "intervalFactor": 2,
-          "legendFormat": "RAM Total - {{node}}",
+          "legendFormat": "RSS - {{instance}}",
           "range": true,
           "refId": "A",
           "step": 240
@@ -1052,11 +1052,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_memory_MemTotal_bytes{node=~\"$node\"} - node_memory_MemFree_bytes{node=~\"$node\"} - (node_memory_Cached_bytes{node=~\"$node\"} + node_memory_Buffers_bytes{node=~\"$node\"})",
+          "expr": "sum by (instance)(process_virtual_memory_bytes{job=\"archivist-nodes\"})",
           "format": "time_series",
           "hide": false,
           "intervalFactor": 2,
-          "legendFormat": "RAM Used - {{node}}",
+          "legendFormat": "Virtual Memory - {{instance}}",
           "range": true,
           "refId": "B",
           "step": 240
@@ -1067,10 +1067,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_memory_Cached_bytes{node=~\"$node\"} + node_memory_Buffers_bytes{node=~\"$node\"}",
+          "expr": "",
           "format": "time_series",
+          "hide": true,
           "intervalFactor": 2,
-          "legendFormat": "RAM Cache + Buffer - {{node}}",
+          "legendFormat": "",
           "range": true,
           "refId": "C",
           "step": 240
@@ -1081,10 +1082,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_memory_MemFree_bytes{node=~\"$node\"}",
+          "expr": "",
           "format": "time_series",
+          "hide": true,
           "intervalFactor": 2,
-          "legendFormat": "RAM Free - {{node}}",
+          "legendFormat": "",
           "range": true,
           "refId": "D",
           "step": 240
@@ -1095,10 +1097,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(node_memory_SwapTotal_bytes{node=~\"$node\"} - node_memory_SwapFree_bytes{node=~\"$node\"})",
+          "expr": "",
           "format": "time_series",
+          "hide": true,
           "intervalFactor": 2,
-          "legendFormat": "SWAP Used - {{node}}",
+          "legendFormat": "",
           "range": true,
           "refId": "E",
           "step": 240
@@ -1556,7 +1559,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "irate(node_network_receive_bytes_total{node=~\"$node\"}[5m])*8",
+          "expr": "irate(node_network_receive_bytes_total{}[5m])*8",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "recv {{device}}",
@@ -1570,7 +1573,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "irate(node_network_transmit_bytes_total{node=~\"$node\"}[5m])*8",
+          "expr": "irate(node_network_transmit_bytes_total{}[5m])*8",
           "format": "time_series",
           "intervalFactor": 2,
           "legendFormat": "trans {{device}} ",
@@ -1710,9 +1713,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(process_cpu_seconds_total{node=~\"$node\"}[2s]) * 100",
+          "expr": "rate(process_cpu_seconds_total{instance=~\"$node\"}[2s]) * 100",
           "hide": true,
-          "legendFormat": "CPU usage % - {{node}}",
+          "legendFormat": "CPU usage % - {{instance}}",
           "range": true,
           "refId": "A"
         },
@@ -1722,9 +1725,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "process_open_fds{node=~\"$node\"}",
+          "expr": "process_open_fds{instance=~\"$node\"}",
           "hide": true,
-          "legendFormat": "open file descriptors - {{node}} ",
+          "legendFormat": "open file descriptors - {{instance}} ",
           "range": true,
           "refId": "C"
         },
@@ -1734,9 +1737,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "process_resident_memory_bytes{node=~\"$node\"}",
+          "expr": "process_resident_memory_bytes{instance=~\"$node\"}",
           "hide": true,
-          "legendFormat": "RSS - {{node}}",
+          "legendFormat": "RSS - {{instance}}",
           "range": true,
           "refId": "D"
         },
@@ -1746,9 +1749,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "nim_gc_mem_bytes{node=~\"$node\"}",
+          "expr": "nim_gc_mem_bytes{instance=~\"$node\"}",
           "hide": true,
-          "legendFormat": "Nim GC mem total - {{node}}",
+          "legendFormat": "Nim GC mem total - {{instance}}",
           "range": true,
           "refId": "F"
         },
@@ -1758,9 +1761,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "nim_gc_mem_occupied_bytes{node=~\"$node\"}",
+          "expr": "nim_gc_mem_occupied_bytes{instance=~\"$node\"}",
           "hide": false,
-          "legendFormat": "Nim GC mem used - {{node}}",
+          "legendFormat": "Nim GC mem used - {{instance}}",
           "range": true,
           "refId": "G"
         }
@@ -1872,9 +1875,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "nim_gc_heap_instance_occupied_bytes{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
+          "expr": "nim_gc_mem_occupied_bytes{instance=~\"$node\"}",
           "interval": "",
-          "legendFormat": "{{type_name}} - {{pod}}",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -1978,7 +1981,7 @@
                 "uid": "d32523fb-ef36-4856-b61a-b31e73a39fc2"
               },
               "editorMode": "code",
-              "expr": "chronos_exec_time_with_children_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
+              "expr": "chronos_exec_time_with_children_total{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "{{proc}} [{{file}}:{{line}}]",
               "range": true,
@@ -2074,7 +2077,7 @@
                 "uid": "d32523fb-ef36-4856-b61a-b31e73a39fc2"
               },
               "editorMode": "code",
-              "expr": "increase(chronos_exec_time_with_children_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
+              "expr": "increase(chronos_exec_time_with_children_total{instance=~\"$node\"}[60s])",
               "instant": false,
               "legendFormat": "{{proc}} [{{file}}:{{line}}]",
               "range": true,
@@ -2170,7 +2173,7 @@
                 "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
-              "expr": "chronos_single_exec_time_max{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
+              "expr": "chronos_single_exec_time_max{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "{{proc}} [{{file}}:{{line}}]",
               "range": true,
@@ -2267,7 +2270,7 @@
                 "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
-              "expr": "increase(chronos_call_count_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
+              "expr": "increase(chronos_call_count_total{instance=~\"$node\"}[60s])",
               "instant": false,
               "legendFormat": "{{proc}} [{{file}}:{{line}}]",
               "range": true,
@@ -2365,7 +2368,7 @@
                 "uid": "PBFA97CFB590B2093"
               },
               "editorMode": "code",
-              "expr": "chronos_call_count_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}",
+              "expr": "chronos_call_count_total{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "{{proc}} [{{file}}:{{line}}]",
               "range": true,
@@ -2478,9 +2481,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (archivist_api_uploads_total{node=~\"$node\",namespace=~\"$namespace\", pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_api_uploads_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -2577,9 +2580,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (archivist_api_downloads_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_api_downloads_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -2696,9 +2699,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (libp2p_peers{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (libp2p_peers{instance=~\"$node\"})",
               "interval": "",
-              "legendFormat": "connected peers - {{pod}}",
+              "legendFormat": "connected peers - {{instance}}",
               "range": true,
               "refId": "A"
             },
@@ -2708,9 +2711,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (libp2p_pubsub_peers{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (libp2p_pubsub_peers{instance=~\"$node\"})",
               "interval": "",
-              "legendFormat": "pubsub peers - {{pod}}",
+              "legendFormat": "pubsub peers - {{instance}}",
               "range": true,
               "refId": "B"
             }
@@ -2838,10 +2841,10 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod,type) (libp2p_open_streams{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance,type) (libp2p_open_streams{instance=~\"$node\"})",
               "hide": true,
               "interval": "",
-              "legendFormat": "{{type}} - {{pod}}",
+              "legendFormat": "{{type}} - {{instance}}",
               "range": true,
               "refId": "A"
             },
@@ -2851,10 +2854,10 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (libp2p_open_streams{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (libp2p_open_streams{instance=~\"$node\"})",
               "hide": true,
               "interval": "",
-              "legendFormat": "combined - {{pod}}",
+              "legendFormat": "combined - {{instance}}",
               "range": true,
               "refId": "B"
             },
@@ -2864,10 +2867,10 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(type, dir, pod) (libp2p_open_streams{node=~\"$node\",namespace=~\"$namespace\", pod=~\"$pod\"})",
+              "expr": "sum by (type, dir, instance) (libp2p_open_streams{instance=~\"$node\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "{{type}} , {{dir}} - {{pod}}",
+              "legendFormat": "{{type}} , {{dir}} - {{instance}}",
               "range": true,
               "refId": "C"
             }
@@ -2970,8 +2973,8 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (pod) (dht_message_requests_incoming_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}))",
-              "legendFormat": "-> {{ pod }}",
+              "expr": "rate(sum by (instance) (dht_message_requests_incoming_total{instance=~\"$node\"}))",
+              "legendFormat": "-> {{instance}}",
               "range": true,
               "refId": "A"
             },
@@ -2981,9 +2984,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "- sum by (pod) (discovery_message_requests_outgoing_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "- sum by (instance) (discovery_message_requests_outgoing_total{instance=~\"$node\"})",
               "hide": false,
-              "legendFormat": "<- {{ pod }}",
+              "legendFormat": "<- {{instance}}",
               "range": true,
               "refId": "B"
             }
@@ -3086,8 +3089,8 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(sum by (pod) (dht_session_lru_cache_hits_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}))",
-              "legendFormat": "hits - {{ pod }}",
+              "expr": "rate(sum by (instance) (dht_session_lru_cache_hits_total{instance=~\"$node\"}))",
+              "legendFormat": "hits - {{instance}}",
               "range": true,
               "refId": "A"
             },
@@ -3097,9 +3100,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "- sum by (pod) (discovery_session_lru_cache_misses_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "- sum by (instance) (discovery_session_lru_cache_misses_total{instance=~\"$node\"})",
               "hide": false,
-              "legendFormat": "misses - {{ pod }}",
+              "legendFormat": "misses - {{instance}}",
               "range": true,
               "refId": "B"
             }
@@ -3199,9 +3202,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (pod) (dht_routing_table_nodes {state=\"\", node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (dht_routing_table_nodes {state=\"\", instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3308,9 +3311,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_block_exchange_blocks_sent_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_block_exchange_blocks_sent_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3405,9 +3408,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "increase(archivist_block_exchange_blocks_sent_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
+              "expr": "increase(archivist_block_exchange_blocks_sent_total{instance=~\"$node\"}[60s])",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3500,9 +3503,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_block_exchange_want_have_lists_sent_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_block_exchange_want_have_lists_sent_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3595,9 +3598,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "increase(archivist_block_exchange_want_have_lists_sent_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
+              "expr": "increase(archivist_block_exchange_want_have_lists_sent_total{instance=~\"$node\"}[60s])",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3690,9 +3693,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_block_exchange_want_block_lists_sent_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_block_exchange_want_block_lists_sent_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3787,9 +3790,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "increase(archivist_block_exchange_want_block_lists_sent_total{node=~\"${node}\",namespace=~\"${namespace}\",pod=~\"$pod\"}[60s])",
+              "expr": "increase(archivist_block_exchange_want_block_lists_sent_total{instance=~\"$node\"}[60s])",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3882,9 +3885,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_block_exchange_want_have_lists_received_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_block_exchange_want_have_lists_received_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -3977,9 +3980,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_block_exchange_want_block_lists_received_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_block_exchange_want_block_lists_received_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -4090,9 +4093,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_repostore_blocks{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_repostore_blocks{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -4190,9 +4193,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_repostore_bytes_used{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_repostore_bytes_used{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -4290,9 +4293,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_repostore_bytes_reserved{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_repostore_bytes_reserved{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -4404,7 +4407,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_tryput_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_tryput_retries_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryPut retries",
               "range": true,
@@ -4416,7 +4419,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_tryputatomic_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_tryputatomic_retries_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryPutAtomic retries",
               "range": true,
@@ -4428,7 +4431,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_trydelete_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_trydelete_retries_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryDelete retries",
               "range": true,
@@ -4440,7 +4443,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_trydeleteatomic_retries_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_trydeleteatomic_retries_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryDeleteAtomic retries",
               "range": true,
@@ -4540,7 +4543,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_tryput_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_tryput_exhausted_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryPut exhausted",
               "range": true,
@@ -4552,7 +4555,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_tryputatomic_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_tryputatomic_exhausted_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryPutAtomic exhausted",
               "range": true,
@@ -4564,7 +4567,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_trydelete_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_trydelete_exhausted_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryDelete exhausted",
               "range": true,
@@ -4576,7 +4579,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_trydeleteatomic_exhausted_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_trydeleteatomic_exhausted_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "tryDeleteAtomic exhausted",
               "range": true,
@@ -4676,7 +4679,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_put_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_put_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "put",
               "range": true,
@@ -4688,7 +4691,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_get_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_get_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "get",
               "range": true,
@@ -4700,7 +4703,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_has_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_has_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "has",
               "range": true,
@@ -4712,7 +4715,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_delete_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_delete_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "delete",
               "range": true,
@@ -4724,7 +4727,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_putatomic_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_putatomic_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "putAtomic",
               "range": true,
@@ -4736,7 +4739,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_deleteatomic_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_deleteatomic_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "deleteAtomic",
               "range": true,
@@ -4748,7 +4751,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_move_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_move_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "moveKeys",
               "range": true,
@@ -4760,7 +4763,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_query_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_query_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "query",
               "range": true,
@@ -4860,7 +4863,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_put_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_put_conflict_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "put conflicts",
               "range": true,
@@ -4872,7 +4875,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_delete_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_delete_conflict_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "delete conflicts",
               "range": true,
@@ -4884,7 +4887,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_putatomic_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_putatomic_conflict_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "putAtomic conflicts",
               "range": true,
@@ -4896,7 +4899,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_putatomic_rollback_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_putatomic_rollback_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "putAtomic rollbacks",
               "range": true,
@@ -4908,7 +4911,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_deleteatomic_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_deleteatomic_conflict_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "deleteAtomic conflicts",
               "range": true,
@@ -4920,7 +4923,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_deleteatomic_rollback_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_deleteatomic_rollback_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "deleteAtomic rollbacks",
               "range": true,
@@ -4932,7 +4935,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_sql_moveatomic_error_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_sql_moveatomic_error_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "moveAtomic errors",
               "range": true,
@@ -5032,7 +5035,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p50",
               "range": true,
@@ -5044,7 +5047,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p95",
               "range": true,
@@ -5056,7 +5059,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_put_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p99",
               "range": true,
@@ -5156,7 +5159,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_get_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p50",
               "range": true,
@@ -5168,7 +5171,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_get_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p95",
               "range": true,
@@ -5180,7 +5183,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_get_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p99",
               "range": true,
@@ -5280,7 +5283,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p50",
               "range": true,
@@ -5292,7 +5295,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p95",
               "range": true,
@@ -5304,7 +5307,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_putatomic_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p99",
               "range": true,
@@ -5404,7 +5407,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_move_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_move_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p50",
               "range": true,
@@ -5416,7 +5419,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_move_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_move_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p95",
               "range": true,
@@ -5428,7 +5431,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_move_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.99, sum(rate(kvstore_sql_move_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p99",
               "range": true,
@@ -5528,7 +5531,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_batch_size_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p50",
               "range": true,
@@ -5540,7 +5543,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_batch_size_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p95",
               "range": true,
@@ -5552,7 +5555,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_putatomic_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_putatomic_batch_size_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "putAtomic p50",
               "range": true,
@@ -5564,7 +5567,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_putatomic_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_putatomic_batch_size_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "putAtomic p95",
               "range": true,
@@ -5664,7 +5667,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_sql_inflight_put{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_sql_inflight_put{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "put",
               "range": true,
@@ -5676,7 +5679,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_sql_inflight_get{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_sql_inflight_get{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "get",
               "range": true,
@@ -5688,7 +5691,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_sql_inflight_has{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_sql_inflight_has{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "has",
               "range": true,
@@ -5700,7 +5703,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_sql_inflight_delete{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_sql_inflight_delete{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "delete",
               "range": true,
@@ -5712,7 +5715,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_sql_inflight_putatomic{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_sql_inflight_putatomic{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "putAtomic",
               "range": true,
@@ -5724,7 +5727,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_sql_inflight_deleteatomic{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_sql_inflight_deleteatomic{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "deleteAtomic",
               "range": true,
@@ -5824,7 +5827,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_put_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p50",
               "range": true,
@@ -5836,7 +5839,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_put_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p95",
               "range": true,
@@ -5848,7 +5851,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_sql_get_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "get p50",
               "range": true,
@@ -5860,7 +5863,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_sql_get_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "get p95",
               "range": true,
@@ -5960,7 +5963,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_sql_active_iterators{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_sql_active_iterators{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "iterators",
               "range": true,
@@ -6060,7 +6063,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_fs_put_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_fs_put_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "put",
               "range": true,
@@ -6072,7 +6075,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_fs_get_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_fs_get_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "get",
               "range": true,
@@ -6084,7 +6087,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_fs_has_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_fs_has_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "has",
               "range": true,
@@ -6096,7 +6099,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_fs_delete_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_fs_delete_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "delete",
               "range": true,
@@ -6108,7 +6111,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_fs_query_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_fs_query_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "query",
               "range": true,
@@ -6208,7 +6211,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_fs_put_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_fs_put_conflict_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "put conflicts",
               "range": true,
@@ -6220,7 +6223,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(kvstore_fs_delete_conflict_total_total{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])",
+              "expr": "rate(kvstore_fs_delete_conflict_total_total{instance=~\"$node\"}[5m])",
               "instant": false,
               "legendFormat": "delete conflicts",
               "range": true,
@@ -6320,7 +6323,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p50",
               "range": true,
@@ -6332,7 +6335,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p95",
               "range": true,
@@ -6344,7 +6347,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(kvstore_fs_put_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.99, sum(rate(kvstore_fs_put_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p99",
               "range": true,
@@ -6444,7 +6447,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_get_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p50",
               "range": true,
@@ -6456,7 +6459,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_get_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p95",
               "range": true,
@@ -6468,7 +6471,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(kvstore_fs_get_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.99, sum(rate(kvstore_fs_get_duration_seconds_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "p99",
               "range": true,
@@ -6568,7 +6571,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_batch_size_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p50",
               "range": true,
@@ -6580,7 +6583,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_batch_size_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_batch_size_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p95",
               "range": true,
@@ -6680,7 +6683,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_fs_inflight_put{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_fs_inflight_put{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "put",
               "range": true,
@@ -6692,7 +6695,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_fs_inflight_get{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_fs_inflight_get{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "get",
               "range": true,
@@ -6704,7 +6707,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_fs_inflight_has{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_fs_inflight_has{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "has",
               "range": true,
@@ -6716,7 +6719,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_fs_inflight_delete{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_fs_inflight_delete{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "delete",
               "range": true,
@@ -6816,7 +6819,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_put_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p50",
               "range": true,
@@ -6828,7 +6831,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_put_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "put p95",
               "range": true,
@@ -6840,7 +6843,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.5, sum(rate(kvstore_fs_get_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "get p50",
               "range": true,
@@ -6852,7 +6855,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_get_value_bytes_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[5m])) by (le, pod))",
+              "expr": "histogram_quantile(0.95, sum(rate(kvstore_fs_get_value_bytes_bucket{instance=~\"$node\"}[5m])) by (le, instance))",
               "instant": false,
               "legendFormat": "get p95",
               "range": true,
@@ -6952,7 +6955,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "kvstore_fs_active_iterators{namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kvstore_fs_active_iterators{instance=~\"$node\"}",
               "instant": false,
               "legendFormat": "iterators",
               "range": true,
@@ -7064,9 +7067,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_pending_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_pending_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7162,9 +7165,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_submitted_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_submitted_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7260,9 +7263,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_started_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_started_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7358,9 +7361,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_finished_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_finished_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7456,9 +7459,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_failed_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_failed_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7554,9 +7557,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_cancelled_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_cancelled_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7652,9 +7655,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_unknown_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_unknown_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7750,9 +7753,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_purchases_error_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_purchases_error_total{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7864,9 +7867,9 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by(pod) (archivist_proofs_per_period{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"})",
+              "expr": "sum by (instance) (archivist_proofs_per_period{instance=~\"$node\"})",
               "instant": false,
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A"
             }
@@ -7981,12 +7984,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m]))",
+              "expr": "sum by (instance) (rate(container_cpu_usage_seconds_total{instance=~\"$node\"}[1m]))",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "{{ pod }}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A",
               "useBackend": false
@@ -8088,12 +8091,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by(pod) (container_processes{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"})",
+              "expr": "sum by (instance) (container_processes{instance=~\"$node\",image!=\"\",container!~\"POD|\"})",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "Processes - {{ pod }}",
+              "legendFormat": "Processes - {{instance}}",
               "range": true,
               "refId": "A",
               "useBackend": false
@@ -8105,12 +8108,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by(pod) (container_threads{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"})",
+              "expr": "sum by (instance) (container_threads{instance=~\"$node\",image!=\"\",container!~\"POD|\"})",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "Threads - {{ pod }}",
+              "legendFormat": "Threads - {{instance}}",
               "range": true,
               "refId": "B",
               "useBackend": false
@@ -8122,12 +8125,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by(pod) (container_sockets{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"})",
+              "expr": "sum by (instance) (container_sockets{instance=~\"$node\",image!=\"\",container!~\"POD|\"})",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "Sockets - {{ pod }}",
+              "legendFormat": "Sockets - {{instance}}",
               "range": true,
               "refId": "C",
               "useBackend": false
@@ -8229,12 +8232,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by (pod) ((container_cpu_cfs_throttled_periods_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"} / container_cpu_cfs_periods_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}) * 100)",
+              "expr": "sum by (instance) ((container_cpu_cfs_throttled_periods_total{instance=~\"$node\"} / container_cpu_cfs_periods_total{instance=~\"$node\"}) * 100)",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "{{ pod }}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A",
               "useBackend": false
@@ -8334,12 +8337,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum(container_memory_working_set_bytes{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\",image!=\"\",container!~\"POD|\"}) by (pod)",
+              "expr": "sum(container_memory_working_set_bytes{instance=~\"$node\",image!=\"\",container!~\"POD|\"}) by (instance)",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "{{ pod }}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A",
               "useBackend": false
@@ -8439,12 +8442,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by(pod) (rate(container_network_receive_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m])) * 8",
+              "expr": "sum by (instance) (rate(container_network_receive_bytes_total{instance=~\"$node\"}[1m])) * 8",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "-> {{ pod }}",
+              "legendFormat": "-> {{instance}}",
               "range": true,
               "refId": "A",
               "useBackend": false
@@ -8456,12 +8459,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "- sum by(pod) (rate(container_network_transmit_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m])) * 8",
+              "expr": "- sum by (instance) (rate(container_network_transmit_bytes_total{instance=~\"$node\"}[1m])) * 8",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "<- {{ pod }}",
+              "legendFormat": "<- {{instance}}",
               "range": true,
               "refId": "B",
               "useBackend": false
@@ -8561,12 +8564,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by(pod) (rate(container_fs_reads_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m]))",
+              "expr": "sum by (instance) (rate(container_fs_reads_bytes_total{instance=~\"$node\"}[1m]))",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "Reads {{ pod }}",
+              "legendFormat": "Reads {{instance}}",
               "range": true,
               "refId": "A",
               "useBackend": false
@@ -8578,12 +8581,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "sum by(pod) (rate(container_fs_writes_bytes_total{instance=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}[1m]))",
+              "expr": "sum by (instance) (rate(container_fs_writes_bytes_total{instance=~\"$node\"}[1m]))",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "Writes {{ pod }}",
+              "legendFormat": "Writes {{instance}}",
               "range": true,
               "refId": "B",
               "useBackend": false
@@ -8685,12 +8688,12 @@
               },
               "disableTextWrap": false,
               "editorMode": "code",
-              "expr": "kube_pod_container_status_restarts_total{node=~\"$node\",namespace=~\"$namespace\",pod=~\"$pod\"}",
+              "expr": "kube_pod_container_status_restarts_total{instance=~\"$node\"}",
               "fullMetaSearch": false,
               "hide": false,
               "includeNullMetadata": true,
               "interval": "",
-              "legendFormat": "{{ pod }}",
+              "legendFormat": "{{instance}}",
               "range": true,
               "refId": "A",
               "useBackend": false
@@ -8737,7 +8740,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(process_virtual_memory_bytes,node)",
+        "definition": "label_values(process_resident_memory_bytes,instance)",
         "includeAll": true,
         "label": "Node",
         "multi": true,
@@ -8745,7 +8748,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(process_virtual_memory_bytes,node)",
+          "query": "label_values(process_resident_memory_bytes{job=\"archivist-nodes\"},instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -8765,15 +8768,15 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values({node=~\"$node\"},namespace)",
+        "definition": "label_values(process_resident_memory_bytes,instance)",
         "includeAll": true,
-        "label": "Namespace",
+        "label": "Instance",
         "multi": true,
         "name": "namespace",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values({node=~\"$node\"},namespace)",
+          "query": "label_values(process_resident_memory_bytes,instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -8791,15 +8794,15 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values({namespace=~\"$namespace\"},pod)",
+        "definition": "label_values(process_resident_memory_bytes,instance)",
         "includeAll": true,
-        "label": "Pod",
+        "label": "Instance",
         "multi": true,
         "name": "pod",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values({namespace=~\"$namespace\"},pod)",
+          "query": "label_values(process_resident_memory_bytes,instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
