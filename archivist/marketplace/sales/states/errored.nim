@@ -18,13 +18,16 @@ logScope:
 method `$`*(state: SaleErrored): string =
   "SaleErrored"
 
-proc isMySlot(marketplace: AbstractMarketplace, data: SalesData): Future[bool] {.async.} = 
+proc isMySlot(
+    marketplace: AbstractMarketplace, data: SalesData
+): Future[bool] {.async.} =
   let slotId = slotId(data.requestId, data.slotIndex)
   let slotIds = await marketplace.mySlots()
-  let aaa = slotId in slotIds
-  return aaa
+  return slotId in slotIds
 
-proc performCleanUpExit(state: SaleErrored, agent: SalesAgent): Future[?State] {.async: (raises: []).} =
+proc performCleanUpExit(
+    state: SaleErrored, agent: SalesAgent
+): Future[?State] {.async: (raises: []).} =
   trace "SaleErrored: Cleanup and exit"
   try:
     if onCleanUp =? agent.onCleanUp:

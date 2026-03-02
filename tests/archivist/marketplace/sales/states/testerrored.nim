@@ -38,11 +38,13 @@ asyncchecksuite "sales state 'errored'":
     expBackoff = MockExponentialBackoff.new()
     slotId = slotId(request.id, slotIndex)
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some, SlotQueueItem.none, expBackoff)
+    agent = newSalesAgent(
+      context, request.id, slotIndex, request.some, SlotQueueItem.none, expBackoff
+    )
     agent.onCleanUp = onCleanUp
     state = SaleErrored(error: newException(ValueError, "oh no!"))
 
-  proc runState(): Future[?State] {.async.} = 
+  proc runState(): Future[?State] {.async.} =
     state = SaleErrored(error: newException(ValueError, "oh no!"), reprocessSlot: true)
     return await state.run(agent)
 
@@ -56,7 +58,7 @@ asyncchecksuite "sales state 'errored'":
 
     let nextState = await runState()
     check !nextState of SaleUnknown
-  
+
   test "performs cleanup when slot is not active":
     let me = await marketplace.getSigner()
     marketplace.activeSlots[me] = @[]

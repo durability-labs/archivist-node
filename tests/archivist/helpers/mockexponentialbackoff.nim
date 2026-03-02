@@ -8,5 +8,7 @@ type MockExponentialBackoff* = ref object of ExponentialBackoff
 func new*(_: type MockExponentialBackoff): MockExponentialBackoff =
   MockExponentialBackoff(callCount: 0)
 
-method applyDelay*(eb: MockExponentialBackoff): Future[void] {.async: (raises: [CancelledError]).} =
+method applyDelay*(
+    eb: MockExponentialBackoff
+): Future[void] {.async: (raises: [CancelledError]).} =
   inc eb.callCount
