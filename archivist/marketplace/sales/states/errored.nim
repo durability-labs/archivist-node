@@ -10,26 +10,19 @@ import ../../contracts/requests
 import ../../abstractmarketplace
 import ../../../logutils
 import ../../../utils/exceptions
+import ../../../utils/exponentialbackoff
 
 logScope:
   topics = "marketplace sales errored"
 
-const
-  MaximumBackoff = 60.minutes
-
 method `$`*(state: SaleErrored): string =
   "SaleErrored"
-
-proc exponentialBackoff(data: SalesData): Future[void] {.async: (raises: [CancelledError]).} =
-  data.errorBackoffDelay = (data.errorBackoffDelay * 2) + 1.seconds
-  if data.errorBackoffDelay > MaximumBackoff:
-    data.errorBackoffDelay = MaximumBackoff
-  await sleepAsync(data.errorBackoffDelay)
 
 proc isMySlot(marketplace: AbstractMarketplace, data: SalesData): Future[bool] {.async.} = 
   let slotId = slotId(data.requestId, data.slotIndex)
   let slotIds = await marketplace.mySlots()
-  return slotId in slotIds
+  let aaa = slotId in slotIds
+  return aaa
 
 proc performCleanUpExit(state: SaleErrored, agent: SalesAgent): Future[?State] {.async: (raises: []).} =
   trace "SaleErrored: Cleanup and exit"
@@ -55,7 +48,7 @@ method run*(
     slotIndex = data.slotIndex
 
   try:
-    await exponentialBackoff(data)
+    await data.errorBackoff.applyDelay()
 
     if await isMySlot(marketplace, data):
       debug "Errored slot is in MySlots. Restarting state machine..."
