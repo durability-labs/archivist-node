@@ -5,7 +5,7 @@ import pkg/archivist/marketplace/sales
 import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/marketplace/sales/states/filled
-import pkg/archivist/marketplace/sales/states/errored
+import pkg/archivist/marketplace/sales/states/types
 import pkg/archivist/marketplace/sales/states/proving
 
 import ../../../../asynctest
