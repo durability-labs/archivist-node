@@ -2,7 +2,7 @@ import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
 
-import ./unknown
+import ./types
 import ../statemachine
 import ../salesagent
 import ../salesdata
@@ -16,10 +16,6 @@ logScope:
 
 const
   MaximumBackoff = 60.minutes
-
-type SaleErrored* = ref object of SaleState
-  error*: ref CatchableError
-  reprocessSlot*: bool
 
 method `$`*(state: SaleErrored): string =
   "SaleErrored"

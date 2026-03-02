@@ -13,7 +13,7 @@ import ./failed
 import ./filled
 import ./ignored
 import ./slotreserving
-import ./errored
+import ./types
 
 type SalePreparing* = ref object of SaleState
 

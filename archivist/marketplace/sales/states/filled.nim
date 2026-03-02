@@ -8,7 +8,7 @@ import ../../abstractmarketplace
 import ../../storageinterface
 import ../statemachine
 import ../salesagent
-import ./errored
+import ./types
 import ./cancelled
 import ./failed
 import ./proving

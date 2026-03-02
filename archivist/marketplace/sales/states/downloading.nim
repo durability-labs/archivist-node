@@ -13,7 +13,7 @@ import ./cancelled
 import ./failed
 import ./filled
 import ./initialproving
-import ./errored
+import ./types
 
 type SaleDownloading* = ref object of SaleState
 
