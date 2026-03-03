@@ -1,0 +1,620 @@
+## libarchivist.nim - C-exported interface for the Archivist shared library
+##
+## This file implements the public C API for libarchivist.
+## It acts as the bridge between C programs and the internal Nim implementation.
+##
+## This file defines:
+## - Initialization logic for the Nim runtime (once per process)
+## - Thread-safe exported procs callable from C
+## - Callback registration and invocation for asynchronous communication
+
+{.pragma: exported, exportc, cdecl, raises: [].}
+{.pragma: callback, cdecl, raises: [], gcsafe.}
+
+{.passc: "-fPIC".}
+
+when defined(linux):
+  {.passl: "-Wl,-soname,libarchivist.so".}
+
+import std/[atomics, json]
+import chronicles
+import chronos
+import chronos/threadsync
+import ./archivist_context
+import ./archivist_thread_requests/archivist_thread_request
+import ./archivist_thread_requests/requests/node_lifecycle_request
+import ./archivist_thread_requests/requests/node_info_request
+import ./archivist_thread_requests/requests/node_debug_request
+import ./archivist_thread_requests/requests/node_p2p_request
+import ./archivist_thread_requests/requests/node_upload_request
+import ./archivist_thread_requests/requests/node_download_request
+import ./archivist_thread_requests/requests/node_storage_request
+import ./ffi_types
+import ./alloc
+
+logScope:
+  topics = "libarchivist"
+
+template checkLibarchivistParams*(
+    ctx: ptr ArchivistContext, callback: ArchivistCallback, userData: pointer
+) =
+  if not isNil(ctx):
+    ctx[].userData = userData
+
+  if isNil(callback):
+    return RET_MISSING_CALLBACK
+
+proc libarchivistNimMain() {.importc.}
+
+var initialized: Atomic[bool]
+
+if defined(android):
+  # Redirect chronicles to Android System logs
+  when compiles(defaultChroniclesStream.outputs[0].writer):
+    defaultChroniclesStream.outputs[0].writer = proc(
+        logLevel: LogLevel, msg: LogOutputStr
+    ) {.raises: [].} =
+      echo logLevel, msg
+
+# Initializes the Nim runtime and foreign-thread GC
+proc initializeLibrary() {.exported.} =
+  if not initialized.exchange(true):
+    libarchivistNimMain()
+  when declared(setupForeignThreadGc):
+    setupForeignThreadGc()
+  when declared(nimGC_setStackBottom):
+    var locals {.volatile, noinit.}: pointer
+    locals = addr(locals)
+    nimGC_setStackBottom(locals)
+
+################################################################################
+### Context Lifecycle
+
+proc archivist_new*(
+    configJson: cstring, callback: ArchivistCallback, userData: pointer
+): pointer {.dynlib, exported.} =
+  initializeLibrary()
+
+  if isNil(callback):
+    error "Failed to create Archivist instance: the callback is missing."
+    return nil
+
+  var ctx = archivist_context.createArchivistContext().valueOr:
+    let msg = $error
+    callback(RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), userData)
+    return nil
+
+  ctx.userData = userData
+
+  # TODO: Parse configJson and configure the node
+  
+  let ack = "Archivist context created"
+  callback(RET_OK, unsafeAddr ack[0], cast[csize_t](len(ack)), userData)
+  
+  return ctx
+
+proc archivist_create*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.CREATE, "")
+  let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_start*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.START, "")
+  let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_stop*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.STOP, "")
+  let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_close*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  # TODO: Need to double check this part
+  let ack = "closed"
+  callback(RET_OK, unsafeAddr ack[0], cast[csize_t](len(ack)), userData)
+  return RET_OK
+
+proc archivist_destroy*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let destroyRes = destroyArchivistContext(ctx)
+  if destroyRes.isErr:
+    return callback.error(destroyRes.error, userData)
+  
+  let ack = "destroyed"
+  callback(RET_OK, unsafeAddr ack[0], cast[csize_t](len(ack)), userData)
+  return RET_OK
+
+################################################################################
+### Version Information
+
+proc archivist_version*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeInfoRequest.createShared(NodeInfoMsgType.VERSION)
+  let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_revision*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeInfoRequest.createShared(NodeInfoMsgType.REVISION)
+  let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_repo*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeInfoRequest.createShared(NodeInfoMsgType.REPO)
+  let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+################################################################################
+### Debug Operations
+
+proc archivist_debug*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeDebugRequest.createShared(NodeDebugMsgType.DEBUG)
+  let res = ctx.sendRequestToArchivistThread(RequestType.DEBUG, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_spr*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeInfoRequest.createShared(NodeInfoMsgType.SPR)
+  let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_peer_id*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeInfoRequest.createShared(NodeInfoMsgType.PEERID)
+  let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_log_level*(
+    ctx: pointer, logLevel: cstring, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeDebugRequest.createShared(NodeDebugMsgType.LOG_LEVEL, $logLevel)
+  let res = ctx.sendRequestToArchivistThread(RequestType.DEBUG, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+################################################################################
+### P2P Networking
+
+proc archivist_connect*(
+    ctx: pointer,
+    peerId: cstring,
+    peerAddresses: cstringArray,
+    peerAddressesSize: csize_t,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  var addresses: seq[string] = @[]
+  if not peerAddresses.isNil and peerAddressesSize > 0:
+    for i in 0 ..< peerAddressesSize.int:
+      addresses.add($peerAddresses[i])
+  
+  let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECT, $peerId, addresses)
+  let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_connected_peers*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECTED_PEERS)
+  let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_connected_peer_ids*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECTED_PEER_IDS)
+  let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_find_peer*(
+    ctx: pointer, peerId: cstring, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeP2PRequest.createShared(NodeP2PMsgType.FIND_PEER, $peerId)
+  let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_disconnect*(
+    ctx: pointer, peerId: cstring, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeP2PRequest.createShared(NodeP2PMsgType.DISCONNECT, $peerId)
+  let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+################################################################################
+### Upload Operations
+
+proc archivist_upload_init*(
+    ctx: pointer,
+    filepath: cstring,
+    chunkSize: csize_t,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeUploadRequest.createShared(NodeUploadMsgType.INIT, $filepath, @[], chunkSize.int)
+  let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_upload_chunk*(
+    ctx: pointer,
+    sessionId: cstring,
+    chunk: ptr uint8,
+    len: csize_t,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  var chunkData: seq[byte] = @[]
+  if not chunk.isNil and len > 0:
+    chunkData = newSeq[byte](len.int)
+    copyMem(addr chunkData[0], chunk, len.int)
+  
+  let req = NodeUploadRequest.createShared(NodeUploadMsgType.CHUNK, $sessionId, chunkData)
+  let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_upload_finalize*(
+    ctx: pointer,
+    sessionId: cstring,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeUploadRequest.createShared(NodeUploadMsgType.FINALIZE, $sessionId)
+  let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_upload_cancel*(
+    ctx: pointer,
+    sessionId: cstring,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeUploadRequest.createShared(NodeUploadMsgType.CANCEL, $sessionId)
+  let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_upload_file*(
+    ctx: pointer,
+    sessionId: cstring,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeUploadRequest.createShared(NodeUploadMsgType.FILE, $sessionId)
+  let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+################################################################################
+### Download Operations
+
+proc archivist_download_init*(
+    ctx: pointer,
+    cid: cstring,
+    chunkSize: csize_t,
+    local: bool,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.INIT, $cid, chunkSize.int, local)
+  let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_download_stream*(
+    ctx: pointer,
+    cid: cstring,
+    chunkSize: csize_t,
+    local: bool,
+    filepath: cstring,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  var fp = ""
+  if not filepath.isNil:
+    fp = $filepath
+  let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.STREAM, $cid, chunkSize.int, local, fp)
+  let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_download_chunk*(
+    ctx: pointer,
+    cid: cstring,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.CHUNK, $cid)
+  let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_download_cancel*(
+    ctx: pointer,
+    cid: cstring,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.CANCEL, $cid)
+  let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_download_manifest*(
+    ctx: pointer,
+    cid: cstring,
+    callback: ArchivistCallback,
+    userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.MANIFEST, $cid)
+  let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+################################################################################
+### Storage Operations
+
+proc archivist_list*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeStorageRequest.createShared(NodeStorageMsgType.LIST)
+  let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_space*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
+  let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_delete*(
+    ctx: pointer, cid: cstring, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeStorageRequest.createShared(NodeStorageMsgType.DELETE, cid)
+  let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_fetch*(
+    ctx: pointer, cid: cstring, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeStorageRequest.createShared(NodeStorageMsgType.FETCH, cid)
+  let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_exists*(
+    ctx: pointer, cid: cstring, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeStorageRequest.createShared(NodeStorageMsgType.EXISTS, cid)
+  let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_local_size*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
+  let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+proc archivist_block_count*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+): cint {.dynlib, exported.} =
+  checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
+  
+  let ctx = cast[ptr ArchivistContext](ctx)
+  let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
+  let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
+  if res.isErr:
+    deallocShared(req)
+    return callback.error(res.error, userData)
+  return RET_OK
+
+################################################################################
+### Event Callback
+
+proc archivist_set_event_callback*(
+    ctx: pointer, callback: ArchivistCallback, userData: pointer
+) {.dynlib, exported.} =
+  let ctx = cast[ptr ArchivistContext](ctx)
+  if not ctx.isNil:
+    ctx.eventCallback = cast[pointer](callback)
+    ctx.eventUserData = userData

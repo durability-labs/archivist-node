@@ -46,7 +46,7 @@ type
   NodeServer* = ref object
     config: NodeConf
     restServer: RestServerRef
-    archivistNode: ArchivistNodeRef
+    archivistNode*: ArchivistNodeRef
     repoStore: RepoStore
     maintenance: BlockMaintainer
     taskpool: Taskpool
