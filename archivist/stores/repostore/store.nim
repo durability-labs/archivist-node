@@ -366,8 +366,7 @@ method hasBlocks*(
   if indices.len == 0:
     return success(newSeq[(Natural, bool)]())
 
-  let
-    indices = indices.deduplicate()
+  let indices = indices.deduplicate()
 
   var results: seq[(Natural, bool)]
   for idx in indices:
