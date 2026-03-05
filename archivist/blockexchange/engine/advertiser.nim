@@ -97,7 +97,7 @@ proc advertiseLocalStoreLoop(b: Advertiser) {.async: (raises: []).} =
       for c in cidsIter:
         if cid =? await c:
           await b.advertiseBlock(cid)
-        trace "Advertiser iterating blocks finished."
+      trace "Advertiser iterating blocks finished."
 
       await sleepAsync(b.advertiseLocalStoreLoopSleep)
   except CancelledError:
