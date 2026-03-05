@@ -14,7 +14,7 @@ type MockStorage* = ref object of StorageInterface
   storeSlotCalls: seq[(Cid, uint64, uint64, StorageTimestamp, bool)]
   proveSlotCalls: seq[(Cid, uint64, ProofChallenge)]
   updateSlotExpiryCalls: seq[(Cid, uint64, StorageTimestamp)]
-  slotFailedCalls: seq[(Cid, uint64)]
+  deleteSlotCalls: seq[(Cid, uint64)]
 
 proc new*(_: type MockStorage): MockStorage =
   MockStorage(
