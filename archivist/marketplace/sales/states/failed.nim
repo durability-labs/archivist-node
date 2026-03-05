@@ -2,6 +2,7 @@ import pkg/chronos
 import ../../../logutils
 import ../../../utils/exceptions
 import ../../../marketplace/abstractmarketplace
+import ../../storageinterface
 import ../salesagent
 import ../statemachine
 import ./types
@@ -19,8 +20,11 @@ method `$`*(state: SaleFailed): string =
 method run*(
     state: SaleFailed, machine: Machine
 ): Future[?State] {.async: (raises: []).} =
-  let data = SalesAgent(machine).data
-  let marketplace = SalesAgent(machine).context.marketplace
+  let agent = SalesAgent(machine)
+  let data = agent.data
+  let context = agent.context
+  let marketplace = context.marketplace
+  let storage = context.storage
 
   without request =? data.request:
     raiseAssert "no sale request"
@@ -31,6 +35,12 @@ method run*(
       requestId = data.requestId, slotIndex = data.slotIndex
 
     await marketplace.freeSlot(slot.id)
+
+    # Delete slot from the repostore
+    if request =? data.request:
+      if err =?
+          (await storage.deleteSlot(request.content.cid, data.slotIndex)).errorOption:
+        error "Failed to mark slot as failed", error = err.msg
 
     let error = newException(SaleFailedError, "Sale failed")
     return some State(SaleErrored(error: error))

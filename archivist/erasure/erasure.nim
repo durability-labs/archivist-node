@@ -411,9 +411,6 @@ proc encodeData(
     data[].setLen(params.ecK)
     parity[] = newSeqWith(params.ecM, newSeqWith(params.blockSize.int, 0'u8))
 
-    # TODO: this is a tight blocking loop so we sleep here to allow
-    # other events to be processed, this should be addressed
-    # by threading
     let resolved =
       ?await self.prepareEncodingData(
         originalTreeCid, params, step, data, cids, params.emptyCid, emptyBlock

@@ -451,7 +451,8 @@ proc blocksDeliveryHandler*(
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
-    # TODO: The putBlock here should be replace by something like
+    # TODO: The putBlock here should be replace by something like -
+    # storeManifestBlock(...)
     if err =? (await self.localStore.putBlock(bd.blk)).errorOption:
       error "Unable to store block", err = err.msg
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)

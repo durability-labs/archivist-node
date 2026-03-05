@@ -721,7 +721,7 @@ proc initNodeApi(node: ArchivistNodeRef, conf: NodeConf, router: var RestRouter)
     ## to invoke peer discovery, if it succeeds
     ## the returned addresses will be used to dial
     ##
-    ## `addrs` the listening addresses of the peers to dial, eg the one specified with `-listen-addrs`
+    ## `addrs` the listening addresses of the peers to dial, eg the one specified with `--listen-addrs`
     ##
     var headers = buildCorsHeaders("GET", allowedOrigin)
 

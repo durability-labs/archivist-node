@@ -15,8 +15,7 @@ import pkg/questionable/results
 import pkg/stew/arrayops
 
 import ../../logutils
-# import ../../marketplace # Commented for kvstore migration
-import ../../marketplace/storageinterface # For ProofChallenge type
+import ../../marketplace
 import ../../blocktype as bt
 import ../../merkletree
 import ../../manifest
