@@ -447,7 +447,7 @@ proc blocksDeliveryHandler*(
   # Write non-leaf blocks sequentially - this should only be manifests after #94
   for bd in nonLeafDeliveries:
     without isManifest =? bd.blk.cid.isManifest, err:
-      error "Reseived a non-leaf block that isn't a manifest!", err = err.msg
+      error "Received a non-leaf block that isn't a manifest!", err = err.msg
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
