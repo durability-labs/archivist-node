@@ -17,14 +17,14 @@
 ##
 ## message BlockMetadata {
 ##   bytes  cid = 1;        # Cid bytes
-##   uint64 size = 2;       # NBytes
-##   uint64 refCount = 3;   # Natural
+##   uint64 refCount = 2;   # Natural
 ## }
 ##
 ## message LeafMetadata {
 ##   uint32 deleted = 1;    # bool as uint
 ##   bytes  blkCid = 2;     # Cid bytes
 ##   bytes  proof = 3;      # ArchivistProof bytes (optional)
+##   bytes  cellCid = 4;    # the cid of the cell if isCell == true
 ## }
 ## ```
 

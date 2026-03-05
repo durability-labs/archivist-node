@@ -187,13 +187,13 @@ method putBlocks*(
 
   var
     totalSize = 0
-    uniqeBlks: HashSet[Block] # filter out duplicate leafs for different tree branches
+    uniqueBlks: HashSet[Block] # filter out duplicate leafs for different tree branches
 
   let blocks = collect(newSeq):
     for (blk, idx, proof) in items.deduplicate():
       if not blk.cid.isEmpty:
         totalSize += blk.data.len
-        uniqeBlks.incl(blk)
+        uniqueBlks.incl(blk)
       (idx, blk.cid, proof)
 
   trace "Putting blocks", actualBlocks = blocks.len, totalSize
@@ -210,7 +210,7 @@ method putBlocks*(
   # Write blocks to FS (best effort, idempotent)
   # Build records and capture sizes before moving into put
   var
-    records = uniqeBlks.mapIt(
+    records = uniqueBlks.mapIt(
       RawKVRecord.init(?makePrefixKey(self.postFixLen, it.cid), it.data)
     )
     keySizes = records.mapIt((it.key, it.val.len))
@@ -228,7 +228,7 @@ method putBlocks*(
     ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
 
   if onBlock =? self.onBlockStored:
-    await allFutures(uniqeBlks.mapIt(onBlock(it.cid)))
+    await allFutures(uniqueBlks.mapIt(onBlock(it.cid)))
 
   return success()
 
@@ -325,7 +325,7 @@ method delBlock*(
 
   let skipped = ?await self.tryDeleteBlocks(cid)
   if skipped.len > 0:
-    trace "Some blocks were not deleted, likely due to refcCount > 0",
+    trace "Some blocks were not deleted, likely due to refCount > 0",
       skipped = skipped.len
 
   return success()
@@ -575,13 +575,12 @@ method close*(self: RepoStore): Future[void] {.async: (raises: []).} =
   trace "Closing repostore"
 
   if not self.metaDs.isNil:
-    try:
-      (await noCancel self.metaDs.close()).expect("Should meta datastore")
-    except CatchableError as err:
-      error "Failed to close meta datastore", err = err.msg
+    if err =? (await noCancel self.metaDs.close()).errorOption:
+      error "Failed to close metadata store!", err = err.msg
 
   if not self.repoDs.isNil:
-    (await noCancel self.repoDs.close()).expect("Should repo datastore")
+    if err =? (await noCancel self.repoDs.close()).errorOption:
+      error "Failed to close repods store!", err = err.msg
 
 ###########################################################
 # RepoStore procs

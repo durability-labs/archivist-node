@@ -251,7 +251,7 @@ proc putLeafBlockMetaImpl(
   ## level tree.
   ##
   ## The main difference apart from representing different types of
-  # objects, is that multiple cells point to the same block,
+  ## objects, is that multiple cells point to the same block,
   ## so they might increment the same block's refCount several times.
   ##
   ## All writes - leaf records, block refcounts, and overlay BitSeq -
@@ -294,7 +294,7 @@ proc putLeafBlockMetaImpl(
             leafKey, LeafMetadata(blkCid: blkCid, proof: proof)
           )
 
-    # we only increase refcount for **NEW LEAFS**, if a leaf
+    # we only increase refcount for **NEW LEAVES**, if a leaf
     # already exists, we skip the refCount.inc, thus we make
     # a mapping of block rec -> leaf rec to be able to filter
     # out inserts from updates

@@ -70,7 +70,6 @@ method getBlocks*(
 
     let idx = requests.find(completedFut)
     requests.del(idx)
-    toRequestCids.del(idx)
 
     without blk =? catch(await completedFut).flatten, err:
       if err of CancelledError:
@@ -234,6 +233,7 @@ method hasBlocks*(
 ): Future[?!seq[(Natural, bool)]] {.async: (raw: true, raises: [CancelledError]).} =
   ## Check if multiple blocks exist in the blockstore
   ##
+
   self.localStore.hasBlocks(tree, indices)
 
 method storeManifest*(
@@ -241,20 +241,31 @@ method storeManifest*(
 ): Future[?!Block] {.async: (raw: true, raises: [CancelledError]).} =
   ## Store a manifest to the blockstore
   ##
+
   self.localStore.storeManifest(manifest)
 
 method fetchManifest*(
     self: NetworkStore, cid: Cid
-): Future[?!Manifest] {.async: (raw: true, raises: [CancelledError]).} =
+): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
   ## Fetch a manifest from the blockstore by CID
   ##
-  self.localStore.fetchManifest(cid)
+
+  without manifest =? (await self.localStore.fetchManifest(cid)), err:
+    if err of BlockNotFoundError:
+      without manifestBlk =? (await self.engine.requestBlock(cid)), err:
+        error "Unable to fetch manifest block!", err = err.msg
+        return failure(err)
+
+      return Manifest.decode(manifestBlk)
+
+  return success manifest
 
 method getCid*(
     self: NetworkStore, treeCid: Cid, index: Natural
 ): Future[?!Cid] {.async: (raw: true, raises: [CancelledError]).} =
   ## Get a block CID given a tree and index
   ##
+
   self.localStore.getCid(treeCid, index)
 
 method putCellCidsAndProofs*(
@@ -262,6 +273,7 @@ method putCellCidsAndProofs*(
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Put multiple cell CIDs and proofs as a batch
   ##
+
   self.localStore.putCellCidsAndProofs(treeCid, items)
 
 method delBlocks*(
@@ -269,6 +281,7 @@ method delBlocks*(
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Delete multiple blocks by tree CID and indices
   ##
+
   self.localStore.delBlocks(treeCid, indices)
 
 method getBlocksAndProofs*(
@@ -316,6 +329,7 @@ method getBlocksAndProofs*(
     let
       idx = requests.find(completedFut)
       originalIdx = toRequestIdxs[idx]
+
     requests.del(idx)
     toRequestIdxs.del(idx)
 
@@ -344,6 +358,7 @@ method getCidsAndProofs*(
 ): Future[?!seq[(Cid, ArchivistProof)]] {.async: (raw: true, raises: [CancelledError]).} =
   ## Get multiple CIDs and proofs
   ##
+
   self.localStore.getCidsAndProofs(treeCid, indices)
 
 method putBlocks*(
@@ -351,6 +366,7 @@ method putBlocks*(
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Put multiple blocks without proofs
   ##
+
   self.localStore.putBlocks(treeCid, blocks)
 
 method close*(self: NetworkStore): Future[void] {.async: (raises: []).} =
@@ -365,4 +381,5 @@ proc new*(
 ): NetworkStore =
   ## Create new instance of a NetworkStore
   ##
+
   NetworkStore(localStore: localStore, engine: engine)

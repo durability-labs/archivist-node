@@ -1,11 +1,3 @@
-## Copyright (c) 2025 Archivist Authors
-## Licensed under either of
-##  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE))
-##  * MIT license ([LICENSE-MIT](LICENSE-MIT))
-## at your option.
-## This file may not be copied, modified, or distributed except according to
-## those terms.
-
 ## Overlay metadata operations - storing, retrieving, and listing dataset overlays
 
 {.push raises: [].}
@@ -118,8 +110,13 @@ proc getOverlay*(
   ## Get overlay metadata for a dataset.
   ##
 
-  let meta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
+  let key = ?overlayKey(treeCid)
+  self.overlayCache.withValue(key, value):
+    return success value[]
+
+  let meta = ?await self.metaDs.get(key, OverlayMetadata)
   trace "OverlayMetadata loaded", treeCid = treeCid, status = meta.val.status
+
   success meta.val
 
 proc deleteOverlay*(
