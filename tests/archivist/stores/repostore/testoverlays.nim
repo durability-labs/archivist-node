@@ -27,21 +27,7 @@ import ../../helpers
 import ../../helpers/mockclock
 import ../../examples
 
-proc createTestBlock(size: int): bt.Block =
-  bt.Block.new('a'.repeat(size).toBytes).tryGet()
-
-proc putBlockWithOverlay(
-    repo: RepoStore, blk: bt.Block
-): Future[?!(Cid, Natural)] {.async.} =
-  let (_, tree) = makeManifestAndTree(@[blk]).tryGet()
-  let treeCid = tree.rootCid.tryGet()
-  let proof = tree.getProof(0).tryGet()
-  var blocks = BitSeq.init(1)
-  blocks.setBit(0)
-
-  (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
-  (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
-  success((treeCid, 0.Natural))
+import ./helpers
 
 suite "OverlayMetadata codecs":
   test "Should roundtrip with all fields":
