@@ -77,13 +77,6 @@ type
     Full ## Delete both slots and dataset
     None ## Keep everything
 
-  BlockBitState* = enum
-    ## Reasons for BitSeq inconsistency between overlay and leaf metadata
-    BitSetButLeafDeleted ## Bit is set in BitSeq but leaf is marked deleted
-    LeafExistsButBitNotSet ## Leaf exists and not deleted but bit not set in BitSeq
-    BitSetButNoLeafMetadata ## Bit is set in BitSeq but no leaf metadata exists
-    InvalidKeyFormat ## Key format is invalid
-
   OverlayMetadata* {.serialize.} = object
     ## Transient local state for an overlay
     ##
