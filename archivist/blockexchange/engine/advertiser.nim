@@ -85,7 +85,7 @@ proc advertiseLocalStoreLoop(b: Advertiser) {.async: (raises: []).} =
     while b.advertiserRunning:
       without cidsIter =? await b.localStore.listBlocks(blockType = BlockType.Manifest),
         err:
-        trace "Error retriving manifest iterator, adverticing skipped!", err = err.msg
+        trace "Error retrieving manifest iterator, advertising skipped!", err = err.msg
         await sleepAsync(b.advertiseLocalStoreLoopSleep)
         continue
 
