@@ -81,7 +81,6 @@ proc checkBitmap*(
   ##
 
   let bits = ?await self.getBlocksBitmap(treeCid)
-
   if index >= bits.len or not bits[index]:
     trace "Block not in overlay BitSeq, fast-path rejection", treeCid, index
     return success(false)
@@ -369,11 +368,10 @@ method hasBlocks*(
 
   let
     indices = indices.deduplicate()
-    bits = ?await self.getBlocksBitmap(treeCid)
 
   var results: seq[(Natural, bool)]
   for idx in indices:
-    results.add((idx, idx < bits.len and bits[idx]))
+    results.add((idx, ?await self.checkBitmap(treeCid, idx.Natural)))
 
   success(results)
 
@@ -455,13 +453,10 @@ method getBlocksAndProofs*(
 
   trace "Batch getting blocks and proofs"
 
-  # Fetch overlay bitmap once for all indices
-  let bits = ?await self.getBlocksBitmap(treeCid)
-
   # Filter to indices present in bitmap
   var presentIndices: seq[Natural]
   for idx in indices:
-    if idx < bits.len and bits[idx]:
+    if ?await self.checkBitmap(treeCid, idx.Natural):
       presentIndices.add(idx)
 
   if presentIndices.len == 0:
@@ -528,13 +523,10 @@ method getCidsAndProofs*(
 
   trace "Batch getting CIDs and proofs"
 
-  # Fetch overlay bitmap once for all indices
-  let bits = ?await self.getBlocksBitmap(treeCid)
-
   # Filter to indices present in bitmap
   var presentIndices: seq[Natural]
   for idx in indices:
-    if idx < bits.len and bits[idx]:
+    if ?await self.checkBitmap(treeCid, idx.Natural):
       presentIndices.add(idx)
 
   if presentIndices.len == 0:
