@@ -48,3 +48,5 @@ logs/
 *.log
 CLAUDE.md
 AGENTS.md
+.claude
+.opencode

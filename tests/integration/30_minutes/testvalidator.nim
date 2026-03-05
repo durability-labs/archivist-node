@@ -12,7 +12,7 @@ suite "Validator":
     await testbed.stop()
 
   test "validator marks proofs as missing":
-    let node = await testbed.node.log("archivist", "validator").persistence.start()
+    let node = await testbed.node.persistence.start()
     discard await testbed.node.provider.failProofs(every = 1).start()
     discard await testbed.node.validator.start()
     let failed = await testbed.marketplace.recordRequestFailed()
@@ -20,7 +20,7 @@ suite "Validator":
     await failed.waitForRequestFailed(request.id)
 
   test "validator marks proofs as missing when using validation groups":
-    let node = await testbed.node.log("archivist", "validator").persistence.start()
+    let node = await testbed.node.persistence.start()
     discard await testbed.node.provider.failProofs(every = 1).start()
     discard await testbed.node.validator(groups = 2, index = 0).start()
     discard await testbed.node.validator(groups = 2, index = 1).start()
@@ -29,7 +29,7 @@ suite "Validator":
     await failed.waitForRequestFailed(request.id)
 
   test "validator uses historical state to mark proofs as missing":
-    let node = await testbed.node.log("archivist", "validator").persistence.start()
+    let node = await testbed.node.persistence.start()
     discard await testbed.node.provider.failProofs(every = 1).start()
     let request = await testbed.request.start(node)
     let failed = await testbed.marketplace.recordRequestFailed()
