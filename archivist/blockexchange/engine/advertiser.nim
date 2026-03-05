@@ -91,7 +91,7 @@ proc advertiseLocalStoreLoop(b: Advertiser) {.async: (raises: []).} =
 
       defer:
         if err =? (await cidsIter.dispose()).errorOption:
-          warn "Error disposing overlay iterator", err = err.msg
+          warn "Error disposing manifest iterator", err = err.msg
 
       trace "Advertiser begins iterating blocks..."
       for c in cidsIter:
