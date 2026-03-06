@@ -51,16 +51,12 @@ template callEventCallback(ctx: ptr ArchivistContext, eventName: string, body: u
   foreignThreadGc:
     try:
       let event = body
-      cast[ArchivistCallback](ctx[].eventCallback)(
-        RET_OK, unsafeAddr event[0], cast[csize_t](len(event)), ctx[].eventUserData
-      )
+      safeCallback(cast[ArchivistCallback](ctx[].eventCallback), RET_OK, event, ctx[].eventUserData)
     except CatchableError:
       let msg =
         "Exception " & eventName & " when calling 'eventCallBack': " &
         getCurrentExceptionMsg()
-      cast[ArchivistCallback](ctx[].eventCallback)(
-        RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), ctx[].eventUserData
-      )
+      safeCallback(cast[ArchivistCallback](ctx[].eventCallback), RET_ERR, msg, ctx[].eventUserData)
 
 proc sendRequestToArchivistThread*(
     ctx: ptr ArchivistContext,

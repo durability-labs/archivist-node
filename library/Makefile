@@ -17,7 +17,7 @@ LIB_A = $(LIB_DIR)/$(LIB_NAME).a
 TEST_BIN = $(BIN_DIR)/test_ffi
 
 NIM_SOURCES = libarchivist.nim
-C_TEST_SOURCES = test_ffi.c
+C_TEST_SOURCES = tests/test_ffi.c
 
 .PHONY: all
 all: $(LIB_SO) $(TEST_BIN)
@@ -38,12 +38,21 @@ $(LIB_A): $(NIM_SOURCES) | $(LIB_DIR)
 	$(NIM) c $(NIM_FLAGS) --out:$(LIB_A) $(NIM_SOURCES)
 
 $(TEST_BIN): $(C_TEST_SOURCES) $(LIB_SO) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $(TEST_BIN) $(C_TEST_SOURCES) $(LDFLAGS) -I.
+	$(CC) $(CFLAGS) -o $(TEST_BIN) $(C_TEST_SOURCES) $(LDFLAGS) -I. -Itests
 
 .PHONY: test
 test: $(TEST_BIN)
 	@echo "Running FFI tests..."
 	@LD_LIBRARY_PATH=$(LIB_DIR) $(TEST_BIN)
+
+.PHONY: test-nim
+test-nim:
+	@echo "Running Nim tests..."
+	@cd tests && nim c -r test_runner.nim
+
+.PHONY: test-all
+test-all: test test-nim
+	@echo "All tests completed."
 
 .PHONY: clean
 clean:
@@ -73,6 +82,8 @@ help:
 	@echo "Available targets:"
 	@echo "  all       - Build library and test program (default)"
 	@echo "  test      - Run FFI tests"
+	@echo "  test-nim  - Run Nim tests"
+	@echo "  test-all  - Run all tests (FFI + Nim)"
 	@echo "  clean     - Remove build artifacts"
 	@echo "  install   - Install library to /usr/local"
 	@echo "  uninstall - Remove library from /usr/local"

@@ -79,15 +79,17 @@ proc archivist_new*(
     error "Failed to create Archivist instance: the callback is missing."
     return nil
 
+  let safeConfig = if validateCString(configToml): safeStringCopy(configToml, 10000) else: ""
+
   var ctx = archivist_context.createArchivistContext().valueOr:
     let msg = $error
-    callback(RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), userData)
+    safeCallback(callback, RET_ERR, msg, userData)
     return nil
 
   ctx.userData = userData
 
   let reqContent =
-    NodeLifecycleRequest.createShared(NodeLifecycleMsgType.CREATE, configToml)
+    NodeLifecycleRequest.createShared(NodeLifecycleMsgType.CREATE, safeConfig)
 
   archivist_context.sendRequestToArchivistThread(
     ctx, RequestType.LIFECYCLE, reqContent, callback, userData
@@ -95,7 +97,7 @@ proc archivist_new*(
     let msg = $error
     reqContent.cleanupRequest()
     deallocShared(reqContent)
-    callback(RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), userData)
+    safeCallback(callback, RET_ERR, msg, userData)
     return nil
 
   return ctx
@@ -150,7 +152,7 @@ proc archivist_close*(
   let ctx = cast[ptr ArchivistContext](ctx)
   # TODO: Need to double check this part
   let ack = "closed"
-  callback(RET_OK, unsafeAddr ack[0], cast[csize_t](len(ack)), userData)
+  safeCallback(callback, RET_OK, ack, userData)
   return RET_OK
 
 proc archivist_destroy*(
@@ -164,7 +166,7 @@ proc archivist_destroy*(
     return callback.error(destroyRes.error, userData)
   
   let ack = "destroyed"
-  callback(RET_OK, unsafeAddr ack[0], cast[csize_t](len(ack)), userData)
+  safeCallback(callback, RET_OK, ack, userData)
   return RET_OK
 
 ################################################################################
@@ -258,7 +260,10 @@ proc archivist_log_level*(
   checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
   
   let ctx = cast[ptr ArchivistContext](ctx)
-  let req = NodeDebugRequest.createShared(NodeDebugMsgType.LOG_LEVEL, $logLevel)
+  
+  let safeLogLevel = if validateCString(logLevel): safeStringCopy(logLevel, 50) else: "INFO"
+  
+  let req = NodeDebugRequest.createShared(NodeDebugMsgType.LOG_LEVEL, safeLogLevel)
   let res = ctx.sendRequestToArchivistThread(RequestType.DEBUG, req, callback, userData)
   if res.isErr:
     req.cleanupRequest()
@@ -280,12 +285,16 @@ proc archivist_connect*(
   checkLibarchivistParams(cast[ptr ArchivistContext](ctx), callback, userData)
   
   let ctx = cast[ptr ArchivistContext](ctx)
+  
+  let safePeerId = if validateCString(peerId): safeStringCopy(peerId, 500) else: ""
+  
   var addresses: seq[string] = @[]
   if not peerAddresses.isNil and peerAddressesSize > 0:
     for i in 0 ..< peerAddressesSize.int:
-      addresses.add($peerAddresses[i])
+      if validateCString(peerAddresses[i]):
+        addresses.add(safeStringCopy(peerAddresses[i], 1000))
   
-  let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECT, $peerId, addresses)
+  let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECT, safePeerId, addresses)
   let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
   if res.isErr:
     deallocShared(req)

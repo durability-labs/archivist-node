@@ -61,18 +61,15 @@ proc handleRes[T: string | void | seq[byte]](
       if msg == "":
         request[].callback(RET_ERR, nil, cast[csize_t](0), request[].userData)
       else:
-        request[].callback(
-          RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), request[].userData
-        )
+        safeCallback(request[].callback, RET_ERR, msg, request[].userData)
     return
 
   foreignThreadGc:
-    var msg: cstring = ""
     when T is string:
-      msg = res.get().cstring()
-    request[].callback(
-      RET_OK, unsafeAddr msg[0], cast[csize_t](len(msg)), request[].userData
-    )
+      let msg = res.get()
+      safeCallback(request[].callback, RET_OK, msg, request[].userData)
+    else:
+      request[].callback(RET_OK, nil, cast[csize_t](0), request[].userData)
   return
 
 proc process*(
@@ -95,12 +92,16 @@ proc process*(
     of DOWNLOAD:
       let onChunk = proc(bytes: seq[byte]) =
         if bytes.len > 0:
+          let sharedBytes = allocSharedSeq(bytes)
+          
           request[].callback(
             RET_PROGRESS,
-            cast[ptr cchar](unsafeAddr bytes[0]),
-            cast[csize_t](bytes.len),
+            cast[ptr cchar](sharedBytes.data),
+            cast[csize_t](sharedBytes.len),
             request[].userData,
           )
+          
+          deallocSharedSeq(sharedBytes)
 
       cast[ptr NodeDownloadRequest](request[].reqContent).process(archivist, onChunk)
     of UPLOAD:

@@ -6,7 +6,7 @@
 {.pragma: exported, exportc, cdecl, raises: [].}
 {.pragma: callback, cdecl, raises: [], gcsafe.}
 
-import pkg/results
+import ./alloc
 
 ################################################################################
 ### Exported types
@@ -24,30 +24,80 @@ const RET_MISSING_CALLBACK*: cint = 2
 const RET_PROGRESS*: cint = 3
 
 ################################################################################
+### Safe callback string handling
+
+type CallbackString* = object
+  data*: cstring
+  len*: csize_t
+
+proc createCallbackString*(msg: string): CallbackString =
+  if msg.len == 0:
+    return CallbackString(data: nil, len: 0)
+  
+  let data = allocCString(msg)
+  return CallbackString(data: data, len: cast[csize_t](msg.len))
+
+proc createCallbackString*(msg: cstring): CallbackString =
+  if msg.isNil:
+    return CallbackString(data: nil, len: 0)
+  
+  let len = len(msg)
+  if len == 0:
+    return CallbackString(data: nil, len: 0)
+  
+  let data = alloc(msg)
+  return CallbackString(data: data, len: cast[csize_t](len))
+
+proc freeCallbackString*(cbStr: CallbackString) =
+  if not cbStr.data.isNil:
+    deallocCString(cbStr.data)
+
+proc safeCallback*(callback: ArchivistCallback, retCode: cint, cbStr: CallbackString, userData: pointer) =
+  callback(retCode, cast[ptr cchar](cbStr.data), cbStr.len, userData)
+  cbStr.freeCallbackString()
+
+proc safeCallback*(callback: ArchivistCallback, retCode: cint, msg: string, userData: pointer) =
+  let cbStr = createCallbackString(msg)
+  safeCallback(callback, retCode, cbStr, userData)
+
+################################################################################
+### String pointer validation
+
+proc validateCString*(str: cstring): bool =
+  return not str.isNil
+
+proc validateStringPtr*(strPtr: ptr cchar, len: csize_t): bool =
+  return not strPtr.isNil and len > 0
+
+proc safeStringCopy*(src: cstring, maxLen: csize_t): string =
+  if not validateCString(src):
+    return ""
+  
+  try:
+    let srcLen = len(src)
+    let copyLen = min(srcLen, maxLen.int)
+    if copyLen == 0:
+      return ""
+    
+    result = newString(copyLen)
+    copyMem(addr result[0], src, copyLen)
+  except:
+    result = ""
+
+################################################################################
 ### Helper procedures
 
 proc success*(callback: ArchivistCallback, msg: string, userData: pointer): cint =
-  if msg.len > 0:
-    callback(RET_OK, unsafeAddr msg[0], cast[csize_t](len(msg)), userData)
-  else:
-    let empty = ""
-    callback(RET_OK, unsafeAddr empty[0], 0, userData)
+  safeCallback(callback, RET_OK, msg, userData)
   return RET_OK
 
 proc error*(callback: ArchivistCallback, msg: string, userData: pointer): cint =
-  let msg = "libarchivist error: " & msg
-  callback(RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), userData)
+  let fullMsg = "libarchivist error: " & msg
+  safeCallback(callback, RET_ERR, fullMsg, userData)
   return RET_ERR
 
-proc okOrError*[T](
-    callback: ArchivistCallback, res: Result[T, string], userData: pointer
-): cint =
-  if res.isOk:
-    return RET_OK
-  return callback.error($res.error, userData)
-
 proc progress*(callback: ArchivistCallback, data: string, userData: pointer): cint =
-  callback(RET_PROGRESS, unsafeAddr data[0], cast[csize_t](len(data)), userData)
+  safeCallback(callback, RET_PROGRESS, data, userData)
   return RET_OK
 
 ################################################################################
