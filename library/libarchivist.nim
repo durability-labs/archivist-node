@@ -31,6 +31,7 @@ import ./archivist_thread_requests/requests/node_download_request
 import ./archivist_thread_requests/requests/node_storage_request
 import ./ffi_types
 import ./alloc
+import ./toml_validation
 
 logScope:
   topics = "libarchivist"
@@ -115,6 +116,17 @@ proc archivist_new*(
     let errorMsg = formatErrorMessage(validationResult, "archivist_new", "Callback validation failed")
     if not callback.isNil:
       safeCallback(callback, validationResult, errorMsg, userData)
+    return nil
+
+  let tomlValidationResult = validateTomlCString(configToml)
+  if tomlValidationResult.isErr:
+    let errorMsg = formatErrorMessage(
+      RET_INVALID_PARAM,
+      "archivist_new",
+      "TOML validation failed: " & formatError(tomlValidationResult.error)
+    )
+    if not callback.isNil:
+      safeCallback(callback, RET_INVALID_PARAM, errorMsg, userData)
     return nil
 
   let safeConfig = if validateCString(configToml): safeStringCopy(configToml, 10000) else: ""

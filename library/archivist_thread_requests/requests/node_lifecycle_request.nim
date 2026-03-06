@@ -15,6 +15,7 @@ import toml_serialization
 import ../../../archivist/conf
 
 import ../../alloc
+import ../../toml_validation
 import ../../../archivist/utils
 import ../../../archivist/utils/[keyutils, fileutils]
 import ../../../archivist/units
@@ -76,6 +77,10 @@ proc createArchivist(
     configToml: cstring
 ): Future[Result[NodeServer, string]] {.async: (raises: []).} =
   var conf: NodeConf
+
+  let tomlValidationResult = validateTomlCString(configToml)
+  if tomlValidationResult.isErr:
+    return err("Failed to create Archivist: TOML validation failed: " & formatError(tomlValidationResult.error))
 
   try:
     conf = NodeConf.load(
