@@ -93,6 +93,8 @@ proc archivist_new*(
     ctx, RequestType.LIFECYCLE, reqContent, callback, userData
   ).isOkOr:
     let msg = $error
+    reqContent.cleanupRequest()
+    deallocShared(reqContent)
     callback(RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), userData)
     return nil
 
@@ -107,6 +109,7 @@ proc archivist_create*(
   let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.CREATE, "")
   let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -120,6 +123,7 @@ proc archivist_start*(
   let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.START, "")
   let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -133,6 +137,7 @@ proc archivist_stop*(
   let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.STOP, "")
   let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -216,6 +221,7 @@ proc archivist_debug*(
   let req = NodeDebugRequest.createShared(NodeDebugMsgType.DEBUG)
   let res = ctx.sendRequestToArchivistThread(RequestType.DEBUG, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -255,6 +261,7 @@ proc archivist_log_level*(
   let req = NodeDebugRequest.createShared(NodeDebugMsgType.LOG_LEVEL, $logLevel)
   let res = ctx.sendRequestToArchivistThread(RequestType.DEBUG, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -353,6 +360,7 @@ proc archivist_upload_init*(
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.INIT, $filepath, @[], chunkSize.int)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -376,6 +384,7 @@ proc archivist_upload_chunk*(
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.CHUNK, $sessionId, chunkData)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -392,6 +401,7 @@ proc archivist_upload_finalize*(
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.FINALIZE, $sessionId)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -408,6 +418,7 @@ proc archivist_upload_cancel*(
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.CANCEL, $sessionId)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -424,6 +435,7 @@ proc archivist_upload_file*(
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.FILE, $sessionId)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -445,6 +457,7 @@ proc archivist_download_init*(
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.INIT, $cid, chunkSize.int, local)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -467,6 +480,7 @@ proc archivist_download_stream*(
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.STREAM, $cid, chunkSize.int, local, fp)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -483,6 +497,7 @@ proc archivist_download_chunk*(
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.CHUNK, $cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -499,6 +514,7 @@ proc archivist_download_cancel*(
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.CANCEL, $cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -515,6 +531,7 @@ proc archivist_download_manifest*(
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.MANIFEST, $cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -531,6 +548,7 @@ proc archivist_list*(
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.LIST)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -544,6 +562,7 @@ proc archivist_space*(
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -557,6 +576,7 @@ proc archivist_delete*(
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.DELETE, cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -570,6 +590,7 @@ proc archivist_fetch*(
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.FETCH, cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -583,6 +604,7 @@ proc archivist_exists*(
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.EXISTS, cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -596,6 +618,7 @@ proc archivist_local_size*(
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK
@@ -609,6 +632,7 @@ proc archivist_block_count*(
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
   if res.isErr:
+    req.cleanupRequest()
     deallocShared(req)
     return callback.error(res.error, userData)
   return RET_OK

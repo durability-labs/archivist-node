@@ -64,8 +64,13 @@ proc createShared*(
   return ret
 
 proc destroyShared(self: ptr NodeLifecycleRequest) =
-  deallocShared(self[].configToml)
-  deallocShared(self)
+  if not self.isNil:
+    deallocShared(self[].configToml)
+    deallocShared(self)
+
+proc cleanupRequest(self: ptr NodeLifecycleRequest) =
+  if not self.isNil:
+    deallocShared(self[].configToml)
 
 proc createArchivist(
     configToml: cstring

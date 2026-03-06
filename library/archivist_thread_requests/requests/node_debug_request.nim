@@ -48,8 +48,13 @@ proc createShared*(
   return ret
 
 proc destroyShared(self: ptr NodeDebugRequest) =
-  deallocShared(self[].data)
-  deallocShared(self)
+  if not self.isNil:
+    deallocShared(self[].data)
+    deallocShared(self)
+
+proc cleanupRequest(self: ptr NodeDebugRequest) =
+  if not self.isNil:
+    deallocShared(self[].data)
 
 proc process*(
     self: ptr NodeDebugRequest, archivist: ptr NodeServer

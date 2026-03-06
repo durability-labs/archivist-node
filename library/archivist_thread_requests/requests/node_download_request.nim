@@ -75,9 +75,15 @@ proc createShared*(
   return ret
 
 proc destroyShared(self: ptr NodeDownloadRequest) =
-  deallocShared(self[].cid)
-  deallocShared(self[].filepath)
-  deallocShared(self)
+  if not self.isNil:
+    deallocShared(self[].cid)
+    deallocShared(self[].filepath)
+    deallocShared(self)
+
+proc cleanupRequest(self: ptr NodeDownloadRequest) =
+  if not self.isNil:
+    deallocShared(self[].cid)
+    deallocShared(self[].filepath)
 
 proc init(
     archivist: ptr NodeServer, cCid: cstring = "", chunkSize: csize_t = 0, local: bool

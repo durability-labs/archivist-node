@@ -53,8 +53,13 @@ proc createShared*(
   return ret
 
 proc destroyShared(self: ptr NodeStorageRequest) =
-  deallocShared(self[].cid)
-  deallocShared(self)
+  if not self.isNil:
+    deallocShared(self[].cid)
+    deallocShared(self)
+
+proc cleanupRequest(self: ptr NodeStorageRequest) =
+  if not self.isNil:
+    deallocShared(self[].cid)
 
 type ManifestWithCid = object
   cid {.serialize.}: string
