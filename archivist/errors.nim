@@ -81,3 +81,24 @@ proc allFinishedValues*[T](
   # here, we know there are no failed futures in "futs"
   # and we are only interested in those that completed successfully
   return success futs.filterIt(it.finished).mapIt(it.value)
+
+template catchAsync*(body: typed): Result[type(body), ref CatchableError] =
+  ## Catch exceptions for body and store them in the Result
+  ##
+  ## NOTE: Adopted from Results to propagate async cancellations
+  ##
+  ## ```
+  ## let r = catch: someFuncThatMayRaise()
+  ## ```
+  type R = Result[type(body), ref CatchableError]
+
+  try:
+    when type(body) is void:
+      body
+      R.ok()
+    else:
+      R.ok(body)
+  except CancelledError as exc:
+    raise exc
+  except CatchableError as exc:
+    R.err(exc)

@@ -188,7 +188,7 @@ proc prepareEncodingData(
   var resolved = 0
   for fut in pendingBlocksIter:
     let
-      (blkOrErr, idx) = ?catch(await fut)
+      (blkOrErr, idx) = ?catchAsync(await fut)
       blk = ?blkOrErr
 
     let pos = indexToPos(params.steps, idx, step)
@@ -247,7 +247,7 @@ proc prepareDecodingData(
     if resolved >= params.ecK:
       break
 
-    let (blkOrErr, idx) = ?catch(await fut)
+    let (blkOrErr, idx) = ?catchAsync(await fut)
     without blk =? blkOrErr, err:
       trace "Failed retrieving a block", idx, treeCid = treeCid, msg = err.msg
       continue

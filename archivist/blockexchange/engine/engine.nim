@@ -461,11 +461,11 @@ proc blocksDeliveryHandler*(
 
   let peerCtx = self.peers.get(peer)
   if peerCtx != nil:
-    if err =? catch(await self.payForBlocks(peerCtx, blocksDelivery)).errorOption:
+    if err =? catchAsync(await self.payForBlocks(peerCtx, blocksDelivery)).errorOption:
       warn "Error paying for blocks", err = err.msg
       return
 
-  if err =? catch(await self.resolveBlocks(validatedBlocksDelivery)).errorOption:
+  if err =? catchAsync(await self.resolveBlocks(validatedBlocksDelivery)).errorOption:
     warn "Error resolving blocks", err = err.msg
     return
 

@@ -58,7 +58,8 @@ logScope:
 
 const
   DefaultFetchBatch = 10
-  DefaultStoreBatch* = 1000 ## Number of blocks to batch when storing data
+  DefaultStoreBatch* = 1024 ## Number of blocks to batch when storing data
+  MaxInFlightBatches = 8 ## Maximum concurrent batch flushes for bounded parallelism
 
 type
   ArchivistNode* = object
@@ -432,7 +433,7 @@ proc store*(
     await stream.close()
 
   proc flushBatch(
-      tmpCid: Cid, batch: seq[(bt.Block, Natural)]
+      tmpCid: Cid, batch: sink seq[(bt.Block, Natural)]
   ): Future[?!void] {.async: (raises: [CancelledError]).} =
     ## Flush a batch of blocks to storage using batched putBlocks
     if batch.len == 0:
@@ -457,9 +458,6 @@ proc store*(
     )
     success()
 
-  const MaxInFlightBatches = 4
-    ## Maximum concurrent batch flushes for bounded parallelism
-
   let treeCid =
     ?await self.repoStore.withTmpOverlay(
       body = proc(
@@ -477,12 +475,13 @@ proc store*(
           # wait if at capacity before launching new batch
           if inFlight.len >= MaxInFlightBatches:
             # Remove first future and await it (cleanup before await to avoid leak)
-            let fut = ?catch(await one(inFlight))
+            let fut = ?catchAsync(await one(inFlight))
             inFlight.keepItIf(FutureBase(it) != FutureBase(fut))
-            ?catch(?await fut)
+            ?catchAsync(?await fut)
 
           # Launch batch flush without awaiting (adds to window)
-          inFlight.add(flushBatch(tmpCid, batch))
+          var batch = batch
+          inFlight.add(flushBatch(tmpCid, move batch))
           archivist_upload_batches_total.inc()
           archivist_upload_active_batches.set(inFlight.len.int64)
 

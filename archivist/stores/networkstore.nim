@@ -62,19 +62,14 @@ method getBlocks*(
 
   var allBlocks = localBlocks
   while requests.len > 0:
-    without completedFut =? catch(await one(requests)), err:
-      if err of CancelledError:
-        raise (ref CancelledError)(err)
+    without completedFut =? catchAsync(await one(requests)), err:
       error "Unable to get block from exchange engine", err = err.msg
       break
 
     let idx = requests.find(completedFut)
     requests.del(idx)
 
-    without blk =? catch(await completedFut).flatten, err:
-      if err of CancelledError:
-        raise (ref CancelledError)(err)
-          # need to wrap, otherwise it will be reinterpreted as CatchableError
+    without blk =? catchAsync(await completedFut).flatten, err:
       error "Unable to get block from exchange engine", err = err.msg
       continue
 
@@ -151,9 +146,7 @@ method getBlocks*(
 
   var allBlocks = localBlocks
   while requests.len > 0:
-    without completedFut =? catch(await one(requests)), err:
-      if err of CancelledError:
-        raise (ref CancelledError)(err)
+    without completedFut =? catchAsync(await one(requests)), err:
       error "Unable to get block from exchange engine", treeCid, err = err.msg
       break
 
@@ -163,9 +156,7 @@ method getBlocks*(
     requests.del(idx)
     toRequestIdxs.del(idx)
 
-    without blk =? catch(await completedFut).flatten, err:
-      if err of CancelledError:
-        raise (ref CancelledError)(err)
+    without blk =? catchAsync(await completedFut).flatten, err:
       error "Unable to get block from exchange engine", treeCid, err = err.msg
       continue
 
@@ -320,9 +311,7 @@ method getBlocksAndProofs*(
 
   var allBlocks = localBlocks
   while requests.len > 0:
-    without completedFut =? catch(await one(requests)), err:
-      if err of CancelledError:
-        raise (ref CancelledError)(err)
+    without completedFut =? catchAsync(await one(requests)), err:
       error "Unable to get block from exchange engine", treeCid, err = err.msg
       break
 
@@ -333,9 +322,7 @@ method getBlocksAndProofs*(
     requests.del(idx)
     toRequestIdxs.del(idx)
 
-    without blk =? catch(await completedFut).flatten, err:
-      if err of CancelledError:
-        raise (ref CancelledError)(err)
+    without blk =? catchAsync(await completedFut).flatten, err:
       error "Unable to get block from exchange engine", treeCid, err = err.msg
       continue
 
