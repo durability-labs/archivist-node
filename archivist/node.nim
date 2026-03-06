@@ -544,8 +544,13 @@ proc store*(
         var proofItems: seq[(Natural, Cid, ArchivistProof)]
         for index, cid in cids:
           proofItems.add((index.Natural, cid, ?tree.getProof(index)))
+          if proofItems.len >= storeBatchSize:
+            ?await self.repoStore.putCidsAndProofs(tmpCid, proofItems)
+            proofItems.setLen(0)
 
-        ?await self.repoStore.putCidsAndProofs(tmpCid, proofItems)
+        if proofItems.len > 0:
+          ?await self.repoStore.putCidsAndProofs(tmpCid, proofItems)
+          proofItems.setLen(0)
 
         success treeCid
     )
