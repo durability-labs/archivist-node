@@ -59,9 +59,11 @@ proc handleRes[T: string | void | seq[byte]](
     foreignThreadGc:
       let msg = $res.error
       if msg == "":
-        request[].callback(RET_ERR, nil, cast[csize_t](0), request[].userData)
+        let errorMsg = formatErrorMessage(RET_ERR, "request processing", "Unknown error occurred")
+        safeCallback(request[].callback, RET_ERR, errorMsg, request[].userData)
       else:
-        safeCallback(request[].callback, RET_ERR, msg, request[].userData)
+        let errorMsg = formatErrorMessage(RET_ERR, "request processing", msg)
+        safeCallback(request[].callback, RET_ERR, errorMsg, request[].userData)
     return
 
   foreignThreadGc:

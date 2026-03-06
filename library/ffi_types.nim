@@ -22,6 +22,11 @@ const RET_OK*: cint = 0
 const RET_ERR*: cint = 1
 const RET_MISSING_CALLBACK*: cint = 2
 const RET_PROGRESS*: cint = 3
+const RET_INVALID_PARAM*: cint = 4
+const RET_NULL_CONTEXT*: cint = 5
+const RET_THREAD_ERROR*: cint = 6
+const RET_MEMORY_ERROR*: cint = 7
+const RET_TIMEOUT*: cint = 8
 
 ################################################################################
 ### Safe callback string handling
@@ -98,6 +103,83 @@ proc error*(callback: ArchivistCallback, msg: string, userData: pointer): cint =
 
 proc progress*(callback: ArchivistCallback, data: string, userData: pointer): cint =
   safeCallback(callback, RET_PROGRESS, data, userData)
+  return RET_OK
+
+################################################################################
+### Standardized Error Handling Utilities
+
+proc formatErrorMessage*(errorCode: cint, context: string, details: string = ""): string =
+  ## Standardized error message formatting
+  let errorType = case errorCode:
+    of RET_INVALID_PARAM: "Invalid parameter"
+    of RET_NULL_CONTEXT: "Null context"
+    of RET_THREAD_ERROR: "Thread error"
+    of RET_MEMORY_ERROR: "Memory error"
+    of RET_TIMEOUT: "Timeout error"
+    of RET_MISSING_CALLBACK: "Missing callback"
+    of RET_ERR: "General error"
+    else: "Unknown error"
+  
+  if details.len > 0:
+    errorType & " in " & context & ": " & details
+  else:
+    errorType & " in " & context
+
+proc handleRequestError*(
+    callback: ArchivistCallback,
+    userData: pointer,
+    errorCode: cint,
+    context: string,
+    details: string = "",
+    request: pointer = nil,
+    cleanupProc: proc(request: pointer) {.raises: [].} = nil
+): cint =
+  ## Standardized error handling for failed requests
+  ## Handles cleanup and consistent error reporting
+  if not request.isNil and not cleanupProc.isNil:
+    cleanupProc(request)
+  
+  let errorMsg = formatErrorMessage(errorCode, context, details)
+  safeCallback(callback, errorCode, errorMsg, userData)
+  return errorCode
+
+proc handleRequestSuccess*(
+    callback: ArchivistCallback,
+    userData: pointer,
+    message: string = "",
+    request: pointer = nil,
+    cleanupProc: proc(request: pointer) {.raises: [].} = nil
+): cint =
+  ## Standardized success handling for completed requests
+  ## Handles cleanup and consistent success reporting
+  if not request.isNil and not cleanupProc.isNil:
+    cleanupProc(request)
+  
+  safeCallback(callback, RET_OK, message, userData)
+  return RET_OK
+
+proc validateContext*(ctx: pointer): cint =
+  ## Standardized context validation
+  if ctx.isNil:
+    return RET_NULL_CONTEXT
+  return RET_OK
+
+proc validateCallback*(callback: ArchivistCallback): cint =
+  ## Standardized callback validation
+  if callback.isNil:
+    return RET_MISSING_CALLBACK
+  return RET_OK
+
+proc validateParams*(ctx: pointer, callback: ArchivistCallback): cint =
+  ## Standardized parameter validation for common FFI function signature
+  let ctxResult = validateContext(ctx)
+  if ctxResult != RET_OK:
+    return ctxResult
+  
+  let callbackResult = validateCallback(callback)
+  if callbackResult != RET_OK:
+    return callbackResult
+  
   return RET_OK
 
 ################################################################################
