@@ -58,21 +58,22 @@ typedef void (*ArchivistCallback)(int callerRet, const char *msg, size_t len, vo
 
 /**
  * Create a new instance of an Archivist node.
- * 
- * @param configJson JSON string with configuration overwriting defaults (can be NULL)
+ *
+ * @param configToml TOML string with configuration overwriting defaults (can be NULL or empty string)
  * @param callback Callback function for the result
  * @param userData User-provided context pointer
  * @return Opaque pointer to the ArchivistContext, or NULL on failure
- * 
+ *
  * Typical usage:
- *   ctx = archivist_new(configJson, myCallback, myUserData);
+ *   ctx = archivist_new(configToml, myCallback, myUserData);
+ *   archivist_create(ctx, ...);
  *   archivist_start(ctx, ...);
  *   ...
  *   archivist_stop(ctx, ...);
  *   archivist_destroy(ctx, ...);
  */
 void *archivist_new(
-    const char *configJson,
+    const char *configToml,
     ArchivistCallback callback,
     void *userData);
 

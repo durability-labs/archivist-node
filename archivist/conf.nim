@@ -20,7 +20,12 @@ import pkg/chronicles/helpers
 import pkg/chronicles/topics_registry
 import pkg/confutils/defs
 import pkg/confutils/std/net
+import pkg/confutils/toml/defs
 import pkg/toml_serialization
+import pkg/serialization
+
+type ConfTypes = InputFile | InputDir | OutPath | OutDir | OutFile
+serializesAsBase(ConfTypes, Toml)
 import pkg/metrics
 import pkg/metrics/chronos_httpserver
 import pkg/stew/byteutils
@@ -661,7 +666,67 @@ proc readValue*(
     except CatchableError as err:
       raise newException(SerializationError, err.msg)
 
-# no idea why confutils needs this:
+# TOML Serialization readValue procedures
+proc readValue*(r: var TomlReader, value: var IpAddress) {.raises: [SerializationError, TomlError, IOError].} =
+  try:
+    value = parseIpAddress(r.parseAsString())
+  except ValueError as ex:
+    raise newException(SerializationError, ex.msg)
+
+proc readValue*(r: var TomlReader, value: var Port) {.raises: [SerializationError, TomlError, IOError].} =
+  value = r.parseInt(int).Port
+
+# TOML Serialization writeValue procedures
+proc writeValue*(w: var TomlWriter, value: ThreadCount) {.raises: [IOError].} =
+  w.writeValue(int(value))
+
+proc writeValue*(w: var TomlWriter, value: NBytes) {.raises: [IOError].} =
+  w.writeValue(int(value))
+
+proc writeValue*(w: var TomlWriter, value: Duration) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: IpAddress) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: Port) {.raises: [IOError].} =
+  w.writeValue(int(value))
+
+proc writeValue*(w: var TomlWriter, value: MultiAddress) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: EthAddress) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: SignedPeerRecord) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: NatConfig) {.raises: [IOError].} =
+  if value.hasExtIp:
+    w.writeValue("extip:" & $value.extIp)
+  else:
+    case value.nat
+    of NatStrategy.NatAny:
+      w.writeValue("any")
+    of NatStrategy.NatNone:
+      w.writeValue("none")
+    of NatStrategy.NatUpnp:
+      w.writeValue("upnp")
+    of NatStrategy.NatPmp:
+      w.writeValue("pmp")
+
+proc writeValue*(w: var TomlWriter, value: LogKind) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: RepoKind) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: ProverBackendCmd) {.raises: [IOError].} =
+  w.writeValue($value)
+
+proc writeValue*(w: var TomlWriter, value: Curves) {.raises: [IOError].} =
+  w.writeValue($value)
+
 proc completeCmdArg*(T: type EthAddress, val: string): seq[string] =
   discard
 
@@ -674,7 +739,6 @@ proc completeCmdArg*(T: type Duration, val: string): seq[string] =
 proc completeCmdArg*(T: type ThreadCount, val: string): seq[string] =
   discard
 
-# silly chronicles, colors is a compile-time property
 proc stripAnsi*(v: string): string =
   var
     res = newStringOfCap(v.len)

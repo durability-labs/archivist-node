@@ -1,9 +1,9 @@
 ## This file contains the lifecycle request type that will be handled.
-## CREATE: create a new Archivist node with the provided config.json.
+## CREATE: create a new Archivist node with the provided config.toml.
 ## START: start the provided Archivist node.
 ## STOP: stop the provided Archivist node.
 
-import std/[options, json, strutils, net, os]
+import std/[options, strutils, net, os]
 import chronos
 import chronicles
 import results
@@ -11,13 +11,10 @@ import confutils
 import confutils/std/net
 import confutils/defs
 import libp2p
-import libp2p/routing_record
-import json_serialization
-import json_serialization/std/[options, net]
+import toml_serialization
 import ../../../archivist/conf
 
 import ../../alloc
-import ../../../archivist/conf
 import ../../../archivist/utils
 import ../../../archivist/utils/[keyutils, fileutils]
 import ../../../archivist/units
@@ -33,94 +30,60 @@ type NodeLifecycleMsgType* = enum
   START
   STOP
 
+
+
 proc readValue*[T: InputFile | InputDir | OutPath | OutDir | OutFile](
-    r: var JsonReader, val: var T
-) {.raises: [SerializationError, IOError].} =
+    r: var TomlReader, val: var T
+) =
   val = T(r.readValue(string))
 
-proc readValue*(r: var JsonReader, val: var MultiAddress) {.raises: [SerializationError, IOError].} =
-  let addrStr = r.readValue(string)
-  let res = MultiAddress.init(addrStr)
-  if res.isErr:
-    raise
-      newException(SerializationError, "Cannot parse MultiAddress: " & addrStr)
-  val = res.get()
-
-proc readValue*(r: var JsonReader, val: var NatConfig) {.raises: [SerializationError, ValueError, IOError].} =
+proc readValue*(r: var TomlReader, val: var IpAddress) {.raises: [SerializationError, IOError].} =
+  let s = r.readValue(string)
   try:
-    val = NatConfig.parseCmdArg(r.readValue(string))
-  except ValueError as e:
-    raise
-      newException(SerializationError, "Cannot parse the NAT config: " & e.msg)
+    val = parseIpAddress(s)
+  except CatchableError:
+    raise newException(SerializationError, "Invalid IP address: " & s)
 
-proc readValue*(r: var JsonReader, val: var SignedPeerRecord) {.raises: [SerializationError, IOError].} =
-  let uri = r.readValue(string)
-  if not val.fromURI(uri):
-    raise
-      newException(SerializationError, "Cannot parse the signed peer record: " & uri)
-
-proc readValue*(r: var JsonReader, val: var ThreadCount) {.raises: [SerializationError, IOError].} =
-  val = ThreadCount(r.readValue(int))
-
-proc readValue*(r: var JsonReader, val: var NBytes) {.raises: [SerializationError, IOError].} =
-  val = NBytes(r.readValue(int))
-
-proc readValue*(r: var JsonReader, val: var Duration) {.raises: [SerializationError, IOError].} =
-  var dur: Duration
-  let input = r.readValue(string)
-  let count = parseDuration(input, dur)
-  if count == 0:
-    raise newException(SerializationError, "Cannot parse the duration: " & input)
-  val = dur
+proc readValue*(r: var TomlReader, val: var Port) {.raises: [SerializationError, IOError].} =
+  let s = r.readValue(string)
+  try:
+    val = Port(parseInt(s))
+  except CatchableError:
+    raise newException(SerializationError, "Invalid port number: " & s)
 
 type NodeLifecycleRequest* = object
   operation: NodeLifecycleMsgType
-  configJson: cstring
+  configToml: cstring
 
 proc createShared*(
-    T: type NodeLifecycleRequest, op: NodeLifecycleMsgType, configJson: cstring = ""
+    T: type NodeLifecycleRequest, op: NodeLifecycleMsgType, configToml: cstring = ""
 ): ptr type T =
   var ret = createShared(T)
   ret[].operation = op
-  ret[].configJson = configJson.alloc()
+  ret[].configToml = configToml.alloc()
   return ret
 
 proc destroyShared(self: ptr NodeLifecycleRequest) =
-  deallocShared(self[].configJson)
+  deallocShared(self[].configToml)
   deallocShared(self)
 
 proc createArchivist(
-    configJson: cstring
+    configToml: cstring
 ): Future[Result[NodeServer, string]] {.async: (raises: []).} =
   var conf: NodeConf
 
   try:
-    # TODO: Fix configuration loading serialization issues, remove hardcoded stuff
-    conf = default(NodeConf)
-    conf.logLevel = "info"
-    conf.dataDir = OutDir(defaultDataDir())
-    conf.netPrivKeyFile = "key"
-    conf.maxPeers = 160
-    conf.agentString = "Archivist Node"
-    conf.numThreads = ThreadCount(0)
-    conf.discoveryPort = Port(8090)
-    
-    conf.listenAddrs = @[MultiAddress.init("/ip4/127.0.0.1/tcp/0").expect("Should init multiaddress")]
-    
-    conf.apiBindAddress = "127.0.0.1"
-    conf.apiPort = Port(8080)
-    conf.storageQuota = DefaultQuotaBytes
-    conf.blockTtl = DefaultBlockTtl
-    conf.blockMaintenanceInterval = DefaultBlockInterval
-    conf.blockMaintenanceNumberOfBlocks = DefaultNumBlocksPerInterval
-    
-    let dataDir = string(conf.dataDir)
-    if not dirExists(dataDir):
-      try:
-        createDir(dataDir)
-      except CatchableError as e:
-        # TODO: Should we really ignore the directory creation failure?
-        discard
+    conf = NodeConf.load(
+      version = nodeFullVersion,
+      envVarsPrefix = "archivist",
+      cmdLine = @[],
+      secondarySources = proc(
+          config: NodeConf, sources: auto
+      ) {.gcsafe, raises: [ConfigurationError].} =
+        if configToml.len > 0:
+          sources.addConfigFileContent(Toml, $(configToml))
+      ,
+    )
   except ConfigurationError as e:
     return err("Failed to create Archivist: unable to load configuration: " & e.msg)
 
@@ -172,7 +135,7 @@ proc process*(
   of CREATE:
     archivist[] = (
       await createArchivist(
-        self.configJson
+        self.configToml
       )
     ).valueOr:
       error "Failed to CREATE.", error = error

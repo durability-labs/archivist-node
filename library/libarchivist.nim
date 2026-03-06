@@ -71,7 +71,7 @@ proc initializeLibrary() {.exported.} =
 ### Context Lifecycle
 
 proc archivist_new*(
-    configJson: cstring, callback: ArchivistCallback, userData: pointer
+    configToml: cstring, callback: ArchivistCallback, userData: pointer
 ): pointer {.dynlib, exported.} =
   initializeLibrary()
 
@@ -86,11 +86,16 @@ proc archivist_new*(
 
   ctx.userData = userData
 
-  # TODO: Parse configJson and configure the node
-  
-  let ack = "Archivist context created"
-  callback(RET_OK, unsafeAddr ack[0], cast[csize_t](len(ack)), userData)
-  
+  let reqContent =
+    NodeLifecycleRequest.createShared(NodeLifecycleMsgType.CREATE, configToml)
+
+  archivist_context.sendRequestToArchivistThread(
+    ctx, RequestType.LIFECYCLE, reqContent, callback, userData
+  ).isOkOr:
+    let msg = $error
+    callback(RET_ERR, unsafeAddr msg[0], cast[csize_t](len(msg)), userData)
+    return nil
+
   return ctx
 
 proc archivist_create*(

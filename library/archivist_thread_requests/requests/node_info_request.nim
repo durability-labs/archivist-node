@@ -54,8 +54,9 @@ proc process*(
   of REVISION:
     return ok(archivistRevision)
   of REPO:
-    # TODO: Get actual repo path from config
-    return ok("")
+    if archivist[].isNil:
+      return err("Archivist node is not initialized")
+    return ok(string(archivist[].config.dataDir))
   of PEERID:
     if archivist[].isNil:
       return err("Archivist node is not initialized")

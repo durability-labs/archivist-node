@@ -53,6 +53,18 @@ type
 
   NodePrivateKey* = libp2p.PrivateKey # alias
 
+func node*(self: NodeServer): ArchivistNodeRef =
+  return self.archivistNode
+
+func repoStore*(self: NodeServer): RepoStore =
+  return self.repoStore
+
+func dataDir*(self: NodeServer): string =
+  return string(self.config.dataDir)
+
+func config*(self: NodeServer): NodeConf =
+  return self.config
+
 proc connectMarketplace(s: NodeServer) {.async.} =
   let config = s.config
 
