@@ -205,31 +205,54 @@ proc tryDeleteBlocks*(
   ##
   ## Returns skipped cids or empty seq
   ##
-  ## TODO: Currently, we're not respecting the refCount invariance
-  ## during deletion, because blocks can still be put without any
-  ## metadata, however once we introduce the overlays, this will
-  ## no longer be the case, even blocks that don't have a merkle
-  ## tree yet, will get metdata and a respective refCount
-  ##
 
   trace "Deleting blocks", count = cids.len
 
-  let
-    dedupped = cids.deduplicate().filterIt(not it.isEmpty)
-    # delete fs blocks first - drop the block, we'll rework with
-    # refCount once overlays are ready
-    skippedCids = ?await self.delFromBlocksStore(dedupped)
-    # only delete metadata for deleted fs blocks (cid - skipped cids)
-    blockMetaKeys =
-      (dedupped.toHashset - skippedCids.toHashSet).mapIt((?blockMetaKey(it)))
-    # this will happen before deleting the fs block once we have overlays
-    blocksMeta = ?await self.metaDs.get(blockMetaKeys, BlockMetadata)
-    skipped = ?await self.deleteBlocksMetaRecs(blocksMeta)
+  let dedupped = cids.deduplicate().filterIt(not it.isEmpty)
 
-  # return skipped Cids
-  success toSeq(
-    cids.toHashSet - skipped.mapIt(?Cid.init(it.key.value).mapFailure).toHashSet
-  )
+  # Check refcounts before deleting from disk - only delete blocks
+  # whose refCount is 0 (or that have no metadata at all)
+  var
+    toDelete: seq[Cid]
+    skippedByRefCount: seq[Cid]
+
+  let blocksMeta =
+    ?await self.metaDs.get(dedupped.mapIt(?blockMetaKey(it)), BlockMetadata)
+
+  var metaByKey = initTable[Key, KVRecord[BlockMetadata]]()
+  for rec in blocksMeta:
+    metaByKey[rec.key] = rec
+
+  for cid in dedupped:
+    let key = ?blockMetaKey(cid)
+    if key in metaByKey:
+      let rec = ?catch(metaByKey[key])
+      if rec.val.refCount == 0:
+        toDelete.add(cid)
+      else:
+        skippedByRefCount.add(cid)
+    else:
+      # No metadata - safe to delete
+      toDelete.add(cid)
+
+  # Delete fs blocks for refCount == 0 only
+  let skippedCids = ?await self.delFromBlocksStore(toDelete)
+
+  # Delete metadata for successfully deleted fs blocks
+  let deletedCids = toDelete.toHashSet - skippedCids.toHashSet
+  var deletedMetaKeys: HashSet[Key]
+  for cid in deletedCids:
+    deletedMetaKeys.incl(?blockMetaKey(cid))
+
+  var deletedMeta: seq[KVRecord[BlockMetadata]]
+  for rec in blocksMeta:
+    if rec.key in deletedMetaKeys:
+      deletedMeta.add(rec)
+
+  discard ?await self.deleteBlocksMetaRecs(deletedMeta)
+
+  # Return all skipped cids (refCount > 0 + failed disk deletes)
+  success skippedByRefCount & skippedCids
 
 proc tryDeleteBlocks*(
     self: RepoStore, cid: Cid
