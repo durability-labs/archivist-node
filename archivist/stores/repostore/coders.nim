@@ -144,4 +144,8 @@ proc encode*(i: Natural | enum): seq[byte] =
   cast[uint64](i).encode
 
 proc decode*(T: typedesc[Natural | enum], bytes: openArray[byte]): ?!T =
-  uint64.decode(bytes).map((ui: uint64) => cast[T](ui))
+  let ui = ?uint64.decode(bytes)
+  when T is enum:
+    if ui > T.high.uint64:
+      return failure("Invalid enum value " & $ui & " for " & $T)
+  success cast[T](ui)
