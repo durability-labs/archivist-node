@@ -59,7 +59,7 @@ logScope:
 const
   DefaultFetchBatch = 10
   DefaultStoreBatch* = 1024 ## Number of blocks to batch when storing data
-  MaxInFlightBatches = 8 ## Maximum concurrent batch flushes for bounded parallelism
+  MaxInFlightBatches = 4 ## Maximum concurrent batch flushes for bounded parallelism
 
 type
   ArchivistNode* = object
@@ -514,7 +514,6 @@ proc store*(
           if blockBatch.len >= storeBatchSize:
             archivist_upload_active_batches.set(inFlight.len.int64)
             ?await fireBoundedBatch(blockBatch)
-            archivist_upload_batches_total.inc()
             archivist_upload_active_batches.set(inFlight.len.int64)
             blockBatch.setLen(0)
 
