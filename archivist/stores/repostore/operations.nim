@@ -1,12 +1,3 @@
-## Copyright (c) 2025 Archivist Authors
-## Copyright (c) 2024 Status Research & Development GmbH
-## Licensed under either of
-##  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE))
-##  * MIT license ([LICENSE-MIT](LICENSE-MIT))
-## at your option.
-## This file may not be copied, modified, or distributed except according to
-## those terms.
-
 {.push raises: [].}
 
 import std/sets
@@ -53,13 +44,12 @@ declareGauge(archivist_repostore_bytes_reserved, "archivist repostore bytes rese
 ## semantics we mean that we won't update stale records, but it doesn't mean that a
 ## multikey updates will remain consistent, this is only guaranteed by atomic operations.
 ##
-## This allows us to preserve consistency even in the event of crashes, however this
-## requires care with the order of operations. The metadata store support atomic operations
-## but the block store doesn't, which means that we should avoid writing blocks to the
+## The atomic operations preserve consistency even in the event of crashes, however it
+## requires care with the order of operations. We should avoid writing blocks to the
 ## filesystem before writing the metadata, because that would require expensive filesystem
-## scans (which we used to do!) to find orphaned blocks. If we write the metadata first
-## however, we can always recover from missing on disk block, by either re-downloading or
-## dropping the meta entry.
+## scans (which we used to do) to find orphaned blocks. If we write the metadata first,
+## we can always recover from missing on disk block, by either re-downloading or dropping
+## the meta entry.
 ##
 ## For the metadata writes:
 ## - ALWAYS WRITE BOTH LEAFS AND BLOCK META (refCount) AS AN ATOMIC BATCH, and only after
@@ -293,6 +283,10 @@ proc putLeafBlockMetaImpl(
   var overlayMeta = existingOverlayRec.val
   trace "Got existing overlay", treeCid, existingBitmapLen = overlayMeta.blocks.len
 
+  # abort if overlay is already being deleted
+  if overlayMeta.status == Deleting:
+    return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
+
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
@@ -338,13 +332,31 @@ proc putLeafBlockMetaImpl(
   proc putLeafAndBlockMetaAtomic(
       records: seq[RawKVRecord], conflicts: seq[Key]
   ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
-    var records = records.mapIt((it.key, it)).toTable
-    let
+    var
+      records = records.mapIt((it.key, it)).toTable
       refreshed = ?await self.metaDs.get(conflicts)
-      conflictSet = conflicts.toHashSet
+
+    let conflictSet = conflicts.toHashSet
 
     trace "Got refreshed leaf and block records",
       refreshed = refreshed.len, conflicts = conflicts.len
+
+    # Update the overlay first, to avoid writing over a deleted overlays
+    for i, rec in refreshed:
+      if ArchivistOverlaysKey.ancestor(rec.key):
+        let overlayMetaRec = ?toRecord[OverlayMetadata](rec)
+        # Abort if overlay is being deleted
+        if overlayMetaRec.val.status == Deleting:
+          return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
+
+        # Update overlay and mark for removal
+        var updatedRec = overlayMetaRec
+        updatedRec.val.blocks.combineSafe(overlayMeta.blocks)
+        trace "Updated overlay meta", overlay = updatedRec.val
+        overlayMeta = updatedRec.val
+        records[rec.key] = updatedRec.toRaw
+        refreshed.del(i)
+        break
 
     for rec in refreshed:
       var record = rec
@@ -390,12 +402,6 @@ proc putLeafBlockMetaImpl(
               cid = blockMeta.val.cid, refCount = blockMeta.val.refCount
 
           record = blockMeta.toRaw
-      elif ArchivistOverlaysKey.ancestor(record.key):
-        var overlayMetaRec = ?toRecord[OverlayMetadata](record)
-        overlayMetaRec.val.blocks.combineSafe(overlayMeta.blocks)
-        trace "Updated overlay meta", overlay = overlayMetaRec.val
-        overlayMeta = overlayMetaRec.val
-        record = overlayMetaRec.toRaw
 
       # update records
       records[record.key] = record
@@ -505,7 +511,7 @@ proc delLeafBlockMetadata*(
       )
     )
 
-  # Build aggregation table: block key -> set of leaf indices
+  # Build aggregation table block key -> set of leaf indices
   # This ensures we correctly decrement refCount when multiple leaves
   # reference the same block
   # Skip empty blkCid (pad blocks) - no block metadata to decrement
@@ -605,7 +611,7 @@ proc delLeafBlockMetadata*(
     atomicUpdateDelMeta,
   )
 
-  # Write-through: cache the final overlay after delete
+  # cache the final overlay after delete
   self.overlayCache[?overlayKey(treeCid)] = overlayMeta
 
   let

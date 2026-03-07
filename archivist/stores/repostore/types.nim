@@ -30,6 +30,7 @@ const
 
 type
   QuotaNotEnoughError* = object of ArchivistError
+  OverlayDeletingError* = object of ArchivistError
 
   RepoStore* = ref object of BlockStore
     postFixLen*: int
