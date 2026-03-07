@@ -75,6 +75,7 @@ proc putOverlay*(
   ##
 
   let key = ?overlayKey(treeCid)
+  self.overlayCache.del(key)
 
   # Read full KVRecord (preserving CAS token) for correct first attempt
   without var record =? (await self.metaDs.get(key, OverlayMetadata)), err:
@@ -99,7 +100,7 @@ proc putOverlay*(
     ,
   )
 
-  # Write-through: cache the final merged overlay
+  # cache the final merged overlay
   self.overlayCache[key] = cachedOverlay
   trace "Overlay metadata stored", treeCid = treeCid, status = cachedOverlay.status
   success()
@@ -126,8 +127,9 @@ proc deleteOverlay*(
   ##
 
   let key = ?overlayKey(treeCid)
-  ?await self.metaDs.delete(?await self.metaDs.get(key))
   self.overlayCache.del(key)
+
+  ?await self.metaDs.delete(?await self.metaDs.get(key))
 
   trace "Overlay metadata deleted", treeCid = treeCid
   success()
@@ -296,7 +298,7 @@ proc dropOverlay*(
   # Extract indices from the leaf keys
   var indices: seq[Natural]
   for recordFut in iter:
-    if record =? ?catch(?(await recordFut)):
+    if record =? ?catchAsync(?(await recordFut)):
       # Key format: /meta/leafs/{treeCid}/{index}
       # Extract index from last namespace segment
       let indexStr = record.key.value
@@ -347,15 +349,19 @@ proc finalizeOverlay*(
 
   trace "Finalizing temp overlay"
 
+  let
+    tmpOverlayKey = ?overlayKey(tmpCid)
+    overlayKey = ?overlayKey(realTreeCid)
+
   defer:
-    self.overlayCache.del(?overlayKey(tmpCid))
+    self.overlayCache.del(tmpOverlayKey)
 
   # Atomically move both leaf records and overlay metadata
   if err =? (
     await self.metaDs.moveKeysAtomic(
       @[
         (?(BlockLeafKey / $tmpCid), ?(BlockLeafKey / $realTreeCid)),
-        (?overlayKey(tmpCid), ?overlayKey(realTreeCid)),
+        (tmpOverlayKey, overlayKey),
       ]
     )
   ).errorOption:
@@ -401,19 +407,19 @@ proc withOverlay*[T](
     status = status
 
   trace "Starting overlay operation"
-  if initErr =?
+  if err =?
       (await self.putOverlay(treeCid, status, BitSeq.init(0), expiry)).errorOption:
-    error "Unable to create/update overlay metadata", exc = initErr.msg
-    return failure(initErr)
+    error "Unable to create/update overlay metadata", exc = err.msg
+    return failure(err)
 
   let
     bodyRes = await body()
     finalState = if bodyRes.isOk: Completed.some else: Failure.some
 
-  if finalErr =?
+  if err =?
       (await self.putOverlay(treeCid, finalState, BitSeq.init(0), expiry)).errorOption:
-    error "Unable to set overlay final state", exc = finalErr.msg
-    return failure(finalErr)
+    error "Unable to set overlay final state", exc = err.msg
+    return failure(err)
 
   trace "Overlay operation completed", finalState
 
