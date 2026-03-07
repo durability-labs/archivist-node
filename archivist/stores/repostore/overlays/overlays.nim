@@ -407,8 +407,7 @@ proc withOverlay*[T](
     status = status
 
   trace "Starting overlay operation"
-  if err =?
-      (await self.putOverlay(treeCid, status, BitSeq.init(0), expiry)).errorOption:
+  if err =? (await self.putOverlay(treeCid, status, BitSeq.init(0), expiry)).errorOption:
     error "Unable to create/update overlay metadata", exc = err.msg
     return failure(err)
 

@@ -16,7 +16,7 @@ import ../../helpers
 import ../../examples
 import ../../merkletree/helpers as mhelpers
 
-suite "Test coders":
+suite "Test repostore coders":
   proc rand(T: type NBytes): T =
     rand(Natural).NBytes
 

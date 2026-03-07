@@ -5,14 +5,19 @@ import pkg/archivist/stores
 import pkg/archivist/merkletree
 import pkg/archivist/blocktype as bt
 
-import ../../helpers
+import ../../../helpers
 
-type BlockBitState* = enum
-  ## Reasons for BitSeq inconsistency between overlay and leaf metadata
-  BitSetButLeafDeleted ## Bit is set in BitSeq but leaf is marked deleted
-  LeafExistsButBitNotSet ## Leaf exists and not deleted but bit not set in BitSeq
-  BitSetButNoLeafMetadata ## Bit is set in BitSeq but no leaf metadata exists
-  InvalidKeyFormat ## Key format is invalid
+type
+  KVStoreProvider* = proc(): KVStore {.gcsafe.}
+  Before* = proc(): Future[void] {.gcsafe.}
+  After* = proc(): Future[void] {.gcsafe.}
+
+  BlockBitState* = enum
+    ## Reasons for BitSeq inconsistency between overlay and leaf metadata
+    BitSetButLeafDeleted ## Bit is set in BitSeq but leaf is marked deleted
+    LeafExistsButBitNotSet ## Leaf exists and not deleted but bit not set in BitSeq
+    BitSetButNoLeafMetadata ## Bit is set in BitSeq but no leaf metadata exists
+    InvalidKeyFormat ## Key format is invalid
 
 proc createTestBlock*(size: int): bt.Block =
   bt.Block.new('a'.repeat(size).toBytes).tryGet()
