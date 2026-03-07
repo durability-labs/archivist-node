@@ -72,6 +72,9 @@ proc decode*(T: type OverlayMetadata, data: openArray[byte]): ?!T =
     else:
       Cid.none
 
+  if status.int > OverlayStatus.high.ord.int:
+    return failure("Invalid OverlayStatus value: " & $status)
+
   success OverlayMetadata(
     status: OverlayStatus(status),
     expiry: expiry.int64,
