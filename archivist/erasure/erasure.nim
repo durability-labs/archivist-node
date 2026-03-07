@@ -643,12 +643,12 @@ proc decode*(
     recoveredIndices: seq[Natural]
 
   ?await self.repoStore.withOverlay(
-    encoded.treeCid,
+    encoded.originalTreeCid,
     status = Storing.some,
     body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
       let
         (cids, recoveredIndices) =
-          ?await self.decodeInternal(encoded.treeCid, encoded.treeCid, params)
+          ?await self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params)
         tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
         treeCid = ?tree.rootCid
 
