@@ -59,7 +59,7 @@ method run*(
     else:
       trace "Errored slot is not in MySlots."
   except CancelledError as e:
-    trace "SaleErrored.isMySlot was cancelled", error = e.msgDetail
+    trace "SaleErrored.run was cancelled", error = e.msgDetail
   except CatchableError as e:
     error "Error during SaleError.isMySlot", error = e.msgDetail
     return some State(SaleErrored(error: e))
