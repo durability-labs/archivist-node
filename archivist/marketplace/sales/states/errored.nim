@@ -15,9 +15,6 @@ import ../../../utils/exponentialbackoff
 logScope:
   topics = "marketplace sales errored"
 
-method `$`*(state: SaleErrored): string =
-  "SaleErrored"
-
 proc isMySlot(
     marketplace: AbstractMarketplace, data: SalesData
 ): Future[bool] {.async.} =

@@ -5,3 +5,9 @@ type
   SaleErrored* = ref object of SaleState
     error*: ref CatchableError
     reprocessSlot*: bool
+
+method `$`*(state: SaleUnknown): string =
+  "SaleUnknown"
+
+method `$`*(state: SaleErrored): string =
+  "SaleErrored"
