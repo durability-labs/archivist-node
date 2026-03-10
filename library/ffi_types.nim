@@ -6,7 +6,20 @@
 {.pragma: exported, exportc, cdecl, raises: [].}
 {.pragma: callback, cdecl, raises: [], gcsafe.}
 
+import chronicles
 import ./alloc
+
+################################################################################
+### FFI utils
+
+template foreignThreadGc*(body: untyped) =
+  when declared(setupForeignThreadGc):
+    setupForeignThreadGc()
+
+  body
+
+  when declared(tearDownForeignThreadGc):
+    tearDownForeignThreadGc()
 
 ################################################################################
 ### Exported types
@@ -58,6 +71,11 @@ proc freeCallbackString*(cbStr: CallbackString) =
     deallocCString(cbStr.data)
 
 proc safeCallback*(callback: ArchivistCallback, retCode: cint, cbStr: CallbackString, userData: pointer) =
+  if callback.isNil:
+    error "safeCallback: callback is nil"
+    cbStr.freeCallbackString()
+    return
+  
   callback(retCode, cast[ptr cchar](cbStr.data), cbStr.len, userData)
   cbStr.freeCallbackString()
 
@@ -136,11 +154,14 @@ proc handleRequestError*(
 ): cint =
   ## Standardized error handling for failed requests
   ## Handles cleanup and consistent error reporting
+  # Defer cleanup until after callback
   if not request.isNil and not cleanupProc.isNil:
-    cleanupProc(request)
+    defer:
+      cleanupProc(request)
   
-  let errorMsg = formatErrorMessage(errorCode, context, details)
-  safeCallback(callback, errorCode, errorMsg, userData)
+  foreignThreadGc:
+    let errorMsg = formatErrorMessage(errorCode, context, details)
+    safeCallback(callback, errorCode, errorMsg, userData)
   return errorCode
 
 proc handleRequestSuccess*(
@@ -152,10 +173,19 @@ proc handleRequestSuccess*(
 ): cint =
   ## Standardized success handling for completed requests
   ## Handles cleanup and consistent success reporting
-  if not request.isNil and not cleanupProc.isNil:
-    cleanupProc(request)
+  info "handleRequestSuccess: Starting", message = message
   
-  safeCallback(callback, RET_OK, message, userData)
+  # Defer cleanup until after callback
+  if not request.isNil and not cleanupProc.isNil:
+    defer:
+      info "handleRequestSuccess: Calling cleanupProc"
+      cleanupProc(request)
+      info "handleRequestSuccess: cleanupProc completed"
+  
+  foreignThreadGc:
+    info "handleRequestSuccess: Calling safeCallback"
+    safeCallback(callback, RET_OK, message, userData)
+    info "handleRequestSuccess: safeCallback completed"
   return RET_OK
 
 proc validateContext*(ctx: pointer): cint =
@@ -181,17 +211,5 @@ proc validateParams*(ctx: pointer, callback: ArchivistCallback): cint =
     return callbackResult
   
   return RET_OK
-
-################################################################################
-### FFI utils
-
-template foreignThreadGc*(body: untyped) =
-  when declared(setupForeignThreadGc):
-    setupForeignThreadGc()
-
-  body
-
-  when declared(tearDownForeignThreadGc):
-    tearDownForeignThreadGc()
 
 type onDone* = proc()
