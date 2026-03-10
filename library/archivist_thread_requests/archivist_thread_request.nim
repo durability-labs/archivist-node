@@ -6,6 +6,7 @@ import std/json
 import results
 import chronos
 import ../ffi_types
+import ../alloc
 import ./requests/node_lifecycle_request
 import ./requests/node_info_request
 import ./requests/node_debug_request
@@ -50,11 +51,8 @@ proc createShared*(
 
 # TODO: Look into how to improve callback handling (thread pool/mp channel)
 proc handleRes[T: string | void | seq[byte]](
-    res: Result[T, string], request: ptr ArchivistThreadRequest
+  res: Result[T, string], request: ptr ArchivistThreadRequest
 ) =
-  defer:
-    deallocShared(request)
-
   if res.isErr():
     foreignThreadGc:
       let msg = $res.error
@@ -64,6 +62,8 @@ proc handleRes[T: string | void | seq[byte]](
       else:
         let errorMsg = formatErrorMessage(RET_ERR, "request processing", msg)
         safeCallback(request[].callback, RET_ERR, errorMsg, request[].userData)
+    deallocShared(request[].reqContent)
+    deallocShared(request)
     return
 
   foreignThreadGc:
@@ -72,6 +72,9 @@ proc handleRes[T: string | void | seq[byte]](
       safeCallback(request[].callback, RET_OK, msg, request[].userData)
     else:
       request[].callback(RET_OK, nil, cast[csize_t](0), request[].userData)
+
+  deallocShared(request[].reqContent)
+  deallocShared(request)
   return
 
 proc process*(
@@ -94,7 +97,7 @@ proc process*(
     of DOWNLOAD:
       let onChunk = proc(bytes: seq[byte]) =
         if bytes.len > 0:
-          let sharedBytes = allocSharedSeq(bytes)
+          var sharedBytes = allocSharedSeq(bytes)
           
           request[].callback(
             RET_PROGRESS,

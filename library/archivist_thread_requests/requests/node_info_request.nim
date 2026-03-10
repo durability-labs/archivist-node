@@ -14,7 +14,7 @@ import results
 import pkg/libp2p/switch as libp2p_switch
 import ../../alloc
 
-from "../../../archivist/archivist" import NodeServer
+import ../../../archivist/archivist
 from ../../../archivist/node import ArchivistNodeRef, switch, discovery
 
 # TODO: Should this really be hardcoded here?
@@ -43,26 +43,23 @@ proc destroyShared(self: ptr NodeInfoRequest) =
   deallocShared(self)
 
 proc process*(
-    self: ptr NodeInfoRequest, archivist: ptr NodeServer
+  self: ptr NodeInfoRequest, archivist: ptr NodeServer
 ): Future[Result[string, string]] {.async: (raises: []).} =
-  defer:
-    destroyShared(self)
-
   case self.operation
   of VERSION:
     return ok(archivistVersion)
   of REVISION:
     return ok(archivistRevision)
   of REPO:
-    if archivist[].isNil:
+    if archivist.isNil:
       return err("Archivist node is not initialized")
-    return ok(string(archivist[].config.dataDir))
+    return ok(archivist[].dataDir())
   of PEERID:
-    if archivist[].isNil:
+    if archivist.isNil or archivist[].isNil:
       return err("Archivist node is not initialized")
     return ok($archivist[].archivistNode.switch.peerInfo.peerId)
   of SPR:
-    if archivist[].isNil:
+    if archivist.isNil or archivist[].isNil:
       return err("Archivist node is not initialized")
     let spr = archivist[].archivistNode.discovery().dhtRecord
     if spr.isNone:

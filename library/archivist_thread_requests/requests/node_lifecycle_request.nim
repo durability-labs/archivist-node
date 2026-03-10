@@ -15,7 +15,6 @@ import toml_serialization
 import ../../../archivist/conf
 
 import ../../alloc
-import ../../toml_validation
 import ../../../archivist/utils
 import ../../../archivist/utils/[keyutils, fileutils]
 import ../../../archivist/units
@@ -78,10 +77,6 @@ proc createArchivist(
 ): Future[Result[NodeServer, string]] {.async: (raises: []).} =
   var conf: NodeConf
 
-  let tomlValidationResult = validateTomlCString(configToml)
-  if tomlValidationResult.isErr:
-    return err("Failed to create Archivist: TOML validation failed: " & formatError(tomlValidationResult.error))
-
   try:
     conf = NodeConf.load(
       version = nodeFullVersion,
@@ -96,7 +91,6 @@ proc createArchivist(
     )
   except ConfigurationError as e:
     return err("Failed to create Archivist: unable to load configuration: " & e.msg)
-
   conf.setupLogging()
 
   try:
@@ -104,7 +98,6 @@ proc createArchivist(
       updateLogLevel(conf.logLevel)
   except ValueError as err:
     return err("Failed to create Archivist: invalid value for log level: " & err.msg)
-
   conf.setupMetrics()
 
   if not (checkAndCreateDataDir((conf.dataDir).string)):
@@ -126,7 +119,6 @@ proc createArchivist(
   if privateKey.isErr:
     return err("Failed to create Archivist: unable to get the private key.")
   let pk = privateKey.get()
-
   let archivist =
     try:
       NodeServer.new(conf, pk)
@@ -143,13 +135,12 @@ proc process*(
 
   case self.operation
   of CREATE:
-    archivist[] = (
-      await createArchivist(
-        self.configToml
-      )
-    ).valueOr:
-      error "Failed to CREATE.", error = error
-      return err($error)
+    let createResult = await createArchivist(self.configToml)
+    if createResult.isErr():
+      error "Failed to CREATE.", error = createResult.error
+      return err(createResult.error)
+    
+    archivist[] = createResult.get()
   of START:
     try:
       await archivist[].start()
