@@ -17,8 +17,9 @@ import chronos/threadsync
 import taskpools/channels_spsc_single
 import ./ffi_types
 import ./archivist_thread_requests/[archivist_thread_request]
+import ./archivist_thread_requests/requests/node_lifecycle_request
 
-from ../archivist/archivist import NodeServer
+import ../archivist/archivist
 
 logScope:
   topics = "libarchivist"
@@ -42,6 +43,8 @@ type ArchivistContext* = object
   eventUserData*: pointer
 
   running: Atomic[bool]
+  
+  archivist: ptr NodeServer
 
 template callEventCallback(ctx: ptr ArchivistContext, eventName: string, body: untyped) =
   if isNil(ctx[].eventCallback):
@@ -102,6 +105,7 @@ proc sendRequestToArchivistThread*(
 
 proc runArchivist(ctx: ptr ArchivistContext) {.async: (raises: []).} =
   var archivist: NodeServer
+  ctx.archivist = addr archivist
 
   while true:
     try:
@@ -112,6 +116,11 @@ proc runArchivist(ctx: ptr ArchivistContext) {.async: (raises: []).} =
       continue
 
     if ctx.running.load == false:
+      try:
+        await archivist.stop()
+      except Exception as e:
+        error "runArchivist: Failed to stop archivist", error = e.msg
+
       break
 
     var request: ptr ArchivistThreadRequest
@@ -121,10 +130,11 @@ proc runArchivist(ctx: ptr ArchivistContext) {.async: (raises: []).} =
       error "Failure in run Archivist: unable to receive request in Archivist thread."
       continue
 
+    let req = request
     asyncSpawn (
       proc() {.async.} =
         await sleepAsync(0)
-        await ArchivistThreadRequest.process(request, addr archivist)
+        await ArchivistThreadRequest.process(req, addr archivist)
     )()
 
     let fireRes = ctx.reqReceivedSignal.fireSync()
@@ -148,7 +158,8 @@ proc createArchivistContext*(): Result[ptr ArchivistContext, string] =
     )
 
   ctx.lock.initLock()
-
+  
+  ctx.archivist = nil
   ctx.running.store(true)
 
   try:
@@ -164,7 +175,6 @@ proc createArchivistContext*(): Result[ptr ArchivistContext, string] =
 
 proc destroyArchivistContext*(ctx: ptr ArchivistContext): Result[void, string] =
   ctx.running.store(false)
-
   let signaledOnTime = ctx.reqSignal.fireSync().valueOr:
     return err("Failed to destroy Archivist context: " & $error)
 
