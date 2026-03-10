@@ -31,7 +31,6 @@ import ./archivist_thread_requests/requests/node_download_request
 import ./archivist_thread_requests/requests/node_storage_request
 import ./ffi_types
 import ./alloc
-import ./toml_validation
 
 logScope:
   topics = "libarchivist"
@@ -46,28 +45,6 @@ template checkLibarchivistParams*(
   if not isNil(ctx):
     ctx[].userData = userData
 
-template handleRequestResult*(
-    result: Result[void, string],
-    request: pointer,
-    callback: ArchivistCallback,
-    userData: pointer,
-    context: string
-): cint =
-  if result.isErr:
-    return handleRequestError(
-      callback, userData, RET_THREAD_ERROR, context, $result.error, request,
-      proc(req: pointer) {.raises: [].} =
-        when compiles(req.cleanupRequest()):
-          req.cleanupRequest()
-        deallocShared(req)
-    )
-  else:
-    return handleRequestSuccess(callback, userData, "", request,
-      proc(req: pointer) {.raises: [].} =
-        when compiles(req.cleanupRequest()):
-          req.cleanupRequest()
-        deallocShared(req)
-    )
 
 template handleRequestResultNoCleanup*(
     result: Result[void, string],
@@ -111,22 +88,11 @@ proc archivist_new*(
 ): pointer {.dynlib, exported.} =
   initializeLibrary()
 
-  let validationResult = validateParams(nil, callback)
+  let validationResult = validateCallback(callback)
   if validationResult != RET_OK:
     let errorMsg = formatErrorMessage(validationResult, "archivist_new", "Callback validation failed")
     if not callback.isNil:
       safeCallback(callback, validationResult, errorMsg, userData)
-    return nil
-
-  let tomlValidationResult = validateTomlCString(configToml)
-  if tomlValidationResult.isErr:
-    let errorMsg = formatErrorMessage(
-      RET_INVALID_PARAM,
-      "archivist_new",
-      "TOML validation failed: " & formatError(tomlValidationResult.error)
-    )
-    if not callback.isNil:
-      safeCallback(callback, RET_INVALID_PARAM, errorMsg, userData)
     return nil
 
   let safeConfig = if validateCString(configToml): safeStringCopy(configToml, 10000) else: ""
@@ -145,7 +111,6 @@ proc archivist_new*(
     ctx, RequestType.LIFECYCLE, reqContent, callback, userData
   ).isOkOr:
     let errorMsg = formatErrorMessage(RET_THREAD_ERROR, "archivist_new", "Failed to send request: " & $error)
-    reqContent.cleanupRequest()
     deallocShared(reqContent)
     safeCallback(callback, RET_THREAD_ERROR, errorMsg, userData)
     return nil
@@ -160,7 +125,18 @@ proc archivist_create*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.CREATE, "")
   let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_create")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_create", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_start*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -170,7 +146,18 @@ proc archivist_start*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.START, "")
   let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_start")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_start", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_stop*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -180,7 +167,18 @@ proc archivist_stop*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeLifecycleRequest.createShared(NodeLifecycleMsgType.STOP, "")
   let res = ctx.sendRequestToArchivistThread(RequestType.LIFECYCLE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_stop")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_stop", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_close*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -216,7 +214,18 @@ proc archivist_version*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeInfoRequest.createShared(NodeInfoMsgType.VERSION)
   let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_version")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_version", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_revision*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -226,7 +235,18 @@ proc archivist_revision*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeInfoRequest.createShared(NodeInfoMsgType.REVISION)
   let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_revision")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_revision", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_repo*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -236,7 +256,18 @@ proc archivist_repo*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeInfoRequest.createShared(NodeInfoMsgType.REPO)
   let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_repo")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_repo", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 ################################################################################
 ### Debug Operations
@@ -249,7 +280,18 @@ proc archivist_debug*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeDebugRequest.createShared(NodeDebugMsgType.DEBUG)
   let res = ctx.sendRequestToArchivistThread(RequestType.DEBUG, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_debug")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_debug", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_spr*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -259,7 +301,18 @@ proc archivist_spr*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeInfoRequest.createShared(NodeInfoMsgType.SPR)
   let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_spr")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_spr", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_peer_id*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -269,7 +322,18 @@ proc archivist_peer_id*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeInfoRequest.createShared(NodeInfoMsgType.PEERID)
   let res = ctx.sendRequestToArchivistThread(RequestType.INFO, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_peer_id")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_peer_id", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_log_level*(
     ctx: pointer, logLevel: cstring, callback: ArchivistCallback, userData: pointer
@@ -282,7 +346,18 @@ proc archivist_log_level*(
   
   let req = NodeDebugRequest.createShared(NodeDebugMsgType.LOG_LEVEL, safeLogLevel)
   let res = ctx.sendRequestToArchivistThread(RequestType.DEBUG, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_log_level")
+  
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_log_level", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 ################################################################################
 ### P2P Networking
@@ -309,7 +384,17 @@ proc archivist_connect*(
   
   let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECT, safePeerId, addresses)
   let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_connect")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_connect", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_connected_peers*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -319,7 +404,17 @@ proc archivist_connected_peers*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECTED_PEERS)
   let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_connected_peers")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_connected_peers", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_connected_peer_ids*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -329,7 +424,17 @@ proc archivist_connected_peer_ids*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeP2PRequest.createShared(NodeP2PMsgType.CONNECTED_PEER_IDS)
   let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_connected_peer_ids")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_connected_peer_ids", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_find_peer*(
     ctx: pointer, peerId: cstring, callback: ArchivistCallback, userData: pointer
@@ -339,7 +444,17 @@ proc archivist_find_peer*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeP2PRequest.createShared(NodeP2PMsgType.FIND_PEER, $peerId)
   let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_find_peer")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_find_peer", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_disconnect*(
     ctx: pointer, peerId: cstring, callback: ArchivistCallback, userData: pointer
@@ -349,7 +464,17 @@ proc archivist_disconnect*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeP2PRequest.createShared(NodeP2PMsgType.DISCONNECT, $peerId)
   let res = ctx.sendRequestToArchivistThread(RequestType.P2P, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_disconnect")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_disconnect", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 ################################################################################
 ### Upload Operations
@@ -366,7 +491,17 @@ proc archivist_upload_init*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.INIT, $filepath, @[], chunkSize.int)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_upload_init")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_upload_init", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_upload_chunk*(
     ctx: pointer,
@@ -386,7 +521,17 @@ proc archivist_upload_chunk*(
   
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.CHUNK, $sessionId, chunkData)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_upload_chunk")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_upload_chunk", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_upload_finalize*(
     ctx: pointer,
@@ -399,7 +544,17 @@ proc archivist_upload_finalize*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.FINALIZE, $sessionId)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_upload_finalize")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_upload_finalize", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_upload_cancel*(
     ctx: pointer,
@@ -412,7 +567,17 @@ proc archivist_upload_cancel*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.CANCEL, $sessionId)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_upload_cancel")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_upload_cancel", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_upload_file*(
     ctx: pointer,
@@ -425,7 +590,17 @@ proc archivist_upload_file*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeUploadRequest.createShared(NodeUploadMsgType.FILE, $sessionId)
   let res = ctx.sendRequestToArchivistThread(RequestType.UPLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_upload_file")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_upload_file", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 ################################################################################
 ### Download Operations
@@ -443,7 +618,17 @@ proc archivist_download_init*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.INIT, $cid, chunkSize.int, local)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_download_init")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_download_init", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_download_stream*(
     ctx: pointer,
@@ -462,7 +647,17 @@ proc archivist_download_stream*(
     fp = $filepath
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.STREAM, $cid, chunkSize.int, local, fp)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_download_stream")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_download_stream", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_download_chunk*(
     ctx: pointer,
@@ -475,7 +670,17 @@ proc archivist_download_chunk*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.CHUNK, $cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_download_chunk")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_download_chunk", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_download_cancel*(
     ctx: pointer,
@@ -488,7 +693,17 @@ proc archivist_download_cancel*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.CANCEL, $cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_download_cancel")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_download_cancel", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_download_manifest*(
     ctx: pointer,
@@ -501,7 +716,17 @@ proc archivist_download_manifest*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeDownloadRequest.createShared(NodeDownloadMsgType.MANIFEST, $cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.DOWNLOAD, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_download_manifest")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_download_manifest", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 ################################################################################
 ### Storage Operations
@@ -514,7 +739,17 @@ proc archivist_list*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.LIST)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_list")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_list", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_space*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -524,7 +759,17 @@ proc archivist_space*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_space")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_space", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_delete*(
     ctx: pointer, cid: cstring, callback: ArchivistCallback, userData: pointer
@@ -534,7 +779,17 @@ proc archivist_delete*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.DELETE, cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_delete")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_delete", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_fetch*(
     ctx: pointer, cid: cstring, callback: ArchivistCallback, userData: pointer
@@ -544,7 +799,17 @@ proc archivist_fetch*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.FETCH, cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_fetch")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_fetch", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_exists*(
     ctx: pointer, cid: cstring, callback: ArchivistCallback, userData: pointer
@@ -554,7 +819,17 @@ proc archivist_exists*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.EXISTS, cid)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_exists")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_exists", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_local_size*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -564,7 +839,17 @@ proc archivist_local_size*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_local_size")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_local_size", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 proc archivist_block_count*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
@@ -574,14 +859,24 @@ proc archivist_block_count*(
   let ctx = cast[ptr ArchivistContext](ctx)
   let req = NodeStorageRequest.createShared(NodeStorageMsgType.SPACE)
   let res = ctx.sendRequestToArchivistThread(RequestType.STORAGE, req, callback, userData)
-  return handleRequestResult(res, req, callback, userData, "archivist_block_count")
+  if res.isErr:
+    return handleRequestError(
+      callback, userData, RET_THREAD_ERROR, "archivist_block_count", $res.error, req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
+  else:
+    return handleRequestSuccess(callback, userData, "", req,
+      proc(req: pointer) {.raises: [].} =
+        deallocShared(req)
+    )
 
 ################################################################################
 ### Event Callback
 
 proc archivist_set_event_callback*(
     ctx: pointer, callback: ArchivistCallback, userData: pointer
-): cint {.dynlib, exported.} =
+): cint {.dynlib, exported, raises: [].} =
   let validationResult = validateParams(ctx, callback)
   if validationResult != RET_OK:
     return validationResult
