@@ -46,12 +46,26 @@ type
   NodeServer* = ref object
     config: NodeConf
     restServer: RestServerRef
-    archivistNode: ArchivistNodeRef
+    archivistNode*: ArchivistNodeRef
     repoStore: RepoStore
     maintenance: BlockMaintainer
     taskpool: Taskpool
+    started: bool  # Track whether the node was started
+    discoveryStore: Datastore  # Store reference to close explicitly
 
   NodePrivateKey* = libp2p.PrivateKey # alias
+
+func node*(self: NodeServer): ArchivistNodeRef =
+  return self.archivistNode
+
+func repoStore*(self: NodeServer): RepoStore =
+  return self.repoStore
+
+func dataDir*(self: NodeServer): string =
+  return string(self.config.dataDir)
+
+func config*(self: NodeServer): NodeConf =
+  return self.config
 
 proc connectMarketplace(s: NodeServer) {.async.} =
   let config = s.config
@@ -106,24 +120,50 @@ proc start*(s: NodeServer) {.async.} =
   await s.connectMarketplace()
   await s.archivistNode.start()
   s.restServer.start()
+  s.started = true
 
 proc stop*(s: NodeServer) {.async.} =
   notice "Stopping node"
 
-  let res = await noCancel allFinishedFailed[void](
-    @[
-      s.restServer.stop(),
-      s.archivistNode.switch.stop(),
-      s.archivistNode.stop(),
-      s.repoStore.stop(),
-      s.maintenance.stop(),
-    ]
-  )
+  if not s.started:
+    # Close the discovery store to release the LevelDB lock
+    if not s.discoveryStore.isNil:
+      try:
+        discard await s.discoveryStore.close()
+      except Exception as e:
+        error "Failed to close discovery store", error = e.msg
+    if not s.taskpool.isNil:
+      s.taskpool.shutdown()
+    return
 
-  if res.failure.len > 0:
-    error "Failed to stop node", failures = res.failure.len
-    raiseAssert "Failed to stop node"
+  var futures: seq[Future[void]] = @[]
+  
+  if not s.restServer.isNil:
+    futures.add(s.restServer.stop())
+  
+  if not s.archivistNode.isNil:
+    futures.add(s.archivistNode.switch.stop())
+    futures.add(s.archivistNode.stop())
+  
+  if not s.repoStore.isNil:
+    futures.add(s.repoStore.stop())
+  
+  if not s.maintenance.isNil:
+    futures.add(s.maintenance.stop())
+  
+  if futures.len > 0:
+    let res = await noCancel allFinishedFailed[void](futures)
+    
+    if res.failure.len > 0:
+      error "Failed to stop node", failures = res.failure.len
+      raiseAssert "Failed to stop node"
 
+  # Close the discovery store to release the LevelDB lock
+  if not s.discoveryStore.isNil:
+    try:
+      discard await s.discoveryStore.close()
+    except Exception as e:
+      error "Failed to close discovery store", error = e.msg
   if not s.taskpool.isNil:
     s.taskpool.shutdown()
 
@@ -156,24 +196,27 @@ proc new*(
     except CatchableError as exc:
       raiseAssert("Failure in tp initialization:" & exc.msg)
 
-  info "Threadpool started", numThreads = tp.numThreads
-
   let discoveryDir = config.dataDir / ArchivistDhtNamespace
 
   if io2.createPath(discoveryDir).isErr:
-    trace "Unable to create discovery directory for block store",
-      discoveryDir = discoveryDir
     raise (ref Defect)(
       msg: "Unable to create discovery directory for block store: " & discoveryDir
     )
 
+  let discoveryProvidersDir = config.dataDir / ArchivistDhtProvidersNamespace
+  if io2.createPath(discoveryProvidersDir).isErr:
+    raise (ref Defect)(
+      msg: "Unable to create discovery providers directory: " & discoveryProvidersDir
+    )
+
   let
     discoveryStore = Datastore(
-      LevelDbDatastore.new(config.dataDir / ArchivistDhtProvidersNamespace).expect(
+      LevelDbDatastore.new(discoveryProvidersDir).expect(
         "Should create discovery datastore!"
       )
     )
 
+  let
     discovery = Discovery.new(
       switch.peerInfo.privateKey,
       announceAddrs = config.listenAddrs,
@@ -264,4 +307,6 @@ proc new*(
     repoStore: repoStore,
     maintenance: maintenance,
     taskpool: tp,
+    discoveryStore: discoveryStore,
+    started: false,
   )
