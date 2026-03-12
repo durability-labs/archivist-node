@@ -3,7 +3,7 @@ import ../../../utils/exceptions
 import ../../abstractmarketplace
 import ../salesagent
 import ../statemachine
-import ./errored
+import ./types
 
 logScope:
   topics = "marketplace sales cancelled"

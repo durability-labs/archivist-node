@@ -20,7 +20,7 @@ import ./sales/statemachine
 import ./sales/slotqueue
 import ./sales/salesslot
 import ./sales/states/preparing
-import ./sales/states/unknown
+import ./sales/states
 
 ## Sales holds a list of available storage that it may sell.
 ##

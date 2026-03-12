@@ -11,7 +11,7 @@ import ../salescontext
 import ../metrics
 import ./cancelled
 import ./failed
-import ./errored
+import ./types
 import ./payout
 
 logScope:

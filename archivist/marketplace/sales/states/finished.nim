@@ -9,7 +9,7 @@ import ../statemachine
 import ../salesagent
 import ./cancelled
 import ./failed
-import ./errored
+import ./types
 
 logScope:
   topics = "marketplace sales finished"

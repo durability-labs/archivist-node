@@ -10,7 +10,7 @@ import ./cancelled
 import ./failed
 import ./ignored
 import ./downloading
-import ./errored
+import ./types
 
 type SaleSlotReserving* = ref object of SaleState
 

@@ -2,6 +2,7 @@ import pkg/chronos
 import pkg/questionable
 import ../contracts/requests
 import ./slotqueue
+import ../../utils/exponentialbackoff
 
 type SalesData* = ref object
   requestId*: RequestId
@@ -9,3 +10,4 @@ type SalesData* = ref object
   slotIndex*: uint64
   cancelled*: Future[void]
   slotQueueItem*: ?SlotQueueItem
+  errorBackoff*: ExponentialBackoff

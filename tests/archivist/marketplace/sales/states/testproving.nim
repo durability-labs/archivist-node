@@ -5,7 +5,7 @@ import pkg/archivist/marketplace/sales/states/proving
 import pkg/archivist/marketplace/sales/states/cancelled
 import pkg/archivist/marketplace/sales/states/failed
 import pkg/archivist/marketplace/sales/states/payout
-import pkg/archivist/marketplace/sales/states/errored
+import pkg/archivist/marketplace/sales/states/types
 import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 

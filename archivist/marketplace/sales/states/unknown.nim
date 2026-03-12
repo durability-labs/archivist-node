@@ -7,7 +7,7 @@ import ../salesagent
 import ./filled
 import ./finished
 import ./failed
-import ./errored
+import ./types
 import ./proving
 import ./cancelled
 import ./payout
@@ -16,7 +16,6 @@ logScope:
   topics = "marketplace sales unknown"
 
 type
-  SaleUnknown* = ref object of SaleState
   SaleUnknownError* = object of CatchableError
   UnexpectedSlotError* = object of SaleUnknownError
 

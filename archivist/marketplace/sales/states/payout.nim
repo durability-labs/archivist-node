@@ -6,7 +6,7 @@ import ../salesagent
 import ./cancelled
 import ./failed
 import ./finished
-import ./errored
+import ./types
 
 logScope:
   topics = "marketplace sales payout"

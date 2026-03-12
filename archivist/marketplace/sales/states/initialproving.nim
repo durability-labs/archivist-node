@@ -9,7 +9,7 @@ import ../salesagent
 import ../metrics
 import ./filling
 import ./cancelled
-import ./errored
+import ./types
 import ./failed
 
 logScope:

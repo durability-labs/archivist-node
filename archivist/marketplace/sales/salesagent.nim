@@ -5,6 +5,7 @@ import pkg/stint
 import ../../errors
 import ../../logutils
 import ../../utils/exceptions
+import ../../utils/exponentialbackoff
 import ../contracts/requests
 import ../abstractmarketplace
 import ./statemachine
@@ -41,6 +42,7 @@ proc newSalesAgent*(
     slotIndex: uint64,
     request: ?StorageRequest,
     slotQueueItem = SlotQueueItem.none,
+    errorBackoff = ExponentialBackoff(),
 ): SalesAgent =
   var agent = SalesAgent.new()
   agent.context = context
@@ -49,6 +51,7 @@ proc newSalesAgent*(
     slotIndex: slotIndex,
     request: request,
     slotQueueItem: slotQueueItem,
+    errorBackoff: errorBackoff,
   )
   return agent
 

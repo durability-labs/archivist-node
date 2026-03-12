@@ -6,7 +6,7 @@ import ../../../utils/exceptions
 import ../../contracts/requests
 import ../statemachine
 import ../salesagent
-import ./errored
+import ./types
 
 logScope:
   topics = "marketplace sales ignored"

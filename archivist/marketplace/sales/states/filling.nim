@@ -7,7 +7,7 @@ import ./filled
 import ./cancelled
 import ./failed
 import ./ignored
-import ./errored
+import ./types
 
 logScope:
   topics = "marketplace sales filling"
