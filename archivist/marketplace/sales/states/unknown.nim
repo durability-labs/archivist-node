@@ -19,6 +19,9 @@ type
   SaleUnknownError* = object of CatchableError
   UnexpectedSlotError* = object of SaleUnknownError
 
+method `$`*(state: SaleUnknown): string =
+  "SaleUnknown"
+
 method onCancelled*(state: SaleUnknown, request: StorageRequest): ?State =
   return some State(SaleCancelled())
 
