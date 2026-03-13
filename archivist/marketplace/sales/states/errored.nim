@@ -44,7 +44,7 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let marketplace = agent.context.marketplace
-    slotIndex = data.slotIndex
+  let slotIndex = data.slotIndex
 
   try:
     await data.errorBackoff.applyDelay()

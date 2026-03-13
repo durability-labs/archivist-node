@@ -64,8 +64,6 @@ proc defaultDataDir*(): string =
 
 const DefaultDataDir* = defaultDataDir()
 
-
-
 proc toAbsolutePath*(path: string): string =
   try:
     absolutePath(path)
