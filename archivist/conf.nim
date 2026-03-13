@@ -64,8 +64,7 @@ proc defaultDataDir*(): string =
 
 const DefaultDataDir* = defaultDataDir()
 
-proc defaultCircuitDir*(): string =
-  defaultDataDir() / "circuits"
+
 
 proc toAbsolutePath*(path: string): string =
   try:
@@ -397,8 +396,8 @@ type
 
     circuitDir* {.
       desc: "Directory where the node will store proof circuit data",
-      defaultValue: defaultCircuitDir(),
-      defaultValueDesc: "data/circuits",
+      defaultValue: OutDir($config.dataDir / "circuits"),
+      defaultValueDesc: "<data-dir>/circuits",
       abbr: "cd",
       name: "circuit-dir"
     .}: OutDir
