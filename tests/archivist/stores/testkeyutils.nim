@@ -18,7 +18,6 @@ import pkg/archivist/clock
 
 import ../../asynctest
 import ../helpers/mocktimer
-import ../helpers/mockrepostore
 import ../helpers/mockclock
 import ../examples
 
@@ -70,24 +69,24 @@ suite "KeyUtils":
       namespaces[2].value == expectedPrefix
       namespaces[3].value == expectedPostfix
 
-  test "createBlockExpirationMetadataKey should create block TTL key":
+  test "blockMetaKey should create block metadata key":
     let cid = Cid.example
 
-    let key = !createBlockExpirationMetadataKey(cid).option
+    let key = !blockMetaKey(cid).option
     let namespaces = key.namespaces
 
     check:
       namespaces.len == 3
       namespaces[0].value == ArchivistMetaNamespace
-      namespaces[1].value == "ttl"
+      namespaces[1].value == "blocks"
       namespaces[2].value == $cid
 
-  test "createBlockExpirationMetadataQueryKey should create key for all block TTL entries":
-    let key = !createBlockExpirationMetadataQueryKey().option
+  test "blockMetaKeyQuery should create key for all block metadata entries":
+    let key = !blockMetaKeyQuery().option
     let namespaces = key.namespaces
 
     check:
       namespaces.len == 3
       namespaces[0].value == ArchivistMetaNamespace
-      namespaces[1].value == "ttl"
+      namespaces[1].value == "blocks"
       namespaces[2].value == "*"

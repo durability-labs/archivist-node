@@ -147,6 +147,7 @@ when isMainModule:
       chronos.poll()
     except Exception as exc:
       error "Unhandled exception in async proc, aborting", msg = exc.msg
+      # raise exc # uncomment for stack trace
       quit QuitFailure
 
   try:
@@ -155,6 +156,7 @@ when isMainModule:
     waitFor shutdown
   except CatchableError as error:
     error "Archivist Node didn't shutdown correctly", error = error.msg
+    # raise exc # uncomment for stacktrace
     quit QuitFailure
 
   notice "Exited Archivist Node"

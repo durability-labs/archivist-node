@@ -19,7 +19,7 @@ import pkg/confutils
 import pkg/confutils/defs
 import pkg/nitro
 import pkg/stew/io2
-import pkg/datastore
+import pkg/kvstore
 import pkg/ethers except Rng
 
 import ./node
@@ -168,8 +168,8 @@ proc new*(
     )
 
   let
-    discoveryStore = Datastore(
-      LevelDbDatastore.new(config.dataDir / ArchivistDhtProvidersNamespace).expect(
+    discoveryStore = KVStore(
+      SQLiteKVStore.new(config.dataDir / ArchivistDhtProvidersNamespace, tp).expect(
         "Should create discovery datastore!"
       )
     )
@@ -185,40 +185,41 @@ proc new*(
     wallet = WalletRef.new(EthPrivateKey.random())
     network = BlockExcNetwork.new(switch)
 
-    repoData =
+    repoData: KVStore =
       case config.repoKind
       of repoFS:
-        Datastore(
-          FSDatastore.new($config.dataDir, depth = 5).expect(
-            "Should create repo file data store!"
+        KVStore(
+          FSKVStore
+          .new(
+            $config.dataDir,
+            tp,
+            depth = 5,
+            directIO = config.fsDirectIO,
+            fsyncFile = config.fsFsyncFile,
+            fsyncDir = config.fsFsyncDir,
           )
+          .expect("Should create repo file data store!")
         )
       of repoSQLite:
-        Datastore(
-          SQLiteDatastore.new($config.dataDir).expect(
+        KVStore(
+          SQLiteKVStore.new($config.dataDir, tp).expect(
             "Should create repo SQLite data store!"
-          )
-        )
-      of repoLevelDb:
-        Datastore(
-          LevelDbDatastore.new($config.dataDir).expect(
-            "Should create repo LevelDB data store!"
           )
         )
 
     repoStore = RepoStore.new(
       repoDs = repoData,
-      metaDs = LevelDbDatastore.new(config.dataDir / ArchivistMetaNamespace).expect(
+      metaDs = SQLiteKVStore.new(config.dataDir / ArchivistMetaNamespace, tp).expect(
           "Should create metadata store!"
         ),
       quotaMaxBytes = config.storageQuota,
-      blockTtl = config.blockTtl,
+      overlayTtl = config.overlayTtl.seconds,
     )
 
     maintenance = BlockMaintainer.new(
       repoStore,
-      interval = config.blockMaintenanceInterval,
-      numberOfBlocksPerInterval = config.blockMaintenanceNumberOfBlocks,
+      interval = config.overlayMaintenanceInterval,
+      numberOfBlocksPerInterval = config.overlayMaintenanceNumberOfBlocks,
     )
 
     peerStore = PeerCtxStore.new()
@@ -240,6 +241,7 @@ proc new*(
     archivistNode = ArchivistNodeRef.new(
       switch = switch,
       networkStore = store,
+      repoStore = repoStore,
       engine = engine,
       discovery = discovery,
       prover = prover,

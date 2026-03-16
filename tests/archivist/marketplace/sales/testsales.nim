@@ -2,7 +2,8 @@ import std/sequtils
 import std/sugar
 import std/times
 import pkg/chronos
-import pkg/datastore/typedds
+import pkg/kvstore
+import pkg/taskpools
 import pkg/questionable
 import pkg/questionable/results
 import pkg/archivist/marketplace/sales
@@ -24,9 +25,7 @@ import ./helpers/periods
 import ./mockstorage
 
 asyncchecksuite "Sales - start":
-  let
-    proof = Groth16Proof.example
-    metaTmp = TempLevelDb.new()
+  let proof = Groth16Proof.example
 
   var request: StorageRequest
   var sales: Sales
@@ -35,6 +34,8 @@ asyncchecksuite "Sales - start":
   var clock: MockClock
   var queue: SlotQueue
   var itemsProcessed: seq[SlotQueueItem]
+  var metaTp: Taskpool
+  var metaDs: KVStore
 
   setup:
     request = StorageRequest(
@@ -53,7 +54,8 @@ asyncchecksuite "Sales - start":
 
     marketplace = MockMarketplace.new()
     clock = MockClock.new()
-    let metaDs = TypedDatastore.init(metaTmp.newDb())
+    metaTp = Taskpool.new(num_threads = 4)
+    metaDs = SQLiteKVStore.new(SqliteMemory, metaTp).tryGet()
     let availability = AvailabilityStore.new(metaDs)
     storage = MockStorage.new()
     sales = Sales.new(marketplace, clock, availability, storage)
@@ -62,7 +64,8 @@ asyncchecksuite "Sales - start":
 
   teardown:
     await sales.stop()
-    await metaTmp.destroyDb()
+    (await metaDs.close()).tryGet()
+    metaTp.shutdown()
 
   proc fillSlot(slotIdx: uint64 = 0.uint64) {.async.} =
     let address = await marketplace.getSigner()
@@ -99,9 +102,7 @@ asyncchecksuite "Sales - start":
     )
 
 asyncchecksuite "Sales":
-  let
-    proof = Groth16Proof.example
-    metaTmp = TempLevelDb.new()
+  let proof = Groth16Proof.example
 
   var minPricePerBytePerSecond: TokensPerSecond
   var request: StorageRequest
@@ -111,6 +112,8 @@ asyncchecksuite "Sales":
   var storage: MockStorage
   var queue: SlotQueue
   var itemsProcessed: seq[SlotQueueItem]
+  var metaTp: Taskpool
+  var metaDs: KVStore
 
   setup:
     minPricePerBytePerSecond = 1'TokensPerSecond
@@ -135,7 +138,8 @@ asyncchecksuite "Sales":
     marketplace.activeSlots[me] = @[]
 
     clock = MockClock.new()
-    let metaDs = TypedDatastore.init(metaTmp.newDb())
+    metaTp = Taskpool.new(num_threads = 4)
+    metaDs = SQLiteKVStore.new(SqliteMemory, metaTp).tryGet()
     let availability = AvailabilityStore.new(metaDs)
     sales = Sales.new(marketplace, clock, availability, storage)
     queue = sales.context.slotQueue
@@ -144,7 +148,8 @@ asyncchecksuite "Sales":
 
   teardown:
     await sales.stop()
-    await metaTmp.destroyDb()
+    (await metaDs.close()).tryGet()
+    metaTp.shutdown()
 
   proc isInState(idx: int, state: string): bool =
     proc description(state: State): string =

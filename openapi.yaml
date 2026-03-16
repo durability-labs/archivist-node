@@ -601,6 +601,8 @@ paths:
       responses:
         "204":
           description: Data was successfully deleted.
+        "404":
+          description: Cid was not locally available.
         "400":
           description: Invalid CID is specified
         "500":

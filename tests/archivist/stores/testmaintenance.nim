@@ -7,172 +7,186 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+import std/sets
+
 import pkg/chronos
+import pkg/kvstore
+import pkg/taskpools
+import pkg/questionable
+import pkg/questionable/results
+import pkg/stew/byteutils
+
+import pkg/libp2p/multicodec
+
 import pkg/archivist/blocktype as bt
-import pkg/archivist/stores/repostore
-import pkg/archivist/clock
+import pkg/archivist/stores
 
 import ../../asynctest
-import ../helpers
 import ../helpers/mocktimer
-import ../helpers/mockrepostore
 import ../helpers/mockclock
 import ../examples
 
 import archivist/stores/maintenance
 
 suite "BlockMaintainer":
-  var mockRepoStore: MockRepoStore
-  var interval: Duration
-  var mockTimer: MockTimer
-  var mockClock: MockClock
-
-  var blockMaintainer: BlockMaintainer
-
-  var testBe1: BlockExpiration
-  var testBe2: BlockExpiration
-  var testBe3: BlockExpiration
-
-  proc createTestExpiration(expiry: SecondsSince1970): BlockExpiration =
-    BlockExpiration(cid: bt.Block.example.cid, expiry: expiry)
+  var
+    tp: Taskpool
+    repoDs: KVStore
+    metaDs: KVStore
+    mockClock: MockClock
+    mockTimer: MockTimer
+    repo: RepoStore
+    maintainer: BlockMaintainer
+    interval: Duration
 
   setup:
+    tp = Taskpool.new()
+    repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+    metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
     mockClock = MockClock.new()
     mockClock.set(100)
-
-    testBe1 = createTestExpiration(200)
-    testBe2 = createTestExpiration(300)
-    testBe3 = createTestExpiration(400)
-
-    mockRepoStore = MockRepoStore.new()
-    mockRepoStore.testBlockExpirations.add(testBe1)
-    mockRepoStore.testBlockExpirations.add(testBe2)
-    mockRepoStore.testBlockExpirations.add(testBe3)
-
+    repo = RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 2000'nb)
     interval = 1.days
     mockTimer = MockTimer.new()
+    maintainer =
+      BlockMaintainer.new(repo, interval, timer = mockTimer, clock = mockClock)
 
-    blockMaintainer = BlockMaintainer.new(
-      mockRepoStore, interval, numberOfBlocksPerInterval = 2, mockTimer, mockClock
-    )
+  teardown:
+    (await repoDs.close()).tryGet()
+    (await metaDs.close()).tryGet()
+    tp.shutdown()
 
   test "Start should start timer at provided interval":
-    blockMaintainer.start()
+    maintainer.start()
     check mockTimer.startCalled == 1
     check mockTimer.mockInterval == interval
 
   test "Stop should stop timer":
-    await blockMaintainer.stop()
+    await maintainer.stop()
     check mockTimer.stopCalled == 1
 
-  test "Timer callback should call getBlockExpirations on RepoStore":
-    blockMaintainer.start()
+  test "Should not drop overlays that have not expired":
+    let treeCid = Cid.example
+
+    (await repo.putOverlay(treeCid, status = Completed.some, expiry = 200)).tryGet()
+
+    maintainer.start()
     await mockTimer.invokeCallback()
 
-    check:
-      mockRepoStore.getBeMaxNumber == 2
-      mockRepoStore.getBeOffset == 0
+    let meta = (await repo.getOverlay(treeCid)).tryGet()
+    check meta.expiry == 200
 
-  test "Subsequent timer callback should call getBlockExpirations on RepoStore with offset":
-    blockMaintainer.start()
-    await mockTimer.invokeCallback()
-    await mockTimer.invokeCallback()
+  test "Should drop overlay that has expired":
+    let treeCid = Cid.example
 
-    check:
-      mockRepoStore.getBeMaxNumber == 2
-      mockRepoStore.getBeOffset == 2
+    (await repo.putOverlay(treeCid, status = Completed.some, expiry = 50)).tryGet()
 
-  test "Timer callback should delete no blocks if none are expired":
-    blockMaintainer.start()
+    maintainer.start()
     await mockTimer.invokeCallback()
 
-    check:
-      mockRepoStore.delBlockCids.len == 0
+    let res = await repo.getOverlay(treeCid)
+    check res.isErr
 
-  test "Timer callback should delete one block if it is expired":
-    mockClock.set(250)
-    blockMaintainer.start()
+  test "Should drop only expired overlays":
+    let
+      cid1 = Cid
+        .init(
+          CIDv1,
+          multiCodec("codex-manifest"),
+          bt.Block.new("a".toBytes).tryGet().cid.mhash.tryGet(),
+        )
+        .tryGet()
+      cid2 = Cid
+        .init(
+          CIDv1,
+          multiCodec("codex-manifest"),
+          bt.Block.new("b".toBytes).tryGet().cid.mhash.tryGet(),
+        )
+        .tryGet()
+      cid3 = Cid
+        .init(
+          CIDv1,
+          multiCodec("codex-manifest"),
+          bt.Block.new("c".toBytes).tryGet().cid.mhash.tryGet(),
+        )
+        .tryGet()
+
+    (await repo.putOverlay(cid1, status = Completed.some, expiry = 50)).tryGet()
+    (await repo.putOverlay(cid2, status = Completed.some, expiry = 200)).tryGet()
+    (await repo.putOverlay(cid3, status = Completed.some, expiry = 90)).tryGet()
+
+    maintainer.start()
     await mockTimer.invokeCallback()
 
-    check:
-      mockRepoStore.delBlockCids == [testBe1.cid]
+    # cid1 (expiry=50) and cid3 (expiry=90) expired, cid2 (expiry=200) retained
+    check (await repo.getOverlay(cid1)).isErr
+    check (await repo.getOverlay(cid2)).isOk
+    check (await repo.getOverlay(cid3)).isErr
 
-  test "Timer callback should delete multiple blocks if they are expired":
-    mockClock.set(500)
-    blockMaintainer.start()
+  test "Should not drop overlays with default TTL that have not expired":
+    let treeCid = Cid.example
+    # ZeroSeconds triggers default TTL: now() + overlayTtl
+
+    (await repo.putOverlay(treeCid, status = Completed.some, expiry = 0)).tryGet()
+
+    # Clock is still at 100, well before the default TTL expiry
+    maintainer.start()
     await mockTimer.invokeCallback()
 
-    check:
-      mockRepoStore.delBlockCids == [testBe1.cid, testBe2.cid]
+    let meta = (await repo.getOverlay(treeCid)).tryGet()
+    check meta.expiry > 0
 
-  test "After deleting a block, subsequent timer callback should decrease offset by the number of deleted blocks":
-    mockClock.set(250)
-    blockMaintainer.start()
-    await mockTimer.invokeCallback()
+  test "Should drop overlay in Failure status":
+    let treeCid = Cid.example
 
-    check mockRepoStore.delBlockCids == [testBe1.cid]
-
-    # Because one block was deleted, the offset used in the next call should be 2 minus 1.
-    await mockTimer.invokeCallback()
-
-    check:
-      mockRepoStore.getBeMaxNumber == 2
-      mockRepoStore.getBeOffset == 1
-
-  test "Should delete all blocks if expired, in two timer callbacks":
-    mockClock.set(500)
-    blockMaintainer.start()
-    await mockTimer.invokeCallback()
-    await mockTimer.invokeCallback()
-
-    check mockRepoStore.delBlockCids == [testBe1.cid, testBe2.cid, testBe3.cid]
-
-  test "Iteration offset should loop":
-    blockMaintainer.start()
-    await mockTimer.invokeCallback()
-    check mockRepoStore.getBeOffset == 0
+    (await repo.putOverlay(treeCid, status = Failure.some, expiry = 200)).tryGet()
+    maintainer.start()
 
     await mockTimer.invokeCallback()
-    check mockRepoStore.getBeOffset == 2
+    check (await repo.getOverlay(treeCid)).isErr
 
+  test "Should drop overlay left in Deleting status (crash leftover)":
+    let treeCid = Cid.example
+
+    (await repo.putOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
+
+    maintainer.start()
     await mockTimer.invokeCallback()
-    check mockRepoStore.getBeOffset == 0
 
-  test "Should handle new blocks":
-    proc invokeTimerManyTimes(): Future[void] {.async.} =
-      for i in countup(0, 10):
-        await mockTimer.invokeCallback()
+    check (await repo.getOverlay(treeCid)).isErr
 
-    blockMaintainer.start()
-    await invokeTimerManyTimes()
+  test "Should skip overlay actively being deleted (runtime lock)":
+    let treeCid = Cid.example
 
-    # no blocks have expired
-    check mockRepoStore.delBlockCids == []
+    (await repo.putOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
 
-    mockClock.set(250)
-    await invokeTimerManyTimes()
-    # one block has expired
-    check mockRepoStore.delBlockCids == [testBe1.cid]
+    # Simulate an active deletion by holding the lock
+    repo.deletingLock.incl(treeCid)
 
-    # new blocks are added
-    let testBe4 = createTestExpiration(600)
-    let testBe5 = createTestExpiration(700)
-    mockRepoStore.testBlockExpirations.add(testBe4)
-    mockRepoStore.testBlockExpirations.add(testBe5)
+    maintainer.start()
+    await mockTimer.invokeCallback()
 
-    mockClock.set(500)
-    await invokeTimerManyTimes()
-    # All blocks have expired
-    check mockRepoStore.delBlockCids == [testBe1.cid, testBe2.cid, testBe3.cid]
+    # Overlay should still exist because the lock prevented re-deletion
+    check (await repo.getOverlay(treeCid)).isOk
 
-    mockClock.set(650)
-    await invokeTimerManyTimes()
-    # First new block has expired
-    check mockRepoStore.delBlockCids ==
-      [testBe1.cid, testBe2.cid, testBe3.cid, testBe4.cid]
+    repo.deletingLock.excl(treeCid)
 
-    mockClock.set(750)
-    await invokeTimerManyTimes()
-    # Second new block has expired
-    check mockRepoStore.delBlockCids ==
-      [testBe1.cid, testBe2.cid, testBe3.cid, testBe4.cid, testBe5.cid]
+  test "Should drop expired Pending overlay":
+    let treeCid = Cid.example
+
+    (await repo.putOverlay(treeCid, status = Pending.some, expiry = 50)).tryGet()
+
+    maintainer.start()
+    await mockTimer.invokeCallback()
+
+    check (await repo.getOverlay(treeCid)).isErr
+
+  test "Should not drop non-expired Pending overlay":
+    let treeCid = Cid.example
+
+    (await repo.putOverlay(treeCid, status = Pending.some, expiry = 200)).tryGet()
+
+    maintainer.start()
+    await mockTimer.invokeCallback()
+
+    check (await repo.getOverlay(treeCid)).isOk

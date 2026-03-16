@@ -21,11 +21,13 @@ import pkg/constantine/math/io/io_fields
 
 import ../../logutils
 import ../../utils
+import ../../utils/poseidon2digest
 import ../../stores
 import ../../manifest
 import ../../merkletree
 import ../../utils/asynciter
 import ../../indexingstrategy
+import ../../archivisttypes
 
 import ../converters
 
@@ -35,7 +37,8 @@ logScope:
   topics = "archivist slotsbuilder"
 
 type SlotsBuilder*[SomeTree, SomeHash] = ref object of RootObj
-  store: BlockStore
+  networkStore: BlockStore
+  repoStore: RepoStore
   manifest: Manifest # current manifest
   strategy: IndexingStrategy # indexing strategy
   cellSize: NBytes # cell size
@@ -131,12 +134,11 @@ func slotIndicesIter*[SomeTree, SomeHash](
 
 func slotIndices*[SomeTree, SomeHash](
     self: SlotsBuilder[SomeTree, SomeHash], slot: Natural
-): seq[int] =
+): ?!seq[int] =
   ## Returns the slot indices.
   ##
 
-  if iter =? self.strategy.getIndices(slot).catch:
-    return toSeq(iter)
+  success toSeq(?catch(self.strategy.getIndices(slot)))
 
 func manifest*[SomeTree, SomeHash](self: SlotsBuilder[SomeTree, SomeHash]): Manifest =
   ## Returns the manifest.
@@ -158,24 +160,17 @@ proc buildBlockTree*[SomeTree, SomeHash](
     cellSize = self.cellSize
 
   trace "Building block tree"
-
   if slotPos > (self.manifest.numSlotBlocks - 1):
     # pad blocks are 0 byte blocks
     trace "Returning empty digest tree for pad block"
     return success (self.emptyBlock, self.emptyDigestTree)
 
-  without blk =? await self.store.getBlock(self.manifest.treeCid, blkIdx), e:
-    error "Failed to get block CID for tree at index", e = e.msg
-    return failure(e)
-
+  let blk = ?await self.networkStore.getBlock(self.manifest.treeCid, blkIdx)
   if blk.isEmpty:
-    success (self.emptyBlock, self.emptyDigestTree)
-  else:
-    without tree =? SomeTree.digestTree(blk.data, self.cellSize.int), e:
-      error "Failed to create digest for block", e = e.msg
-      return failure(e)
+    return success (self.emptyBlock, self.emptyDigestTree)
 
-    success (blk.data, tree)
+  let tree = ?SomeTree.digestTree(blk.data, self.cellSize.int)
+  success (blk.data, tree)
 
 proc getCellHashes*[SomeTree, SomeHash](
     self: SlotsBuilder[SomeTree, SomeHash], slotIndex: Natural
@@ -196,20 +191,15 @@ proc getCellHashes*[SomeTree, SomeHash](
     slotIndex = slotIndex
 
   let hashes = collect(newSeq):
-    for i, blkIdx in ?self.strategy.getIndices(slotIndex).catch:
+    for i, blkIdx in ?catch(self.strategy.getIndices(slotIndex)):
       logScope:
         blkIdx = blkIdx
         pos = i
 
       trace "Getting block CID for tree at index"
-
-      without (_, tree) =? (await self.buildBlockTree(blkIdx, i)), e:
-        error "Failed to get block CID for tree at index", e = e.msg
-        return failure(e)
-
-      without digest =? tree.root, e:
-        error "Failed to get block CID for tree at index", e = e.msg
-        return failure(e)
+      let
+        (_, tree) = ?await self.buildBlockTree(blkIdx, i)
+        digest = ?tree.root
 
       trace "Get block digest", digest = digest.toHex
       digest
@@ -222,15 +212,7 @@ proc buildSlotTree*[SomeTree, SomeHash](
   ## Build the slot tree from the block digest hashes
   ## and return the tree.
 
-  try:
-    without cellHashes =? (await self.getCellHashes(slotIndex)), e:
-      error "Failed to select slot blocks", e = e.msg
-      return failure(e)
-
-    SomeTree.init(cellHashes)
-  except IndexingError as e:
-    error "Failed to build slot tree", e = e.msg
-    return failure(e)
+  SomeTree.init(?await self.getCellHashes(slotIndex))
 
 proc buildSlot*[SomeTree, SomeHash](
     self: SlotsBuilder[SomeTree, SomeHash], slotIndex: Natural
@@ -251,19 +233,35 @@ proc buildSlot*[SomeTree, SomeHash](
     return failure(e)
 
   trace "Storing slot tree", treeCid, slotIndex, leaves = tree.leavesCount
-  for i, leaf in tree.leaves:
-    without cellCid =? leaf.toCellCid, e:
-      error "Failed to get CID for slot cell", e = e.msg
-      return failure(e)
+  ?await self.repoStore.withOverlay(
+    treeCid,
+    status = Storing.some,
+    body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+      var proofItems: seq[(Natural, Cid, Cid, ArchivistProof)]
+      for i, blkIdx in ?self.slotIndicesIter(slotIndex):
+        without cellCid =? tree.leaves[i].toCellCid, e:
+          error "Failed to get CID for slot cell", e = e.msg
+          return failure(e)
 
-    without proof =? tree.getProof(i) and encodableProof =? proof.toEncodableProof, e:
-      error "Failed to get proof for slot tree", e = e.msg
-      return failure(e)
+        without proof =? tree.getProof(i) and encodableProof =? proof.toEncodableProof,
+          e:
+          error "Failed to get proof for slot tree", e = e.msg
+          return failure(e)
 
-    if e =?
-        (await self.store.putCidAndProof(treeCid, i, cellCid, encodableProof)).errorOption:
-      error "Failed to store slot tree", e = e.msg
-      return failure(e)
+        # For pad blocks, use empty CID for blkCid since there's no real block
+        # TODO: make sure we do this as a batch, single get/put are very costly
+        # with CAS semantics
+        let blkCid =
+          if blkIdx >= self.manifest.numSlotBlocks:
+            ?emptyCid(self.manifest.version, self.manifest.hcodec, BlockCodec)
+          else:
+            ?await self.repoStore.getCid(self.manifest.treeCid, blkIdx)
+
+        proofItems.add((i.Natural, cellCid, blkCid, encodableProof))
+
+      ?await self.repoStore.putCellCidsAndProofs(treeCid, proofItems)
+      success(),
+  )
 
   tree.root()
 
@@ -287,10 +285,7 @@ proc buildSlots*[SomeTree, SomeHash](
   if self.slotRoots.len == 0:
     self.slotRoots = collect(newSeq):
       for i in 0 ..< self.manifest.numSlots:
-        without slotRoot =? (await self.buildSlot(i)), e:
-          error "Failed to build slot", e = e.msg, index = i
-          return failure(e)
-        slotRoot
+        ?await self.buildSlot(i)
 
   without tree =? self.buildVerifyTree(self.slotRoots) and root =? tree.root, e:
     error "Failed to build slot roots tree", e = e.msg
@@ -307,14 +302,11 @@ proc buildSlots*[SomeTree, SomeHash](
 proc buildManifest*[SomeTree, SomeHash](
     self: SlotsBuilder[SomeTree, SomeHash]
 ): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
-  if e =? (await self.buildSlots()).errorOption:
-    error "Failed to build slot roots", e = e.msg
-    return failure(e)
+  ## Build the manifest with the slot roots and return it.
+  ##
 
-  without rootCids =? self.slotRoots.toSlotCids(), e:
-    error "Failed to map slot roots to CIDs", e = e.msg
-    return failure(e)
-
+  ?await self.buildSlots() # build the slots
+  let rootCids = ?self.slotRoots.toSlotCids()
   without rootProvingCidRes =? self.verifyRoot .? toVerifyCid() and
     rootProvingCid =? rootProvingCidRes, e:
     error "Failed to map slot roots to CIDs", e = e.msg
@@ -326,7 +318,8 @@ proc buildManifest*[SomeTree, SomeHash](
 
 proc new*[SomeTree, SomeHash](
     _: type SlotsBuilder[SomeTree, SomeHash],
-    store: BlockStore,
+    networkStore: BlockStore,
+    repoStore: RepoStore,
     manifest: Manifest,
     strategy = LinearStrategy,
     cellSize = DefaultCellSize,
@@ -394,7 +387,8 @@ proc new*[SomeTree, SomeHash](
   trace "Creating slots builder"
 
   var self = SlotsBuilder[SomeTree, SomeHash](
-    store: store,
+    networkStore: networkStore,
+    repoStore: repoStore,
     manifest: manifest,
     strategy: strategy,
     cellSize: cellSize,

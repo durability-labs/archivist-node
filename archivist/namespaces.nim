@@ -17,11 +17,12 @@ const
   ArchivistBlocksNamespace* = ArchivistRepoNamespace & "/blocks" # blocks namespace
   ArchivistManifestNamespace* = ArchivistRepoNamespace & "/manifests"
     # manifest namespace
-  ArchivistBlocksTtlNamespace* = # Cid TTL
-    ArchivistMetaNamespace & "/ttl"
-  ArchivistBlockProofNamespace* = # Cid and Proof
-    ArchivistMetaNamespace & "/proof"
+  ArchivistBlocksMetaNamespace* = # Block metadata namespace
+    ArchivistMetaNamespace & "/blocks"
+  ArchivistBlockLeafNamespace* = # Cid and Proof
+    ArchivistMetaNamespace & "/leafs"
   ArchivistDhtNamespace* = "dht" # Dht namespace
   ArchivistDhtProvidersNamespace* = # Dht providers namespace
     ArchivistDhtNamespace & "/providers"
   ArchivistQuotaNamespace* = ArchivistMetaNamespace & "/quota" # quota's namespace
+  ArchivistOverlayNamespace* = ArchivistMetaNamespace & "/overlays"

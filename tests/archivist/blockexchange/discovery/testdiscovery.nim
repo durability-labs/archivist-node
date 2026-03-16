@@ -3,6 +3,8 @@ import std/sugar
 import std/tables
 
 import pkg/chronos
+import pkg/kvstore
+import pkg/taskpools
 
 import pkg/libp2p/errors
 
@@ -19,7 +21,7 @@ import ../../helpers
 import ../../helpers/mockdiscovery
 import ../../examples
 
-asyncchecksuite "Block Advertising and Discovery":
+suite "Block Advertising and Discovery":
   let chunker = RandomChunker.new(Rng.instance(), size = 4096, chunkSize = 256)
 
   var
@@ -34,13 +36,14 @@ asyncchecksuite "Block Advertising and Discovery":
     advertiser: Advertiser
     wallet: WalletRef
     network: BlockExcNetwork
-    localStore: CacheStore
+    localStore: BlockStore
     engine: BlockExcEngine
     pendingBlocks: PendingBlocksManager
+    tp: Taskpool
 
   setup:
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 
@@ -50,7 +53,13 @@ asyncchecksuite "Block Advertising and Discovery":
     blockDiscovery = MockDiscovery.new()
     wallet = WalletRef.example
     network = BlockExcNetwork.new(switch)
-    localStore = CacheStore.new(blocks.mapIt(it))
+    tp = Taskpool.new(num_threads = 4)
+    localStore = RepoStore.new(
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+    )
+    for blk in blocks:
+      (await localStore.putBlock(blk)).tryGet()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
 
@@ -76,6 +85,21 @@ asyncchecksuite "Block Advertising and Discovery":
     )
 
     switch.mount(network)
+
+  teardown:
+    if not engine.isNil:
+      await engine.stop()
+
+    if not switch.isNil:
+      await switch.stop()
+
+    if not localStore.isNil:
+      await localStore.close()
+
+    if not discovery.isNil:
+      await discovery.stop()
+
+    tp.shutdown()
 
   test "Should discover want list":
     let pendingBlocks = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
@@ -154,20 +178,23 @@ proc asBlock(m: Manifest): bt.Block =
   let mdata = m.encode().tryGet()
   bt.Block.new(data = mdata, codec = ManifestCodec).tryGet()
 
-asyncchecksuite "E2E - Multiple Nodes Discovery":
+suite "E2E - Multiple Nodes Discovery":
   var
     switch: seq[Switch]
     blockexc: seq[NetworkStore]
     manifests: seq[Manifest]
     mBlocks: seq[bt.Block]
     trees: seq[ArchivistTree]
+    tp: Taskpool
 
   setup:
+    tp = Taskpool.new(num_threads = 4)
+
     for _ in 0 ..< 4:
       let chunker = RandomChunker.new(Rng.instance(), size = 4096, chunkSize = 256)
       var blocks = newSeq[bt.Block]()
       while true:
-        let chunk = await chunker.getBytes()
+        let chunk = (await chunker.getBytes()).tryGet()
         if chunk.len <= 0:
           break
 
@@ -182,7 +209,10 @@ asyncchecksuite "E2E - Multiple Nodes Discovery":
         blockDiscovery = MockDiscovery.new()
         wallet = WalletRef.example
         network = BlockExcNetwork.new(s)
-        localStore = CacheStore.new()
+        localStore = RepoStore.new(
+          SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+          SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        )
         peerStore = PeerCtxStore.new()
         pendingBlocks = PendingBlocksManager.new()
 
@@ -207,6 +237,18 @@ asyncchecksuite "E2E - Multiple Nodes Discovery":
       blockexc.add(networkStore)
 
   teardown:
+    for bs in blockexc:
+      if not bs.engine.isNil:
+        await bs.engine.stop()
+
+      await bs.close()
+
+    for s in switch:
+      await s.stop()
+
+    if not tp.isNil:
+      tp.shutdown()
+
     switch = @[]
     blockexc = @[]
     manifests = @[]

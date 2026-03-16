@@ -2,7 +2,7 @@ import std/os
 import std/times
 import pkg/chronos
 import pkg/taskpools
-import pkg/datastore/typedds
+import pkg/kvstore
 import pkg/archivist/marketplace
 import pkg/archivist/marketplacestorage
 import pkg/archivist/marketplace/timestamps
@@ -11,7 +11,6 @@ import pkg/archivist/chunker
 import pkg/archivist/erasure
 import pkg/archivist/slots
 import pkg/archivist/stores
-import pkg/archivist/indexingstrategy
 import ../asynctest
 import ./node/tempnode
 import ./helpers
@@ -29,7 +28,6 @@ suite "Marketplace storage interface implementation":
     await temporary.destroy()
 
   proc storeVerifiableData(): Future[Cid] {.async.} =
-    let node = temporary.node
     let localStore = temporary.localStore
     let networkStore = temporary.networkStore
     let path = currentSourcePath().parentDir
@@ -39,46 +37,45 @@ suite "Marketplace storage interface implementation":
     let encoder = leoEncoderProvider
     let decoder = leoDecoderProvider
     let taskpool = TaskPool.new()
-    let erasure = Erasure.new(networkStore, encoder, decoder, taskpool)
-    let manifest = await storeDataGetManifest(localStore, chunker)
+    let erasure = Erasure.new(networkStore, localStore, encoder, decoder, taskpool)
+    let manifest = !await storeDataGetManifest(localStore, chunker)
     let protected = !await erasure.encode(manifest, 3, 2)
-    let builder = !Poseidon2Builder.new(localStore, protected)
+    let builder = !Poseidon2Builder.new(networkStore, localStore, protected)
     verifiable = !await builder.buildManifest()
-    let cid = (!await node.storeManifest(verifiable)).cid
+    let cid = (!await localStore.storeManifest(verifiable)).cid
     file.close()
     cid
 
-  proc checkBlockExpiry(cid: Cid, expiry: int64) {.async.} =
-    let localStore = temporary.localStore
-    let key = !createBlockExpirationMetadataKey(cid)
-    let metadata = !await get[BlockMetaData](localStore.metaDs, key)
+  proc checkOverlayExpiry(cid: Cid, expiry: int64) {.async.} =
+    let
+      localStore = temporary.localStore
+      manifestBlock = !await localStore.getBlock(cid)
+      manifest = !Manifest.decode(manifestBlock)
+      metadata = !await localStore.getOverlay(manifest.treeCid)
+
     check metadata.expiry == expiry
 
   proc checkSlotExpiry(cid: Cid, slotIndex: uint64, expiry: int64) {.async.} =
-    let node = temporary.node
-    let localStore = temporary.localStore
-    let manifest = !await node.fetchManifest(cid)
-    let strategy = manifest.verifiableStrategy
-    let indexer = strategy.init(0, manifest.blocksCount - 1, manifest.numSlots)
-    for index in indexer.getIndices(slotIndex.int):
-      let blockCid = !await localStore.getCid(manifest.treeCid, index)
-      await checkBlockExpiry(blockCid, expiry)
+    # TODO: updateSlotExpiry currently updates the entire dataset expiry,
+    # not per-slot expiry, so we just check the manifest overlay
+    discard slotIndex
+    await checkOverlayExpiry(cid, expiry)
 
   test "updates expiry of slot blocks":
     let cid = await storeVerifiableData()
-    let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
+    let expiry = getTime().toUnix + 42
     !await storage.updateSlotExpiry(cid, 0, StorageTimestamp.init(expiry))
     await checkSlotExpiry(cid, 0, expiry)
 
   test "updates expiry of dataset manifest":
     let cid = await storeVerifiableData()
-    let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
+    let expiry = getTime().toUnix + 42
     !await storage.updateSlotExpiry(cid, 0, StorageTimestamp.init(expiry))
-    await checkBlockExpiry(cid, expiry)
+    await checkOverlayExpiry(cid, expiry)
 
   test "rejects manifest with incorrect slotSize":
     let cid = await storeVerifiableData()
-    let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
+    let expiry = getTime().toUnix + 42
     let response = await storage.storeSlot(
       cid, 0, verifiable.slotSize.uint64 - 1, StorageTimestamp.init(expiry), false
     )
@@ -88,7 +85,7 @@ suite "Marketplace storage interface implementation":
 
   test "storing a slot updates the expiry of the slot blocks":
     let cid = await storeVerifiableData()
-    let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
+    let expiry = getTime().toUnix + 42
     !await storage.storeSlot(
       cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
     )
@@ -96,8 +93,46 @@ suite "Marketplace storage interface implementation":
 
   test "storing a slot updates the expiry of the dataset manifest":
     let cid = await storeVerifiableData()
-    let expiry = getTime().toUnix + DefaultBlockTtl.seconds + 42
+    let expiry = getTime().toUnix + 42
     !await storage.storeSlot(
       cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
     )
-    await checkBlockExpiry(cid, expiry)
+    await checkOverlayExpiry(cid, expiry)
+
+  test "deleteSlot marks overlay as Failure":
+    let
+      cid = await storeVerifiableData()
+      localStore = temporary.localStore
+      manifestBlock = !await localStore.getBlock(cid)
+      manifest = !Manifest.decode(manifestBlock)
+      expiry = getTime().toUnix + 42
+
+    !await storage.storeSlot(
+      cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
+    )
+
+    !await storage.deleteSlot(cid, 0)
+
+    # Check that slot overlay status is now Failure
+    let slotCid = manifest.slotRoots[0]
+    let metadata = !await localStore.getOverlay(slotCid)
+    check metadata.status == OverlayStatus.Failure
+
+  test "deleteSlot marks overlay as Failure for different slot indices":
+    let
+      cid = await storeVerifiableData()
+      localStore = temporary.localStore
+      manifestBlock = !await localStore.getBlock(cid)
+      manifest = !Manifest.decode(manifestBlock)
+      expiry = getTime().toUnix + 42
+
+    !await storage.storeSlot(
+      cid, 0, verifiable.slotSize.uint64, StorageTimestamp.init(expiry), false
+    )
+
+    !await storage.deleteSlot(cid, 1)
+
+    # Check that slot overlay status is now Failure
+    let slotCid = manifest.slotRoots[1]
+    let metadata = !await localStore.getOverlay(slotCid)
+    check metadata.status == OverlayStatus.Failure

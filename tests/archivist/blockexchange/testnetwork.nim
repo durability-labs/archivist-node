@@ -31,7 +31,7 @@ asyncchecksuite "Network - Handlers":
 
   setup:
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 
@@ -143,7 +143,7 @@ asyncchecksuite "Network - Senders":
 
   setup:
     while true:
-      let chunk = await chunker.getBytes()
+      let chunk = (await chunker.getBytes()).tryGet()
       if chunk.len <= 0:
         break
 

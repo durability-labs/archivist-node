@@ -18,7 +18,7 @@ import pkg/libp2p/[cid, multicodec, routing_record, signed_envelope]
 import pkg/questionable
 import pkg/questionable/results
 import pkg/contractabi/address as ca
-import pkg/datastore
+import pkg/kvstore
 import pkg/archivistdht/discv5/[routing_table, protocol as discv5]
 from pkg/nimcrypto import keccak256
 
@@ -208,10 +208,11 @@ proc start*(d: Discovery) {.async: (raises: []).} =
     error "Error starting discovery", exc = exc.msg
 
 proc stop*(d: Discovery) {.async: (raises: []).} =
-  try:
-    await noCancel d.protocol.closeWait()
-  except CatchableError as exc:
-    error "Error stopping discovery", exc = exc.msg
+  if not d.protocol.isNil and not d.protocol.transport.isNil:
+    try:
+      await noCancel d.protocol.closeWait()
+    except CatchableError as exc:
+      error "Error stopping discovery", exc = exc.msg
 
 proc new*(
     T: type Discovery,
@@ -220,7 +221,7 @@ proc new*(
     bindPort = 0.Port,
     announceAddrs: openArray[MultiAddress],
     bootstrapNodes: openArray[SignedPeerRecord] = [],
-    store: Datastore = SQLiteDatastore.new(datastore.Memory).expect("Should not fail!"),
+    store: KVStore,
 ): Discovery =
   ## Create a new Discovery node instance for the given key and datastore
   ##

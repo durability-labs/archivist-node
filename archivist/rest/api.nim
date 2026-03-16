@@ -45,6 +45,8 @@ logScope:
 declareCounter(archivist_api_uploads, "archivist API uploads")
 declareCounter(archivist_api_downloads, "archivist API downloads")
 
+const DefaultStreamBatch* = 128 # Number of blocks to fetch per stream read
+
 proc validate(pattern: string, value: string): int {.gcsafe, raises: [Defect].} =
   0
 
@@ -123,7 +125,7 @@ proc retrieveCid(
 
     while not stream.atEof:
       var
-        buff = newSeqUninitialized[byte](DefaultBlockSize.int)
+        buff = newSeqUninitialized[byte](DefaultStreamBatch * DefaultBlockSize.int)
         len = await stream.readOnce(addr buff[0], buff.len)
 
       buff.setLen(len)
@@ -286,8 +288,8 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
     cid: Cid, resp: HttpResponseRef
   ) -> RestApiResponse:
     ## Deletes either a single block or an entire dataset
-    ## from the local node. Does nothing and returns 204
-    ## if the dataset is not locally available.
+    ## from the local node. Returns 404 if the dataset
+    ## is not locally available.
     ##
     var headers = buildCorsHeaders("DELETE", allowedOrigin)
 
@@ -295,6 +297,8 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       return RestApiResponse.error(Http400, $cid.error(), headers = headers)
 
     if err =? (await node.delete(cid.get())).errorOption:
+      if err of BlockNotFoundError:
+        return RestApiResponse.error(Http404, err.msg, headers = headers)
       return RestApiResponse.error(Http500, err.msg, headers = headers)
 
     if corsOrigin =? allowedOrigin:

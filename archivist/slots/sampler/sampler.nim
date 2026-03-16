@@ -56,7 +56,7 @@ proc getSample*[SomeTree, SomeHash](
     cellsPerBlock = self.builder.numBlockCells
     blkCellIdx = cellIdx.toCellInBlk(cellsPerBlock) # block cell index
     blkSlotIdx = cellIdx.toBlkInSlot(cellsPerBlock) # slot tree index
-    origBlockIdx = self.builder.slotIndices(self.index)[blkSlotIdx]
+    origBlockIdx = (?self.builder.slotIndices(self.index))[blkSlotIdx]
       # convert to original dataset block index
 
   logScope:

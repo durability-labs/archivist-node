@@ -1,10 +1,9 @@
 import helpers/multisetup
 import helpers/trackers
-import helpers/templeveldb
 import std/times
 import std/sequtils, chronos
 
-export multisetup, trackers, templeveldb
+export multisetup, trackers
 
 ### taken from libp2p errorhelpers.nim
 proc allFuturesThrowing*(args: varargs[FutureBase]): Future[void] =

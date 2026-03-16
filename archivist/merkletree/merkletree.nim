@@ -18,11 +18,13 @@ import ../errors
 type
   CompressFn*[H, K] = proc(x, y: H, key: K): ?!H {.noSideEffect, raises: [].}
 
+  # TODO: Make object, not ref
   MerkleTree*[H, K] = ref object of RootObj
     layers*: seq[seq[H]]
     compress*: CompressFn[H, K]
     zero*: H
 
+  # TODO: Make object, not ref
   MerkleProof*[H, K] = ref object of RootObj
     index*: int # linear index of the leaf, starting from 0
     path*: seq[H] # order: from the bottom to the top

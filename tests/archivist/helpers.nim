@@ -3,6 +3,7 @@ import std/sequtils
 import pkg/chronos
 import pkg/libp2p
 import pkg/libp2p/varint
+import pkg/stew/bitseqs
 import pkg/archivist/blocktype
 import pkg/archivist/stores
 import pkg/archivist/manifest
@@ -11,14 +12,13 @@ import pkg/archivist/blockexchange
 import pkg/archivist/rng
 import pkg/archivist/utils
 
-import ./helpers/nodeutils
 import ./helpers/randomchunker
 import ./helpers/mockchunker
 import ./helpers/mockdiscovery
 import ./helpers/always
 import ../checktest
 
-export randomchunker, nodeutils, mockdiscovery, mockchunker, always, checktest, manifest
+export randomchunker, mockdiscovery, mockchunker, always, checktest, manifest
 
 export libp2p except setup, eventually
 
@@ -85,43 +85,51 @@ proc makeWantList*(
   )
 
 proc storeDataGetManifest*(
-    store: BlockStore, blocks: seq[Block]
-): Future[Manifest] {.async.} =
-  for blk in blocks:
-    (await store.putBlock(blk)).tryGet()
+    store: RepoStore, blocks: seq[Block]
+): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
+  let tmpTreeCid = ?await store.createTmpOverlay()
+
+  for i, blk in blocks:
+    ?await store.putBlock(tmpTreeCid, blk, i)
 
   let
-    (manifest, tree) = makeManifestAndTree(blocks).tryGet()
-    treeCid = tree.rootCid.tryGet()
+    (manifest, tree) = ?makeManifestAndTree(blocks)
+    treeCid = ?tree.rootCid
+
+  ?await store.finalizeOverlay(tmpTreeCid, treeCid)
 
   for i in 0 ..< tree.leavesCount:
-    let proof = tree.getProof(i).tryGet()
-    (await store.putCidAndProof(treeCid, i, blocks[i].cid, proof)).tryGet()
+    let proof = ?tree.getProof(i)
+    ?await store.putCidAndProof(treeCid, i, blocks[i].cid, proof)
 
-  return manifest
+  success manifest
 
 proc storeDataGetManifest*(
-    store: BlockStore, chunker: Chunker
-): Future[Manifest] {.async.} =
+    store: RepoStore, chunker: Chunker
+): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
   var blocks = newSeq[Block]()
 
-  while (let chunk = await chunker.getBytes(); chunk.len > 0):
-    blocks.add(Block.new(chunk).tryGet())
+  while (let chunk = ?await chunker.getBytes(); chunk.len > 0):
+    blocks.add(?Block.new(chunk))
 
-  return await storeDataGetManifest(store, blocks)
+  await storeDataGetManifest(store, blocks)
 
 proc makeRandomBlocks*(
     datasetSize: int, blockSize: NBytes
-): Future[seq[Block]] {.async.} =
-  var chunker =
-    RandomChunker.new(Rng.instance(), size = datasetSize, chunkSize = blockSize)
+): Future[?!seq[Block]] {.async.} =
+  var
+    chunker =
+      RandomChunker.new(Rng.instance(), size = datasetSize, chunkSize = blockSize)
+    blocks: seq[Block]
 
   while true:
-    let chunk = await chunker.getBytes()
+    let chunk = ?await chunker.getBytes()
     if chunk.len <= 0:
       break
 
-    result.add(Block.new(chunk).tryGet())
+    blocks.add(Block.new(chunk).tryGet())
+
+  success blocks
 
 proc corruptBlocks*(
     store: BlockStore, manifest: Manifest, blks, bytes: int
@@ -148,3 +156,60 @@ proc corruptBlocks*(
       bytePos.add(ii)
       blk.data[ii] = byte 0
   return pos
+
+proc makeBitSeq*(len: int, setBits: seq[int] = @[]): BitSeq =
+  ## Create a BitSeq with specified bits set.
+  ## If setBits is empty, all bits are set.
+  ##
+  var bits = BitSeq.init(len)
+  if setBits.len == 0:
+    for i in 0 ..< len:
+      bits.setBit(i)
+  else:
+    for i in setBits:
+      if i < len:
+        bits.setBit(i)
+  bits
+
+proc storeBlocksWithOverlay*(
+    store: RepoStore,
+    treeCid: Cid,
+    blocks: seq[Block],
+    tree: ArchivistTree,
+    indices: seq[int] = @[],
+    status: ?OverlayStatus = OverlayStatus.Completed.some,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store blocks with overlay context.
+  ## Creates overlay, stores blocks with proofs.
+  ## If indices is empty, all blocks are stored.
+  ##
+  let
+    idx =
+      if indices.len == 0:
+        toSeq(0 ..< blocks.len)
+      else:
+        indices
+    bits = makeBitSeq(blocks.len, idx)
+
+  ?await store.putOverlay(treeCid, status, bits)
+
+  var items: seq[(Block, Natural, ArchivistProof)]
+  for i in idx:
+    let proof = ?tree.getProof(i)
+    items.add((blocks[i], i.Natural, proof))
+
+  ?await store.putBlocks(treeCid, items)
+
+  success()
+
+proc storeBlocksWithOverlay*(
+    store: RepoStore,
+    treeCid: Cid,
+    blocks: seq[Block],
+    tree: ArchivistTree,
+    indices: openArray[int],
+    status: ?OverlayStatus = OverlayStatus.Completed.some,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Store blocks with overlay context (openArray variant).
+  ##
+  await storeBlocksWithOverlay(store, treeCid, blocks, tree, @indices, status)

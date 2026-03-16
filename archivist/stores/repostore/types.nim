@@ -7,11 +7,14 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+import std/sets
+import std/tables
+
 import pkg/chronos
-import pkg/datastore
-import pkg/datastore/typedds
+import pkg/kvstore
 import pkg/libp2p/cid
 import pkg/questionable
+import pkg/stew/bitseqs
 
 import ../blockstore
 import ../../clock
@@ -21,56 +24,93 @@ import ../../systemclock
 import ../../units
 
 const
-  DefaultBlockTtl* = 30.days
+  DefaultOverlayTtl* = SecondsSince1970 30.days.seconds # ttl in seconds
   DefaultQuotaBytes* = 20.GiBs
+  ZeroSeconds* = SecondsSince1970 0
 
 type
   QuotaNotEnoughError* = object of ArchivistError
+  OverlayDeletingError* = object of ArchivistError
 
   RepoStore* = ref object of BlockStore
     postFixLen*: int
-    repoDs*: Datastore
-    metaDs*: TypedDatastore
+    repoDs*: KVStore
+    metaDs*: KVStore
     clock*: Clock
     quotaMaxBytes*: NBytes
     quotaUsage*: QuotaUsage
     totalBlocks*: Natural
-    blockTtl*: Duration
+    overlayTtl*: SecondsSince1970
     started*: bool
+    deletingLock*: HashSet[Cid]
+    overlayCache*: Table[Key, OverlayMetadata]
 
   QuotaUsage* {.serialize.} = object
     used*: NBytes
     reserved*: NBytes
 
   BlockMetadata* {.serialize.} = object
-    expiry*: SecondsSince1970
-    size*: NBytes
+    cid*: Cid
     refCount*: Natural
 
   LeafMetadata* {.serialize.} = object
+    deleted*: bool
     blkCid*: Cid
     proof*: ArchivistProof
+    case isCell*: bool
+    of true:
+      cellCid*: Cid
+    else:
+      discard
 
-  BlockExpiration* {.serialize.} = object
-    cid*: Cid
-    expiry*: SecondsSince1970
+  OverlayStatus* {.serialize.} = enum
+    Pending ## Initial state, not yet active
+    Failure ## Unrecoverable error
+    Storing ## Upload/Download in progress
+    Downloading ## Download in progress (active)
+    Repairing ## Repair in progress
+    Completed ## All blocks received/stored
+    Deleting ## Deletion in progress
 
-  DeleteResultKind* {.serialize.} = enum
-    Deleted = 0 # block removed from store
-    InUse = 1 # block not removed, refCount > 0 and not expired
-    NotFound = 2 # block not found in store
+  CleanupMode* {.serialize.} = enum
+    ## Mode for cleaning up after storage request
+    SlotsOnly ## Delete slot overlays, keep dataset
+    Full ## Delete both slots and dataset
+    None ## Keep everything
 
-  DeleteResult* {.serialize.} = object
-    kind*: DeleteResultKind
-    released*: NBytes
-
-  StoreResultKind* {.serialize.} = enum
-    Stored = 0 # new block stored
-    AlreadyInStore = 1 # block already in store
-
-  StoreResult* {.serialize.} = object
-    kind*: StoreResultKind
-    used*: NBytes
+  OverlayMetadata* {.serialize.} = object
+    ## Transient local state for an overlay
+    ##
+    ##   - protected=false -> original dataset
+    ##   - protected=true, verifiable=false -> protected dataset
+    ##   - protected=true, verifiable=true -> slot
+    ##
+    ## BitSeq semantics (blocks field):
+    ##
+    ## The bitmap is a bloom-filter-like optimization to avoid unnecessary
+    ## metadata/FS lookups:
+    ##
+    ##   - bit NOT set -> block is DEFINITELY absent (fast-path rejection)
+    ##   - bit SET     -> block is PROBABLY present (must verify via FS)
+    ##
+    ## The FS blob store is the ultimate source of truth - a block is
+    ## present if and only if it physically exists on disk. The bitmap
+    ## is set atomically with metadata before the FS write, so a crash
+    ## between metadata commit and FS write can leave a bit set for a
+    ## block that was never persisted. This is acceptable: the read path
+    ## falls through to FS, discovers the block is missing, and should
+    ## treat it as absent (and may clear the stale bit).
+    ##
+    ## Invariants:
+    ## - Length = max_index_stored + 1 (dynamically grows via combineSafe)
+    ## - Bits are set in putLeafBlockMetaImpl (atomic with metadata)
+    ## - Bits are cleared in delLeafBlockMetadata (atomic with metadata)
+    ## - On FS miss for a set bit, callers treat as absent
+    ##
+    status*: OverlayStatus
+    expiry*: SecondsSince1970 # overlay expiration
+    blocks*: BitSeq # bitmap of currently stored blocks
+    manifestCid*: ?Cid # CID of the manifest block (for cleanup)
 
 func quotaUsedBytes*(self: RepoStore): NBytes =
   self.quotaUsage.used
@@ -85,25 +125,25 @@ func available*(self: RepoStore): NBytes =
   return self.quotaMaxBytes - self.totalUsed
 
 func available*(self: RepoStore, bytes: NBytes): bool =
-  return bytes < self.available()
+  return bytes <= self.available()
 
 func new*(
     T: type RepoStore,
-    repoDs: Datastore,
-    metaDs: Datastore,
+    repoDs: KVStore,
+    metaDs: KVStore,
     clock: Clock = SystemClock.new(),
     postFixLen = 2,
     quotaMaxBytes = DefaultQuotaBytes,
-    blockTtl = DefaultBlockTtl,
+    overlayTtl = DefaultOverlayTtl,
 ): RepoStore =
   ## Create new instance of a RepoStore
   ##
   RepoStore(
     repoDs: repoDs,
-    metaDs: TypedDatastore.init(metaDs),
+    metaDs: metaDs,
     clock: clock,
     postFixLen: postFixLen,
     quotaMaxBytes: quotaMaxBytes,
-    blockTtl: blockTtl,
+    overlayTtl: overlayTtl,
     onBlockStored: CidCallback.none,
   )

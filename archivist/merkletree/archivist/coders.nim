@@ -33,7 +33,10 @@ proc encode*(self: ArchivistTree): seq[byte] =
   pb.finish
   pb.buffer
 
-proc decode*(_: type ArchivistTree, data: seq[byte]): ?!ArchivistTree =
+proc decode*(_: type ArchivistTree, data: openArray[byte]): ?!ArchivistTree =
+  if data.len == 0:
+    return success nil.ArchivistTree
+
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var leavesCount: uint64
@@ -57,6 +60,9 @@ proc decode*(_: type ArchivistTree, data: seq[byte]): ?!ArchivistTree =
   ArchivistTree.fromNodes(mcodec, nodes, leavesCount.int)
 
 proc encode*(self: ArchivistProof): seq[byte] =
+  if self.isNil:
+    return @[]
+
   var pb = initProtoBuffer()
   pb.write(1, self.mcodec.uint64)
   pb.write(2, self.index.uint64)
@@ -71,7 +77,10 @@ proc encode*(self: ArchivistProof): seq[byte] =
   pb.finish
   pb.buffer
 
-proc decode*(_: type ArchivistProof, data: seq[byte]): ?!ArchivistProof =
+proc decode*(_: type ArchivistProof, data: openArray[byte]): ?!ArchivistProof =
+  if data.len == 0:
+    return success(ArchivistProof(nil))
+
   var pb = initProtoBuffer(data)
   var mcodecCode: uint64
   var index: uint64

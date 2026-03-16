@@ -42,8 +42,8 @@ export node.provider
 export node.availability
 export node.failProofs
 export node.storageQuota
-export node.blockTtl
-export node.blockMaintenanceInterval
+export node.overlayTtl
+export node.overlayMaintenanceInterval
 export node.waitForOutput
 export node.start
 

@@ -7,6 +7,8 @@ import pkg/archivist/archivisttypes
 import pkg/archivist/chunker
 import pkg/archivist/stores
 
+import pkg/archivist/clock
+
 import ../../asynctest
 
 type CountingStore* = ref object of NetworkStore
@@ -19,13 +21,16 @@ proc new*(
   result = CountingStore(engine: engine, localStore: localStore)
 
 method getBlock*(
-    self: CountingStore, address: BlockAddress
+    self: CountingStore, treeCid: Cid, index: Natural
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
-  self.lookups.mgetOrPut(address.cid, 0).inc
-  await procCall getBlock(NetworkStore(self), address)
+  self.lookups.mgetOrPut(treeCid, 0).inc
+  await procCall getBlock(NetworkStore(self), treeCid, index)
 
 proc toTimesDuration*(d: chronos.Duration): times.Duration =
   initDuration(seconds = d.seconds)
+
+proc toTimesDuration*(d: SecondsSince1970): times.Duration =
+  initDuration(seconds = d)
 
 proc drain*(
     stream: LPStream | Result[lpstream.LPStream, ref CatchableError]
@@ -52,7 +57,7 @@ proc drain*(
 
 proc pipeChunker*(stream: BufferStream, chunker: Chunker) {.async.} =
   try:
-    while (let chunk = await chunker.getBytes(); chunk.len > 0):
+    while (let chunk = (await chunker.getBytes()).tryGet; chunk.len > 0):
       await stream.pushData(chunk)
   finally:
     await stream.pushEof()

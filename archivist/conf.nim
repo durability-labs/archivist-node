@@ -46,8 +46,8 @@ export units, net, archivisttypes, logutils, completeCmdArg, parseCmdArg, NatCon
 export ValidationGroups, MaxSlots
 
 export
-  DefaultQuotaBytes, DefaultBlockTtl, DefaultBlockInterval, DefaultNumBlocksPerInterval,
-  DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
+  DefaultQuotaBytes, DefaultOverlayTtl, DefaultBlockInterval,
+  DefaultNumBlocksPerInterval, DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
 
 type ThreadCount* = range[0 .. 256]
 
@@ -63,9 +63,6 @@ proc defaultDataDir*(): string =
   getHomeDir() / dataDir
 
 const DefaultDataDir* = defaultDataDir()
-
-proc defaultCircuitDir*(): string =
-  defaultDataDir() / "circuits"
 
 proc toAbsolutePath*(path: string): string =
   try:
@@ -91,7 +88,6 @@ type
   RepoKind* = enum
     repoFS = "fs"
     repoSQLite = "sqlite"
-    repoLevelDb = "leveldb"
 
   NodeConf* = object
     configFile* {.
@@ -220,11 +216,36 @@ type
     .}: Option[string]
 
     repoKind* {.
-      desc: "Backend for main repo store (fs, sqlite, leveldb)",
+      desc: "Backend for main repo store (fs, sqlite)",
       defaultValueDesc: "fs",
       defaultValue: repoFS,
       name: "repo-kind"
     .}: RepoKind
+
+    fsDirectIO* {.
+      desc:
+        "Use O_DIRECT for filesystem writes (bypass page cache). " &
+        "FS backend only. May cause EINVAL on some platforms.",
+      defaultValue: false,
+      defaultValueDesc: "false",
+      name: "fs-direct-io"
+    .}: bool
+
+    fsFsyncFile* {.
+      desc: "Fsync files after write in filesystem backend. " & "FS backend only.",
+      defaultValue: true,
+      defaultValueDesc: "true",
+      name: "fs-fsync-file"
+    .}: bool
+
+    fsFsyncDir* {.
+      desc:
+        "Fsync parent directory after rename/delete in filesystem backend. " &
+        "FS backend only.",
+      defaultValue: true,
+      defaultValueDesc: "true",
+      name: "fs-fsync-dir"
+    .}: bool
 
     storageQuota* {.
       desc: "The size of the total storage quota dedicated to the node",
@@ -234,15 +255,15 @@ type
       abbr: "q"
     .}: NBytes
 
-    blockTtl* {.
-      desc: "Default block timeout in seconds - 0 disables the ttl",
-      defaultValue: DefaultBlockTtl,
-      defaultValueDesc: $DefaultBlockTtl,
-      name: "block-ttl",
+    overlayTtl* {.
+      desc: "Default overlay timeout in seconds - 0 disables the ttl",
+      defaultValue: DefaultOverlayTtl.seconds,
+      defaultValueDesc: $DefaultOverlayTtl,
+      name: "overlay-ttl",
       abbr: "t"
     .}: Duration
 
-    blockMaintenanceInterval* {.
+    overlayMaintenanceInterval* {.
       desc:
         "Time interval in seconds - determines frequency of block " &
         "maintenance cycle: how often blocks are checked " & "for expiration and cleanup",
@@ -251,7 +272,7 @@ type
       name: "block-mi"
     .}: Duration
 
-    blockMaintenanceNumberOfBlocks* {.
+    overlayMaintenanceNumberOfBlocks* {.
       desc: "Number of blocks to check every maintenance cycle",
       defaultValue: DefaultNumBlocksPerInterval,
       defaultValueDesc: $DefaultNumBlocksPerInterval,
@@ -373,8 +394,8 @@ type
 
     circuitDir* {.
       desc: "Directory where the node will store proof circuit data",
-      defaultValue: defaultCircuitDir(),
-      defaultValueDesc: "data/circuits",
+      defaultValue: OutDir($config.dataDir / "circuits"),
+      defaultValueDesc: "<data-dir>/circuits",
       abbr: "cd",
       name: "circuit-dir"
     .}: OutDir

@@ -2,6 +2,7 @@ import std/sequtils
 
 import pkg/chronos
 import pkg/taskpools
+import pkg/kvstore
 import pkg/libp2p
 import pkg/libp2p/errors
 
@@ -39,14 +40,13 @@ type
     blockDiscovery*: Discovery
     wallet*: WalletRef
     network*: BlockExcNetwork
-    localStore*: BlockStore
+    localStore*: RepoStore
     peerStore*: PeerCtxStore
     pendingBlocks*: PendingBlocksManager
     discovery*: DiscoveryEngine
     engine*: BlockExcEngine
     networkStore*: NetworkStore
     node*: ArchivistNodeRef = nil
-    tempDbs*: seq[TempLevelDb] = @[]
 
   NodesCluster* = ref object
     components*: seq[NodesComponents]
@@ -66,7 +66,7 @@ converter toTuple*(
   blockDiscovery: Discovery,
   wallet: WalletRef,
   network: BlockExcNetwork,
-  localStore: BlockStore,
+  localStore: RepoStore,
   peerStore: PeerCtxStore,
   pendingBlocks: PendingBlocksManager,
   discovery: DiscoveryEngine,
@@ -84,7 +84,7 @@ converter toComponents*(cluster: NodesCluster): seq[NodesComponents] =
 proc nodes*(cluster: NodesCluster): seq[ArchivistNodeRef] =
   cluster.components.filterIt(it.node != nil).mapIt(it.node)
 
-proc localStores*(cluster: NodesCluster): seq[BlockStore] =
+proc localStores*(cluster: NodesCluster): seq[RepoStore] =
   cluster.components.mapIt(it.localStore)
 
 proc switches*(cluster: NodesCluster): seq[Switch] =
@@ -136,15 +136,13 @@ proc generateNodes*(
       peerStore = PeerCtxStore.new()
       pendingBlocks = PendingBlocksManager.new()
 
-    let (localStore, tempDbs, blockDiscovery) =
+    let (localStore, blockDiscovery) =
       if config.useRepoStore:
         let
-          bdStore = TempLevelDb.new()
-          repoStore = TempLevelDb.new()
-          mdStore = TempLevelDb.new()
-          store =
-            RepoStore.new(repoStore.newDb(), mdStore.newDb(), clock = SystemClock.new())
-          blockDiscoveryStore = bdStore.newDb()
+          repoDs = SQLiteKVStore.new(SqliteMemory, taskpool).tryGet()
+          metaDs = SQLiteKVStore.new(SqliteMemory, taskpool).tryGet()
+          store = RepoStore.new(repoDs, metaDs, clock = SystemClock.new())
+          blockDiscoveryStore = SQLiteKVStore.new(SqliteMemory, taskpool).tryGet()
           discovery = Discovery.new(
             switch.peerInfo.privateKey,
             announceAddrs = @[listenAddr],
@@ -153,13 +151,21 @@ proc generateNodes*(
             bootstrapNodes = bootstrapNodes,
           )
         waitFor store.start()
-        (store.BlockStore, @[bdStore, repoStore, mdStore], discovery)
+        (store, discovery)
       else:
         let
-          store = CacheStore.new(blocks.mapIt(it))
-          discovery =
-            Discovery.new(switch.peerInfo.privateKey, announceAddrs = @[listenAddr])
-        (store.BlockStore, newSeq[TempLevelDb](), discovery)
+          repoDs = SQLiteKVStore.new(SqliteMemory, taskpool).tryGet()
+          metaDs = SQLiteKVStore.new(SqliteMemory, taskpool).tryGet()
+          store = RepoStore.new(repoDs, metaDs)
+          discoveryDs = SQLiteKVStore.new(SqliteMemory, taskpool).tryGet()
+          discovery = Discovery.new(
+            switch.peerInfo.privateKey,
+            announceAddrs = @[listenAddr],
+            store = discoveryDs,
+          )
+        for blk in blocks:
+          (waitFor store.putBlock(blk)).tryGet()
+        (store, discovery)
 
     let
       discovery = DiscoveryEngine.new(
@@ -178,6 +184,7 @@ proc generateNodes*(
         let fullNode = ArchivistNodeRef.new(
           switch = switch,
           networkStore = networkStore,
+          repoStore = localStore,
           engine = engine,
           prover = Prover.none,
           discovery = blockDiscovery,
@@ -212,7 +219,6 @@ proc generateNodes*(
       engine: engine,
       networkStore: networkStore,
       node: node,
-      tempDbs: tempDbs,
     )
 
     components.add(nodeComponent)
@@ -240,15 +246,14 @@ proc connectNodes*(cluster: NodesCluster) {.async.} =
 proc cleanup*(cluster: NodesCluster) {.async.} =
   for component in cluster.components:
     if component.node != nil:
-      await component.node.switch.stop()
-      await component.node.stop()
+      try:
+        await component.node.stop()
+        await component.node.switch.stop()
+      except CatchableError:
+        discard
 
   for component in cluster.components:
-    for db in component.tempDbs:
-      await db.destroyDb()
-
-  for component in cluster.components:
-    if component.tempDbs.len > 0:
-      await RepoStore(component.localStore).stop()
+    if not component.localStore.isNil:
+      await component.localStore.close()
 
   cluster.taskpool.shutdown()

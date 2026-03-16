@@ -48,7 +48,7 @@ type
     mcodec*: MultiCodec
 
 # CodeHashes is not exported from libp2p
-# So we need to recreate it instead of 
+# So we need to recreate it instead of
 proc initMultiHashCodeTable(): Table[MultiCodec, MHash] {.compileTime.} =
   for item in HashesList:
     result[item.mcodec] = item

@@ -70,15 +70,19 @@ type
     taskPool: Taskpool
     encoderProvider*: EncoderProvider
     decoderProvider*: DecoderProvider
-    store*: BlockStore
+    networkStore*: BlockStore
+    repoStore*: RepoStore
 
   EncodingParams = object
+    blockSize: NBytes
     ecK: Natural
     ecM: Natural
     rounded: Natural
     steps: Natural
     blocksCount: Natural
+    encodedBlocksCount: Natural
     strategy: StrategyType
+    emptyCid: Cid
 
   ErasureError* = object of ArchivistError
   InsufficientBlocksError* = object of ErasureError
@@ -115,7 +119,7 @@ func indexToPos(steps, idx, step: int): int {.inline.} =
   (idx - step) div steps
 
 proc getPendingBlocks(
-    self: Erasure, manifest: Manifest, indices: seq[int]
+    self: Erasure, treeCid: Cid, indices: seq[int]
 ): AsyncIter[(?!bt.Block, int)] =
   ## Get pending blocks iterator
   ##
@@ -129,7 +133,7 @@ proc getPendingBlocks(
 
   for blockIndex in indices:
     # request blocks from the store
-    let fut = self.store.getBlock(BlockAddress.init(manifest.treeCid, blockIndex))
+    let fut = self.networkStore.getBlock(treeCid, blockIndex)
     pendingBlocks.add(attachIndex(fut, blockIndex))
 
   proc isFinished(): bool =
@@ -144,38 +148,48 @@ proc getPendingBlocks(
       let (_, index) = await completedFut
       raise newException(
         CatchableError,
-        "Future for block id not found, tree cid: " & $manifest.treeCid & ", index: " &
-          $index,
+        "Future for block id not found, tree cid: " & $treeCid & ", index: " & $index,
       )
 
   AsyncIter[(?!bt.Block, int)].new(genNext, isFinished)
 
 proc prepareEncodingData(
     self: Erasure,
-    manifest: Manifest,
+    treeCid: Cid,
     params: EncodingParams,
     step: Natural,
     data: ref seq[seq[byte]],
     cids: ref seq[Cid],
+    emptyCid: Cid,
     emptyBlock: seq[byte],
-): Future[?!Natural] {.async.} =
+): Future[?!Natural] {.async: (raises: [CancelledError]).} =
   ## Prepare data for encoding
   ##
 
+  logScope:
+    treeCid = treeCid
+    step = step
+    blocksCount = params.blocksCount
+    rounded = params.rounded
+    strategy = params.strategy
+
+  trace "Preparing encoding data"
   let
-    strategy = params.strategy.init(
-      firstIndex = 0, lastIndex = params.rounded - 1, iterations = params.steps
-    )
-    indices = toSeq(strategy.getIndices(step))
+    strategy =
+      ?catch(
+        params.strategy.init(
+          firstIndex = 0, lastIndex = params.rounded - 1, iterations = params.steps
+        )
+      )
+    indices = toSeq(?catch(strategy.getIndices(step)))
     pendingBlocksIter =
-      self.getPendingBlocks(manifest, indices.filterIt(it < manifest.blocksCount))
+      self.getPendingBlocks(treeCid, indices.filterIt(it < params.blocksCount))
 
   var resolved = 0
   for fut in pendingBlocksIter:
-    let (blkOrErr, idx) = await fut
-    without blk =? blkOrErr, err:
-      warn "Failed retrieving a block", treeCid = manifest.treeCid, idx, msg = err.msg
-      return failure(err)
+    let
+      (blkOrErr, idx) = ?catchAsync(await fut)
+      blk = ?blkOrErr
 
     let pos = indexToPos(params.steps, idx, step)
     data[pos] = if blk.isEmpty: emptyBlock else: blk.data
@@ -183,28 +197,27 @@ proc prepareEncodingData(
 
     resolved.inc()
 
-  for idx in indices.filterIt(it >= manifest.blocksCount):
+  for idx in indices.filterIt(it >= params.blocksCount):
     let pos = indexToPos(params.steps, idx, step)
     trace "Padding with empty block", idx
     data[pos] = emptyBlock
-    without emptyBlockCid =? emptyCid(manifest.version, manifest.hcodec, manifest.codec),
-      err:
-      return failure(err)
-    cids[idx] = emptyBlockCid
+    cids[idx] = emptyCid
 
   success(resolved.Natural)
 
 proc prepareDecodingData(
     self: Erasure,
-    encoded: Manifest,
+    treeCid: Cid,
+    params: EncodingParams,
     step: Natural,
     data: ref seq[seq[byte]],
     parityData: ref seq[seq[byte]],
     cids: ref seq[Cid],
     emptyBlock: seq[byte],
-): Future[?!(Natural, Natural)] {.async.} =
+): Future[?!(Natural, Natural)] {.async: (raises: [CancelledError]).} =
   ## Prepare data for decoding
-  ## `encoded`    - the encoded manifest
+  ## `treeCid`    - the tree cid to fetch blocks from
+  ## `params`     - encoding parameters
   ## `step`       - the current step
   ## `data`       - the data to be prepared
   ## `parityData` - the parityData to be prepared
@@ -213,11 +226,16 @@ proc prepareDecodingData(
   ##
 
   let
-    strategy = encoded.protectedStrategy.init(
-      firstIndex = 0, lastIndex = encoded.blocksCount - 1, iterations = encoded.steps
-    )
-    indices = toSeq(strategy.getIndices(step))
-    pendingBlocksIter = self.getPendingBlocks(encoded, indices)
+    strategy =
+      ?catch(
+        params.strategy.init(
+          firstIndex = 0,
+          lastIndex = params.encodedBlocksCount - 1,
+          iterations = params.steps,
+        )
+      )
+    indices = toSeq(?catch(strategy.getIndices(step)))
+    pendingBlocksIter = self.getPendingBlocks(treeCid, indices)
 
   var
     dataPieces = 0
@@ -226,15 +244,15 @@ proc prepareDecodingData(
   for fut in pendingBlocksIter:
     # Continue to receive blocks until we have just enough for decoding
     # or no more blocks can arrive
-    if resolved >= encoded.ecK:
+    if resolved >= params.ecK:
       break
 
-    let (blkOrErr, idx) = await fut
+    let (blkOrErr, idx) = ?catchAsync(await fut)
     without blk =? blkOrErr, err:
-      trace "Failed retrieving a block", idx, treeCid = encoded.treeCid, msg = err.msg
+      trace "Failed retrieving a block", idx, treeCid = treeCid, msg = err.msg
       continue
 
-    let pos = indexToPos(encoded.steps, idx, step)
+    let pos = indexToPos(params.steps, idx, step)
 
     logScope:
       cid = blk.cid
@@ -244,9 +262,9 @@ proc prepareDecodingData(
       empty = blk.isEmpty
 
     cids[idx] = blk.cid
-    if idx >= encoded.rounded:
+    if idx >= params.rounded:
       trace "Retrieved parity block"
-      parityData[pos - encoded.ecK] = if blk.isEmpty: emptyBlock else: blk.data
+      parityData[pos - params.ecK] = if blk.isEmpty: emptyBlock else: blk.data
       parityPieces.inc
     else:
       trace "Retrieved data block"
@@ -263,6 +281,7 @@ proc init*(
     ecK: Natural,
     ecM: Natural,
     strategy: StrategyType,
+    emptyCid: Cid,
 ): ?!EncodingParams =
   if ecK > manifest.blocksCount:
     let exc = (ref InsufficientBlocksError)(
@@ -276,19 +295,37 @@ proc init*(
   let
     rounded = roundUp(manifest.blocksCount, ecK)
     steps = divUp(rounded, ecK)
-    blocksCount = rounded + (steps * ecM)
 
   success EncodingParams(
+    blockSize: manifest.blockSize,
     ecK: ecK,
     ecM: ecM,
     rounded: rounded,
     steps: steps,
-    blocksCount: blocksCount,
+    blocksCount: manifest.blocksCount,
+    encodedBlocksCount: rounded + (steps * ecM),
     strategy: strategy,
+    emptyCid: emptyCid,
+  )
+
+proc initFromEncoded*(
+    _: type EncodingParams, encoded: Manifest, emptyCid: Cid
+): EncodingParams =
+  ## Construct EncodingParams from an already-encoded manifest.
+  ##
+  EncodingParams(
+    blockSize: encoded.blockSize,
+    ecK: encoded.ecK,
+    ecM: encoded.ecM,
+    rounded: encoded.rounded,
+    steps: encoded.steps,
+    blocksCount: encoded.originalBlocksCount,
+    encodedBlocksCount: encoded.blocksCount,
+    strategy: encoded.protectedStrategy,
+    emptyCid: emptyCid,
   )
 
 proc leopardEncodeTask(tp: Taskpool, task: ptr EncodeTask) {.gcsafe.} =
-  # Task suitable for running in taskpools - look, no GC!
   let encoder = task[].erasure.encoderProvider(
     task[].blockSize, task[].blocks[].len, task[].parity[].len
   )
@@ -343,94 +380,61 @@ proc asyncEncode*(
   success()
 
 proc encodeData(
-    self: Erasure, manifest: Manifest, params: EncodingParams
-): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
-  ## Encode blocks pointed to by the protected manifest
-  ##
-  ## `manifest` - the manifest to encode
+    self: Erasure, originalTreeCid: Cid, tmpTreeCid: Cid, params: EncodingParams
+): Future[?!ref seq[Cid]] {.async: (raises: [CancelledError]).} =
+  ## Encode blocks and return the cids of all blocks (data + parity).
+  ## Tree construction, proof storage, and manifest creation are
+  ## handled by the caller.
   ##
   logScope:
+    originalTreeCid = originalTreeCid
+    tmpTreeCid = tmpTreeCid
     steps = params.steps
-    rounded_blocks = params.rounded
-    blocks_count = params.blocksCount
+    roundedBlocks = params.rounded
+    blocksCount = params.blocksCount
+    encodedBlocksCount = params.encodedBlocksCount
     ecK = params.ecK
     ecM = params.ecM
 
+  trace "Starting erasure coding dataset"
   var
     cids = seq[Cid].new()
-    emptyBlock = newSeq[byte](manifest.blockSize.int)
+    emptyBlock = newSeq[byte](params.blockSize.int)
 
-  cids[].setLen(params.blocksCount)
+  cids[].setLen(params.encodedBlocksCount)
+  for step in 0 ..< params.steps:
+    # TODO: Don't allocate a new seq every time, allocate once and zero out
+    var
+      data = new seq[seq[byte]] # number of blocks to encode
+      parity = new seq[seq[byte]]
 
-  try:
-    for step in 0 ..< params.steps:
-      # TODO: Don't allocate a new seq every time, allocate once and zero out
-      var
-        data = new seq[seq[byte]] # number of blocks to encode
-        parity = new seq[seq[byte]]
+    data[].setLen(params.ecK)
+    parity[] = newSeqWith(params.ecM, newSeqWith(params.blockSize.int, 0'u8))
 
-      data[].setLen(params.ecK)
-      parity[] = newSeqWith(params.ecM, newSeqWith(manifest.blockSize.int, 0'u8))
+    let resolved =
+      ?await self.prepareEncodingData(
+        originalTreeCid, params, step, data, cids, params.emptyCid, emptyBlock
+      )
 
-      # TODO: this is a tight blocking loop so we sleep here to allow
-      # other events to be processed, this should be addressed
-      # by threading
-      await sleepAsync(10.millis)
+    trace "Erasure coding data", data = data[].len
+    ?await self.asyncEncode(params.blockSize.int, data, parity)
+    var
+      idx = params.rounded + step
+      blocks: seq[(bt.Block, Natural, ArchivistProof)]
 
-      without resolved =?
-        (await self.prepareEncodingData(manifest, params, step, data, cids, emptyBlock)),
-        err:
-        trace "Unable to prepare data", error = err.msg
-        return failure(err)
+    for j in 0 ..< params.ecM:
+      let blk = ?bt.Block.new(parity[j])
 
-      trace "Erasure coding data", data = data[].len
+      trace "Adding parity block", cid = blk.cid, idx
+      cids[idx] = blk.cid
+      blocks.add((blk, idx.Natural, nil))
+      idx.inc(params.steps)
 
-      try:
-        if err =?
-            (await self.asyncEncode(manifest.blockSize.int, data, parity)).errorOption:
-          return failure(err)
-      except CancelledError as exc:
-        raise exc
+    trace "Storing parity blocks", count = blocks.len
+    ?await self.repoStore.putBlocks(tmpTreeCid, blocks)
 
-      var idx = params.rounded + step
-      for j in 0 ..< params.ecM:
-        without blk =? bt.Block.new(parity[j]), error:
-          trace "Unable to create parity block", err = error.msg
-          return failure(error)
-
-        trace "Adding parity block", cid = blk.cid, idx
-        cids[idx] = blk.cid
-        if error =? (await self.store.putBlock(blk)).errorOption:
-          warn "Unable to store block!", cid = blk.cid, msg = error.msg
-          return failure("Unable to store block!")
-        idx.inc(params.steps)
-
-    without tree =? ArchivistTree.init(cids[]), err:
-      return failure(err)
-
-    without treeCid =? tree.rootCid, err:
-      return failure(err)
-
-    if err =? (await self.store.putAllProofs(tree)).errorOption:
-      return failure(err)
-
-    let encodedManifest = Manifest.new(
-      manifest = manifest,
-      treeCid = treeCid,
-      datasetSize = (manifest.blockSize.int * params.blocksCount).NBytes,
-      ecK = params.ecK,
-      ecM = params.ecM,
-      strategy = params.strategy,
-    )
-
-    trace "Encoded data successfully", treeCid, blocksCount = params.blocksCount
-    success encodedManifest
-  except CancelledError as exc:
-    trace "Erasure coding encoding cancelled"
-    raise exc # cancellation needs to be propagated
-  except CatchableError as exc:
-    trace "Erasure coding encoding error", exc = exc.msg
-    return failure(exc)
+  trace "Encoding complete", encodedBlocksCount = params.encodedBlocksCount
+  success cids
 
 proc encode*(
     self: Erasure,
@@ -446,13 +450,64 @@ proc encode*(
   ## `parity`     - the number of parity blocks to generate - M
   ##
 
-  without params =? EncodingParams.init(manifest, blocks.int, parity.int, strategy), err:
-    return failure(err)
+  let
+    emptyCid = ?emptyCid(manifest.version, manifest.hcodec, manifest.codec)
+    sourceManifest =
+      if manifest.protected:
+        Manifest.new(manifest)
+      else:
+        manifest
+    params =
+      ?EncodingParams.init(sourceManifest, blocks.int, parity.int, strategy, emptyCid)
 
-  without encodedManifest =? await self.encodeData(manifest, params), err:
-    return failure(err)
+  proc treeAndProofs(
+      cids: ref seq[Cid], targetCid: Cid
+  ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+    let
+      tree = ?ArchivistTree.init(cids[])
+      treeCid = ?tree.rootCid
 
-  return success encodedManifest
+    var proofItems: seq[(Natural, Cid, ArchivistProof)]
+    for index, cid in cids[]:
+      proofItems.add((index.Natural, cid, ?tree.getProof(index)))
+
+    ?await self.repoStore.putCidsAndProofs(targetCid, proofItems)
+
+    trace "Tree and proofs stored", treeCid, blocks = blocks, parity = parity
+    success treeCid
+
+  let treeCid =
+    if manifest.protected:
+      ?await self.repoStore.withOverlay(
+        manifest.treeCid,
+        body = proc(): Future[?!Cid] {.
+            closure, gcsafe, async: (raises: [CancelledError])
+        .} =
+          let cids =
+            ?await self.encodeData(sourceManifest.treeCid, manifest.treeCid, params)
+          await treeAndProofs(cids, manifest.treeCid)
+        ,
+      )
+    else:
+      ?await self.repoStore.withTmpOverlay(
+        body = proc(
+            tmpCid: Cid
+        ): Future[?!Cid] {.closure, gcsafe, async: (raises: [CancelledError]).} =
+          let cids = ?await self.encodeData(sourceManifest.treeCid, tmpCid, params)
+
+          await treeAndProofs(cids, tmpCid)
+      )
+
+  let protected = Manifest.new(
+    manifest = sourceManifest,
+    treeCid = treeCid,
+    ecK = blocks.int,
+    ecM = parity.int,
+    strategy = strategy,
+    datasetSize = (sourceManifest.blockSize.int * params.encodedBlocksCount).NBytes,
+  )
+
+  success(protected)
 
 proc leopardDecodeTask(tp: Taskpool, task: ptr DecodeTask) {.gcsafe.} =
   # Task suitable for running in taskpools - look, no GC!
@@ -513,81 +568,59 @@ proc asyncDecode*(
   success()
 
 proc decodeInternal(
-    self: Erasure, encoded: Manifest
+    self: Erasure, encodedTreeCid: Cid, targetCid: Cid, params: EncodingParams
 ): Future[?!(ref seq[Cid], seq[Natural])] {.async: (raises: [CancelledError]).} =
   logScope:
-    steps = encoded.steps
-    rounded_blocks = encoded.rounded
-    new_manifest = encoded.blocksCount
+    encodedTreeCid = encodedTreeCid
+    targetCid = targetCid
+    steps = params.steps
+    roundedBlocks = params.rounded
+    encodedBlocksCount = params.encodedBlocksCount
 
   var
     cids = seq[Cid].new()
     recoveredIndices = newSeq[Natural]()
-    decoder = self.decoderProvider(encoded.blockSize.int, encoded.ecK, encoded.ecM)
-    emptyBlock = newSeq[byte](encoded.blockSize.int)
+    emptyBlock = newSeq[byte](params.blockSize.int)
 
-  cids[].setLen(encoded.blocksCount)
-  try:
-    for step in 0 ..< encoded.steps:
-      # TODO: this is a tight blocking loop so we sleep here to allow
-      # other events to be processed, this should be addressed
-      # by threading
-      await sleepAsync(10.millis)
+  cids[].setLen(params.encodedBlocksCount)
+  for step in 0 ..< params.steps:
+    var
+      data = new seq[seq[byte]]
+      parityData = new seq[seq[byte]]
+      recovered = new seq[seq[byte]]
 
-      var
-        data = new seq[seq[byte]]
-        parityData = new seq[seq[byte]]
-        recovered = new seq[seq[byte]]
+    data[].setLen(params.ecK) # set len to K
+    parityData[].setLen(params.ecM) # set len to M
+    recovered[] = newSeqWith(params.ecK, newSeqWith(params.blockSize.int, 0'u8))
 
-      data[].setLen(encoded.ecK) # set len to K
-      parityData[].setLen(encoded.ecM) # set len to M
-      recovered[] = newSeqWith(encoded.ecK, newSeqWith(encoded.blockSize.int, 0'u8))
+    let (dataPieces, _) =
+      ?await self.prepareDecodingData(
+        encodedTreeCid, params, step, data, parityData, cids, emptyBlock
+      )
 
-      without (dataPieces, _) =? (
-        await self.prepareDecodingData(
-          encoded, step, data, parityData, cids, emptyBlock
-        )
-      ), err:
-        trace "Unable to prepare data", error = err.msg
-        return failure(err)
+    if dataPieces >= params.ecK:
+      trace "Retrieved all the required data blocks"
+      continue
 
-      if dataPieces >= encoded.ecK:
-        trace "Retrieved all the required data blocks"
-        continue
+    trace "Erasure decoding data"
+    ?await self.asyncDecode(params.blockSize.int, data, parityData, recovered)
+    var blocks: seq[(bt.Block, Natural, ArchivistProof)]
+    for i in 0 ..< params.ecK:
+      let idx = i * params.steps + step
+      if data[i].len <= 0 and not cids[idx].isEmpty:
+        without blk =? bt.Block.new(recovered[i]), error:
+          trace "Unable to create block!", exc = error.msg
+          return failure(error)
 
-      trace "Erasure decoding data"
-      try:
-        if err =? (
-          await self.asyncDecode(encoded.blockSize.int, data, parityData, recovered)
-        ).errorOption:
-          return failure(err)
-      except CancelledError as exc:
-        raise exc
+        trace "Recovered block", cid = blk.cid, index = i
+        self.networkStore.completeBlock(encodedTreeCid, idx, blk)
 
-      for i in 0 ..< encoded.ecK:
-        let idx = i * encoded.steps + step
-        if data[i].len <= 0 and not cids[idx].isEmpty:
-          without blk =? bt.Block.new(recovered[i]), error:
-            trace "Unable to create block!", exc = error.msg
-            return failure(error)
+        cids[idx] = blk.cid
+        blocks.add((blk, idx.Natural, nil))
+        recoveredIndices.add(idx)
 
-          trace "Recovered block", cid = blk.cid, index = i
-          if error =? (await self.store.putBlock(blk)).errorOption:
-            warn "Unable to store block!", cid = blk.cid, msg = error.msg
-            return failure("Unable to store block!")
-
-          self.store.completeBlock(BlockAddress.init(encoded.treeCid, idx), blk)
-
-          cids[idx] = blk.cid
-          recoveredIndices.add(idx)
-  except CancelledError as exc:
-    trace "Erasure coding decoding cancelled"
-    raise exc # cancellation needs to be propagated
-  except CatchableError as exc:
-    trace "Erasure coding decoding error", exc = exc.msg
-    return failure(exc)
-  finally:
-    decoder.release()
+    trace "Storing recovered blocks", count = blocks.len
+    ?await self.repoStore.putBlocks(targetCid, blocks)
 
   return (cids, recoveredIndices).success
 
@@ -601,60 +634,90 @@ proc decode*(
   ##             be recovered
   ##
 
-  without (cids, recoveredIndices) =? (await self.decodeInternal(encoded)), err:
-    return failure(err)
+  let
+    emptyCid = ?emptyCid(encoded.version, encoded.hcodec, encoded.codec)
+    params = EncodingParams.initFromEncoded(encoded, emptyCid)
 
-  without tree =? ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
-    return failure(err)
+  var
+    cids: ref seq[Cid]
+    recoveredIndices: seq[Natural]
 
-  without treeCid =? tree.rootCid, err:
-    return failure(err)
+  ?await self.repoStore.withOverlay(
+    encoded.originalTreeCid,
+    status = Storing.some,
+    body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+      let
+        (cids, recoveredIndices) =
+          ?await self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params)
+        tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
+        treeCid = ?tree.rootCid
 
-  if treeCid != encoded.originalTreeCid:
-    return failure(
-      "Original tree root differs from the tree root computed out of recovered data"
-    )
+      if treeCid != encoded.originalTreeCid:
+        return failure(
+          "Original tree root differs from the tree root computed out of recovered data"
+        )
 
-  let idxIter =
-    Iter[Natural].new(recoveredIndices).filter((i: Natural) => i < tree.leavesCount)
+      let idxIter =
+        Iter[Natural].new(recoveredIndices).filter((i: Natural) => i < tree.leavesCount)
 
-  if err =? (await self.store.putSomeProofs(tree, idxIter)).errorOption:
-    return failure(err)
+      if err =? (await self.repoStore.putSomeProofs(tree, idxIter)).errorOption:
+        return failure(err)
+
+      success(),
+  )
 
   let decoded = Manifest.new(encoded)
-
   return decoded.success
 
-proc repair*(self: Erasure, encoded: Manifest): Future[?!void] {.async.} =
+proc repair*(
+    self: Erasure, encoded: Manifest
+): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Repair a protected manifest by reconstructing the full dataset
   ##
   ## `encoded` - the encoded (protected) manifest to
   ##             be repaired
   ##
+  ## TODO: there are several quirks to be aware of here -
+  ## decode can only recreate original blocks, the resulting
+  ## parity is not usable (AFAIK) as the original parity blocks
+  ## so we need decode the original dataset first and then
+  ## re-encode it to get valid parity blocks for the repaired manifest
+  ##
+  ## So the first decode is called with the original tree as it's overlay,
+  ## the call to encode will create the protected overlay and manifest,
+  ## this means that we need to properly handle cleanup of these overlays
+  ## to avoid leaving garbage in the store
+  ##
 
-  without (cids, _) =? (await self.decodeInternal(encoded)), err:
-    return failure(err)
+  let
+    emptyCid = ?emptyCid(encoded.version, encoded.hcodec, encoded.codec)
+    params = EncodingParams.initFromEncoded(encoded, emptyCid)
 
-  without tree =? ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount]), err:
-    return failure(err)
+  ?await self.repoStore.withOverlay(
+    encoded.originalTreeCid,
+    status = Repairing.some,
+    body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
+      let
+        (cids, _) =
+          ?await self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params)
+        tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
+        treeCid = ?tree.rootCid
 
-  without treeCid =? tree.rootCid, err:
-    return failure(err)
+      if treeCid != encoded.originalTreeCid:
+        return failure(
+          "Original tree root differs from the tree root computed out of recovered data"
+        )
 
-  if treeCid != encoded.originalTreeCid:
-    return failure(
-      "Original tree root differs from the tree root computed out of recovered data"
-    )
+      await self.repoStore.putAllProofs(tree)
+    ,
+  )
 
-  if err =? (await self.store.putAllProofs(tree)).errorOption:
-    return failure(err)
-
-  without repaired =? (
-    await self.encode(
-      Manifest.new(encoded), encoded.ecK, encoded.ecM, encoded.protectedStrategy
-    )
-  ), err:
-    return failure(err)
+  # TODO: We don't get valid parity data from leopard,
+  # so we need to do full re-encoding to get parity
+  # blocks for a valid slot - this is higly inneficient
+  # we need to either fix leopard or use another implementation
+  let repaired =
+    ?(await self.encode(encoded, encoded.ecK, encoded.ecM, encoded.protectedStrategy))
 
   if repaired.treeCid != encoded.treeCid:
     return failure(
@@ -671,7 +734,8 @@ proc stop*(self: Erasure) {.async.} =
 
 proc new*(
     T: type Erasure,
-    store: BlockStore,
+    networkStore: BlockStore,
+    repoStore: RepoStore,
     encoderProvider: EncoderProvider,
     decoderProvider: DecoderProvider,
     taskPool: Taskpool,
@@ -679,7 +743,8 @@ proc new*(
   ## Create a new Erasure instance for encoding and decoding manifests
   ##
   Erasure(
-    store: store,
+    networkStore: networkStore,
+    repoStore: repoStore,
     encoderProvider: encoderProvider,
     decoderProvider: decoderProvider,
     taskPool: taskPool,

@@ -1,4 +1,5 @@
 import pkg/chronos
+import pkg/questionable/results
 import pkg/archivist/chunker
 
 export chunker
@@ -21,9 +22,9 @@ proc new*(
   var consumed = 0
   proc reader(
       data: ChunkBuffer, len: int
-  ): Future[int] {.gcsafe, async: (raises: [ChunkerError, CancelledError]).} =
+  ): Future[?!int] {.gcsafe, async: (raises: [CancelledError]).} =
     if consumed >= dataset.len:
-      return 0
+      return success 0
 
     var read = 0
     while read < len and read < chunkSize.int and (consumed + read) < dataset.len:
@@ -31,6 +32,6 @@ proc new*(
       read.inc
 
     consumed += read
-    return read
+    return success read
 
   Chunker.new(reader = reader, pad = pad, chunkSize = chunkSize)

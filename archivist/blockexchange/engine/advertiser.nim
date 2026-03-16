@@ -83,12 +83,21 @@ proc advertiseBlock(b: Advertiser, cid: Cid) {.async: (raises: [CancelledError])
 proc advertiseLocalStoreLoop(b: Advertiser) {.async: (raises: []).} =
   try:
     while b.advertiserRunning:
-      if cidsIter =? await b.localStore.listBlocks(blockType = BlockType.Manifest):
-        trace "Advertiser begins iterating blocks..."
-        for c in cidsIter:
-          if cid =? await c:
-            await b.advertiseBlock(cid)
-        trace "Advertiser iterating blocks finished."
+      without cidsIter =? await b.localStore.listBlocks(blockType = BlockType.Manifest),
+        err:
+        trace "Error retrieving manifest iterator, advertising skipped!", err = err.msg
+        await sleepAsync(b.advertiseLocalStoreLoopSleep)
+        continue
+
+      defer:
+        if err =? (await cidsIter.dispose()).errorOption:
+          warn "Error disposing manifest iterator", err = err.msg
+
+      trace "Advertiser begins iterating blocks..."
+      for c in cidsIter:
+        if cid =? await c:
+          await b.advertiseBlock(cid)
+      trace "Advertiser iterating blocks finished."
 
       await sleepAsync(b.advertiseLocalStoreLoopSleep)
   except CancelledError:
@@ -126,7 +135,7 @@ proc start*(b: Advertiser) {.async: (raises: []).} =
 
   # The advertiser is expected to be started only once.
   if b.advertiserRunning:
-    raiseAssert "Advertiser can only be started once — this should not happen"
+    raiseAssert "Advertiser can only be started once - this should not happen"
 
   proc onBlock(cid: Cid) {.async: (raises: []).} =
     try:

@@ -3,15 +3,16 @@ import pkg/questionable/results
 import pkg/libp2p/builders
 import pkg/nitro/wallet
 import pkg/taskpools
+import pkg/kvstore
 import pkg/archivist/discovery
 import pkg/archivist/stores
 import pkg/archivist/blockexchange
 import pkg/archivist/node
-import ../../helpers/templeveldb
 
 type TemporaryNode* = ref object
-  tempRepoDb: TempLevelDb
-  tempMetaDb: TempLevelDb
+  repoDs: KVStore
+  metaDs: KVStore
+  tp: Taskpool
   localStore: RepoStore
   p2p: Switch
   peerStore: PeerCtxStore
@@ -24,11 +25,10 @@ type TemporaryNode* = ref object
   node: ArchivistNodeRef
 
 proc initializeLocalStore(temporary: TemporaryNode) =
-  temporary.tempRepoDb = TempLevelDb.new()
-  temporary.tempMetaDb = TempLevelDb.new()
-  let repoDs = temporary.tempRepoDb.newDb()
-  let metaDs = temporary.tempMetaDb.newDb()
-  temporary.localStore = RepoStore.new(repoDs, metaDs)
+  temporary.tp = Taskpool.new(num_threads = 4)
+  temporary.repoDs = SQLiteKVStore.new(SqliteMemory, temporary.tp).tryGet()
+  temporary.metaDs = SQLiteKVStore.new(SqliteMemory, temporary.tp).tryGet()
+  temporary.localStore = RepoStore.new(temporary.repoDs, temporary.metaDs)
 
 proc initializeNetwork(temporary: TemporaryNode) =
   temporary.p2p = newStandardSwitch()
@@ -36,7 +36,9 @@ proc initializeNetwork(temporary: TemporaryNode) =
   temporary.exchangeNetwork = BlockExcnetwork.new(temporary.p2p)
   let privateKey = temporary.p2p.peerInfo.privateKey
   let address = MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()
-  temporary.discoveryNetwork = Discovery.new(privateKey, announceAddrs = @[address])
+  let discoveryDs = SQLiteKVStore.new(SqliteMemory, temporary.tp).tryGet()
+  temporary.discoveryNetwork =
+    Discovery.new(privateKey, announceAddrs = @[address], store = discoveryDs)
 
 proc initializePendingBlocks(temporary: TemporaryNode) =
   temporary.pendingBlocks = PendingBlocksManager.new()
@@ -63,6 +65,7 @@ proc initializeNode(temporary: TemporaryNode) =
   temporary.node = ArchivistNodeRef.new(
     temporary.p2p,
     temporary.networkStore,
+    temporary.localStore,
     temporary.exchangeEngine,
     temporary.discoveryNetwork,
     Taskpool.new(),
@@ -82,8 +85,9 @@ proc create*(_: type TemporaryNode): Future[TemporaryNode] {.async.} =
 
 proc destroy*(temporary: TemporaryNode) {.async.} =
   await temporary.node.stop()
-  await temporary.tempRepoDb.destroyDb()
-  await temporary.tempMetaDb.destroyDb()
+  (await temporary.repoDs.close()).tryGet()
+  (await temporary.metaDs.close()).tryGet()
+  temporary.tp.shutdown()
 
 func node*(temporary: TemporaryNode): ArchivistNodeRef =
   temporary.node

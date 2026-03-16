@@ -96,12 +96,6 @@
 [submodule "vendor/nimble/sqlite3_abi"]
 	path = vendor/nimble/sqlite3_abi
 	url = https://github.com/arnetheduck/nim-sqlite3-abi
-[submodule "vendor/nimble/leveldbstatic"]
-	path = vendor/nimble/leveldbstatic
-	url = https://github.com/durability-labs/nim-leveldbstatic
-[submodule "vendor/nimble/datastore"]
-	path = vendor/nimble/datastore
-	url = https://github.com/durability-labs/nim-datastore
 [submodule "vendor/nimble/archivistdht"]
 	path = vendor/nimble/archivistdht
 	url = https://github.com/durability-labs/archivist-dht
@@ -159,3 +153,10 @@
 [submodule "vendor/nimble/zippy"]
 	path = vendor/nimble/zippy
 	url = https://github.com/guzba/zippy
+[submodule "vendor/nimble/nim-kvstore"]
+	path = vendor/nimble/nim-kvstore
+	url = git@github.com:durability-labs/nim-kvstore.git
+	url = https://github.com/durability-labs/nim-kvstore.git
+[submodule "vendor/nimble/threading"]
+	path = vendor/nimble/threading
+	url = https://github.com/nim-lang/threading.git

@@ -12,39 +12,37 @@ import pkg/archivist/rng
 import pkg/archivist/utils
 import pkg/archivist/indexingstrategy
 import pkg/taskpools
+import pkg/kvstore
 
 import ../asynctest
 import ./helpers
 import ./examples
 
 suite "Erasure encode/decode":
-  const BlockSize = 1024'nb
+  const BlockSize = 128'nb
   const dataSetSize = BlockSize * 123 # weird geometry
 
   var rng: Rng
   var chunker: Chunker
   var manifest: Manifest
-  var store: BlockStore
+  var store: RepoStore
   var erasure: Erasure
-  let repoTmp = TempLevelDb.new()
-  let metaTmp = TempLevelDb.new()
-  var taskpool: Taskpool
+  var tp: Taskpool
 
   setup:
+    tp = Taskpool.new(num_threads = 4)
     let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+      repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
     rng = Rng.instance()
     chunker = RandomChunker.new(rng, size = dataSetSize, chunkSize = BlockSize)
     store = RepoStore.new(repoDs, metaDs)
-    taskpool = Taskpool.new()
-    erasure = Erasure.new(store, leoEncoderProvider, leoDecoderProvider, taskpool)
-    manifest = await storeDataGetManifest(store, chunker)
+    erasure = Erasure.new(store, store, leoEncoderProvider, leoDecoderProvider, tp)
+    manifest = (await storeDataGetManifest(store, chunker)).tryGet()
 
   teardown:
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
-    taskpool.shutdown()
+    await store.close()
+    tp.shutdown()
 
   proc encode(buffers, parity: int): Future[Manifest] {.async.} =
     let encoded =
@@ -201,9 +199,7 @@ suite "Erasure encode/decode":
 
     let
       encoded = await encode(buffers, parity)
-      blocks = collect:
-        for i in 0 .. encoded.blocksCount:
-          i
+      blocks = toSeq(0 .. encoded.blocksCount)
 
     # loose M parity (all!) symbols/blocks from the dataset
     for b in blocks[^(encoded.steps * encoded.ecM) ..^ 1]:
@@ -241,7 +237,7 @@ suite "Erasure encode/decode":
         # create random data and store it
         blockSize = rng.sample(@[1, 2, 4, 8, 16, 32, 64].mapIt(it.KiBs))
         chunker = RandomChunker.new(rng, size = datasetSize, chunkSize = blockSize)
-        manifest = await storeDataGetManifest(store, chunker)
+        manifest = (await storeDataGetManifest(store, chunker)).tryGet()
       manifests.add(manifest)
       # encode the data concurrently
       encodeTasks.add(erasure.encode(manifest, ecK, ecM))
@@ -292,7 +288,7 @@ suite "Erasure encode/decode":
 
       let
         chunker = RandomChunker.new(rng, size = datasetSize, chunkSize = blockSize)
-        manifest = await storeDataGetManifest(store, chunker)
+        manifest = (await storeDataGetManifest(store, chunker)).tryGet()
         encoded = (await erasure.encode(manifest, ecK, ecM)).tryGet()
         decoded = (await erasure.decode(encoded)).tryGet()
 
@@ -313,7 +309,7 @@ suite "Erasure encode/decode":
     let recovered = new seq[seq[byte]]
     let cancelledTaskParity = new seq[seq[byte]]
     let cancelledTaskRecovered = new seq[seq[byte]]
-    data[] = newSeqWith(blocksLen, await chunker.getBytes())
+    data[] = newSeqWith(blocksLen, (await chunker.getBytes()).tryGet())
     parity[] = newSeqWith(10, newSeqWith(BlockSize.int, 0'u8))
     cancelledTaskParity[] = newSeqWith(10, newSeqWith(BlockSize.int, 0'u8))
     recovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))

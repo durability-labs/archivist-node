@@ -25,10 +25,9 @@ const DefaultChunkSize* = DefaultBlockSize
 
 type
   # default reader type
-  ChunkerError* = object of CatchableError
   ChunkBuffer* = ptr UncheckedArray[byte]
-  Reader* = proc(data: ChunkBuffer, len: int): Future[int] {.
-    gcsafe, async: (raises: [ChunkerError, CancelledError])
+  Reader* = proc(data: ChunkBuffer, len: int): Future[?!int] {.
+    gcsafe, async: (raises: [CancelledError])
   .}
 
   # Reader that splits input data into fixed-size chunks
@@ -41,23 +40,23 @@ type
   FileChunker* = Chunker
   LPStreamChunker* = Chunker
 
-proc getBytes*(c: Chunker): Future[seq[byte]] {.async.} =
+proc getBytes*(c: Chunker): Future[?!seq[byte]] {.async: (raises: [CancelledError]).} =
   ## returns a chunk of bytes from
   ## the instantiated chunker
   ##
 
   var buff = newSeq[byte](c.chunkSize.int)
-  let read = await c.reader(cast[ChunkBuffer](addr buff[0]), buff.len)
+  let read = ?await c.reader(cast[ChunkBuffer](addr buff[0]), buff.len)
 
   if read <= 0:
-    return @[]
+    return success(newSeq[byte](0))
 
   c.offset += read
 
   if not c.pad and buff.len > read:
     buff.setLen(read)
 
-  return move buff
+  success move buff
 
 proc new*(
     T: type Chunker, reader: Reader, chunkSize = DefaultChunkSize, pad = true
@@ -74,23 +73,17 @@ proc new*(
 
   proc reader(
       data: ChunkBuffer, len: int
-  ): Future[int] {.gcsafe, async: (raises: [ChunkerError, CancelledError]).} =
+  ): Future[?!int] {.gcsafe, async: (raises: [CancelledError]).} =
     var res = 0
     try:
       while res < len:
         res += await stream.readOnce(addr data[res], len - res)
-    except LPStreamEOFError as exc:
-      trace "LPStreamChunker stream Eof", exc = exc.msg
-    except CancelledError as error:
-      raise error
-    except LPStreamError as error:
-      error "LPStream error", err = error.msg
-      raise newException(ChunkerError, "LPStream error", error)
-    except CatchableError as exc:
-      error "CatchableError exception", exc = exc.msg
-      raise newException(Defect, exc.msg)
+    except LPStreamEOFError:
+      discard # EOF reached, return bytes read so far
+    except LPStreamError as exc:
+      return failure(exc)
 
-    return res
+    return success res
 
   LPStreamChunker.new(reader = reader, chunkSize = chunkSize, pad = pad)
 
@@ -102,23 +95,15 @@ proc new*(
 
   proc reader(
       data: ChunkBuffer, len: int
-  ): Future[int] {.gcsafe, async: (raises: [ChunkerError, CancelledError]).} =
+  ): Future[?!int] {.gcsafe, async: (raises: [CancelledError]).} =
     var total = 0
-    try:
-      while total < len:
-        let res = file.readBuffer(addr data[total], len - total)
-        if res <= 0:
-          break
+    while total < len:
+      let res = ?catch(file.readBuffer(addr data[total], len - total))
+      if res <= 0:
+        break
 
-        total += res
-    except IOError as exc:
-      trace "Exception reading file", exc = exc.msg
-    except CancelledError as error:
-      raise error
-    except CatchableError as exc:
-      error "CatchableError exception", exc = exc.msg
-      raise newException(Defect, exc.msg)
+      total += res
 
-    return total
+    return success total
 
   FileChunker.new(reader = reader, chunkSize = chunkSize, pad = pad)

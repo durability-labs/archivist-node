@@ -5,6 +5,8 @@ import ../../asynctest
 
 import pkg/chronos
 import pkg/questionable/results
+import pkg/kvstore
+import pkg/taskpools
 import pkg/archivist/blocktype as bt
 import pkg/archivist/rng
 import pkg/archivist/stores
@@ -23,6 +25,7 @@ import ../merkletree/helpers
 
 import pkg/archivist/indexingstrategy {.all.}
 import pkg/archivist/slots {.all.}
+import pkg/archivist/stores/repostore/operations
 
 privateAccess(Poseidon2Builder) # enable access to private fields
 privateAccess(Manifest) # enable access to private fields
@@ -62,26 +65,26 @@ suite "Slot builder":
 
     # empty digest
     emptyDigest = SpongeMerkle.digest(newSeq[byte](blockSize.int), cellSize.int)
-    repoTmp = TempLevelDb.new()
-    metaTmp = TempLevelDb.new()
 
   var
     datasetBlocks: seq[bt.Block]
-    localStore: BlockStore
+    localStore: RepoStore
     manifest: Manifest
     protectedManifest: Manifest
     builder: Poseidon2Builder
     chunker: Chunker
+    tp: Taskpool
 
   setup:
+    tp = Taskpool.new(num_threads = 4)
     let
-      repoDs = repoTmp.newDb()
-      metaDs = metaTmp.newDb()
+      repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
 
     localStore = RepoStore.new(repoDs, metaDs)
     chunker =
       RandomChunker.new(Rng.instance(), size = totalDatasetSize, chunkSize = blockSize)
-    datasetBlocks = await chunker.createBlocks(localStore)
+    datasetBlocks = await chunker.createBlocks()
 
     (manifest, protectedManifest) = await createProtectedManifest(
       datasetBlocks, localStore, numDatasetBlocks, ecK, ecM, blockSize,
@@ -90,8 +93,7 @@ suite "Slot builder":
 
   teardown:
     await localStore.close()
-    await repoTmp.destroyDb()
-    await metaTmp.destroyDb()
+    tp.shutdown()
 
     # TODO: THIS IS A BUG IN asynctest, because it doesn't release the
     #       objects after the test is done, so we need to do it manually
@@ -113,8 +115,9 @@ suite "Slot builder":
     )
 
     check:
-      Poseidon2Builder.new(localStore, unprotectedManifest, cellSize = cellSize).error.msg ==
-        "Manifest is not protected."
+      Poseidon2Builder.new(
+        localStore, localStore, unprotectedManifest, cellSize = cellSize
+      ).error.msg == "Manifest is not protected."
 
   test "Number of blocks must be devisable by number of slots":
     let mismatchManifest = Manifest.new(
@@ -131,8 +134,9 @@ suite "Slot builder":
     )
 
     check:
-      Poseidon2Builder.new(localStore, mismatchManifest, cellSize = cellSize).error.msg ==
-        "Number of blocks must be divisible by number of slots."
+      Poseidon2Builder.new(
+        localStore, localStore, mismatchManifest, cellSize = cellSize
+      ).error.msg == "Number of blocks must be divisible by number of slots."
 
   test "Block size must be divisable by cell size":
     let mismatchManifest = Manifest.new(
@@ -149,12 +153,14 @@ suite "Slot builder":
     )
 
     check:
-      Poseidon2Builder.new(localStore, mismatchManifest, cellSize = cellSize).error.msg ==
-        "Block size must be divisible by cell size."
+      Poseidon2Builder.new(
+        localStore, localStore, mismatchManifest, cellSize = cellSize
+      ).error.msg == "Block size must be divisible by cell size."
 
   test "Should build correct slot builder":
-    builder =
-      Poseidon2Builder.new(localStore, protectedManifest, cellSize = cellSize).tryGet()
+    builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
 
     check:
       builder.cellSize == cellSize
@@ -171,7 +177,7 @@ suite "Slot builder":
       )
 
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
     for i in 0 ..< numSlots:
@@ -196,7 +202,7 @@ suite "Slot builder":
       )
 
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
     for i in 0 ..< numSlots:
@@ -215,8 +221,9 @@ suite "Slot builder":
         slotTree.root().tryGet() == expectedRoot
 
   test "Should persist trees for all slots":
-    let builder =
-      Poseidon2Builder.new(localStore, protectedManifest, cellSize = cellSize).tryGet()
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
 
     for i in 0 ..< numSlots:
       let
@@ -242,7 +249,7 @@ suite "Slot builder":
         0, protectedManifest.blocksCount - 1, numSlots, numSlots, numPadSlotBlocks
       )
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
     (await builder.buildSlots()).tryGet
@@ -270,7 +277,7 @@ suite "Slot builder":
         0, protectedManifest.blocksCount - 1, numSlots, numSlots, numPadSlotBlocks
       )
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
       slotsHashes = collect(newSeq):
@@ -296,46 +303,182 @@ suite "Slot builder":
   test "Should not build from verifiable manifest with 0 slots":
     var
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
       verifyManifest = (await builder.buildManifest()).tryGet()
 
     verifyManifest.slotRoots = @[]
-    check Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).isErr
+    check Poseidon2Builder.new(
+      localStore, localStore, verifyManifest, cellSize = cellSize
+    ).isErr
 
   test "Should not build from verifiable manifest with incorrect number of slots":
     var
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
       verifyManifest = (await builder.buildManifest()).tryGet()
 
     verifyManifest.slotRoots.del(verifyManifest.slotRoots.len - 1)
 
-    check Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).isErr
+    check Poseidon2Builder.new(
+      localStore, localStore, verifyManifest, cellSize = cellSize
+    ).isErr
 
   test "Should not build from verifiable manifest with invalid verify root":
-    let builder =
-      Poseidon2Builder.new(localStore, protectedManifest, cellSize = cellSize).tryGet()
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
 
     var verifyManifest = (await builder.buildManifest()).tryGet()
 
     rng.shuffle(Rng.instance, verifyManifest.verifyRoot.data.buffer)
 
-    check Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).isErr
+    check Poseidon2Builder.new(
+      localStore, localStore, verifyManifest, cellSize = cellSize
+    ).isErr
 
   test "Should build from verifiable manifest":
     let
       builder = Poseidon2Builder
-        .new(localStore, protectedManifest, cellSize = cellSize)
+        .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
       verifyManifest = (await builder.buildManifest()).tryGet()
 
-      verificationBuilder =
-        Poseidon2Builder.new(localStore, verifyManifest, cellSize = cellSize).tryGet()
+      verificationBuilder = Poseidon2Builder
+        .new(localStore, localStore, verifyManifest, cellSize = cellSize)
+        .tryGet()
 
     check:
       builder.slotRoots == verificationBuilder.slotRoots
       builder.verifyRoot == verificationBuilder.verifyRoot
+
+suite "Cell-aware slot building":
+  ## Tests for slot building that verify cell leaves are stored correctly
+  ## with separate cellCid and blkCid for proper refcount handling.
+  ##
+  let
+    blockSize = NBytes 1024
+    cellSize = NBytes 64
+    ecK = 2
+    ecM = 1
+
+    numSlots = ecK + ecM
+    numDatasetBlocks = 3
+    numTotalBlocks = calcEcBlocksCount(numDatasetBlocks, ecK, ecM)
+    originalDatasetSize = numDatasetBlocks * blockSize.int
+    totalDatasetSize = numTotalBlocks * blockSize.int
+
+    numSlotBlocks = numTotalBlocks div numSlots
+    numBlockCells = (blockSize div cellSize).int
+    numSlotCells = numSlotBlocks * numBlockCells
+    pow2SlotCells = nextPowerOfTwo(numSlotCells)
+    numPadSlotBlocks = (pow2SlotCells div numBlockCells) - numSlotBlocks
+
+    emptyDigest = SpongeMerkle.digest(newSeq[byte](blockSize.int), cellSize.int)
+
+  var
+    datasetBlocks: seq[bt.Block]
+    localStore: RepoStore
+    manifest: Manifest
+    protectedManifest: Manifest
+    tp: Taskpool
+
+  setup:
+    tp = Taskpool.new(num_threads = 4)
+    let
+      repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+      metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
+
+    localStore = RepoStore.new(repoDs, metaDs)
+    let chunker =
+      RandomChunker.new(Rng.instance(), size = totalDatasetSize, chunkSize = blockSize)
+    datasetBlocks = await chunker.createBlocks()
+
+    (manifest, protectedManifest) = await createProtectedManifest(
+      datasetBlocks, localStore, numDatasetBlocks, ecK, ecM, blockSize,
+      originalDatasetSize, totalDatasetSize,
+    )
+
+  teardown:
+    await localStore.close()
+    tp.shutdown()
+    reset(datasetBlocks)
+    reset(localStore)
+    reset(manifest)
+    reset(protectedManifest)
+
+  test "buildSlot stores cell leaves with correct cellCid and blkCid":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotCid = slotRoot.toSlotCid().tryGet()
+
+    # Verify that leaf metadata has cell flag set
+    for i in 0 ..< protectedManifest.numSlotBlocks:
+      let leaf = (await localStore.getLeafMetadata(slotCid, i.Natural)).tryGet()
+      check:
+        leaf.isCell == true
+        leaf.blkCid != Cid() # blkCid should point to a real block
+
+  test "buildSlot stores proofs for pad blocks with empty blkCid":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotCid = slotRoot.toSlotCid().tryGet()
+
+    # ALL positions (including pad blocks) should have leaf metadata
+    let numRealBlocks = protectedManifest.numSlotBlocks
+    let numTotalSlotBlocks = builder.numSlotBlocks
+
+    # Check that all positions have metadata
+    for i in 0 ..< numTotalSlotBlocks:
+      let leafRes = await localStore.getLeafMetadata(slotCid, i.Natural)
+      check leafRes.isOk
+
+    # If there are pad blocks, their blkCid should be empty CID
+    if numTotalSlotBlocks > numRealBlocks:
+      for i in numRealBlocks ..< numTotalSlotBlocks:
+        let leaf = (await localStore.getLeafMetadata(slotCid, i.Natural)).tryGet()
+        check leaf.blkCid.isEmpty
+
+  test "buildSlot increments refcount on blkCid, not cellCid":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    # Build one slot
+    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotCid = slotRoot.toSlotCid().tryGet()
+
+    # Get the first block's CID and check its refcount
+    let leaf = (await localStore.getLeafMetadata(slotCid, 0.Natural)).tryGet()
+    let blkRefCount = (await localStore.blockRefCount(leaf.blkCid)).tryGet()
+
+    # Refcount should be at least 1 (this slot references it)
+    check blkRefCount >= 1
+
+    # Cell CID should not have a block metadata entry
+    let cellRefCountRes = await localStore.blockRefCount(leaf.cellCid)
+    check cellRefCountRes.isErr or cellRefCountRes.tryGet() == 0
+
+  test "Multiple slots referencing same block increment refcount correctly":
+    let builder = Poseidon2Builder
+      .new(localStore, localStore, protectedManifest, cellSize = cellSize)
+      .tryGet()
+
+    # Build all slots
+    (await builder.buildSlots()).tryGet()
+
+    # Get refcount on first dataset block
+    let firstBlockCid = datasetBlocks[0].cid
+    let refCount = (await localStore.blockRefCount(firstBlockCid)).tryGet()
+
+    # Refcount should be 1 (block is referenced by one slot in EC distribution)
+    check refCount >= 1

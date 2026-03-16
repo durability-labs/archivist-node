@@ -10,7 +10,6 @@
 {.push raises: [].}
 
 import std/options
-import std/sugar
 import std/sequtils
 
 import pkg/results
@@ -52,6 +51,7 @@ proc allFinishedFailed*[T](
   ##
   ## TODO: wip, not sure if we want this - at the minimum,
   ## we should probably avoid the async transform
+  ##
 
   var res: FinishedFailed[T] = (@[], @[])
   await allFutures(futs)
@@ -80,8 +80,25 @@ proc allFinishedValues*[T](
 
   # here, we know there are no failed futures in "futs"
   # and we are only interested in those that completed successfully
-  let values = collect:
-    for b in futs:
-      if b.finished:
-        b.value
-  return success values
+  return success futs.filterIt(it.finished).mapIt(it.value)
+
+template catchAsync*(body: typed): Result[type(body), ref CatchableError] =
+  ## Catch exceptions for body and store them in the Result
+  ##
+  ## NOTE: Adopted from Results to propagate async cancellations
+  ##
+  ## ```
+  ## let r = catch: someFuncThatMayRaise()
+  ## ```
+  type R = Result[type(body), ref CatchableError]
+
+  try:
+    when type(body) is void:
+      body
+      R.ok()
+    else:
+      R.ok(body)
+  except CancelledError as exc:
+    raise exc
+  except CatchableError as exc:
+    R.err(exc)

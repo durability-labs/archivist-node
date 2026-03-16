@@ -7,9 +7,10 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import std/options
-
 {.push raises: [].}
+
+import std/tables
+import std/options
 
 import pkg/chronos
 import pkg/stew/ptrops
@@ -71,7 +72,9 @@ proc newLPStreamReadError*(p: ref CatchableError): ref LPStreamReadError =
 method readOnce*(
     self: StoreStream, pbytes: pointer, nbytes: int
 ): Future[int] {.async: (raises: [CancelledError, LPStreamError]).} =
-  ## Read `nbytes` from current position in the StoreStream into output buffer pointed by `pbytes`.
+  ## Read `nbytes` from current position in the StoreStream into output
+  ## buffer pointed by `pbytes`.
+  ##
   ## Return how many bytes were actually read before EOF was encountered.
   ## Raise exception if we are already at EOF.
   ##
@@ -79,47 +82,69 @@ method readOnce*(
   if self.atEof:
     raise newLPStreamEOFError()
 
-  # The loop iterates over blocks in the StoreStream,
-  # reading them and copying their data into outbuf
-  var read = 0 # Bytes read so far, and thus write offset in the outbuf
-  while read < nbytes and not self.atEof:
-    # Compute from the current stream position `self.offset` the block num/offset to read
-    # Compute how many bytes to read from this block
-    let
-      blockNum = self.offset div self.manifest.blockSize.int
-      blockOffset = self.offset mod self.manifest.blockSize.int
-      readBytes = min(
-        [
-          self.size - self.offset,
-          nbytes - read,
-          self.manifest.blockSize.int - blockOffset,
-        ]
-      )
-      address =
-        BlockAddress(leaf: true, treeCid: self.manifest.treeCid, index: blockNum)
+  let
+    blockSize = self.manifest.blockSize.int
+    treeCid = self.manifest.treeCid
+    firstBlock = self.offset div blockSize
+    lastBlock =
+      min(self.manifest.blocksCount - 1, (self.offset + nbytes - 1) div blockSize)
 
-    # Read contents of block `blockNum`
-    without blk =? (await self.store.getBlock(address)).tryGet.catch, error:
-      raise newLPStreamReadError(error)
+  # Prefetch all blocks in range as a batch
+  let indices = (firstBlock .. lastBlock).mapIt(it.Natural)
+  trace "Requesting indices from store", indices
+  without blocks =? (await self.store.getBlocks(treeCid, indices)).tryGet.catch, err:
+    trace "Unable to get blocks from store", err = err.msg
+    raise newLPStreamReadError(err)
+
+  if blocks.len == 0:
+    trace "No blocks returned from store!"
+    raise newLPStreamReadError(newException(IOError, "No blocks returned from store!"))
+
+  # Build a lookup table from block CID to block data for ordered copying
+  # We copy block by block in index order using single-block getBlock fallback
+  # if a block is missing from the batch result.
+  var read = 0
+  let blocksMap = blocks.toTable
+
+  for idx in indices:
+    if self.atEof or read >= nbytes:
+      break
+
+    if idx notin blocksMap:
+      break
+
+    without blk =? catch(blocksMap[idx]), err:
+      trace "Block index not found in returned batch, some blocks failed to retrieve",
+        err = err.msg
+      raise newLPStreamReadError(err)
+
+    trace "Read block", cid = blk.cid
+
+    let
+      blockOffset = (self.offset + read) mod blockSize
+      readBytes =
+        min([self.size - self.offset - read, nbytes - read, blockSize - blockOffset])
+
+    trace "Read bytes", readBytes
+    if readBytes <= 0:
+      break
 
     trace "Reading bytes from store stream",
-      manifestCid = self.manifest.treeCid,
+      manifestCid = treeCid,
       numBlocks = self.manifest.blocksCount,
-      blockNum,
+      blockNum = idx,
       blkCid = blk.cid,
       bytes = readBytes,
       blockOffset
 
-    # Copy `readBytes` bytes starting at `blockOffset` from the block into the outbuf
     if blk.isEmpty:
       zeroMem(pbytes.offset(read), readBytes)
     else:
       copyMem(pbytes.offset(read), blk.data[blockOffset].unsafeAddr, readBytes)
 
-    # Update current positions in the stream and outbuf
-    self.offset += readBytes
     read += readBytes
 
+  self.offset += read
   return read
 
 method closeImpl*(self: StoreStream) {.async: (raises: []).} =

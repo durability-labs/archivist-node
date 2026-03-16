@@ -37,3 +37,8 @@ method updateSlotExpiry*(
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   # TODO: update only the slot expiry, not the expiry of the entiry dataset
   await storage.node.updateExpiry(cid, expiry.toSecondsSince1970)
+
+method deleteSlot*(
+    storage: MarketplaceStorage, cid: Cid, slotIndex: uint64
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  await storage.node.deleteSlot(cid, slotIndex)

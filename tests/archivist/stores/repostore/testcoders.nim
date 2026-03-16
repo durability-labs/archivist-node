@@ -2,16 +2,21 @@ import std/random
 
 import pkg/unittest2
 import pkg/stew/objects
+import pkg/stew/byteutils
 import pkg/questionable
 import pkg/questionable/results
 
 import pkg/archivist/clock
+import pkg/archivist/merkletree
+import pkg/archivist/blocktype as bt
 import pkg/archivist/stores/repostore/types
 import pkg/archivist/stores/repostore/coders
 
 import ../../helpers
+import ../../examples
+import ../../merkletree/helpers as mhelpers
 
-suite "Test coders":
+suite "Test repostore coders":
   proc rand(T: type NBytes): T =
     rand(Natural).NBytes
 
@@ -22,16 +27,11 @@ suite "Test coders":
   proc rand(T: type QuotaUsage): T =
     QuotaUsage(used: rand(NBytes), reserved: rand(NBytes))
 
+  proc rand(T: type Cid): T =
+    Cid.example
+
   proc rand(T: type BlockMetadata): T =
-    BlockMetadata(
-      expiry: rand(SecondsSince1970), size: rand(NBytes), refCount: rand(Natural)
-    )
-
-  proc rand(T: type DeleteResult): T =
-    DeleteResult(kind: rand(DeleteResultKind), released: rand(NBytes))
-
-  proc rand(T: type StoreResult): T =
-    StoreResult(kind: rand(StoreResultKind), used: rand(NBytes))
+    BlockMetadata(cid: rand(Cid), refCount: rand(Natural))
 
   test "Natural encode/decode":
     for val in newSeqWith(100, rand(Natural)) & @[Natural.low, Natural.high]:
@@ -48,12 +48,53 @@ suite "Test coders":
       check:
         success(val) == BlockMetadata.decode(encode(val))
 
-  test "DeleteResult encode/decode":
-    for val in newSeqWith(100, rand(DeleteResult)):
-      check:
-        success(val) == DeleteResult.decode(encode(val))
+  test "LeafMetadata encode/decode":
+    let
+      nodes = @[newSeqWith(32, rand(byte)), newSeqWith(32, rand(byte))]
+      proof = ArchivistProof.init(index = 0, nleaves = 4, nodes = nodes).tryGet()
+      val = LeafMetadata(deleted: false, blkCid: Cid.example, proof: proof)
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
 
-  test "StoreResult encode/decode":
-    for val in newSeqWith(100, rand(StoreResult)):
-      check:
-        success(val) == StoreResult.decode(encode(val))
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == val.blkCid
+      decoded.proof == val.proof
+
+  test "LeafMetadata encode/decode with nil proof":
+    let
+      val = LeafMetadata(deleted: true, blkCid: Cid.example, proof: nil)
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
+
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == val.blkCid
+      decoded.proof.isNil
+
+  test "LeafMetadata encode/decode with cell variant":
+    # Create two different CIDs using blocks
+    let
+      blkCid = bt.Block.new("block data".toBytes).tryGet().cid
+      cellCid = bt.Block.new("cell data".toBytes).tryGet().cid
+      nodes = @[newSeqWith(32, rand(byte)), newSeqWith(32, rand(byte))]
+      proof = ArchivistProof.init(index = 1, nleaves = 8, nodes = nodes).tryGet()
+      val = LeafMetadata(
+        deleted: false, blkCid: blkCid, proof: proof, isCell: true, cellCid: cellCid
+      )
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
+
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == blkCid
+      decoded.proof == val.proof
+      decoded.isCell == true
+      decoded.cellCid == cellCid
+
+  test "LeafMetadata cell variant backwards compatible (non-cell decodes correctly)":
+    let
+      val = LeafMetadata(deleted: false, blkCid: Cid.example, proof: nil)
+      decoded = LeafMetadata.decode(encode(val)).tryGet()
+
+    check:
+      decoded.deleted == val.deleted
+      decoded.blkCid == val.blkCid
+      decoded.isCell == false

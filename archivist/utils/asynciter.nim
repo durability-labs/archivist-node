@@ -1,24 +1,64 @@
+## AsyncIter[T] - Asynchronous iterator with mandatory disposal
+##
+## Similar to `Iter[Future[T]]` with addition of methods specific to asynchronous processing.
+##
+## USAGE CONTRACT:
+## 1. Single-consumer: Do NOT call next() concurrently from multiple tasks
+## 2. Disposal required: Always call dispose() when done (use defer or try/finally)
+## 3. No concurrent dispose: Do NOT call dispose() concurrently or while next() is in-flight
+## 4. After dispose: Calling next() will raise an error
+##
+## Example:
+##   let iter = createIterator()
+##   defer: await iter.dispose()
+##   while not iter.finished:
+##     let item = await iter.next()
+##     # process item
+
 import std/sugar
 
 import pkg/questionable
+import pkg/questionable/results
 import pkg/chronos
 
 import ./iter
 
 export iter
 
-## AsyncIter[T] is similar to `Iter[Future[T]]` with addition of methods specific to asynchronous processing
-##
+type
+  AsyncDispose* = proc(): Future[void] {.async, gcsafe, closure.}
+  AsyncIsDisposed* = proc(): bool {.raises: [], gcsafe, closure.}
 
-type AsyncIter*[T] = ref object
-  finished: bool
-  next*: GenNext[Future[T]]
+  AsyncIter*[T] = ref object
+    finished: bool
+    next*: GenNext[Future[T]]
+    disposeImpl: AsyncDispose
+    disposedImpl: AsyncIsDisposed
+
+proc defaultAsyncDispose(): Future[void] {.async.} =
+  discard
+
+proc defaultAsyncIsDisposed(): bool =
+  false
 
 proc finish*[T](self: AsyncIter[T]): void =
   self.finished = true
 
 proc finished*[T](self: AsyncIter[T]): bool =
   self.finished
+
+proc disposed*[T](self: AsyncIter[T]): bool =
+  self.disposedImpl()
+
+proc dispose*[T](self: AsyncIter[T]): Future[void] {.async.} =
+  ## Dispose the iterator and release any underlying resources.
+  ## Caller is responsible for calling this when done with the iterator.
+  ## Idempotent - safe to call multiple times.
+  ## Sets finished = true to prevent further iteration.
+  ## Uses noCancel to ensure cleanup completes even if caller is cancelled.
+  if not self.disposed:
+    self.finished = true
+    await noCancel self.disposeImpl()
 
 iterator items*[T](self: AsyncIter[T]): Future[T] =
   while not self.finished:
@@ -42,15 +82,19 @@ proc new*[T](
     _: type AsyncIter[T],
     genNext: GenNext[Future[T]],
     isFinished: IsFinished,
+    dispose: AsyncDispose = defaultAsyncDispose,
+    isDisposed: AsyncIsDisposed = defaultAsyncIsDisposed,
     finishOnErr: bool = true,
 ): AsyncIter[T] =
   ## Creates a new Iter using elements returned by supplier function `genNext`.
   ## Iter is finished whenever `isFinished` returns true.
-  ##
+  ## Caller is responsible for calling `dispose()` when done with the iterator.
 
-  var iter = AsyncIter[T]()
+  var iter = AsyncIter[T](disposeImpl: dispose, disposedImpl: isDisposed)
 
   proc next(): Future[T] {.async.} =
+    if iter.disposed:
+      raise newException(CatchableError, "AsyncIter is disposed - cannot call next()")
     if not iter.finished:
       var item: T
       try:
@@ -78,7 +122,14 @@ proc new*[T](
   return iter
 
 proc mapAsync*[T, U](iter: Iter[T], fn: Function[T, Future[U]]): AsyncIter[U] =
-  AsyncIter[U].new(genNext = () => fn(iter.next()), isFinished = () => iter.finished())
+  # Chain dispose to underlying sync iterator
+  AsyncIter[U].new(
+    genNext = () => fn(iter.next()),
+    isFinished = () => iter.finished(),
+    dispose = proc(): Future[void] {.async.} =
+      iter.dispose(),
+    isDisposed = () => iter.disposed,
+  )
 
 proc new*[U, V: Ordinal](_: type AsyncIter[U], slice: HSlice[U, V]): AsyncIter[U] =
   ## Creates new Iter from a slice
@@ -108,17 +159,29 @@ proc empty*[T](_: type AsyncIter[T]): AsyncIter[T] =
   ## Creates an empty AsyncIter
   ##
 
+  var disposed = false
+
   proc genNext(): Future[T] {.raises: [CatchableError].} =
     raise newException(CatchableError, "Next item requested from an empty AsyncIter")
 
   proc isFinished(): bool =
     true
 
-  AsyncIter[T].new(genNext, isFinished)
+  proc onDispose(): Future[void] {.async.} =
+    disposed = true
+
+  proc isDisposed(): bool =
+    disposed
+
+  AsyncIter[T].new(genNext, isFinished, onDispose, isDisposed)
 
 proc map*[T, U](iter: AsyncIter[T], fn: Function[T, Future[U]]): AsyncIter[U] =
+  # Chain dispose to underlying iterator
   AsyncIter[U].new(
-    genNext = () => iter.next().flatMap(fn), isFinished = () => iter.finished
+    genNext = () => iter.next().flatMap(fn),
+    isFinished = () => iter.finished,
+    dispose = () => iter.dispose(),
+    isDisposed = () => iter.disposed,
   )
 
 proc mapFilter*[T, U](
@@ -153,7 +216,13 @@ proc mapFilter*[T, U](
     nextFutU.isNone
 
   await tryFetch()
-  AsyncIter[U].new(genNext, isFinished)
+  # Chain dispose to underlying iterator
+  AsyncIter[U].new(
+    genNext,
+    isFinished,
+    dispose = () => iter.dispose(),
+    isDisposed = () => iter.disposed,
+  )
 
 proc filter*[T](
     iter: AsyncIter[T], predicate: Function[T, Future[bool]]
@@ -164,12 +233,14 @@ proc filter*[T](
     else:
       T.none
 
+  # mapFilter already chains dispose to iter
   await mapFilter[T, T](iter, wrappedPredicate)
 
 proc delayBy*[T](iter: AsyncIter[T], d: Duration): AsyncIter[T] =
   ## Delays emitting each item by given duration
   ##
 
+  # map already chains dispose to iter
   map[T, T](
     iter,
     proc(t: T): Future[T] {.async.} =

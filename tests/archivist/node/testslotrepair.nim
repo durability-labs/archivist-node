@@ -22,6 +22,7 @@ import ../../examples
 import ../helpers
 
 import ./helpers
+import ../helpers/nodeutils
 
 proc fetchStreamData(stream: LPStream, datasetSize: int): Future[seq[byte]] {.async.} =
   var buf = newSeq[byte](datasetSize)
@@ -34,7 +35,7 @@ proc flatten[T](s: seq[seq[T]]): seq[T] =
     t &= ss
   return t
 
-asyncchecksuite "Test Node - Slot Repair":
+suite "Test Node - Slot Repair":
   let
     numNodes = 12
     config = NodeConfig(
@@ -52,12 +53,13 @@ asyncchecksuite "Test Node - Slot Repair":
     cluster: NodesCluster
 
     nodes: seq[ArchivistNodeRef]
-    localStores: seq[BlockStore]
+    localStores: seq[RepoStore]
 
   setup:
     cluster = generateNodes(numNodes, config = config)
     nodes = cluster.nodes
     localStores = cluster.localStores
+    await connectNodes(cluster)
 
   teardown:
     await cluster.cleanup()
@@ -66,15 +68,16 @@ asyncchecksuite "Test Node - Slot Repair":
 
   test "repair slots (2,1)":
     let
-      expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+      expiry = (getTime() + DefaultOverlayTtl.toTimesDuration + 1.hours).toUnix
       numBlocks = 5
       datasetSize = numBlocks * DefaultBlockSize.int
       ecK = 2
       ecM = 1
       localStore = localStores[0]
       store = nodes[0].blockStore
-      blocks =
+      blocks = (
         await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+      ).tryGet
       data = (
         block:
           collect(newSeq):
@@ -84,17 +87,18 @@ asyncchecksuite "Test Node - Slot Repair":
     check blocks.len == numBlocks
 
     # Populate manifest in local store
-    manifest = await storeDataGetManifest(localStore, blocks)
+    manifest = (await storeDataGetManifest(localStore, blocks)).tryGet()
     let
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-      erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+      erasure = Erasure.new(
+        store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool
+      )
 
     (await localStore.putBlock(manifestBlock)).tryGet()
 
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
-    builder = Poseidon2Builder.new(localStore, protected).tryGet()
+    builder = Poseidon2Builder.new(store, localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
     verifiableBlock =
       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
@@ -149,15 +153,16 @@ asyncchecksuite "Test Node - Slot Repair":
 
   test "repair slots (3,2)":
     let
-      expiry = (getTime() + DefaultBlockTtl.toTimesDuration + 1.hours).toUnix
+      expiry = (getTime() + DefaultOverlayTtl.toTimesDuration + 1.hours).toUnix
       numBlocks = 40
       datasetSize = numBlocks * DefaultBlockSize.int
       ecK = 3
       ecM = 2
       localStore = localStores[0]
       store = nodes[0].blockStore
-      blocks =
+      blocks = (
         await makeRandomBlocks(datasetSize = datasetSize, blockSize = DefaultBlockSize)
+      ).tryGet
       data = (
         block:
           collect(newSeq):
@@ -167,17 +172,18 @@ asyncchecksuite "Test Node - Slot Repair":
     check blocks.len == numBlocks
 
     # Populate manifest in local store
-    manifest = await storeDataGetManifest(localStore, blocks)
+    manifest = (await storeDataGetManifest(localStore, blocks)).tryGet()
     let
       manifestBlock =
         bt.Block.new(manifest.encode().tryGet(), codec = ManifestCodec).tryGet()
-      erasure =
-        Erasure.new(store, leoEncoderProvider, leoDecoderProvider, cluster.taskpool)
+      erasure = Erasure.new(
+        store, localStore, leoEncoderProvider, leoDecoderProvider, cluster.taskpool
+      )
 
     (await localStore.putBlock(manifestBlock)).tryGet()
 
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
-    builder = Poseidon2Builder.new(localStore, protected).tryGet()
+    builder = Poseidon2Builder.new(store, localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
     verifiableBlock =
       bt.Block.new(verifiable.encode().tryGet(), codec = ManifestCodec).tryGet()
