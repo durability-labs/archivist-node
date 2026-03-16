@@ -256,14 +256,14 @@ type
     .}: NBytes
 
     overlayTtl* {.
-      desc: "Default block timeout in seconds - 0 disables the ttl",
+      desc: "Default overlay timeout in seconds - 0 disables the ttl",
       defaultValue: DefaultOverlayTtl.seconds,
       defaultValueDesc: $DefaultOverlayTtl,
-      name: "block-ttl",
+      name: "overlay-ttl",
       abbr: "t"
     .}: Duration
 
-    blockMaintenanceInterval* {.
+    overlayMaintenanceInterval* {.
       desc:
         "Time interval in seconds - determines frequency of block " &
         "maintenance cycle: how often blocks are checked " & "for expiration and cleanup",
@@ -272,7 +272,7 @@ type
       name: "block-mi"
     .}: Duration
 
-    blockMaintenanceNumberOfBlocks* {.
+    overlayMaintenanceNumberOfBlocks* {.
       desc: "Number of blocks to check every maintenance cycle",
       defaultValue: DefaultNumBlocksPerInterval,
       defaultValueDesc: $DefaultNumBlocksPerInterval,

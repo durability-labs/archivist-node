@@ -40,7 +40,7 @@ type NodeBuilder = ref object
   failProofs: ?int
   storageQuota: ?int
   blockTtl: ?int
-  blockMaintenanceInterval: ?int
+  overlayMaintenanceInterval: ?int
   waitForOutput: ?string
   setInitialAvailability: bool
 
@@ -175,8 +175,8 @@ func blockTtl*(builder: NodeBuilder, ttl: int): NodeBuilder =
   builder.blockTtl = some ttl
   builder
 
-func blockMaintenanceInterval*(builder: NodeBuilder, interval: int): NodeBuilder =
-  builder.blockMaintenanceInterval = some interval
+func overlayMaintenanceInterval*(builder: NodeBuilder, interval: int): NodeBuilder =
+  builder.overlayMaintenanceInterval = some interval
   builder
 
 proc dataDirResolved(builder: NodeBuilder): string =
@@ -275,8 +275,8 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
     arguments.add("--storage-quota=" & $quota)
   if blockTtl =? builder.blockTtl:
     arguments.add("--block-ttl=" & $blockTtl)
-  if blockMaintenanceInterval =? builder.blockMaintenanceInterval:
-    arguments.add("--block-mi=" & $blockMaintenanceInterval)
+  if overlayMaintenanceInterval =? builder.overlayMaintenanceInterval:
+    arguments.add("--block-mi=" & $overlayMaintenanceInterval)
   let dataDir = builder.dataDirResolved
   let address = builder.apiBindAddressResolved
   let port = await builder.apiPortResolved

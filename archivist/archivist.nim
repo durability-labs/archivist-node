@@ -218,8 +218,8 @@ proc new*(
 
     maintenance = BlockMaintainer.new(
       repoStore,
-      interval = config.blockMaintenanceInterval,
-      numberOfBlocksPerInterval = config.blockMaintenanceNumberOfBlocks,
+      interval = config.overlayMaintenanceInterval,
+      numberOfBlocksPerInterval = config.overlayMaintenanceNumberOfBlocks,
     )
 
     peerStore = PeerCtxStore.new()
