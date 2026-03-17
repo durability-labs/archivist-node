@@ -9,11 +9,7 @@ import pkg/archivist/blocktype as bt
 import pkg/archivist/slots
 import pkg/archivist/stores
 import pkg/archivist/conf
-import pkg/confutils/defs
 import pkg/poseidon2/io
-import pkg/archivist/utils/poseidon2digest
-import pkg/archivist/nat
-import pkg/archivist/nat/utils
 import pkg/taskpools
 import pkg/kvstore
 import ./helpers
@@ -24,7 +20,6 @@ suite "Test CircomCompat Prover":
     samples = 5
     blockSize = DefaultBlockSize
     cellSize = DefaultCellSize
-    tp = Taskpool.new()
     challenge = 1234567.toF.toBytes.toArray32
 
   var
