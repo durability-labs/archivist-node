@@ -20,8 +20,8 @@ import pkg/chronicles
 import pkg/libp2p
 
 import ./utils
-import ./utils/natutils
 import ./utils/addrutils
+import ./nat/utils
 
 const
   UPNP_TIMEOUT = 200 # ms

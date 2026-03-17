@@ -13,7 +13,7 @@ import pkg/confutils/defs
 import pkg/poseidon2/io
 import pkg/archivist/utils/poseidon2digest
 import pkg/archivist/nat
-import pkg/archivist/utils/natutils
+import pkg/archivist/nat/utils
 import pkg/taskpools
 import pkg/kvstore
 import ./helpers

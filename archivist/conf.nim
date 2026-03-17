@@ -37,7 +37,7 @@ import ./marketplace
 import ./units
 import ./utils
 import ./nat
-import ./utils/natutils
+import ./nat/utils
 
 when defaultChroniclesStream.outputs.type.arity == 3:
   import std/terminal

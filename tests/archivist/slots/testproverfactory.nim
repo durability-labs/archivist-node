@@ -8,7 +8,7 @@ import pkg/confutils/defs
 import pkg/archivist/conf
 import pkg/archivist/slots/proofs/backends
 import pkg/archivist/slots/proofs/proverfactory {.all.}
-import pkg/archivist/utils/natutils
+import pkg/archivist/nat/utils
 
 import ../helpers
 import ../examples
