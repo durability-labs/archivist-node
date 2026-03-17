@@ -145,7 +145,7 @@ type
     nat* {.
       desc:
         "Specify method to use for determining public address. " &
-        "Must be one of: any, none, upnp, pmp, extip:<IP>",
+        "Must be one of: any, none, upnp, pmp, extip:<IP>, pmp:<gateway>, any:<gateway>",
       defaultValue: defaultNatConfig(),
       defaultValueDesc: "any",
       name: "nat"
@@ -569,27 +569,29 @@ proc parseCmdArg*(T: type SignedPeerRecord, uri: string): T =
     quit QuitFailure
   res
 
-func parseCmdArg*(T: type NatConfig, p: string): T {.raises: [ValueError].} =
-  case p.toLowerAscii
+func parseCmdArg*(T: type NatConfig, nat: string): T {.raises: [ValueError].} =
+  let parts = nat.split(":", 1)
+  let strategy = parts[0]
+  var address: ?IpAddress
+  if argument =? parts.?[1]:
+    without parsed =? parseIpAddress(argument).catch:
+      raise newException(ValueError, "Not a valid IP address: " & argument)
+    address = some parsed
+  case strategy
   of "any":
-    NatConfig.anyStrategy()
+    NatConfig.anyStrategy(gateway = address)
   of "none":
     NatConfig.noNat()
   of "upnp":
     NatConfig.upnp()
   of "pmp":
-    NatConfig.pmp()
+    NatConfig.pmp(gateway = address)
+  of "extip":
+    without ip =? address:
+      raise newException(ValueError, "Missing external IP address")
+    NatConfig.externalIp(ip)
   else:
-    if p.startsWith("extip:"):
-      try:
-        let ip = parseIpAddress(p[6 ..^ 1])
-        NatConfig.externalIp(ip)
-      except ValueError:
-        let error = "Not a valid IP address: " & p[6 ..^ 1]
-        raise newException(ValueError, error)
-    else:
-      let error = "Not a valid NAT option: " & p
-      raise newException(ValueError, error)
+    raise newException(ValueError, "Not a valid NAT option: " & nat)
 
 proc completeCmdArg*(T: type NatConfig, val: string): seq[string] =
   return @[]
