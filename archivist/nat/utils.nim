@@ -4,12 +4,6 @@ import std/[tables, hashes], pkg/results, chronos, chronicles
 import std/net
 import pkg/libp2p
 
-type NatStrategy* = enum
-  NatAny
-  NatUpnp
-  NatPmp
-  NatNone
-
 type IpLimits* = object
   limit*: uint
   ips: Table[IpAddress, uint]

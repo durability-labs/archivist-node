@@ -12,7 +12,7 @@ import pkg/archivist/blocktype as bt
 import pkg/archivist/blockexchange
 import pkg/archivist/systemclock
 import pkg/archivist/nat
-import pkg/archivist/nat/utils
+import pkg/archivist/nat/config
 import pkg/archivist/slots
 
 import pkg/archivist/node

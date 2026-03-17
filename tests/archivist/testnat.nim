@@ -5,7 +5,7 @@ import pkg/libp2p/[multiaddress, multihash, multicodec]
 import pkg/results
 
 import ../../archivist/nat
-import ../../archivist/utils
+import ../../archivist/nat/config
 
 suite "NAT Address Tests":
   test "nattedAddress with local addresses":

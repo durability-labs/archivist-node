@@ -7,7 +7,7 @@ import pkg/taskpools
 import pkg/confutils/defs
 import pkg/archivist/conf
 import pkg/archivist/slots/proofs/proverfactory {.all.}
-import pkg/archivist/nat/utils
+import pkg/archivist/nat/config
 
 import ../helpers
 import ../examples

@@ -21,6 +21,7 @@ import pkg/libp2p
 
 import ./utils
 import ./utils/addrutils
+import ./nat/config
 import ./nat/utils
 
 const
@@ -37,11 +38,6 @@ type PortMappings* = object
 
 type PortMappingArgs =
   tuple[strategy: NatStrategy, tcpPort, udpPort: Port, description: string]
-
-type NatConfig* = object
-  case hasExtIp*: bool
-  of true: extIp*: IpAddress
-  of false: nat*: NatStrategy
 
 var
   upnp {.threadvar.}: Miniupnp
