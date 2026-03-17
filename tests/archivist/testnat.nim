@@ -12,7 +12,7 @@ suite "NAT Address Tests":
     # Setup test data
     let
       udpPort = Port(1234)
-      natConfig = NatConfig(hasExtIp: true, extIp: parseIpAddress("8.8.8.8"))
+      natConfig = NatConfig.externalIp(parseIpAddress("8.8.8.8"))
 
       # Create test addresses
       localAddr = MultiAddress.init("/ip4/127.0.0.1/tcp/5000").expect("valid multiaddr")

@@ -42,7 +42,7 @@ type PortMappingArgs =
 var
   upnp {.threadvar.}: Miniupnp
   npmp {.threadvar.}: NatPmp
-  strategy = NatStrategy.NatNone
+  strategy = NatStrategy.None
   natClosed: Atomic[bool]
   extIp: Option[IpAddress]
   activeMappings: seq[PortMappings]
@@ -63,7 +63,7 @@ type PrefSrcStatus = enum
 proc getExternalIP*(natStrategy: NatStrategy, quiet = false): Option[IpAddress] =
   var externalIP: IpAddress
 
-  if natStrategy == NatStrategy.NatAny or natStrategy == NatStrategy.NatUpnp:
+  if natStrategy == NatStrategy.Any or natStrategy == NatStrategy.Upnp:
     if upnp == nil:
       upnp = newMiniupnp()
 
@@ -99,13 +99,13 @@ proc getExternalIP*(natStrategy: NatStrategy, quiet = false): Option[IpAddress] 
           # if we got this far, UPnP is working and we don't need to try NAT-PMP
           try:
             externalIP = parseIpAddress(ires.value)
-            strategy = NatStrategy.NatUpnp
+            strategy = NatStrategy.Upnp
             return some(externalIP)
           except ValueError as e:
             error "parseIpAddress() exception", err = e.msg
             return
 
-  if natStrategy == NatStrategy.NatAny or natStrategy == NatStrategy.NatPmp:
+  if natStrategy == NatStrategy.Any or natStrategy == NatStrategy.Pmp:
     if npmp == nil:
       npmp = newNatPmp()
     let nres = npmp.init()
@@ -118,7 +118,7 @@ proc getExternalIP*(natStrategy: NatStrategy, quiet = false): Option[IpAddress] 
       else:
         try:
           externalIP = parseIpAddress($(nires.value))
-          strategy = NatStrategy.NatPmp
+          strategy = NatStrategy.Pmp
           return some(externalIP)
         except ValueError as e:
           error "parseIpAddress() exception", err = e.msg
@@ -170,7 +170,7 @@ proc doPortMapping(
     extTcpPort: Port
     extUdpPort: Port
 
-  if strategy == NatStrategy.NatUpnp:
+  if strategy == NatStrategy.Upnp:
     for t in [(tcpPort, UPNPProtocol.TCP), (udpPort, UPNPProtocol.UDP)]:
       let
         (port, protocol) = t
@@ -200,7 +200,7 @@ proc doPortMapping(
           extTcpPort = port
         of UPNPProtocol.UDP:
           extUdpPort = port
-  elif strategy == NatStrategy.NatPmp:
+  elif strategy == NatStrategy.Pmp:
     for t in [(tcpPort, NatPmpProtocol.TCP), (udpPort, NatPmpProtocol.UDP)]:
       let
         (port, protocol) = t
@@ -270,7 +270,7 @@ proc stopNatThreads() {.noconv.} =
 
   let ipres = getExternalIP(strategy, quiet = true)
   if ipres.isSome:
-    if strategy == NatStrategy.NatUpnp:
+    if strategy == NatStrategy.Upnp:
       for entry in activeMappings:
         for t in [
           (entry.externalTcpPort, entry.internalTcpPort, UPNPProtocol.TCP),
@@ -284,7 +284,7 @@ proc stopNatThreads() {.noconv.} =
           else:
             debug "UPnP: deleted port mapping",
               externalPort = eport, internalPort = iport, protocol = protocol
-    elif strategy == NatStrategy.NatPmp:
+    elif strategy == NatStrategy.Pmp:
       for entry in activeMappings:
         for t in [
           (entry.externalTcpPort, entry.internalTcpPort, NatPmpProtocol.TCP),
@@ -368,20 +368,19 @@ proc setupAddress*(
   ## external IP can be figured out by other means at a later stage.
   ## TODO: Allow for tcp or udp bind ports to be optional.
 
-  if natConfig.hasExtIp:
+  case natConfig.strategy
+  of NatStrategy.ExternalIp:
     # any required port redirection must be done by hand
-    return (some(natConfig.extIp), some(tcpPort), some(udpPort))
-
-  case natConfig.nat
-  of NatStrategy.NatAny:
+    return (natConfig.externalIp, some(tcpPort), some(udpPort))
+  of NatStrategy.Any:
     let (prefSrcIp, prefSrcStatus) = getRoutePrefSrc(bindIp)
 
     case prefSrcStatus
     of NoRoutingInfo, PrefSrcIsPublic, BindAddressIsPublic:
       return (prefSrcIp, some(tcpPort), some(udpPort))
     of PrefSrcIsPrivate, BindAddressIsPrivate:
-      return setupNat(natConfig.nat, tcpPort, udpPort, clientId)
-  of NatStrategy.NatNone:
+      return setupNat(natConfig.strategy, tcpPort, udpPort, clientId)
+  of NatStrategy.None:
     let (prefSrcIp, prefSrcStatus) = getRoutePrefSrc(bindIp)
 
     case prefSrcStatus
@@ -393,8 +392,8 @@ proc setupAddress*(
     of BindAddressIsPrivate:
       error "Bind IP is not a public IP address. Should not use --nat:none option"
       return (none(IpAddress), some(tcpPort), some(udpPort))
-  of NatStrategy.NatUpnp, NatStrategy.NatPmp:
-    return setupNat(natConfig.nat, tcpPort, udpPort, clientId)
+  of NatStrategy.Upnp, NatStrategy.Pmp:
+    return setupNat(natConfig.strategy, tcpPort, udpPort, clientId)
 
 proc nattedAddress*(
     natConfig: NatConfig, addresses: seq[MultiAddress], udpPort: Port

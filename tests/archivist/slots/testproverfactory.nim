@@ -24,7 +24,7 @@ suite "Test BackendFactory":
   test "Should initialize with correct nimGroth16 config files":
     let config = NodeConf(
       persistence: true,
-      nat: NatConfig(hasExtIp: false, nat: NatNone),
+      nat: NatConfig.noNat,
       metricsAddress: parseIpAddress("127.0.0.1"),
       prover: true,
       marketplaceAddress: EthAddress.example.some,
@@ -42,7 +42,7 @@ suite "Test BackendFactory":
   test "Should initialize with correct circom compat config files":
     let config = NodeConf(
       persistence: true,
-      nat: NatConfig(hasExtIp: false, nat: NatNone),
+      nat: NatConfig.noNat,
       metricsAddress: parseIpAddress("127.0.0.1"),
       prover: true,
       marketplaceAddress: EthAddress.example.some,
@@ -60,7 +60,7 @@ suite "Test BackendFactory":
   test "Should initialize circom compat from local directory":
     let config = NodeConf(
       persistence: true,
-      nat: NatConfig(hasExtIp: false, nat: NatNone),
+      nat: NatConfig.noNat,
       metricsAddress: parseIpAddress("127.0.0.1"),
       prover: true,
       marketplaceAddress: EthAddress.example.some,
@@ -78,7 +78,7 @@ suite "Test BackendFactory":
   test "Should initialize nim groth16 from local directory":
     let config = NodeConf(
       persistence: true,
-      nat: NatConfig(hasExtIp: false, nat: NatNone),
+      nat: NatConfig.noNat,
       metricsAddress: parseIpAddress("127.0.0.1"),
       prover: true,
       marketplaceAddress: EthAddress.example.some,
@@ -97,7 +97,7 @@ suite "Test BackendFactory":
     let
       config = NodeConf(
         persistence: true,
-        nat: NatConfig(hasExtIp: false, nat: NatNone),
+        nat: NatConfig.noNat,
         metricsAddress: parseIpAddress("127.0.0.1"),
         prover: true,
         proverBackend: ProverBackendCmd.nimgroth16,

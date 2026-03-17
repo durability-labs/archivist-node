@@ -36,7 +36,6 @@ import ./stores
 import ./marketplace
 import ./units
 import ./utils
-import ./nat
 import ./nat/config
 
 when defaultChroniclesStream.outputs.type.arity == 3:
@@ -498,7 +497,7 @@ func defaultAddress*(conf: NodeConf): IpAddress =
   result = static parseIpAddress("127.0.0.1")
 
 func defaultNatConfig*(): NatConfig =
-  result = NatConfig(hasExtIp: false, nat: NatStrategy.NatAny)
+  result = NatConfig.anyStrategy()
 
 proc circuitDirPath*(self: NodeConf): string =
   ## Returns the circuit directory as an absolute path
@@ -573,18 +572,18 @@ proc parseCmdArg*(T: type SignedPeerRecord, uri: string): T =
 func parseCmdArg*(T: type NatConfig, p: string): T {.raises: [ValueError].} =
   case p.toLowerAscii
   of "any":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatAny)
+    NatConfig.anyStrategy()
   of "none":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatNone)
+    NatConfig.noNat()
   of "upnp":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatUpnp)
+    NatConfig.upnp()
   of "pmp":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatPmp)
+    NatConfig.pmp()
   else:
     if p.startsWith("extip:"):
       try:
         let ip = parseIpAddress(p[6 ..^ 1])
-        NatConfig(hasExtIp: true, extIp: ip)
+        NatConfig.externalIp(ip)
       except ValueError:
         let error = "Not a valid IP address: " & p[6 ..^ 1]
         raise newException(ValueError, error)
