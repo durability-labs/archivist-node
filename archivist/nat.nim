@@ -109,7 +109,11 @@ proc getExternalIP*(config: NatConfig, quiet = false): Option[IpAddress] =
   if config.strategy in [NatStrategy.Any, NatStrategy.Pmp]:
     if npmp == nil:
       npmp = newNatPmp()
-    let nres = npmp.init()
+    var nres: Result[bool, cstring]
+    if gateway =? config.gateway:
+      nres = npmp.init(gateway)
+    else:
+      nres = npmp.init()
     if nres.isErr:
       debug "NAT-PMP", msg = nres.error
     else:
