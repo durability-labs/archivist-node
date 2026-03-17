@@ -11,6 +11,7 @@
 
 import
   std/[options, os, times, net, atomics],
+  std/exitprocs,
   nat_traversal/[miniupnpc, natpmp],
   json_serialization/std/net
 
@@ -328,7 +329,7 @@ proc redirectPorts*(
       # atexit() in disguise
       if natThreads.len == 1:
         # we should register the thread termination function only once
-        addQuitProc(stopNatThreads)
+        addExitProc(stopNatThreads)
     except Exception as exc:
       warn "Failed to create NAT port mapping renewal thread", exc = exc.msg
 
