@@ -1,5 +1,6 @@
 --noNimblePath
 include "vendor/nimble/paths.nims"
+include "vendor/nimble/install.nims"
 
 when defined(release):
   switch(
@@ -10,7 +11,7 @@ else:
     "nimcache", joinPath(currentSourcePath.parentDir, "nimcache/debug/$projectName")
   )
 
-# bypass Nim TLSF allocator to avoid cross-thread free accumulation
+# bypass Nim TLSF allocator to avoid cross-thread leaks
 switch("define", "useMalloc")
 
 when defined(release):
@@ -20,3 +21,9 @@ when defined(release):
   switch("define", "lto_incremental")
   switch("passC", "-flto")
   switch("passl", "-flto")
+  # CPU-specific optimizations (use native arch)
+  switch("passC", "-march=native")
+  switch("passl", "-march=native")
+  # Optimize for speed over size
+  switch("opt", "speed")
+  switch("passC", "-O3")

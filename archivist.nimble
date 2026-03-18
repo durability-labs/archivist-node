@@ -8,25 +8,15 @@ binDir = "build"
 import std/os
 import "./vendor/nimble/deps.nims"
 
-before build:
-  exec "nim vendor" / "nimble" / "install.nims"
-
-before test:
-  exec "nim vendor" / "nimble" / "install.nims"
-
 task test, "Run node tests":
-  exec "nim -d:release -d:danger c -r tests" / "testNode"
+  exec "nim -d:release c -r tests" / "testNode"
 
 task testContracts, "Run contract tests":
   exec "nim c -r tests" / "testContracts"
 
-before testIntegration:
-  exec "nim vendor" / "nimble" / "install.nims"
-
 task testIntegration, "Run integration tests":
   exec "nim c" &
     " --define:release" &
-    " --define:danger" &
     " --define:archivist_system_testing_options" &
     " --out:build" / "integration-test" / "archivist-for-testing".toExe &
     " archivist"
