@@ -58,3 +58,14 @@ func gateway*(config: NatConfig): ?IpAddress =
   case config.strategy
   of NatStrategy.Pmp, NatStrategy.Any: config.gateway
   else: IpAddress.none
+
+func `==`*(a, b: NatConfig): bool =
+  if a.strategy != b.strategy:
+    return false
+  case a.strategy
+  of NatStrategy.Any, NatStrategy.Pmp:
+    a.gateway == b.gateway
+  of NatStrategy.Upnp, NatStrategy.None:
+    true
+  of NatStrategy.ExternalIp:
+    a.ip == b.ip

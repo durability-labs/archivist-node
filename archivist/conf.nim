@@ -36,7 +36,7 @@ import ./stores
 import ./marketplace
 import ./units
 import ./utils
-import ./nat/config
+import ./conf/nat
 
 when defaultChroniclesStream.outputs.type.arity == 3:
   import std/terminal
@@ -570,28 +570,9 @@ proc parseCmdArg*(T: type SignedPeerRecord, uri: string): T =
   res
 
 func parseCmdArg*(T: type NatConfig, nat: string): T {.raises: [ValueError].} =
-  let parts = nat.split(":", 1)
-  let strategy = parts[0]
-  var address: ?IpAddress
-  if argument =? parts .? [1]:
-    without parsed =? parseIpAddress(argument).catch:
-      raise newException(ValueError, "Not a valid IP address: " & argument)
-    address = some parsed
-  case strategy
-  of "any":
-    NatConfig.anyStrategy(gateway = address)
-  of "none":
-    NatConfig.noNat()
-  of "upnp":
-    NatConfig.upnp()
-  of "pmp":
-    NatConfig.pmp(gateway = address)
-  of "extip":
-    without ip =? address:
-      raise newException(ValueError, "Missing external IP address")
-    NatConfig.externalIp(ip)
-  else:
-    raise newException(ValueError, "Not a valid NAT option: " & nat)
+  without config =? parseNatConfig(nat), error:
+    raise newException(ValueError, error.msg)
+  config
 
 proc completeCmdArg*(T: type NatConfig, val: string): seq[string] =
   return @[]
