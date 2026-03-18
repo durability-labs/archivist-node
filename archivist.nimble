@@ -15,7 +15,7 @@ before test:
   exec "nim vendor" / "nimble" / "install.nims"
 
 task test, "Run node tests":
-  exec "nim c -r tests" / "testNode"
+  exec "nim -d:release -d:danger c -r tests" / "testNode"
 
 task testContracts, "Run contract tests":
   exec "nim c -r tests" / "testContracts"
@@ -26,6 +26,7 @@ before testIntegration:
 task testIntegration, "Run integration tests":
   exec "nim c" &
     " --define:release" &
+    " --define:danger" &
     " --define:archivist_system_testing_options" &
     " --out:build" / "integration-test" / "archivist-for-testing".toExe &
     " archivist"
