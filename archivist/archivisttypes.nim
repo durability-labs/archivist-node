@@ -9,6 +9,7 @@
 
 {.push raises: [].}
 
+import std/math
 import std/tables
 import std/sugar
 
@@ -25,13 +26,13 @@ export tables
 
 const
   # Size of blocks for storage / network exchange,
-  DefaultBlockSize* = NBytes 1024 * 64
-  DefaultCellSize* = NBytes 2048
+  DefaultBlockSize* = 512.KiBs
+  DefaultCellSize* = 2.KiBs
 
   # Proving defaults
   DefaultMaxSlotDepth* = 32
   DefaultMaxDatasetDepth* = 8
-  DefaultBlockDepth* = 5
+  DefaultBlockDepth* = int(log2(float(DefaultBlockSize div DefaultCellSize)))
   DefaultCellElms* = 67
   DefaultSamplesNum* = 5
 

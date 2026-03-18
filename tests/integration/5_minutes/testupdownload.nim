@@ -44,9 +44,9 @@ suite "Uploads and downloads":
   let exampleData = "some file contents"
   let exampleDataManifest =
     %*{
-      "treeCid": "zDzSvJTezk7bJNQqFq8k1iHXY84psNuUfZVusA5bBQQUSuyzDSVL",
+      "treeCid": "zDzSvJTfBxWb7YJRbrX9LMbkm4FkhvBx5pRb6mc9ZntsGcHbZeiq",
       "datasetSize": 18,
-      "blockSize": 65536,
+      "blockSize": 524288,
       "protected": false,
       "filename": nil,
       "mimetype": nil,

@@ -23,6 +23,10 @@ import ../backends/helpers
 import ../helpers
 import ../../helpers
 
+let
+  blockCells = DefaultBlockSize div DefaultCellSize
+  blockDepth = DefaultBlockDepth
+
 suite "Test Sampler - control samples":
   var
     inputData: string
@@ -36,7 +40,8 @@ suite "Test Sampler - control samples":
 
   test "Should verify control samples":
     let
-      blockCells = 32
+      numSlotBlocks = proofInput.nCellsPerSlot div blockCells
+      slotDepth = ceilingLog2(numSlotBlocks)
       cellIdxs =
         proofInput.entropy.cellIndices(proofInput.slotRoot, proofInput.nCellsPerSlot, 5)
 
@@ -48,13 +53,13 @@ suite "Test Sampler - control samples":
         cellProof = Poseidon2Proof.init(
           cellIdx.toCellInBlk(blockCells),
           proofInput.nCellsPerSlot,
-          sample.merklePaths[0 ..< 5],
+          sample.merklePaths[0 ..< blockDepth],
         ).tryGet
 
         slotProof = Poseidon2Proof.init(
           cellIdx.toBlkInSlot(blockCells),
           proofInput.nCellsPerSlot,
-          sample.merklePaths[5 ..< 9],
+          sample.merklePaths[blockDepth ..< blockDepth + slotDepth],
         ).tryGet
 
         cellData = sample.cellData
@@ -64,9 +69,13 @@ suite "Test Sampler - control samples":
       check slotProof.verify(slotLeaf, proofInput.slotRoot).tryGet
 
   test "Should verify control dataset root":
-    let datasetProof = Poseidon2Proof.init(
-      proofInput.slotIndex, proofInput.nSlotsPerDataSet, proofInput.slotProof[0 ..< 4]
-    ).tryGet
+    let
+      datasetDepth = ceilingLog2(proofInput.nSlotsPerDataSet)
+      datasetProof = Poseidon2Proof.init(
+        proofInput.slotIndex,
+        proofInput.nSlotsPerDataSet,
+        proofInput.slotProof[0 ..< datasetDepth],
+      ).tryGet
 
     check datasetProof.verify(proofInput.slotRoot, proofInput.datasetRoot).tryGet
 
@@ -140,13 +149,15 @@ suite "Test Sampler":
         sample = (await sampler.getSample(cellIdx, slotTreeCid, slotRoot)).tryGet
 
         cellProof = Poseidon2Proof.init(
-          cellIdx.toCellInBlk(nBlockCells), nSlotCells, sample.merklePaths[0 ..< 5]
+          cellIdx.toCellInBlk(nBlockCells),
+          nSlotCells,
+          sample.merklePaths[0 ..< blockDepth],
         ).tryGet
 
         slotProof = Poseidon2Proof.init(
           cellIdx.toBlkInSlot(nBlockCells),
           nSlotCells,
-          sample.merklePaths[5 ..< sample.merklePaths.len],
+          sample.merklePaths[blockDepth ..< sample.merklePaths.len],
         ).tryGet
 
         cellData = sample.cellData

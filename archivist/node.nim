@@ -797,7 +797,7 @@ proc storeSlot*(
     return failure(err)
 
   if repair:
-    trace "start repairing slot", slotIdx
+    trace "Start repairing slot", slotIdx
     let erasure = Erasure.new(
       self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
       self.taskpool,

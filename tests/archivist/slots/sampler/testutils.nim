@@ -23,7 +23,7 @@ import ../../helpers
 import ../../examples
 import ../../merkletree/helpers
 
-asyncchecksuite "Test proof sampler utils":
+suite "Test proof sampler utils":
   let cellsPerBlock = DefaultBlockSize div DefaultCellSize
 
   var
@@ -89,7 +89,7 @@ asyncchecksuite "Test proof sampler utils":
     check:
       slotCellIndices(3) == getExpectedIndices(3)
 
-  for (input, expected) in [(10, 0), (31, 0), (32, 1), (63, 1), (64, 2)]:
+  for (input, expected) in [(10, 0), (255, 0), (256, 1), (511, 1), (512, 2)]:
     test "Can get slotBlockIndex from slotCellIndex (" & $input & " -> " & $expected &
       ")":
       let slotBlockIndex = toBlkInSlot(input, numCells = cellsPerBlock)
@@ -97,7 +97,7 @@ asyncchecksuite "Test proof sampler utils":
       check:
         slotBlockIndex == expected
 
-  for (input, expected) in [(10, 10), (31, 31), (32, 0), (63, 31), (64, 0)]:
+  for (input, expected) in [(10, 10), (255, 255), (256, 0), (511, 255), (512, 0)]:
     test "Can get blockCellIndex from slotCellIndex (" & $input & " -> " & $expected &
       ")":
       let blockCellIndex = toCellInBlk(input, numCells = cellsPerBlock)
