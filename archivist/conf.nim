@@ -573,7 +573,7 @@ func parseCmdArg*(T: type NatConfig, nat: string): T {.raises: [ValueError].} =
   let parts = nat.split(":", 1)
   let strategy = parts[0]
   var address: ?IpAddress
-  if argument =? parts.?[1]:
+  if argument =? parts .? [1]:
     without parsed =? parseIpAddress(argument).catch:
       raise newException(ValueError, "Not a valid IP address: " & argument)
     address = some parsed

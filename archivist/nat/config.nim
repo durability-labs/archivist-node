@@ -55,8 +55,6 @@ func externalIp*(config: NatConfig): ?IpAddress =
     IpAddress.none
 
 func gateway*(config: NatConfig): ?IpAddress =
-  case config.strategy:
-  of NatStrategy.Pmp, NatStrategy.Any:
-    config.gateway
-  else:
-    IpAddress.none
+  case config.strategy
+  of NatStrategy.Pmp, NatStrategy.Any: config.gateway
+  else: IpAddress.none
