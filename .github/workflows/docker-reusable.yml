@@ -49,6 +49,11 @@ on:
         required: false
         type: string
         default: false
+      release_tests_namespace:
+        description: Kubernetes namespace for release tests
+        required: false
+        type: string
+        default: 'devnet'
       contract_image:
         description: Specifies compatible smart contract image
         required: false
@@ -291,5 +296,6 @@ jobs:
       branch: ${{ needs.compute-tests-inputs.outputs.branch }}
       archivistdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
       workflow_source: ${{ needs.compute-tests-inputs.outputs.workflow_source }}
+      namespace: ${{ inputs.release_tests_namespace || 'devnet' }}
     secrets:
       KUBE_CONFIG: ${{ secrets.DEVNET_KUBE_CONFIG }}
