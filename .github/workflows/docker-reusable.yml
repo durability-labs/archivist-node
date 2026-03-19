@@ -259,10 +259,31 @@ jobs:
         run: docker buildx imagetools inspect ${{ steps.image_tag.outputs.archivist_image }}
 
 
+  # Compute Tests inputs
+  compute-tests-inputs:
+    name: Compute Tests inputs
+    if: ${{ inputs.run_release_tests == 'true' }}
+    runs-on: ubuntu-latest
+    needs: publish
+    outputs:
+      source: ${{ steps.compute.outputs.source }}
+      branch: ${{ steps.compute.outputs.branch }}
+      workflow_source: ${{ steps.compute.outputs.workflow_source }}
+      archivistdockerimage: ${{ steps.compute.outputs.archivistdockerimage }}
+    steps:
+      - name: Compute Tests inputs
+        id: compute
+        run: |
+          echo "source=https://github.com/durability-labs/cs-archivist-dist-tests" >> "$GITHUB_OUTPUT"
+          echo "branch=main" >> "$GITHUB_OUTPUT"
+          echo "workflow_source=durability-labs/cs-archivist-dist-tests" >> "$GITHUB_OUTPUT"
+          echo "archivistdockerimage=${{ inputs.docker_repo }}:${{ needs.publish.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+
   # Run Release Tests
   run-release-tests:
     name: Run Release Tests
-    needs: publish
+    needs: [publish, compute-tests-inputs]
     if: ${{ inputs.run_release_tests == 'true' }}
     uses: durability-labs/cs-archivist-dist-tests/.github/workflows/run-release-tests.yaml@main
     with:
@@ -270,4 +291,5 @@ jobs:
       branch: ${{ needs.compute-tests-inputs.outputs.branch }}
       archivistdockerimage: ${{ needs.compute-tests-inputs.outputs.archivistdockerimage }}
       workflow_source: ${{ needs.compute-tests-inputs.outputs.workflow_source }}
-    secrets: inherit
+    secrets:
+      KUBE_CONFIG: ${{ secrets.DEVNET_KUBE_CONFIG }}
