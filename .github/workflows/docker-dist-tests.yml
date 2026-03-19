@@ -28,6 +28,11 @@ on:
         required: false
         type: boolean
         default: false
+      release_tests_namespace:
+        description: Kubernetes namespace for release tests
+        required: false
+        type: string
+        default: 'devnet'
 
 jobs:
   get-contracts-hash:
@@ -57,6 +62,7 @@ jobs:
       tag_stable: ${{ startsWith(github.ref, 'refs/tags/') }}
       contract_image: "durabilitylabs/archivist-contracts:sha-${{ needs.get-contracts-hash.outputs.hash }}-dist-tests"
       run_release_tests: ${{ inputs.run_release_tests }}
+      release_tests_namespace: ${{ inputs.release_tests_namespace || 'devnet' }}
     secrets: inherit
 
   deploy-testnet:
