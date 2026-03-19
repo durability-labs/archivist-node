@@ -319,11 +319,9 @@ proc dropOverlay*(
   ?await self.deleteOverlay(treeCid)
 
   if cid =? manifestCid:
-    let
-      key = ?makePrefixKey(self.postFixLen, cid)
-      record = ?await self.repoDs.get(key)
-
-    ?await self.repoDs.tryDelete(record)
+    let skipped = ?await self.delFromBlocksStore(@[cid])
+    if skipped.len > 0:
+      warn "Unable to delete manifest", cid
 
   trace "Overlay dropped successfully"
 

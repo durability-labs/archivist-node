@@ -85,10 +85,6 @@ proc dropExpiredOverlays(
       if err =? (await self.repoStore.dropOverlay(treeCid)).errorOption:
         error "Error dropping overlay", treeCid, status = meta.status, err = err.msg
 
-      if manifestCid =? meta.manifestCid:
-        if err =? (await self.repoStore.delBlock(manifestCid)).errorOption:
-          warn "Error dropping manifest", err = err.msg
-
     await sleepAsync(1.millis) # cooperative scheduling
 
 proc start*(self: BlockMaintainer) =
