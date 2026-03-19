@@ -58,14 +58,33 @@ proc testLifecycle*(
         await after()
 
     test "Should drop overlay and remove leafs, blocks, and metadata":
-      let blk = createTestBlock(120)
-      let (treeCid, index) = (await putBlockWithOverlay(repo, blk)).tryGet()
+      let
+        blk = createTestBlock(120)
+        (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        proof = tree.getProof(0).tryGet()
+
+      var blocks = BitSeq.init(1)
+      blocks.setBit(0)
+
+      (
+        await repo.putOverlay(
+          treeCid = treeCid, status = Completed.some, blocks = blocks
+        )
+      ).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      let manifestBlk = (await repo.storeManifest(manifest)).tryGet()
+
+      check repo.quotaUsedBytes > 0.NBytes
+      check repo.totalBlocks > 0.Natural
 
       (await repo.dropOverlay(treeCid)).tryGet()
 
-      let leafResult = await repo.getLeafMetadata(treeCid, index)
-      let blockResult = await repo.getBlock(blk.cid)
-      let overlayResult = await repo.getOverlay(treeCid)
+      let
+        leafResult = await repo.getLeafMetadata(treeCid, 0.Natural)
+        blockResult = await repo.getBlock(blk.cid)
+        overlayResult = await repo.getOverlay(treeCid)
+        manifestResult = await repo.getBlock(manifestBlk.cid)
 
       check leafResult.isErr
       check leafResult.error() of BlockNotFoundError
@@ -73,6 +92,10 @@ proc testLifecycle*(
       check blockResult.error() of BlockNotFoundError
       check overlayResult.isErr
       check overlayResult.error() of KVStoreKeyNotFound
+      check manifestResult.isErr
+      check manifestResult.error() of BlockNotFoundError
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
 
     test "Should only decrement refcount for shared blocks when one overlay is dropped":
       let
@@ -102,11 +125,33 @@ proc testLifecycle*(
       (await repo.putBlocks(treeCid2, @[(shared, 1.Natural, proof2)])).tryGet()
       check (await repo.blockRefCount(shared.cid)).tryGet() == 2.Natural
 
+      let
+        manifest1 = Manifest.new(
+          treeCid = treeCid1,
+          blockSize = NBytes(shared.data.len),
+          datasetSize = NBytes(shared.data.len + extra1.data.len),
+        )
+
+        manifest2 = Manifest.new(
+          treeCid = treeCid2,
+          blockSize = NBytes(shared.data.len),
+          datasetSize = NBytes(extra2.data.len + shared.data.len),
+        )
+
+        manifestBlk1 = (await repo.storeManifest(manifest1)).tryGet()
+        manifestBlk2 = (await repo.storeManifest(manifest2)).tryGet()
+
+        quotaBeforeDrop = repo.quotaUsedBytes
+        blocksBeforeDrop = repo.totalBlocks
+
       (await repo.dropOverlay(treeCid1)).tryGet()
 
       check (await repo.blockRefCount(shared.cid)).tryGet() == 1.Natural
       check (await repo.getBlock(shared.cid)).isOk
       check (await repo.getOverlay(treeCid1)).isErr
+
+      check repo.quotaUsedBytes < quotaBeforeDrop
+      check repo.totalBlocks < blocksBeforeDrop
 
     test "Should drop empty overlay metadata":
       let treeCid = Cid.example
@@ -601,6 +646,9 @@ proc testLifecycle*(
       check tmpLeafRes.isErr
       check tmpLeafRes.error() of BlockNotFoundError
 
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
+
     test "Should drop tmp overlay metadata when body is cancelled":
       let realTreeCid = Cid.example
       var
@@ -667,6 +715,9 @@ proc testLifecycle*(
       let blkRes = await repo.getBlock(blk.cid)
       check blkRes.isErr
       check blkRes.error() of BlockNotFoundError
+
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
 
 proc runFsSqliteTests() =
   let repoDir = createTempDir("archivist-", "-repostore")

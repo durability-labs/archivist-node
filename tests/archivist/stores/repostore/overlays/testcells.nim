@@ -257,6 +257,7 @@ proc testCells*(
 
       check (await innerRepo.blockRefCount(blk.cid)).tryGet() == 3.Natural
       check innerRepo.quotaUsedBytes == 256.NBytes
+      check innerRepo.totalBlocks == 1.Natural
 
       (
         await innerRepo.delLeafBlockMetadata(
@@ -266,6 +267,7 @@ proc testCells*(
 
       check not (await blk.cid in innerRepo)
       check innerRepo.quotaUsedBytes == 0.NBytes
+      check innerRepo.totalBlocks == 0.Natural
 
 proc runFsSqliteTests() =
   let repoDir = createTempDir("archivist-", "-repostore")

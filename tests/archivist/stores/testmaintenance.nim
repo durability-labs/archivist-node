@@ -15,15 +15,18 @@ import pkg/taskpools
 import pkg/questionable
 import pkg/questionable/results
 import pkg/stew/byteutils
+import pkg/stew/bitseqs
 
 import pkg/libp2p/multicodec
 
 import pkg/archivist/blocktype as bt
+import pkg/archivist/merkletree
 import pkg/archivist/stores
 
 import ../../asynctest
 import ../helpers/mocktimer
 import ../helpers/mockclock
+import ../helpers
 import ../examples
 
 import archivist/stores/maintenance
@@ -190,3 +193,31 @@ suite "BlockMaintainer":
     await mockTimer.invokeCallback()
 
     check (await repo.getOverlay(treeCid)).isOk
+
+  test "Should return quota to zero when dropping expired overlay with manifest":
+    let
+      blk = bt.Block.new("test-data-for-maintenance".toBytes).tryGet()
+      (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    var blocks = BitSeq.init(1)
+    blocks.setBit(0)
+
+    (
+      await repo.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks, expiry = 50
+      )
+    ).tryGet()
+
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    discard (await repo.storeManifest(manifest)).tryGet()
+
+    check repo.quotaUsedBytes > 0.NBytes
+    check repo.totalBlocks > 0.Natural
+
+    maintainer.start()
+    await mockTimer.invokeCallback()
+
+    check repo.quotaUsedBytes == 0.NBytes
+    check repo.totalBlocks == 0.Natural

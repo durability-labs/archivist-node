@@ -91,6 +91,9 @@ proc testConcurrent*(
       let inconsistencies = (await repo.verifyBlockBitState(treeCid)).tryGet()
       check inconsistencies.len == 0
 
+      check repo.quotaUsedBytes == NBytes(800 + 801 + 802)
+      check repo.totalBlocks == 3.Natural
+
     test "Sequential CAS updates handle retries correctly":
       let
         blk1 = createTestBlock(840)
@@ -201,6 +204,9 @@ proc testConcurrent*(
       check (await repo.getBlock(blk3.cid)).isErr
       check (await repo.getBlock(blk4.cid)).isErr
 
+      check repo.quotaUsedBytes == NBytes(900 + 901)
+      check repo.totalBlocks == 2.Natural
+
     test "putBlocks aborts when delete started first":
       let
         blk1 = createTestBlock(910)
@@ -260,6 +266,9 @@ proc testConcurrent*(
         check putResult.error() of OverlayDeletingError
 
       check (await repo.getOverlay(treeCid)).isErr
+
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
 
 proc runFsSqliteTests() =
   let repoDir = createTempDir("archivist-", "-repostore")

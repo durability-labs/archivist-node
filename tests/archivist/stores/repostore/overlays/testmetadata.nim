@@ -153,6 +153,8 @@ proc testMetadata*(
       # Set with block
       (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
       check (await repo.hasBlock(treeCid, 0.Natural)).tryGet() == true
+      check repo.quotaUsedBytes == 100.NBytes
+      check repo.totalBlocks == 1.Natural
 
       # Out of range (fast-path, no store hit)
       check (await repo.hasBlock(treeCid, 10.Natural)).tryGet() == false
@@ -180,6 +182,8 @@ proc testMetadata*(
 
       let blkRes = await repo.getBlock(shared.cid)
       check blkRes.isErr
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
 
     test "Should handle non-contiguous indices in putBlocks (BitSeq length fix)":
       let
