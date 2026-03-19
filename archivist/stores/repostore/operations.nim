@@ -361,7 +361,6 @@ proc putLeafBlockMetaImpl(
     for rec in refreshed:
       var record = rec
 
-      trace "Processing record", key = record.key
       if BlockLeafKey.ancestor(record.key):
         let incomingLeafRec = ?toRecord[LeafMetadata](?catch(leafsMap[record.key]))
         var currentLeafRec = ?toRecord[LeafMetadata](record)
@@ -562,7 +561,6 @@ proc delLeafBlockMetadata*(
     trace "Got refreshed metadata", count = refreshed.len
     for rec in refreshed:
       var record = rec
-      trace "Processing record", key = record.key
       if BlockLeafKey.ancestor(record.key):
         var leaf = ?toRecord[LeafMetadata](record)
         leaf.val.deleted = true # mark for delete
