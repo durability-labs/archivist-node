@@ -46,6 +46,15 @@ method run*(
   let marketplace = agent.context.marketplace
   let slotIndex = data.slotIndex
 
+  without request =? data.request:
+    raiseAssert "no sale request"
+
+  logScope:
+    requestId = request.id
+    slotIndex = data.slotIndex
+
+  error "Error", error = state.error
+
   try:
     await data.errorBackoff.applyDelay()
 
