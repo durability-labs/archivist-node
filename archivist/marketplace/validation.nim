@@ -108,7 +108,7 @@ proc markProofsAsMissing(validation: Validation) {.async.} =
     await validation.markProofAsMissing(slotId, previousPeriod)
 
 proc run(validation: Validation) {.async: (raises: []).} =
-  trace "Validation started"
+  info "Validation started"
   try:
     while true:
       await validation.waitUntilNextPeriod()
@@ -124,7 +124,7 @@ proc findEpoch(validation: Validation, secondsAgo: uint64): SecondsSince1970 =
   return validation.clock.now - secondsAgo.int64
 
 proc restoreHistoricalState(validation: Validation) {.async.} =
-  trace "Restoring historical state..."
+  info "Restoring historical state..."
   let requestDurationLimit = validation.marketplace.requestDurationLimit
   let startTimeEpoch = validation.findEpoch(secondsAgo = requestDurationLimit.u64)
   let slotFilledEvents =
@@ -137,7 +137,7 @@ proc restoreHistoricalState(validation: Validation) {.async.} =
     if slotState == SlotState.Filled and validation.shouldValidateSlot(slotId):
       trace "Adding slot [historical]", slotId
       validation.slots.incl(slotId)
-  trace "Historical state restored", numberOfSlots = validation.slots.len
+  info "Historical state restored", numberOfSlots = validation.slots.len
 
 proc start*(
     validation: Validation
