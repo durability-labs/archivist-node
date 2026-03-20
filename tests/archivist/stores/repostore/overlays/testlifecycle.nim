@@ -719,6 +719,142 @@ proc testLifecycle*(
       check repo.quotaUsedBytes == 0.NBytes
       check repo.totalBlocks == 0.Natural
 
+    test "Should delete verifiable manifest when no slot overlays remain":
+      let
+        blk0 = createTestBlock(100)
+        blk1 = createTestBlock(101)
+        blk2 = createTestBlock(102)
+        blk3 = createTestBlock(103)
+        (baseManifest, tree) = makeManifestAndTree(@[blk0, blk1, blk2, blk3]).tryGet()
+
+        treeCid = tree.rootCid.tryGet()
+        protDatasetSize = NBytes(8 * 103)
+        protManifest = Manifest.new(
+          manifest = baseManifest,
+          treeCid = treeCid,
+          datasetSize = protDatasetSize,
+          ecK = 2,
+          ecM = 2,
+        )
+
+        slotRoot1 = Cid.example
+        slotRoot2 = Cid.example
+        slotRoot3 = Cid.example
+        slotRoot4 = Cid.example
+        verManifest = Manifest
+          .new(protManifest, Cid.example, @[slotRoot1, slotRoot2, slotRoot3, slotRoot4])
+          .tryGet()
+
+      var bits = BitSeq.init(4)
+      for i in 0 ..< 4:
+        bits.setBit(i)
+
+      (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
+
+      var blkProofs: seq[(bt.Block, Natural, ArchivistProof)]
+      for i, blk in @[blk0, blk1, blk2, blk3]:
+        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet()))
+
+      (await repo.putBlocks(treeCid, blkProofs)).tryGet()
+
+      # Store verifiable manifest (this sets manifestCid on the overlay)
+      let manifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+
+      let
+        dataBytes = NBytes(100 + 101 + 102 + 103)
+        manifestBytes = manifestBlk.data.len.NBytes
+        expectedQuota = dataBytes + manifestBytes
+
+      check repo.quotaUsedBytes == expectedQuota
+      check repo.totalBlocks == 5.Natural
+
+      # No slot overlays exist, so dropping should delete the manifest too
+      (await repo.dropOverlay(treeCid)).tryGet()
+
+      let manifestResult = await repo.getBlock(manifestBlk.cid)
+      check manifestResult.isErr
+      check manifestResult.error() of BlockNotFoundError
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
+
+    test "Should skip verifiable manifest delete when slot overlays still exist":
+      let
+        blk0 = createTestBlock(100)
+        blk1 = createTestBlock(101)
+        blk2 = createTestBlock(102)
+        blk3 = createTestBlock(103)
+        (baseManifest, tree) = makeManifestAndTree(@[blk0, blk1, blk2, blk3]).tryGet()
+        treeCid = tree.rootCid.tryGet()
+
+      # Same protected manifest math as above
+      let
+        protDatasetSize = NBytes(8 * 103)
+        protManifest = Manifest.new(
+          manifest = baseManifest,
+          treeCid = treeCid,
+          datasetSize = protDatasetSize,
+          ecK = 2,
+          ecM = 2,
+        )
+
+      let
+        slotRoot1 = Cid.example
+        slotRoot2 = Cid.example
+        slotRoot3 = Cid.example
+        slotRoot4 = Cid.example
+        verManifest = Manifest
+          .new(protManifest, Cid.example, @[slotRoot1, slotRoot2, slotRoot3, slotRoot4])
+          .tryGet()
+
+      var bits = BitSeq.init(4)
+      for i in 0 ..< 4:
+        bits.setBit(i)
+
+      (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
+
+      var blkProofs: seq[(bt.Block, Natural, ArchivistProof)]
+      for i, blk in @[blk0, blk1, blk2, blk3]:
+        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet()))
+
+      (await repo.putBlocks(treeCid, blkProofs)).tryGet()
+
+      # Store verifiable manifest
+      let
+        manifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+        dataBytes = NBytes(100 + 101 + 102 + 103)
+        manifestBytes = manifestBlk.data.len.NBytes
+
+      check repo.quotaUsedBytes == dataBytes + manifestBytes
+      check repo.totalBlocks == 5.Natural
+
+      # Create a slot overlay for slotRoot1 (simulates an active slot)
+
+      (
+        await repo.putOverlay(
+          treeCid = slotRoot1, status = Completed.some, blocks = BitSeq.init(0)
+        )
+      ).tryGet()
+
+      # Drop the protected dataset overlay - manifest should NOT be deleted
+      (await repo.dropOverlay(treeCid)).tryGet()
+
+      # Data blocks should be gone, but manifest should still exist
+      for blk in @[blk0, blk1, blk2, blk3]:
+        let blkResult = await repo.getBlock(blk.cid)
+        check blkResult.isErr
+        check blkResult.error() of BlockNotFoundError
+
+      # Manifest still exists because slotRoot1 overlay is active
+      let manifestResult = await repo.getBlock(manifestBlk.cid)
+      check manifestResult.isOk
+
+      # Only manifest bytes remain
+      check repo.quotaUsedBytes == manifestBytes
+      check repo.totalBlocks == 1.Natural
+
+      # Clean up the slot overlay
+      (await repo.dropOverlay(slotRoot1)).tryGet()
+
 proc runFsSqliteTests() =
   let repoDir = createTempDir("archivist-", "-repostore")
 

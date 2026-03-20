@@ -19,6 +19,7 @@ import ../types
 import ../operations
 import ../../keyutils
 import ../../../clock
+import ../../../manifest
 import ../../../archivisttypes
 
 import ../../queryiterhelper
@@ -315,13 +316,31 @@ proc dropOverlay*(
     ?await delLeafBlockMetadata(self, treeCid, indices)
     trace "Deleted leaf metadata and updated refcounts", count = indices.len
 
+  if cid =? manifestCid:
+    let
+      manifest =
+        (?await self.repoDs.get(?makePrefixKey(self.postFixLen, cid), Manifest)).val
+      skip =
+        if manifest.verifiable:
+          (
+            await allFinished(
+              manifest.slotRoots.mapIt(self.metaDs.has(?overlayKey(it)))
+            )
+          )
+          .mapIt(?catch(it.read).flatten)
+          .anyIt(it)
+        else:
+          false
+
+    if not skip:
+      let skipped = ?await self.delFromBlocksStore(@[cid])
+      if skipped.len > 0:
+        warn "Unable to delete manifest", cid
+    else:
+      trace "Skipping manifest delete, still used by slots", manifestCid = cid
+
   # Delete overlay metadata
   ?await self.deleteOverlay(treeCid)
-
-  if cid =? manifestCid:
-    let skipped = ?await self.delFromBlocksStore(@[cid])
-    if skipped.len > 0:
-      warn "Unable to delete manifest", cid
 
   trace "Overlay dropped successfully"
 
