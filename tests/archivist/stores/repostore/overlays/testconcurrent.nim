@@ -247,20 +247,21 @@ proc testConcurrent*(
         )
       ).tryGet()
 
-      (await repo.putBlocks(treeCid, @[(blk1, 0.Natural, proof1)])).tryGet()
-
-      let
-        putFuture = repo.putBlocks(
-          treeCid, @[(blk2, 1.Natural, proof2), (blk3, 2.Natural, proof3)]
-        )
-        dropFuture = repo.dropOverlay(treeCid)
-
-      await allFutures(@[putFuture, dropFuture])
+      # TODO: the correct way to test this is with a mock of the kvstore,
+      # but that breaks the structure of the tests and it's a significant
+      # amount of effort - but this is one of the few legitimate usages
+      # of mocking ;)
+      let putFuture = repo.putBlocks(
+        treeCid,
+        @[
+          (blk1, 0.Natural, proof1),
+          (blk2, 1.Natural, proof2),
+          (blk3, 2.Natural, proof3),
+        ],
+      )
+      (await repo.dropOverlay(treeCid)).tryGet
 
       let putResult = await putFuture
-      let dropResult = await dropFuture
-
-      check dropResult.isOk
 
       if putResult.isErr:
         check putResult.error() of OverlayDeletingError
