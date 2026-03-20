@@ -20,8 +20,11 @@ import ./utils/asyncheapqueue
 import ./utils/fileutils
 import ./utils/asynciter
 import ./utils/safeasynciter
+import ./utils/trackedsemaphore
 
-export asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs
+export
+  asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs,
+  trackedsemaphore
 
 when defined(posix):
   import os, posix
