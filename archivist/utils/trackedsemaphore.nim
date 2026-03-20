@@ -12,7 +12,9 @@ proc contains*[K](self: TrackedSemaphore[K], key: K): bool =
   key in self.semas
 
 proc `count`*[K](self: TrackedSemaphore[K], key: K): int =
-  self.semas.mgetOrPut(key, newAsyncSemaphore(self.size)).count
+  self.semas.withValue(key, sema):
+    return sema[].count
+  return self.size
 
 proc tryAcquire*[K](self: TrackedSemaphore[K], key: K): bool =
   self.semas.mgetOrPut(key, newAsyncSemaphore(self.size)).tryAcquire()
