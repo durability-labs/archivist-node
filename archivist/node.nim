@@ -737,6 +737,37 @@ proc requestStorage*(
     return failure err
 
   let purchase = ?await purchasing.purchase(request)
+
+  # Clean up verifiable and slot overlays when purchase completes (success or failure).
+  # The original dataset overlay is not touched - it has its own TTL.
+  let
+    self = self
+    verifiableCid = request.content.cid
+
+  proc cleanupPurchaseOverlays() {.async: (raises: []).} =
+    try:
+      await purchase.future
+    except CatchableError as exc:
+      trace "Purchase future failed, cleaning up overlays", error = exc.msg
+
+    try:
+      without manifest =? await self.fetchManifest(verifiableCid), err:
+        warn "Unable to fetch manifest for purchase cleanup",
+          cid = verifiableCid, error = err.msg
+        return
+
+      for slotRoot in manifest.slotRoots:
+        if err =? (await self.repoStore.dropOverlay(slotRoot)).errorOption:
+          warn "Error dropping slot overlay", slotRoot, error = err.msg
+
+      if err =? (await self.repoStore.dropOverlay(manifest.treeCid)).errorOption:
+        warn "Error dropping verifiable overlay",
+          treeCid = manifest.treeCid, error = err.msg
+    except CancelledError:
+      trace "Purchase overlay cleanup cancelled"
+
+  asyncSpawn cleanupPurchaseOverlays()
+
   success purchase.id
 
 proc validateVerifiableManifest(manifest: Manifest, slotSize: uint64): ?!void =
@@ -890,20 +921,12 @@ proc deleteSlot*(
 
   let slotCid = manifest.slotRoots[slotIdx]
 
-  # Mark slot overlay as Failure so maintenance will drop it and cleanup manifest
-  if err =? (
-    await self.repoStore.putOverlay(
-      slotCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
-    )
-  ).errorOption:
+  # Delete slot overlay
+  if err =? (await self.repoStore.dropOverlay(slotCid)).errorOption:
     warn "Error marking slot overlay failed", err = err.msg
 
-  # Mark tree overlay as Failure so maintenance will drop it and cleanup manifest
-  if err =? (
-    await self.repoStore.putOverlay(
-      manifest.treeCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
-    )
-  ).errorOption:
+  # Delete mainfest overlay
+  if err =? (await self.repoStore.dropOverlay(manifest.treeCid)).errorOption:
     warn "Error marking tree overlay failed", err = err.msg
 
   trace "Slot marked as failed"
