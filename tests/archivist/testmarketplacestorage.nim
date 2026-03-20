@@ -99,7 +99,7 @@ suite "Marketplace storage interface implementation":
     )
     await checkOverlayExpiry(cid, expiry)
 
-  test "deleteSlot marks overlay as Failure":
+  test "deleteSlot drops overlay":
     let
       cid = await storeVerifiableData()
       localStore = temporary.localStore
@@ -113,12 +113,11 @@ suite "Marketplace storage interface implementation":
 
     !await storage.deleteSlot(cid, 0)
 
-    # Check that slot overlay status is now Failure
+    # Check that slot overlay is gone
     let slotCid = manifest.slotRoots[0]
-    let metadata = !await localStore.getOverlay(slotCid)
-    check metadata.status == OverlayStatus.Failure
+    check (await localStore.getOverlay(slotCid)).isErr
 
-  test "deleteSlot marks overlay as Failure for different slot indices":
+  test "deleteSlot drops overlay for different slot indices":
     let
       cid = await storeVerifiableData()
       localStore = temporary.localStore
@@ -132,7 +131,6 @@ suite "Marketplace storage interface implementation":
 
     !await storage.deleteSlot(cid, 1)
 
-    # Check that slot overlay status is now Failure
+    # Check that slot overlay is gone
     let slotCid = manifest.slotRoots[1]
-    let metadata = !await localStore.getOverlay(slotCid)
-    check metadata.status == OverlayStatus.Failure
+    check (await localStore.getOverlay(slotCid)).isErr

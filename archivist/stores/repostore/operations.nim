@@ -287,6 +287,10 @@ proc putLeafBlockMetaImpl(
   if overlayMeta.status == Deleting:
     return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
 
+  self.deletingLock.forceAcquire(treeCid)
+  defer:
+    self.deletingLock.release(treeCid)
+
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
@@ -480,6 +484,10 @@ proc delLeafBlockMetadata*(
 
   trace "Deleting leaf and block metadata"
 
+  await self.deletingLock.acquire(treeCid)
+  defer:
+    self.deletingLock.release(treeCid)
+
   let
     existingOverlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
     uniqueIdxs = index.deduplicate()
@@ -489,7 +497,6 @@ proc delLeafBlockMetadata*(
     trace "No bits set in BitSeq for indices to delete, fast-path return"
     return success()
 
-  # Continue with existing logic
   let
     treeCidStr = $treeCid
     leafKeys = uniqueIdxs.mapIt(?blockLeafKey(treeCidStr, it))

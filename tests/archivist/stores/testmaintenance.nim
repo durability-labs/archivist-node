@@ -22,6 +22,7 @@ import pkg/libp2p/multicodec
 import pkg/archivist/blocktype as bt
 import pkg/archivist/merkletree
 import pkg/archivist/stores
+import pkg/archivist/utils/trackedsemaphore
 
 import ../../asynctest
 import ../helpers/mocktimer
@@ -163,8 +164,8 @@ suite "BlockMaintainer":
 
     (await repo.putOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
 
-    # Simulate an active deletion by holding the lock
-    repo.deletingLock.incl(treeCid)
+    # Simulate an active deletion by holding the semaphore
+    repo.deletingLock.forceAcquire(treeCid)
 
     maintainer.start()
     await mockTimer.invokeCallback()
@@ -172,7 +173,7 @@ suite "BlockMaintainer":
     # Overlay should still exist because the lock prevented re-deletion
     check (await repo.getOverlay(treeCid)).isOk
 
-    repo.deletingLock.excl(treeCid)
+    repo.deletingLock.release(treeCid)
 
   test "Should drop expired Pending overlay":
     let treeCid = Cid.example
