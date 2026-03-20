@@ -766,7 +766,7 @@ proc requestStorage*(
     except CancelledError:
       trace "Purchase overlay cleanup cancelled"
 
-  asyncSpawn cleanupPurchaseOverlays()
+  self.trackedFutures.track(cleanupPurchaseOverlays())
 
   success purchase.id
 
