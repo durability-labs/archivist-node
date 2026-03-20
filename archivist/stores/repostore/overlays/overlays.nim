@@ -282,6 +282,9 @@ proc dropOverlay*(
   while true:
     # Read overlay to get manifestCid before deletion
     without overlay =? (await self.getOverlay(treeCid)), err:
+      if err of KVStoreKeyNotFound:
+        trace "Overlay already deleted", treeCid
+        break
       warn "Overlay missing", treeCid, err = err.msg
       return failure(err)
 
