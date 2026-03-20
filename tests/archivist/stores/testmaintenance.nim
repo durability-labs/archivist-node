@@ -7,8 +7,6 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import std/sets
-
 import pkg/chronos
 import pkg/kvstore
 import pkg/taskpools
@@ -159,19 +157,23 @@ suite "BlockMaintainer":
 
     check (await repo.getOverlay(treeCid)).isErr
 
-  test "Should skip overlay actively being deleted (runtime lock)":
+  test "Should handle concurrent dropOverlay on same treeCid":
     let treeCid = Cid.example
 
     (await repo.putOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
 
-    # Simulate an active deletion by holding the semaphore
+    # Simulate an in-flight put by holding the semaphore
     repo.deletingLock.forceAcquire(treeCid)
 
     maintainer.start()
+    # Timer callback calls dropOverlay, which enters delLeafBlockMetadata
+    # and blocks on acquire (waiting for the put to finish).
+    # But since this overlay has no blocks, the loop breaks before
+    # reaching delLeafBlockMetadata, so it completes and deletes the overlay.
     await mockTimer.invokeCallback()
 
-    # Overlay should still exist because the lock prevented re-deletion
-    check (await repo.getOverlay(treeCid)).isOk
+    # Overlay is gone - dropOverlay found no blocks and cleaned up metadata
+    check (await repo.getOverlay(treeCid)).isErr
 
     repo.deletingLock.release(treeCid)
 

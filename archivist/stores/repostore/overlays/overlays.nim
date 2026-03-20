@@ -272,10 +272,6 @@ proc dropOverlay*(
   logScope:
     treeCid = treeCid
 
-  if treeCid in self.deletingLock:
-    trace "Overlay deletion already in progress, skipping"
-    return success()
-
   trace "Dropping overlay and cleaning up blocks"
 
   if err =? (await self.putOverlay(treeCid, status = Deleting.some)).errorOption:
