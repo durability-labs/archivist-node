@@ -13,7 +13,6 @@ import std/tables
 import pkg/chronos
 import pkg/kvstore
 import pkg/libp2p/cid
-import pkg/libp2p/utils/semaphore
 import pkg/questionable
 import pkg/stew/bitseqs
 
@@ -23,7 +22,7 @@ import ../../errors
 import ../../merkletree
 import ../../systemclock
 import ../../units
-import ../../utils/trackedsemaphore
+import ../../utils/asyncbarrier
 
 const
   DefaultOverlayTtl* = SecondsSince1970 30.days.seconds # ttl in seconds
@@ -44,7 +43,7 @@ type
     totalBlocks*: Natural
     overlayTtl*: SecondsSince1970
     started*: bool
-    deletingLock*: TrackedSemaphore[Cid]
+    deletingLock*: KeyedBarrier[Cid]
     overlayCache*: Table[Key, OverlayMetadata]
 
   QuotaUsage* {.serialize.} = object
@@ -148,5 +147,5 @@ func new*(
     quotaMaxBytes: quotaMaxBytes,
     overlayTtl: overlayTtl,
     onBlockStored: CidCallback.none,
-    deletingLock: TrackedSemaphore[Cid].init(1),
+    deletingLock: KeyedBarrier[Cid].new(),
   )

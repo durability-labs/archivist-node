@@ -28,9 +28,7 @@ proc leave*(self: AsyncBarrier) =
     self.count = 0
     self.event.fire()
 
-proc drain*(
-    self: AsyncBarrier
-): Future[void] {.async: (raises: [CancelledError]).} =
+proc drain*(self: AsyncBarrier): Future[void] {.async: (raises: [CancelledError]).} =
   if self.count <= 0:
     return
   await self.event.wait()

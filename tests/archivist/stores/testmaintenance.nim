@@ -20,7 +20,7 @@ import pkg/libp2p/multicodec
 import pkg/archivist/blocktype as bt
 import pkg/archivist/merkletree
 import pkg/archivist/stores
-import pkg/archivist/utils/trackedsemaphore
+import pkg/archivist/utils/asyncbarrier
 
 import ../../asynctest
 import ../helpers/mocktimer
@@ -162,8 +162,8 @@ suite "BlockMaintainer":
 
     (await repo.putOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
 
-    # Simulate an in-flight put by holding the semaphore
-    repo.deletingLock.forceAcquire(treeCid)
+    # Simulate an in-flight put by entering the barrier
+    repo.deletingLock.enter(treeCid)
 
     maintainer.start()
     # Timer callback calls dropOverlay, which enters delLeafBlockMetadata
@@ -175,7 +175,7 @@ suite "BlockMaintainer":
     # Overlay is gone - dropOverlay found no blocks and cleaned up metadata
     check (await repo.getOverlay(treeCid)).isErr
 
-    repo.deletingLock.release(treeCid)
+    repo.deletingLock.leave(treeCid)
 
   test "Should drop expired Pending overlay":
     let treeCid = Cid.example

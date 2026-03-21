@@ -186,48 +186,26 @@ method putBlocks*(
 
   var
     totalSize = 0
-    uniqueBlks: HashSet[Block] # filter out duplicate leafs for different tree branches
+    uniqueBlks: HashSet[Cid]
 
   let blocks = collect(newSeq):
     for (blk, idx, proof) in items.deduplicate():
       if not blk.cid.isEmpty:
         totalSize += blk.data.len
-        uniqueBlks.incl(blk)
-      (idx, blk.cid, proof)
+        uniqueBlks.incl(blk.cid)
+      (idx, blk.cid, proof, blk.data)
 
   trace "Putting blocks", actualBlocks = blocks.len, totalSize
 
   if not self.available(totalSize.NBytes):
     return failure(newException(QuotaNotEnoughError, "Blocks would exceed quota!"))
 
-  # Atomic metadata update (leaf + block refcount)
-  if err =? (await self.putLeafBlockMeta(treeCid, blocks)).errorOption:
-    trace "Unable to store Leaf and Block Metadata", err = err.msg
-    return failure(err)
-
-  trace "Writting blocks to disc", actualBlocks = blocks.len
-  # Write blocks to FS (best effort, idempotent)
-  # Build records and capture sizes before moving into put
-  var
-    records = uniqueBlks.mapIt(
-      RawKVRecord.init(?makePrefixKey(self.postFixLen, it.cid), it.data)
-    )
-    keySizes = records.mapIt((it.key, it.val.len))
-
-  let skipped = (?await self.repoDs.put(move(records))).toHashSet
-
-  # Count only unique blocks that were successfully written
-  var newBlocks, newBytes = 0
-  for (key, size) in keySizes:
-    if key notin skipped:
-      newBytes += size
-      newBlocks += 1
-
-  if newBlocks > 0:
-    ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+  # Atomic metadata update
+  ?await self.putLeafBlockMeta(treeCid, blocks)
 
   if onBlock =? self.onBlockStored:
-    await allFutures(uniqueBlks.mapIt(onBlock(it.cid)))
+    for cid in uniqueBlks:
+      await onBlock(cid)
 
   return success()
 

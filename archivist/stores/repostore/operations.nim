@@ -250,7 +250,9 @@ proc tryDeleteBlocks*(
   self.tryDeleteBlocks(@[cid])
 
 type BlockLeafTuple =
-  tuple[index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ArchivistProof]
+  tuple[
+    index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ArchivistProof, data: seq[byte]
+  ]
 
 proc putLeafBlockMetaImpl(
     self: RepoStore, treeCid: Cid, blocks: seq[BlockLeafTuple]
@@ -287,16 +289,16 @@ proc putLeafBlockMetaImpl(
   if overlayMeta.status == Deleting:
     return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
 
-  self.deletingLock.forceAcquire(treeCid)
+  self.deletingLock.enter(treeCid)
   defer:
-    self.deletingLock.release(treeCid)
+    self.deletingLock.leave(treeCid)
 
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
     blocksBits = BitSeq.init(blocks.mapIt(it[0]).max() + 1)
 
-  for (index, blkCid, cellCid, proof) in blocks:
+  for (index, blkCid, cellCid, proof, data) in blocks:
     let
       blkKey = ?blockMetaKey(blkCid)
       leafKey = ?blockLeafKey(treeCidStr, index)
@@ -426,6 +428,32 @@ proc putLeafBlockMetaImpl(
   # cache the final overlay
   self.overlayCache[?overlayKey(treeCid)] = overlayMeta
 
+  # Write block data to disk and update counters (inside semaphore)
+  var
+    diskRecords: seq[RawKVRecord]
+    diskKeySizes: seq[(Key, int)]
+    seen: HashSet[Cid]
+
+  for (index, blkCid, cellCid, proof, data) in blocks:
+    if data.len > 0 and not blkCid.isEmpty and blkCid notin seen:
+      seen.incl(blkCid)
+      let key = ?makePrefixKey(self.postFixLen, blkCid)
+      diskKeySizes.add((key, data.len))
+      diskRecords.add(RawKVRecord.init(key, data))
+
+  if diskRecords.len > 0:
+    trace "Writing blocks to disk", count = diskRecords.len
+    let skipped = (?await self.repoDs.put(move(diskRecords))).toHashSet
+
+    var newBlocks, newBytes = 0
+    for (key, size) in diskKeySizes:
+      if key notin skipped:
+        newBytes += size
+        newBlocks += 1
+
+    if newBlocks > 0:
+      ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+
   success()
 
 proc putLeafBlockMeta*(
@@ -433,7 +461,20 @@ proc putLeafBlockMeta*(
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   ## Put or update leaf and block metadata (plain blocks).
   ##
-  self.putLeafBlockMetaImpl(treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2])))
+  self.putLeafBlockMetaImpl(
+    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2], newSeq[byte]()))
+  )
+
+proc putLeafBlockMeta*(
+    self: RepoStore,
+    treeCid: Cid,
+    blocks: seq[(Natural, Cid, ArchivistProof, seq[byte])],
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
+  ## Put or update leaf and block metadata with block data.
+  ##
+  self.putLeafBlockMetaImpl(
+    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2], it[3]))
+  )
 
 proc putLeafBlockMeta*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
@@ -455,7 +496,15 @@ proc putCellLeafBlockMeta*(
 
   self.putLeafBlockMetaImpl(
     treeCid,
-    blocks.mapIt((index: it[0], blkCid: it[2], cellCid: it[1].some, proof: it[3])),
+    blocks.mapIt(
+      (
+        index: it[0],
+        blkCid: it[2],
+        cellCid: it[1].some,
+        proof: it[3],
+        data: newSeq[byte](),
+      )
+    ),
   )
 
 proc delLeafBlockMetadata*(
@@ -484,9 +533,7 @@ proc delLeafBlockMetadata*(
 
   trace "Deleting leaf and block metadata"
 
-  await self.deletingLock.acquire(treeCid)
-  defer:
-    self.deletingLock.release(treeCid)
+  await self.deletingLock.drain(treeCid)
 
   let
     existingOverlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)

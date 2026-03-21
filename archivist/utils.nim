@@ -23,8 +23,7 @@ import ./utils/safeasynciter
 import ./utils/asyncbarrier
 
 export
-  asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs,
-  asyncbarrier
+  asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs, asyncbarrier
 
 when defined(posix):
   import os, posix
