@@ -23,9 +23,9 @@ proc enter*(self: AsyncBarrier) =
   self.event.clear()
 
 proc leave*(self: AsyncBarrier) =
+  doAssert self.count > 0, "leave() called without matching enter()"
   self.count -= 1
-  if self.count <= 0:
-    self.count = 0
+  if self.count == 0:
     self.event.fire()
 
 proc drain*(self: AsyncBarrier): Future[void] {.async: (raises: [CancelledError]).} =

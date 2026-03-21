@@ -118,6 +118,77 @@ suite "AsyncBarrier":
     check barrier.count == 0
     await barrier.drain()
 
+  test "cancelled drain does not leak waiter":
+    let barrier = AsyncBarrier.new()
+    barrier.enter()
+
+    let drainFut = barrier.drain()
+    await sleepAsync(1.millis)
+    check not drainFut.finished()
+
+    await drainFut.cancelAndWait()
+    check drainFut.cancelled()
+
+    # barrier state is unaffected - leave still works
+    barrier.leave()
+    check barrier.count == 0
+
+  test "drain works after previous drain was cancelled":
+    let barrier = AsyncBarrier.new()
+    barrier.enter()
+
+    # first drain - cancelled
+    let drainFut1 = barrier.drain()
+    await sleepAsync(1.millis)
+    await drainFut1.cancelAndWait()
+
+    # second drain - should still block and resolve
+    var drained = false
+    proc waiter() {.async: (raises: []).} =
+      try:
+        await barrier.drain()
+      except CancelledError:
+        discard
+      drained = true
+
+    let t = waiter()
+    await sleepAsync(1.millis)
+    check not drained
+
+    barrier.leave()
+    await sleepAsync(1.millis)
+    check drained
+    await t
+
+  test "enter during drain does not prevent wake":
+    let barrier = AsyncBarrier.new()
+    barrier.enter()
+
+    var drained = false
+    proc waiter() {.async: (raises: []).} =
+      try:
+        await barrier.drain()
+      except CancelledError:
+        discard
+      drained = true
+
+    let t = waiter()
+    await sleepAsync(1.millis)
+    check not drained
+
+    # new enter while drain is waiting
+    barrier.enter()
+    check barrier.count == 2
+
+    barrier.leave()
+    await sleepAsync(1.millis)
+    check not drained # still 1 remaining
+
+    barrier.leave()
+    await sleepAsync(1.millis)
+    check drained
+    await t
+
 suite "KeyedBarrier":
   test "independent keys do not interfere":
     let kb = KeyedBarrier[int].new()
@@ -178,3 +249,22 @@ suite "KeyedBarrier":
   test "count for absent key is 0":
     let kb = KeyedBarrier[int].new()
     check kb.count(123) == 0
+
+  test "cancelled drain does not affect keyed barrier state":
+    let kb = KeyedBarrier[int].new()
+    kb.enter(1)
+
+    let drainFut = kb.drain(1)
+    await sleepAsync(1.millis)
+    check not drainFut.finished()
+
+    await drainFut.cancelAndWait()
+    check drainFut.cancelled()
+
+    # barrier still tracks key 1
+    check 1 in kb
+    check kb.count(1) == 1
+
+    # leave cleans up normally
+    kb.leave(1)
+    check 1 notin kb
