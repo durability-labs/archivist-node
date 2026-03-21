@@ -697,7 +697,7 @@ proc setupRequest(
   let
     manifest = ?await self.fetchManifest(cid)
     verifiable = ?await self.ensureVerifiableManifest(manifest, ecK, ecM)
-    manifestBlk = ?await self.repoStore.storeManifest(verifiable)
+    manifestBlk = ?await self.repoStore.storeVerifiableManifest(verifiable)
 
     verifyRoot = (?verifiable.verifyRoot.fromVerifyCid).toBytes
     slotBytes = (verifiable.blockSize.int * verifiable.numSlotBlocks).NBytes
