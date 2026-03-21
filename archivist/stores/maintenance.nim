@@ -40,7 +40,6 @@ proc new*(
     T: type BlockMaintainer,
     repoStore: RepoStore,
     interval: Duration,
-    numberOfBlocksPerInterval = 100,
     timer = Timer.new("maintenance"),
     clock: Clock = SystemClock.new(),
 ): BlockMaintainer =
