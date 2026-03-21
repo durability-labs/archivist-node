@@ -599,6 +599,40 @@ method storeManifest*(
 
   success manifestBlk
 
+proc storeVerifiableManifest*(
+    self: RepoStore, manifest: Manifest, slotIndex: ?Natural = Natural.none
+): Future[?!Block] {.async: (raises: [CancelledError]).} =
+  ## Store a verifiable manifest block and track it on slot overlays.
+  ## Unlike storeManifest, this does NOT set manifestCid on the tree overlay,
+  ## preserving the protected manifest reference there.
+  ##
+  ## When slotIndex is provided, only update that slot's overlay.
+  ## Otherwise update all slot overlays.
+  ##
+
+  if not manifest.verifiable:
+    return failure(newException(ArchivistError, "Must be a verifiable manifest"))
+
+  let manifestBlk = ?manifest.toBlock
+  ?await self.putBlockInternal(manifestBlk)
+
+  let slotRoots =
+    if idx =? slotIndex:
+      @[manifest.slotRoots[idx]]
+    else:
+      manifest.slotRoots
+
+  for slotRoot in slotRoots:
+    if err =?
+        (await self.putOverlay(slotRoot, manifestCid = manifestBlk.cid.some)).errorOption:
+      trace "Unable to set manifestCid on slot overlay",
+        slotRoot, manifestCid = manifestBlk.cid
+      return failure(err)
+
+  trace "Stored verifiable manifest block", cid = manifestBlk.cid, slots = slotRoots.len
+
+  success manifestBlk
+
 method fetchManifest*(
     self: RepoStore, cid: Cid
 ): Future[?!Manifest] {.async: (raises: [CancelledError]), gcsafe.} =

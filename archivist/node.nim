@@ -674,7 +674,7 @@ proc setupRequest(
   let
     manifest = ?await self.fetchManifest(cid)
     verifiable = ?await self.ensureVerifiableManifest(manifest, ecK, ecM)
-    manifestBlk = ?await self.repoStore.storeManifest(verifiable)
+    manifestBlk = ?await self.repoStore.storeVerifiableManifest(verifiable)
 
     verifyRoot = (?verifiable.verifyRoot.fromVerifyCid).toBytes
     slotBytes = (verifiable.blockSize.int * verifiable.numSlotBlocks).NBytes
@@ -801,9 +801,6 @@ proc storeSlot*(
     error "Validation of verifiable manifest failed", err = err.msg
     return failure(err)
 
-  # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlay(manifest.treeCid, manifestCid = cid.some)
-
   if err =? (await self.updateExpiry(manifest, expiry)).errorOption:
     error "Unable to update manifest expiry", cid, err = err.msg
     return failure(err)
@@ -856,6 +853,10 @@ proc storeSlot*(
     error "Slot root mismatch",
       manifest = manifest.slotRoots[slotIndex.int], recovered = slotRoot.toSlotCid()
     return failure(newException(ArchivistError, "Slot root mismatch"))
+
+  # Track verifiable manifest CID on the slot overlay for cleanup
+  discard
+    ?await self.repoStore.storeVerifiableManifest(manifest, slotIndex.Natural.some)
 
   trace "Slot successfully retrieved and reconstructed"
 

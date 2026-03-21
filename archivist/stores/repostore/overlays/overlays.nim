@@ -3,7 +3,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/strutils
 import std/tables
 
 import pkg/chronos
@@ -302,20 +301,24 @@ proc dropOverlay*(
     trace "Deleted leaf metadata and updated refcounts", count = indices.len
 
   if cid =? manifestCid:
-    let
-      manifest =
-        (?await self.repoDs.get(?makePrefixKey(self.postFixLen, cid), Manifest)).val
-      skip =
-        if manifest.verifiable:
-          (
-            await allFinished(
-              manifest.slotRoots.mapIt(self.metaDs.has(?overlayKey(it)))
+    let manifest =
+      (?await self.repoDs.get(?makePrefixKey(self.postFixLen, cid), Manifest)).val
+
+    var skip = false
+    if manifest.verifiable:
+      # Filter out the current treeCid to avoid self-reference: when dropping
+      # a slot overlay, we must not count ourselves as "still exists".
+
+      let slotsLeft = (
+          await allFinished(
+            manifest.slotRoots.filterIt(it != treeCid).mapIt(
+              self.metaDs.has(?overlayKey(it))
             )
           )
-          .mapIt(?catch(it.read).flatten)
-          .anyIt(it)
-        else:
-          false
+        )
+        .mapIt(?(catch(it.read).flatten))
+        .filterIt(it)
+      skip = slotsLeft.len > 0
 
     if not skip:
       let skipped = ?await self.delFromBlocksStore(@[cid])
