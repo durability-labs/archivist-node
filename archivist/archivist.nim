@@ -216,11 +216,8 @@ proc new*(
       overlayTtl = config.overlayTtl.seconds,
     )
 
-    maintenance = BlockMaintainer.new(
-      repoStore,
-      interval = config.overlayMaintenanceInterval,
-      numberOfBlocksPerInterval = config.overlayMaintenanceNumberOfBlocks,
-    )
+    maintenance =
+      BlockMaintainer.new(repoStore, interval = config.overlayMaintenanceInterval)
 
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
