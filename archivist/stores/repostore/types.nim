@@ -13,7 +13,6 @@ import std/tables
 import pkg/chronos
 import pkg/kvstore
 import pkg/libp2p/cid
-import pkg/libp2p/utils/semaphore
 import pkg/questionable
 import pkg/stew/bitseqs
 
