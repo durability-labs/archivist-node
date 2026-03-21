@@ -40,7 +40,10 @@ import ../examples
 import ../helpers
 import ../helpers/mockmarketplace
 import ../helpers/mockclock
+import ../helpers/mocktimer
 import ../slots/helpers
+
+import archivist/stores/maintenance
 
 import ./helpers
 import ./tempnode
@@ -439,6 +442,128 @@ suite "Test Node - Purchase overlay cleanup":
     # 1 overlay for the original dataset
     check (await overlayCount(localStore)).tryGet() == 1
 
+    let
+      quotaBefore = localStore.quotaUsedBytes
+      blocksBefore = localStore.totalBlocks
+
+    let purchaseId = (
+      await node.requestStorage(
+        cid = manifestBlk.cid,
+        nodes = 5,
+        tolerance = 2,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
+        proofProbability = 3.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
+      )
+    ).tryGet()
+
+    # Overlays: original + protected/verifiable + 5 slot overlays = 7
+    check (await overlayCount(localStore)).tryGet() == 7
+    # Erasure coding added blocks, so quota and block count grew
+    check localStore.quotaUsedBytes > quotaBefore
+    check localStore.totalBlocks > blocksBefore
+
+    # Fulfill the purchase - triggers PurchaseSubmitted -> PurchaseStarted
+    check eventually marketplace.requested.len > 0
+    let request = marketplace.requested[0]
+    let requestEnd = StorageTimestamp.init(clock.now() + 42)
+    marketplace.requestEnds[request.id] = requestEnd
+    marketplace.emitRequestFulfilled(request.id)
+
+    # Advance clock past request end - triggers PurchaseStarted -> PurchaseFinished
+    clock.set(requestEnd.toSecondsSince1970 + 1)
+
+    # Wait for purchase to complete
+    let purchasing = node.marketplace .? purchasing
+    check eventually purchasing .? getPurchase(purchaseId) .? finished == true.some
+
+    # Wait for cleanup callback to run
+    await sleepAsync(500.milliseconds)
+
+    # Original overlay remains, protected/verifiable + 5 slot overlays dropped
+    check (await overlayCount(localStore)).tryGet() == 1
+    # Quota and block count back to just original data
+    check localStore.quotaUsedBytes == quotaBefore
+    check localStore.totalBlocks == blocksBefore
+
+  test "Should cleanup verifiable and slot overlays when purchase fails":
+    let
+      referenceBlocks = (
+        await makeRandomBlocks(
+          datasetSize = 4 * DefaultBlockSize.int, blockSize = DefaultBlockSize
+        )
+      ).tryGet()
+      referenceManifest =
+        (await storeDataGetManifest(localStore, referenceBlocks)).tryGet()
+      manifestBlk = (await localStore.storeManifest(referenceManifest)).tryGet()
+
+    # 1 overlay for the original dataset
+    check (await overlayCount(localStore)).tryGet() == 1
+
+    let
+      quotaBefore = localStore.quotaUsedBytes
+      blocksBefore = localStore.totalBlocks
+
+    let purchaseId = (
+      await node.requestStorage(
+        cid = manifestBlk.cid,
+        nodes = 5,
+        tolerance = 2,
+        duration = 100'StorageDuration,
+        pricePerBytePerSecond = 1'TokensPerSecond,
+        proofProbability = 3.u256,
+        expiry = 200'StorageDuration,
+        collateralPerByte = 1'Tokens,
+      )
+    ).tryGet()
+
+    # Overlays: original + protected/verifiable + 5 slot overlays = 7
+    check (await overlayCount(localStore)).tryGet() == 7
+    # Erasure coding added blocks, so quota and block count grew
+    check localStore.quotaUsedBytes > quotaBefore
+    check localStore.totalBlocks > blocksBefore
+
+    # Fulfill the purchase, then fail it
+    check eventually marketplace.requested.len > 0
+    let request = marketplace.requested[0]
+    let requestEnd = StorageTimestamp.init(clock.now() + 42)
+    marketplace.requestEnds[request.id] = requestEnd
+    marketplace.emitRequestFulfilled(request.id)
+
+    # Wait for PurchaseStarted, then emit failure
+    await sleepAsync(100.milliseconds)
+    marketplace.emitRequestFailed(request.id)
+
+    # Wait for purchase to complete (with error)
+    let purchasing = node.marketplace .? purchasing
+    check eventually purchasing .? getPurchase(purchaseId) .? finished == true.some
+
+    # Wait for cleanup callback to run
+    await sleepAsync(100.milliseconds)
+
+    # Original overlay remains, protected/verifiable + 5 slot overlays dropped
+    check (await overlayCount(localStore)).tryGet() == 1
+    # Quota and block count back to just original data
+    check localStore.quotaUsedBytes == quotaBefore
+    check localStore.totalBlocks == blocksBefore
+
+  test "Should cleanup all manifests and leave repo empty after full lifecycle":
+    let
+      referenceBlocks = (
+        await makeRandomBlocks(
+          datasetSize = 4 * DefaultBlockSize.int, blockSize = DefaultBlockSize
+        )
+      ).tryGet()
+      referenceManifest =
+        (await storeDataGetManifest(localStore, referenceBlocks)).tryGet()
+      manifestBlk = (await localStore.storeManifest(referenceManifest)).tryGet()
+      originalTreeCid = referenceManifest.treeCid
+
+    # 1 overlay for the original dataset
+    check (await overlayCount(localStore)).tryGet() == 1
+
     let purchaseId = (
       await node.requestStorage(
         cid = manifestBlk.cid,
@@ -472,10 +597,55 @@ suite "Test Node - Purchase overlay cleanup":
     # Wait for cleanup callback to run
     await sleepAsync(100.milliseconds)
 
-    # Original overlay remains, protected/verifiable + 5 slot overlays dropped
+    # Only original overlay remains after purchase completes
     check (await overlayCount(localStore)).tryGet() == 1
 
-  test "Should cleanup verifiable and slot overlays when purchase fails":
+    # Simulate data expiry: drop the original overlay too
+    (await localStore.dropOverlay(originalTreeCid)).tryGet()
+
+    # Everything has been cleaned up - repo is empty
+    check (await overlayCount(localStore)).tryGet() == 0
+    check localStore.quotaUsedBytes == 0.NBytes
+    check localStore.totalBlocks == 0.Natural
+
+suite "Test Node - Maintenance expiry with requestStorage":
+  var temporary: TemporaryNode
+  var node: ArchivistNodeRef
+  var localStore: RepoStore
+  var networkStore: NetworkStore
+  var marketplace: MockMarketplace
+  var clock: MockClock
+  var mockTimer: MockTimer
+  var maintainer: BlockMaintainer
+
+  setup:
+    clock = MockClock.new()
+    clock.set(1000)
+    temporary = await TemporaryNode.create(clock)
+    node = temporary.node
+    localStore = temporary.localStore
+    networkStore = temporary.networkStore
+    marketplace = MockMarketplace.new(clock)
+    mockTimer = MockTimer.new()
+    maintainer =
+      BlockMaintainer.new(localStore, 1.days, timer = mockTimer, clock = clock)
+
+    let
+      availDs = SQLiteKVStore.new(SqliteMemory, Taskpool.new()).tryGet()
+      availability = AvailabilityStore.new(availDs)
+    node.marketplace =
+      MarketplaceNode(
+        clock: clock,
+        purchasing: Purchasing.new(marketplace, clock),
+        sales: Sales.new(marketplace, clock, availability, StorageInterface()),
+      ).some
+
+  teardown:
+    await maintainer.stop()
+    node.marketplace = MarketplaceNode.none
+    await temporary.destroy()
+
+  test "Should cleanup manifests via maintenance while purchase is in-flight":
     let
       referenceBlocks = (
         await makeRandomBlocks(
@@ -485,8 +655,12 @@ suite "Test Node - Purchase overlay cleanup":
       referenceManifest =
         (await storeDataGetManifest(localStore, referenceBlocks)).tryGet()
       manifestBlk = (await localStore.storeManifest(referenceManifest)).tryGet()
+      originalTreeCid = referenceManifest.treeCid
 
-    # 1 overlay for the original dataset
+    let
+      quotaOriginal = localStore.quotaUsedBytes
+      blocksOriginal = localStore.totalBlocks
+
     check (await overlayCount(localStore)).tryGet() == 1
 
     let purchaseId = (
@@ -502,26 +676,14 @@ suite "Test Node - Purchase overlay cleanup":
       )
     ).tryGet()
 
-    # Overlays: original + protected/verifiable + 5 slot overlays = 7
     check (await overlayCount(localStore)).tryGet() == 7
+    check localStore.quotaUsedBytes > quotaOriginal
 
-    # Fulfill the purchase, then fail it
-    check eventually marketplace.requested.len > 0
-    let request = marketplace.requested[0]
-    let requestEnd = StorageTimestamp.init(clock.now() + 42)
-    marketplace.requestEnds[request.id] = requestEnd
-    marketplace.emitRequestFulfilled(request.id)
+    clock.set(1000 + 30 * 24 * 3600 + 100) # well past 30-day TTL
 
-    # Wait for PurchaseStarted, then emit failure
-    await sleepAsync(100.milliseconds)
-    marketplace.emitRequestFailed(request.id)
+    maintainer.start()
+    await mockTimer.invokeCallback()
 
-    # Wait for purchase to complete (with error)
-    let purchasing = node.marketplace .? purchasing
-    check eventually purchasing .? getPurchase(purchaseId) .? finished == true.some
-
-    # Wait for cleanup callback to run
-    await sleepAsync(100.milliseconds)
-
-    # Original overlay remains, protected/verifiable + 5 slot overlays dropped
-    check (await overlayCount(localStore)).tryGet() == 1
+    check (await overlayCount(localStore)).tryGet() == 0
+    check localStore.quotaUsedBytes == 0.NBytes
+    check localStore.totalBlocks == 0.Natural
