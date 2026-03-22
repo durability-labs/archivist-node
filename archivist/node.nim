@@ -856,7 +856,9 @@ proc storeSlot*(
 
   # Track verifiable manifest CID on the slot overlay for cleanup
   discard
-    ?await self.repoStore.storeVerifiableManifest(manifest, slotIndex.Natural.some)
+    ?await self.repoStore.storeVerifiableManifest(
+      manifest, slotIndex.Natural.some, expiry = expiry
+    )
 
   trace "Slot successfully retrieved and reconstructed"
 
