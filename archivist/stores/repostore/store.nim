@@ -613,7 +613,12 @@ proc storeVerifiableManifest*(
   await self.storeManifestBlock(rootCids, manifest, expiry)
 
 proc storeVerifiableManifest*(
-    self: RepoStore, manifest: Manifest, slotIndex: ?Natural = Natural.none
+    self: RepoStore,
+    manifest: Manifest,
+    slotIndex: ?Natural = Natural.none,
+    status: ?OverlayStatus = OverlayStatus.none,
+    blocks = BitSeq.init(0),
+    expiry = ZeroSeconds,
 ): Future[?!Block] {.async: (raises: [CancelledError]).} =
   ## Store a verifiable manifest block and track it on slot overlays.
   ## Unlike storeManifest, this does NOT set manifestCid on the tree overlay,
@@ -636,8 +641,15 @@ proc storeVerifiableManifest*(
       manifest.slotRoots
 
   for slotRoot in slotRoots:
-    if err =?
-        (await self.putOverlay(slotRoot, manifestCid = manifestBlk.cid.some)).errorOption:
+    if err =? (
+      await self.putOverlay(
+        slotRoot,
+        status = status,
+        blocks = blocks,
+        expiry = expiry,
+        manifestCid = manifestBlk.cid.some,
+      )
+    ).errorOption:
       trace "Unable to set manifestCid on slot overlay",
         slotRoot, manifestCid = manifestBlk.cid
       return failure(err)
