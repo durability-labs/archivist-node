@@ -376,18 +376,12 @@ proc deleteEntireDataset(
   # Deletion is a strictly local operation
   var store = self.networkStore.localStore
 
-  without manifestBlock =? await store.getBlock(cid), err:
-    return failure(err)
-
-  without manifest =? Manifest.decode(manifestBlock), err:
+  without manifest =? (await self.repoStore.fetchManifest(cid)), err:
     return failure(err)
 
   if err =? (await self.repoStore.dropOverlay(manifest.treeCid)).errorOption:
     error "Error dropping manifest overlay", cid, err = err.msg
     return failure(err)
-
-  if err =? (await store.delBlock(cid)).errorOption:
-    warn "Manifest block already removed", cid, err = err.msg
 
   success()
 
