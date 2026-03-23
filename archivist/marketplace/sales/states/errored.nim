@@ -47,7 +47,7 @@ method run*(
   let slotIndex = data.slotIndex
 
   logScope:
-    requestId = data.?request.?id
+    requestId = data .? request .? id
     slotIndex = data.slotIndex
 
   error "Error", error = state.error
