@@ -905,6 +905,191 @@ proc testLifecycle*(
       check repo.quotaUsedBytes == 0.NBytes
       check repo.totalBlocks == 0.Natural
 
+    test "Should track manifest refCount across slot overlays":
+      var blocks: seq[bt.Block]
+      for size in [100, 101, 102, 103]:
+        blocks.add(createTestBlock(size))
+
+      let
+        (baseManifest, tree) = makeManifestAndTree(blocks).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        protManifest = Manifest.new(
+          manifest = baseManifest,
+          treeCid = treeCid,
+          datasetSize = NBytes(8 * 103),
+          ecK = 2,
+          ecM = 2,
+        )
+
+      var slotRoots: seq[Cid]
+      for _ in 0 ..< 4:
+        slotRoots.add(Cid.example)
+
+      let verManifest = Manifest.new(protManifest, Cid.example, slotRoots).tryGet()
+
+      # Store verifiable manifest - should create 4 slot overlays with refCount=4
+      let verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+
+      check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 4.Natural
+
+      # Drop one slot overlay - refCount should be 3
+      (await repo.dropOverlay(slotRoots[0])).tryGet()
+      check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 3.Natural
+
+      # Drop two more - refCount should be 1
+      (await repo.dropOverlay(slotRoots[1])).tryGet()
+      (await repo.dropOverlay(slotRoots[2])).tryGet()
+      check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 1.Natural
+
+      # Drop last - manifest block should be deleted (refCount 0)
+      (await repo.dropOverlay(slotRoots[3])).tryGet()
+      check (await repo.getBlock(verManifestBlk.cid)).isErr
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
+
+    test "Should cleanup manifest exactly once when slot overlays are dropped concurrently":
+      var blocks: seq[bt.Block]
+      for size in [100, 101, 102, 103]:
+        blocks.add(createTestBlock(size))
+
+      let
+        (baseManifest, tree) = makeManifestAndTree(blocks).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        protManifest = Manifest.new(
+          manifest = baseManifest,
+          treeCid = treeCid,
+          datasetSize = NBytes(8 * 103),
+          ecK = 2,
+          ecM = 2,
+        )
+
+      var slotRoots: seq[Cid]
+      for _ in 0 ..< 4:
+        slotRoots.add(Cid.example)
+
+      let verManifest = Manifest.new(protManifest, Cid.example, slotRoots).tryGet()
+      let verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+
+      check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 4.Natural
+
+      # Drop all slot overlays concurrently - the original race condition scenario
+      var dropFutures: seq[Future[?!void]]
+      for slotRoot in slotRoots:
+        dropFutures.add(repo.dropOverlay(slotRoot))
+
+      await allFutures(dropFutures)
+
+      for fut in dropFutures:
+        check fut.value.isOk
+
+      # Manifest should be fully cleaned up
+      check (await repo.getBlock(verManifestBlk.cid)).isErr
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
+
+    test "Should attach only one slot overlay when slotIdx is provided":
+      var blocks: seq[bt.Block]
+      for size in [100, 101, 102, 103]:
+        blocks.add(createTestBlock(size))
+
+      let
+        (baseManifest, tree) = makeManifestAndTree(blocks).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        protManifest = Manifest.new(
+          manifest = baseManifest,
+          treeCid = treeCid,
+          datasetSize = NBytes(8 * 103),
+          ecK = 2,
+          ecM = 2,
+        )
+
+      var slotRoots: seq[Cid]
+      for _ in 0 ..< 4:
+        slotRoots.add(Cid.example)
+
+      let verManifest = Manifest.new(protManifest, Cid.example, slotRoots).tryGet()
+
+      # Store with slotIdx=1 - only slot 1 overlay should be created
+      let verManifestBlk =
+        (await repo.storeManifest(verManifest, slotIdx = 1.Natural.some)).tryGet()
+
+      # Only one overlay created, so refCount should be 1
+      check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 1.Natural
+
+      # Only slot 1 overlay should have manifestCid
+      let overlay1 = (await repo.getOverlay(slotRoots[1])).tryGet()
+      check overlay1.manifestCid == verManifestBlk.cid.some
+
+      # Other slot overlays should not exist
+      for i in [0, 2, 3]:
+        check (await repo.getOverlay(slotRoots[i])).isErr
+
+      # Dropping the single slot overlay should delete the manifest
+      (await repo.dropOverlay(slotRoots[1])).tryGet()
+      check (await repo.getBlock(verManifestBlk.cid)).isErr
+
+    test "Should reject slotIdx for non-verifiable manifest":
+      let
+        blk = createTestBlock(100)
+        (manifest, _) = makeManifestAndTree(@[blk]).tryGet()
+
+      let result = await repo.storeManifest(manifest, slotIdx = 0.Natural.some)
+      check result.isErr
+
+    test "Should fire onBlockStored callback when storing manifest":
+      let
+        blk = createTestBlock(100)
+        (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+        treeCid = tree.rootCid.tryGet()
+
+      var callbackCid: ?Cid
+      repo.onBlockStored = (
+        proc(cid: Cid): Future[void] {.async: (raises: []).} =
+          callbackCid = cid.some
+      ).some
+
+      (await repo.putOverlay(treeCid = treeCid, status = Completed.some)).tryGet()
+      let manifestBlk = (await repo.storeManifest(manifest)).tryGet()
+
+      check callbackCid.isSome
+      check callbackCid == manifestBlk.cid.some
+
+    test "Should handle idempotent storeManifest without double-counting refCount":
+      let
+        blk = createTestBlock(100)
+        (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+        treeCid = tree.rootCid.tryGet()
+
+      (await repo.putOverlay(treeCid = treeCid, status = Completed.some)).tryGet()
+
+      # Store manifest first time
+      let manifestBlk1 = (await repo.storeManifest(manifest)).tryGet()
+      check (await repo.blockRefCount(manifestBlk1.cid)).tryGet() == 1.Natural
+
+      let quotaAfterFirst = repo.quotaUsedBytes
+
+      # Store same manifest again - overlay already has manifestCid,
+      # so overlaysToUpdate should be empty and refCount unchanged
+      let manifestBlk2 = (await repo.storeManifest(manifest)).tryGet()
+      check manifestBlk1.cid == manifestBlk2.cid
+      check (await repo.blockRefCount(manifestBlk1.cid)).tryGet() == 1.Natural
+
+      # Quota should not increase (block already on disk)
+      check repo.quotaUsedBytes == quotaAfterFirst
+
+    test "Should succeed dropManifest on overlay without manifestCid":
+      let treeCid = Cid.example
+
+      (await repo.putOverlay(treeCid = treeCid, status = Completed.some)).tryGet()
+
+      # dropManifest on overlay with no manifestCid should be a no-op
+      (await repo.dropManifest(treeCid)).tryGet()
+
+      # Overlay should still exist and be unchanged
+      let overlay = (await repo.getOverlay(treeCid)).tryGet()
+      check overlay.status == Completed
+      check overlay.manifestCid.isNone
+
 proc runFsSqliteTests() =
   let repoDir = createTempDir("archivist-", "-repostore")
 
