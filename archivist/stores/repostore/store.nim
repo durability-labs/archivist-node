@@ -582,7 +582,10 @@ proc release*(
   await self.updateCounters(reservedDelta = -(bytes.int))
 
 method storeManifest*(
-    self: RepoStore, manifest: Manifest
+    self: RepoStore,
+    manifest: Manifest,
+    slotIdx = Natural.none,
+    expiry = SecondsSince1970(0),
 ): Future[?!Block] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Store a manifest block with an overlay for the manifest's treeCid.
   ##
@@ -638,23 +641,12 @@ proc storeVerifiableManifest*(
     if idx =? slotIndex:
       @[manifest.slotRoots[idx]]
     else:
-      manifest.slotRoots
-
-  for slotRoot in slotRoots:
-    if err =? (
-      await self.putOverlay(
-        slotRoot,
-        status = status,
-        blocks = blocks,
-        expiry = expiry,
-        manifestCid = manifestBlk.cid.some,
-      )
-    ).errorOption:
-      trace "Unable to set manifestCid on slot overlay",
-        slotRoot, manifestCid = manifestBlk.cid
+      trace "Error storing manifest", cid = manifestBlk.cid
       return failure(err)
+  else:
+    ?await self.updateCounters(quotaDelta = manifestBlk.data.len, blocksDelta = 1)
 
-  trace "Stored verifiable manifest block", cid = manifestBlk.cid, slots = slotRoots.len
+  trace "Stored manifest block", cid = manifestBlk.cid
 
   success manifestBlk
 

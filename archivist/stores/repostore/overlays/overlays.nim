@@ -18,7 +18,6 @@ import ../types
 import ../operations
 import ../../keyutils
 import ../../../clock
-import ../../../manifest
 import ../../../archivisttypes
 
 import ../../queryiterhelper

@@ -15,6 +15,7 @@ import pkg/questionable
 import pkg/questionable/results
 
 import ../blocktype
+import ../clock
 import ../merkletree
 import ../utils
 import ../manifest
@@ -293,7 +294,10 @@ method hasBlock*(
 ###########################################################
 
 method storeManifest*(
-    self: BlockStore, manifest: Manifest
+    self: BlockStore,
+    manifest: Manifest,
+    slotIdx = Natural.none,
+    expiry = SecondsSince1970(0),
 ): Future[?!Block] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Store a manifest to the blockstore and return the manifest block
   ##
