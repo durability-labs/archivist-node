@@ -169,7 +169,7 @@ proc delFromBlocksStore*(
     # bypases CAS for cituations like this)
     toDelete = ?await self.repoDs.get(keys)
 
-    # delete on disk blocks first  - best effort if crash
+    # delete on disk blocks first - best effort if crash
     # occurs we might miss some blocks, but we can recover
     # the delete, since the metadata is still present
     skipped = (?await self.repoDs.delete(toDelete.toKeyRecord)).toHashSet
@@ -718,3 +718,66 @@ proc getLeafMetadata*(
       return failure(err)
 
   success(leafMd.val)
+
+proc dropManifest*(
+    self: RepoStore, treeCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Detach a manifest from an overlay, atomically decrementing the
+  ## manifest's BlockMetadata.refCount. If refCount reaches 0,
+  ## tryDeleteBlocks will delete the manifest block from disk.
+  ##
+
+  logScope:
+    treeCid = treeCid
+
+  let key = ?overlayKey(treeCid)
+  without var overlayRec =? (await self.metaDs.get(key, OverlayMetadata)), err:
+    if err of KVStoreKeyNotFound:
+      trace "Overlay not found, nothing to detach"
+      return success()
+    return failure(err)
+
+  without manifestCid =? overlayRec.val.manifestCid:
+    trace "Overlay has no manifest attached"
+    return success()
+
+  trace "Detaching manifest from overlay", manifestCid
+
+  overlayRec.val.manifestCid = Cid.none
+
+  let blkMetaKey = ?blockMetaKey(manifestCid)
+  var blkMetaRec = ?await self.metaDs.get(blkMetaKey, BlockMetadata)
+  if blkMetaRec.val.refCount > 0:
+    blkMetaRec.val.refCount.dec
+
+  ?await self.metaDs.tryPutAtomic(
+    @[overlayRec.toRaw, blkMetaRec.toRaw],
+    maxRetries = 10,
+    proc(
+        records: seq[RawKVRecord], conflicts: seq[Key]
+    ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
+      var records = records.mapIt((it.key, it)).toTable
+      let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
+
+      if key in refreshed:
+        var rec = ?toRecord[OverlayMetadata](?catch(refreshed[key]))
+        rec.val.manifestCid = Cid.none
+        records[key] = rec.toRaw
+
+      if blkMetaKey in refreshed:
+        var rec = ?toRecord[BlockMetadata](?catch(refreshed[blkMetaKey]))
+        if rec.val.refCount > 0:
+          rec.val.refCount.dec
+        records[blkMetaKey] = rec.toRaw
+
+      success toSeq(records.values)
+    ,
+  )
+
+  self.overlayCache.del(key)
+
+  discard ?await self.tryDeleteBlocks(manifestCid)
+
+  trace "Manifest detached from overlay", manifestCid
+
+  success()

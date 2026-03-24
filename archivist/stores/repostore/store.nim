@@ -29,6 +29,7 @@ import ../../logutils
 import ../../merkletree
 import ../../utils
 import ../../manifest
+import ../../clock
 
 export blocktype, cid, overlays
 
@@ -581,67 +582,126 @@ proc release*(
   await self.updateCounters(reservedDelta = -(bytes.int))
 
 method storeManifest*(
-    self: RepoStore, manifest: Manifest
+    self: RepoStore,
+    manifest: Manifest,
+    slotIdx = Natural.none,
+    expiry = SecondsSince1970(0),
 ): Future[?!Block] {.async: (raises: [CancelledError]), gcsafe.} =
   let manifestBlk = ?manifest.toBlock
 
+  if not manifest.verifiable and slotIdx.isSome:
+    return failure(
+      newException(
+        ArchivistError, "Cannot set slot index with a non-verifiable manifest"
+      )
+    )
+
+  let treeCids =
+    if manifest.verifiable:
+      if idx =? slotIdx:
+        @[manifest.slotRoots[idx]]
+      else:
+        manifest.slotRoots
+    else:
+      @[manifest.treeCid]
+
+  let overlayExpiry =
+    if expiry != SecondsSince1970(0):
+      expiry
+    else:
+      self.clock.now() + self.overlayTtl
+
+  let
+    # initial key -> record mapping
+    overlaysMap = treeCids.mapIt(
+      (
+        ?overlayKey(it),
+        KVRecord[OverlayMetadata].init(
+          ?overlayKey(it),
+          OverlayMetadata(
+            manifestCid: manifestBlk.cid.some,
+            status: Pending,
+            expiry: overlayExpiry,
+            blocks: BitSeq.init(0),
+          ),
+        ),
+      )
+    ).toTable
+
+    # get the current overlays and create a map of key -> record
+    overlayRecsMap = (?await self.metaDs.get(toSeq(overlaysMap.keys), OverlayMetadata)).mapIt(
+      (it.key, it)
+    ).toTable
+
+  # filter out either those that exist but don't have a manifestCid set or don't exist at all
+  var overlaysToUpdate = toSeq(overlaysMap.values).filterIt(it.key notin overlayRecsMap)
+  overlaysToUpdate &=
+    toSeq(overlayRecsMap.values).filterIt(not it.val.manifestCid.isSome)
+
+  # set manifestCid on all overlays
+  for item in overlaysToUpdate.mitems:
+    item.val.manifestCid = manifestBlk.cid.some
+
+  let
+    blkMetaKey = ?blockMetaKey(manifestBlk.cid)
+    blkMetaRec = KVRecord[BlockMetadata].init(
+      blkMetaKey, BlockMetadata(cid: manifestBlk.cid, refCount: overlaysToUpdate.len)
+    )
+
+  ?await self.metaDs.tryPutAtomic(
+    @[blkMetaRec.toRaw] & overlaysToUpdate.mapIt(it.toRaw),
+    maxRetries = 10,
+    proc(
+        records: seq[RawKVRecord], conflicts: seq[Key]
+    ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
+      var records = records.mapIt((it.key, it)).toTable
+      let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
+
+      var overlaysCount = overlaysToUpdate.len
+      for raw in refreshed.values:
+        if ArchivistOverlaysKey.ancestor(raw.key):
+          var record = ?toRecord[OverlayMetadata](raw)
+          if not record.val.manifestCid.isSome:
+            record.val.manifestCid = manifestBlk.cid.some
+            records[record.key] = record.toRaw
+          else:
+            overlaysCount.dec
+            records.del(record.key)
+
+      records[blkMetaKey] =
+        if blkMetaKey in refreshed:
+          var rec = ?toRecord[BlockMetadata](?catch(refreshed[blkMetaKey]))
+          rec.val.refCount += overlaysCount
+          rec.toRaw
+        else:
+          var rec = ?toRecord[BlockMetadata](?catch(records[blkMetaKey]))
+          rec.val.refCount = overlaysCount
+          rec.toRaw
+
+      success toSeq(records.values)
+    ,
+  )
+
+  for treeCid in treeCids:
+    let key = ?overlayKey(treeCid)
+    self.overlayCache.del(key)
+
   if err =? (
-    await self.putOverlay(
-      treeCid = manifest.treeCid, manifestCid = manifestBlk.cid.some
+    await self.repoDs.put(
+      RawKVRecord.init(
+        ?makePrefixKey(self.postFixLen, manifestBlk.cid), manifestBlk.data
+      )
     )
   ).errorOption:
-    trace "Unable to set manifestCid for overlay metadata",
-      treeCid = manifest.treeCid, manifestCid = manifestBlk.cid
-    return failure(err)
-
-  ?await self.putBlockInternal(manifestBlk)
-  trace "Stored manifest block", cid = manifestBlk.cid
-
-  success manifestBlk
-
-proc storeVerifiableManifest*(
-    self: RepoStore,
-    manifest: Manifest,
-    slotIndex: ?Natural = Natural.none,
-    status: ?OverlayStatus = OverlayStatus.none,
-    blocks = BitSeq.init(0),
-    expiry = ZeroSeconds,
-): Future[?!Block] {.async: (raises: [CancelledError]).} =
-  ## Store a verifiable manifest block and track it on slot overlays.
-  ## Unlike storeManifest, this does NOT set manifestCid on the tree overlay,
-  ## preserving the protected manifest reference there.
-  ##
-  ## When slotIndex is provided, only update that slot's overlay.
-  ## Otherwise update all slot overlays.
-  ##
-
-  if not manifest.verifiable:
-    return failure(newException(ArchivistError, "Must be a verifiable manifest"))
-
-  let manifestBlk = ?manifest.toBlock
-  ?await self.putBlockInternal(manifestBlk)
-
-  let slotRoots =
-    if idx =? slotIndex:
-      @[manifest.slotRoots[idx]]
+    if err of KVConflictError:
+      trace "Manifest already on disk, skipping write", cid = manifestBlk.cid
     else:
-      manifest.slotRoots
-
-  for slotRoot in slotRoots:
-    if err =? (
-      await self.putOverlay(
-        slotRoot,
-        status = status,
-        blocks = blocks,
-        expiry = expiry,
-        manifestCid = manifestBlk.cid.some,
-      )
-    ).errorOption:
-      trace "Unable to set manifestCid on slot overlay",
-        slotRoot, manifestCid = manifestBlk.cid
+      trace "Error storing manifest", cid = manifestBlk.cid
       return failure(err)
+  else:
+    ?await self.updateCounters(quotaDelta = manifestBlk.data.len, blocksDelta = 1)
 
-  trace "Stored verifiable manifest block", cid = manifestBlk.cid, slots = slotRoots.len
+  trace "Stored manifest block", cid = manifestBlk.cid
 
   success manifestBlk
 

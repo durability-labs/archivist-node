@@ -561,9 +561,6 @@ proc store*(
   # store the manifest
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
 
-  # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlay(treeCid, manifestCid = manifestBlk.cid.some)
-
   info "Stored data",
     manifestCid = manifestBlk.cid,
     treeCid = treeCid,
@@ -668,7 +665,7 @@ proc setupRequest(
   let
     manifest = ?await self.fetchManifest(cid)
     verifiable = ?await self.ensureVerifiableManifest(manifest, ecK, ecM)
-    manifestBlk = ?await self.repoStore.storeVerifiableManifest(verifiable)
+    manifestBlk = ?await self.repoStore.storeManifest(verifiable)
 
     verifyRoot = (?verifiable.verifyRoot.fromVerifyCid).toBytes
     slotBytes = (verifiable.blockSize.int * verifiable.numSlotBlocks).NBytes
@@ -850,8 +847,8 @@ proc storeSlot*(
 
   # Track verifiable manifest CID on the slot overlay for cleanup
   discard
-    ?await self.repoStore.storeVerifiableManifest(
-      manifest, slotIndex.Natural.some, expiry = expiry
+    ?await self.repoStore.storeManifest(
+      manifest, slotIdx = slotIndex.Natural.some, expiry = expiry
     )
 
   trace "Slot successfully retrieved and reconstructed"

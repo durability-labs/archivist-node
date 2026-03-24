@@ -18,7 +18,6 @@ import ../types
 import ../operations
 import ../../keyutils
 import ../../../clock
-import ../../../manifest
 import ../../../archivisttypes
 
 import ../../queryiterhelper
@@ -277,9 +276,7 @@ proc dropOverlay*(
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)
 
-  var manifestCid: ?Cid
   while true:
-    # Read overlay to get manifestCid before deletion
     without overlay =? (await self.getOverlay(treeCid)), err:
       if err of KVStoreKeyNotFound:
         trace "Overlay already deleted", treeCid
@@ -287,7 +284,6 @@ proc dropOverlay*(
       warn "Overlay missing", treeCid, err = err.msg
       return failure(err)
 
-    manifestCid = overlay.manifestCid
     var indices: seq[Natural]
     for i in 0 ..< overlay.blocks.len:
       if overlay.blocks[i.Natural]:
@@ -300,32 +296,8 @@ proc dropOverlay*(
     ?await self.delLeafBlockMetadata(treeCid, indices)
     trace "Deleted leaf metadata and updated refcounts", count = indices.len
 
-  if cid =? manifestCid:
-    let manifest =
-      (?await self.repoDs.get(?makePrefixKey(self.postFixLen, cid), Manifest)).val
-
-    var skip = false
-    if manifest.verifiable:
-      # Filter out the current treeCid to avoid self-reference: when dropping
-      # a slot overlay, we must not count ourselves as "still exists".
-
-      let slotsLeft = (
-          await allFinished(
-            manifest.slotRoots.filterIt(it != treeCid).mapIt(
-              self.metaDs.has(?overlayKey(it))
-            )
-          )
-        )
-        .mapIt(?(catch(it.read).flatten))
-        .filterIt(it)
-      skip = slotsLeft.len > 0
-
-    if not skip:
-      let skipped = ?await self.delFromBlocksStore(@[cid])
-      if skipped.len > 0:
-        warn "Unable to delete manifest", cid
-    else:
-      trace "Skipping manifest delete, still used by slots", manifestCid = cid
+  # Detach manifest and try to delete if refcount reaches 0
+  ?await self.dropManifest(treeCid)
 
   # Delete overlay metadata
   ?await self.deleteOverlay(treeCid)
