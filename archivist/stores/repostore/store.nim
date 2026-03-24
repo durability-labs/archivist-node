@@ -700,6 +700,8 @@ method storeManifest*(
       return failure(err)
   else:
     ?await self.updateCounters(quotaDelta = manifestBlk.data.len, blocksDelta = 1)
+    if onBlock =? self.onBlockStored:
+      await onBlock(manifestBlk.cid)
 
   trace "Stored manifest block", cid = manifestBlk.cid
 
