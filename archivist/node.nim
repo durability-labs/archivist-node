@@ -155,6 +155,33 @@ proc updateExpiry*(
 
   await self.updateExpiry(manifest, expiry)
 
+proc updateSlotExpiry*(
+    self: ArchivistNodeRef,
+    manifestCid: Cid,
+    slotIndex: uint64,
+    expiry: SecondsSince1970,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Update expiry for both the tree overlay and the slot overlay
+  ##
+
+  without manifest =? await self.fetchManifest(manifestCid), error:
+    trace "Unable to fetch manifest for cid", manifestCid
+    return failure(error)
+
+  # Validate before any mutations
+  if not manifest.verifiable or slotIndex.int > manifest.slotRoots.high:
+    error "Slot not found in manifest", manifestCid, slotIndex
+    return failure(newException(ArchivistError, "Slot not found in manifest"))
+
+  # Update tree overlay expiry
+  ?await self.repoStore.putOverlay(manifest.treeCid, expiry = expiry)
+
+  # Update slot overlay expiry
+  let slotRoot = manifest.slotRoots[slotIndex.int]
+  ?await self.repoStore.putOverlay(slotRoot, expiry = expiry)
+
+  return success()
+
 proc fetchBatched*(
     self: ArchivistNodeRef,
     cid: Cid,
@@ -847,7 +874,7 @@ proc storeSlot*(
 
   # Track verifiable manifest CID on the slot overlay for cleanup
   discard
-    ?await self.repoStore.storeManifest(
+    ?await self.repoStore.storeVerifiableManifest(
       manifest, slotIdx = slotIndex.Natural.some, expiry = expiry
     )
 
@@ -872,7 +899,7 @@ proc proveSlot*(
     trace "Prover enabled"
 
     let
-      manifest = ?await self.fetchManifest(cid)
+      manifest = ?await self.repoStore.fetchManifest(cid)
       builder =
         ?Poseidon2Builder.new(
           self.networkStore, self.repoStore, manifest, manifest.verifiableStrategy

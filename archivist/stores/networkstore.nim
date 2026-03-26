@@ -18,7 +18,6 @@ import pkg/questionable/results
 
 import ../blocktype
 import ../blockexchange
-import ../clock
 import ../logutils
 import ../manifest
 import ../merkletree
@@ -229,15 +228,12 @@ method hasBlocks*(
   self.localStore.hasBlocks(tree, indices)
 
 method storeManifest*(
-    self: NetworkStore,
-    manifest: Manifest,
-    slotIdx = Natural.none,
-    expiry = SecondsSince1970(0),
+    self: NetworkStore, manifest: Manifest
 ): Future[?!Block] {.async: (raw: true, raises: [CancelledError]).} =
   ## Store a manifest to the blockstore
   ##
 
-  self.localStore.storeManifest(manifest, slotIdx, expiry)
+  self.localStore.storeManifest(manifest)
 
 method fetchManifest*(
     self: NetworkStore, cid: Cid

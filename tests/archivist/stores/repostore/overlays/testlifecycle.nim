@@ -755,7 +755,7 @@ proc testLifecycle*(
 
       let
         protManifestBlk = (await repo.storeManifest(protManifest)).tryGet()
-        verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+        verManifestBlk = (await repo.storeVerifiableManifest(verManifest)).tryGet()
 
       # Drop tree overlay: protected manifest deleted, verifiable manifest untouched
       (await repo.dropOverlay(treeCid)).tryGet()
@@ -807,7 +807,7 @@ proc testLifecycle*(
 
       let
         protManifestBlk = (await repo.storeManifest(protManifest)).tryGet()
-        verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+        verManifestBlk = (await repo.storeVerifiableManifest(verManifest)).tryGet()
         verManifestBytes = verManifestBlk.data.len.NBytes
 
       # Drop tree overlay: data blocks + protected manifest gone
@@ -871,7 +871,7 @@ proc testLifecycle*(
       # Step 1: store both manifests
       let
         protManifestBlk = (await repo.storeManifest(protManifest)).tryGet()
-        verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+        verManifestBlk = (await repo.storeVerifiableManifest(verManifest)).tryGet()
         dataBytes = NBytes(100 + 101 + 102 + 103)
         protManifestBytes = protManifestBlk.data.len.NBytes
         verManifestBytes = verManifestBlk.data.len.NBytes
@@ -928,7 +928,7 @@ proc testLifecycle*(
       let verManifest = Manifest.new(protManifest, Cid.example, slotRoots).tryGet()
 
       # Store verifiable manifest - should create 4 slot overlays with refCount=4
-      let verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+      let verManifestBlk = (await repo.storeVerifiableManifest(verManifest)).tryGet()
 
       check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 4.Natural
 
@@ -968,7 +968,7 @@ proc testLifecycle*(
         slotRoots.add(Cid.example)
 
       let verManifest = Manifest.new(protManifest, Cid.example, slotRoots).tryGet()
-      let verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+      let verManifestBlk = (await repo.storeVerifiableManifest(verManifest)).tryGet()
 
       check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 4.Natural
 
@@ -1010,8 +1010,9 @@ proc testLifecycle*(
       let verManifest = Manifest.new(protManifest, Cid.example, slotRoots).tryGet()
 
       # Store with slotIdx=1 - only slot 1 overlay should be created
-      let verManifestBlk =
-        (await repo.storeManifest(verManifest, slotIdx = 1.Natural.some)).tryGet()
+      let verManifestBlk = (
+        await repo.storeVerifiableManifest(verManifest, slotIdx = 1.Natural.some)
+      ).tryGet()
 
       # Only one overlay created, so refCount should be 1
       check (await repo.blockRefCount(verManifestBlk.cid)).tryGet() == 1.Natural
@@ -1033,7 +1034,8 @@ proc testLifecycle*(
         blk = createTestBlock(100)
         (manifest, _) = makeManifestAndTree(@[blk]).tryGet()
 
-      let result = await repo.storeManifest(manifest, slotIdx = 0.Natural.some)
+      let result =
+        await repo.storeVerifiableManifest(manifest, slotIdx = 0.Natural.some)
       check result.isErr
 
     test "Should fire onBlockStored callback when storing manifest":

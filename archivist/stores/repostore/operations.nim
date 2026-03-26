@@ -20,6 +20,7 @@ import ../../blocktype
 import ../../clock
 import ../../logutils
 import ../../merkletree
+import ../../manifest
 import ../../utils
 
 logScope:
@@ -719,9 +720,124 @@ proc getLeafMetadata*(
 
   success(leafMd.val)
 
+proc storeManifestBlock*(
+    self: RepoStore, rootCids: seq[Cid], manifest: Manifest, expiry = ZeroSeconds
+): Future[?!Block] {.async: (raises: [CancelledError]), gcsafe.} =
+  ## Low-level manifest storage: creates/updates overlays for each rootCid
+  ## with manifestCid set, atomically manages BlockMetadata.refCount, and
+  ## writes the manifest block to disk.
+  ##
+  ## This proc is rootCid-agnostic -- callers decide whether rootCids are
+  ## treeCids or slotRoots.
+  ##
+
+  let manifestBlk = ?manifest.toBlock
+
+  let overlayExpiry =
+    if expiry != ZeroSeconds:
+      expiry
+    else:
+      self.clock.now() + self.overlayTtl
+
+  let
+    # initial key -> record mapping
+    overlaysMap = rootCids.mapIt(
+      (
+        ?overlayKey(it),
+        KVRecord[OverlayMetadata].init(
+          ?overlayKey(it),
+          OverlayMetadata(
+            manifestCid: manifestBlk.cid.some,
+            status: Pending,
+            expiry: overlayExpiry,
+            blocks: BitSeq.init(0),
+          ),
+        ),
+      )
+    ).toTable
+
+    # get the current overlays and create a map of key -> record
+    overlayRecsMap = (?await self.metaDs.get(toSeq(overlaysMap.keys), OverlayMetadata)).mapIt(
+      (it.key, it)
+    ).toTable
+
+  # filter out either those that exist but don't have a manifestCid set or don't exist at all
+  var overlaysToUpdate = toSeq(overlaysMap.values).filterIt(it.key notin overlayRecsMap)
+  overlaysToUpdate &=
+    toSeq(overlayRecsMap.values).filterIt(not it.val.manifestCid.isSome)
+
+  # set manifestCid on all overlays
+  for item in overlaysToUpdate.mitems:
+    item.val.manifestCid = manifestBlk.cid.some
+
+  let
+    blkMetaKey = ?blockMetaKey(manifestBlk.cid)
+    blkMetaRec = KVRecord[BlockMetadata].init(
+      blkMetaKey, BlockMetadata(cid: manifestBlk.cid, refCount: overlaysToUpdate.len)
+    )
+
+  ?await self.metaDs.tryPutAtomic(
+    @[blkMetaRec.toRaw] & overlaysToUpdate.mapIt(it.toRaw),
+    maxRetries = 10,
+    proc(
+        records: seq[RawKVRecord], conflicts: seq[Key]
+    ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
+      var records = records.mapIt((it.key, it)).toTable
+      let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
+
+      var overlaysCount = overlaysToUpdate.len
+      for raw in refreshed.values:
+        if ArchivistOverlaysKey.ancestor(raw.key):
+          var record = ?toRecord[OverlayMetadata](raw)
+          if not record.val.manifestCid.isSome:
+            record.val.manifestCid = manifestBlk.cid.some
+            records[record.key] = record.toRaw
+          else:
+            overlaysCount.dec
+            records.del(record.key)
+
+      records[blkMetaKey] =
+        if blkMetaKey in refreshed:
+          var rec = ?toRecord[BlockMetadata](?catch(refreshed[blkMetaKey]))
+          rec.val.refCount += overlaysCount
+          rec.toRaw
+        else:
+          var rec = ?toRecord[BlockMetadata](?catch(records[blkMetaKey]))
+          rec.val.refCount = overlaysCount
+          rec.toRaw
+
+      success toSeq(records.values)
+    ,
+  )
+
+  for rootCid in rootCids:
+    let key = ?overlayKey(rootCid)
+    self.overlayCache.del(key)
+
+  if err =? (
+    await self.repoDs.put(
+      RawKVRecord.init(
+        ?makePrefixKey(self.postFixLen, manifestBlk.cid), manifestBlk.data
+      )
+    )
+  ).errorOption:
+    if err of KVConflictError:
+      trace "Manifest already on disk, skipping write", cid = manifestBlk.cid
+    else:
+      trace "Error storing manifest", cid = manifestBlk.cid
+      return failure(err)
+  else:
+    ?await self.updateCounters(quotaDelta = manifestBlk.data.len, blocksDelta = 1)
+    if onBlock =? self.onBlockStored:
+      await onBlock(manifestBlk.cid)
+
+  trace "Stored manifest block", cid = manifestBlk.cid
+
+  success manifestBlk
+
 proc dropManifest*(
     self: RepoStore, treeCid: Cid
-): Future[?!void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Detach a manifest from an overlay, atomically decrementing the
   ## manifest's BlockMetadata.refCount. If refCount reaches 0,
   ## tryDeleteBlocks will delete the manifest block from disk.

@@ -269,7 +269,7 @@ suite "BlockMaintainer":
     discard (await repo.storeManifest(protManifest)).tryGet()
 
     # Store verifiable manifest on slot overlays
-    let verManifestBlk = (await repo.storeManifest(verManifest)).tryGet()
+    let verManifestBlk = (await repo.storeVerifiableManifest(verManifest)).tryGet()
     let verifiableManifestBytes = verManifestBlk.data.len.NBytes
 
     # Create slot overlays with expiry in the future (200 > 100)

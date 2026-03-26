@@ -451,10 +451,13 @@ proc blocksDeliveryHandler*(
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
-    # TODO: The putBlock here should be replace by something like -
-    # storeManifestBlock(...)
-    if err =? (await self.localStore.putBlock(bd.blk)).errorOption:
-      error "Unable to store block", err = err.msg
+    without manifest =? Manifest.decode(bd.blk), err:
+      error "Unable to decode manifest block", err = err.msg
+      validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
+      continue
+
+    if err =? (await self.localStore.storeManifest(manifest)).errorOption:
+      error "Unable to store manifest", err = err.msg
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
 
   archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
