@@ -49,6 +49,7 @@ type
     archivistNode: ArchivistNodeRef
     repoStore: RepoStore
     maintenance: BlockMaintainer
+    natTraversal: NatTraversal
     taskpool: Taskpool
 
   NodePrivateKey* = libp2p.PrivateKey # alias
@@ -96,12 +97,15 @@ proc start*(s: NodeServer) {.async.} =
 
   await s.archivistNode.switch.start()
 
-  let (announceAddrs, discoveryAddrs) = nattedAddress(
-    s.config.nat, s.archivistNode.switch.peerInfo.addrs, s.config.discoveryPort
-  )
+  await s.natTraversal.start()
 
-  s.archivistNode.discovery.updateAnnounceRecord(announceAddrs)
-  s.archivistNode.discovery.updateDhtRecord(discoveryAddrs)
+  let discoveryAddress =
+    MultiAddress.init(IPv4_any(), udpProtocol, s.config.discoveryPort)
+  await s.natTraversal.map(@[discoveryAddress]) do(mapped: seq[MultiAddress]):
+    s.archivistNode.discovery.updateDhtRecord(mapped)
+
+  await s.natTraversal.map(s.config.listenAddrs) do(mapped: seq[MultiAddress]):
+    s.archivistNode.discovery.updateAnnounceRecord(mapped)
 
   await s.connectMarketplace()
   await s.archivistNode.start()
@@ -117,6 +121,7 @@ proc stop*(s: NodeServer) {.async.} =
       s.archivistNode.stop(),
       s.repoStore.stop(),
       s.maintenance.stop(),
+      s.natTraversal.stop(),
     ]
   )
 
@@ -219,6 +224,8 @@ proc new*(
     maintenance =
       BlockMaintainer.new(repoStore, interval = config.overlayMaintenanceInterval)
 
+    natTraversal = !NatTraversal.new(config.nat, tp)
+
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
     advertiser = Advertiser.new(repoStore, discovery)
@@ -262,5 +269,6 @@ proc new*(
     restServer: restServer,
     repoStore: repoStore,
     maintenance: maintenance,
+    natTraversal: natTraversal,
     taskpool: tp,
   )

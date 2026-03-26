@@ -1,0 +1,118 @@
+import std/net
+import std/tables
+import pkg/chronos
+import pkg/libp2p/multiaddress
+import pkg/questionable
+import pkg/questionable/results
+import pkg/nat_traversal/miniupnpc
+import pkg/nat_traversal/natpmp
+import ./config
+import ./multiaddress
+import ./pmp
+import ./upnp
+
+{.push raises: [].}
+
+type PortMapping* = object
+  config: NatConfig
+  upnp: Miniupnp
+  pmp: NatPmp
+  externalPorts: Table[MultiAddress, Port]
+  upnpDiscoverTimeout*: Duration = 200.milliseconds
+  portMappingLifetime*: Duration = 1.hours
+  portMappingDescription*: string = "archivist"
+
+proc initUpnp(mapping: var PortMapping) =
+  mapping.upnp = newMiniupnp()
+
+proc initPmp(mapping: var PortMapping): ?!void =
+  mapping.pmp = newNatPmp()
+  if gateway =? mapping.config.gateway:
+    if error =? mapping.pmp.init(gateway).errorOption:
+      return failure $error
+  else:
+    if error =? mapping.pmp.init().errorOption:
+      return failure $error
+  success()
+
+proc init*(_: type PortMapping, config: NatConfig): ?!PortMapping =
+  var mapping = PortMapping(config: config)
+  if config.strategy in [NatStrategy.Upnp, NatStrategy.Any]:
+    mapping.initUpnp()
+  if config.strategy in [NatStrategy.Pmp, NatStrategy.Any]:
+    ?mapping.initPmp()
+  success mapping
+
+proc mapExternalIp(mapping: PortMapping, address: MultiAddress): ?!MultiAddress =
+  without protocol =? address.protocol and port =? address.port:
+    return failure "Missing port in multiaddress"
+  success MultiAddress.init(!mapping.config.externalIp, protocol, port)
+
+proc mapRoutingTable(mapping: PortMapping, address: MultiAddress): ?!MultiAddress =
+  without ip =? address.ip and port =? address.port:
+    return failure "Missing IP address or port in multiaddress"
+  let bindAddress = initTAddress(ip, port)
+  if bindAddress.isGlobal and bindAddress.isUnicast:
+    return success address
+  let destination = initTAddress(static parseIpAddress("1.1.1.1"), Port(0))
+  let route = getBestRoute(destination)
+  if route.source.isGlobal and route.source.isUnicast:
+    if source =? route.source.address.catch and protocol =? address.protocol:
+      return success MultiAddress.init(source, protocol, port)
+  failure "No routable IP address found, check your network connection"
+
+proc mapPmp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
+  without protocol =? address.protocol and internal =? address.port:
+    return failure "Missing port in multiaddress"
+  let pmp = mapping.pmp
+  without externalIp =? pmp.requestExternalIp(), error:
+    return failure "NAT-PMP request external address failed: " & error.msg
+  let lifetime = mapping.portMappingLifetime
+  let external = mapping.externalPorts .? [address] |? internal
+  without mapped =? pmp.addPortMapping(external, internal, protocol, lifetime), error:
+    return failure "NAT-PMP port mapping failed: " & error.msg
+  mapping.externalPorts[address] = mapped
+  success MultiAddress.init(externalIp, protocol, mapped)
+
+proc mapUpnp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
+  without protocol =? address.protocol and internal =? address.port:
+    return failure "Missing port in multiaddress"
+  let upnp = mapping.upnp
+  ?upnp.discoverGateways(mapping.upnpDiscoverTimeout)
+  ?upnp.selectGateway()
+  without externalIp =? upnp.requestExternalIp(), error:
+    return failure "UPnP request external address failed: " & error.msg
+  let lifetime = mapping.portMappingLifetime
+  let external = mapping.externalPorts .? [address] |? internal
+  let description = mapping.portMappingDescription
+  let attempt = upnp.addPortMapping(external, internal, protocol, lifetime, description)
+  without mapped =? attempt, error:
+    return failure "UPnP port mapping failed: " & error.msg
+  mapping.externalPorts[address] = mapped
+  success MultiAddress.init(externalIp, protocol, mapped)
+
+proc mapAny(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
+  if mapped =? mapping.mapRoutingTable(address):
+    mapping.config = NatConfig.noNat
+    success mapped
+  elif mapped =? mapping.mapUpnp(address):
+    mapping.config = NatConfig.upnp
+    success mapped
+  elif mapped =? mapping.mapPmp(address):
+    mapping.config = NatConfig.pmp(mapping.config.gateway)
+    success mapped
+  else:
+    failure "UPnP/NAT-PMP failed"
+
+proc map*(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
+  case mapping.config.strategy
+  of NatStrategy.Any:
+    mapping.mapAny(address)
+  of NatStrategy.Upnp:
+    mapping.mapUpnp(address)
+  of NatStrategy.Pmp:
+    mapping.mapPmp(address)
+  of NatStrategy.ExternalIp:
+    mapping.mapExternalIp(address)
+  of NatStrategy.None:
+    mapping.mapRoutingTable(address)
