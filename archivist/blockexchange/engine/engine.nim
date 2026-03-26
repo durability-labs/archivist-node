@@ -451,6 +451,9 @@ proc blocksDeliveryHandler*(
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
+    if not isManifest:
+      continue
+
     without manifest =? Manifest.decode(bd.blk), err:
       error "Unable to decode manifest block", err = err.msg
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)

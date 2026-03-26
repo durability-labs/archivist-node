@@ -336,10 +336,10 @@ asyncchecksuite "NetworkStore engine handlers":
     let resolved = await allFinished(pending)
     check resolved.mapIt(it.read) == blocks
 
-    # Non-leaf deliveries are NOT persisted - hasBlock should fail
+    # Non-leaf non-manifest deliveries are NOT persisted
     for b in blocks:
       let present = await engine.localStore.hasBlock(b.cid)
-      check present.tryGet()
+      check not present.tryGet()
 
   test "Should send payments for received blocks":
     let
