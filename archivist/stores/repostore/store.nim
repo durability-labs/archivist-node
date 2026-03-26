@@ -582,10 +582,7 @@ proc release*(
   await self.updateCounters(reservedDelta = -(bytes.int))
 
 method storeManifest*(
-    self: RepoStore,
-    manifest: Manifest,
-    slotIdx = Natural.none,
-    expiry = SecondsSince1970(0),
+    self: RepoStore, manifest: Manifest
 ): Future[?!Block] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Store a manifest block with an overlay for the manifest's treeCid.
   ##
