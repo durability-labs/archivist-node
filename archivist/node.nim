@@ -382,8 +382,11 @@ proc retrieve*(
 
     return await self.streamSingleBlock(cid)
 
-  # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlay(manifest.treeCid, manifestCid = cid.some)
+  let blk = ?await self.repoStore.storeManifest(manifest)
+
+  if blk.cid != cid:
+    error "Retrieved manifest cid dont match!", original = cid, retrieved = blk.cid
+    return failure(newException(ArchivistError, "Retrieved manifest cid dont match!"))
 
   await self.streamEntireDataset(manifest, cid)
 
@@ -639,7 +642,6 @@ proc ensureProtectedManifest(
       leoDecoderProvider, self.taskpool,
     )
     encodedManifest = ?await erasure.encode(manifest, ecK, ecM)
-    manifestBlk = ?await self.repoStore.storeManifest(encodedManifest)
 
   success encodedManifest
 

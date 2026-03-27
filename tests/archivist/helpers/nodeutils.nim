@@ -163,8 +163,6 @@ proc generateNodes*(
             announceAddrs = @[listenAddr],
             store = discoveryDs,
           )
-        for blk in blocks:
-          (waitFor store.putBlock(blk)).tryGet()
         (store, discovery)
 
     let

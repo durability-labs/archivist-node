@@ -452,6 +452,8 @@ proc blocksDeliveryHandler*(
       continue
 
     if not isManifest:
+      error "Skipping, blocks should either be part of a tree or a manifest",
+        cid = bd.blk.cid
       continue
 
     without manifest =? Manifest.decode(bd.blk), err:

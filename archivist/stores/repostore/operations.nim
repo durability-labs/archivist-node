@@ -2,6 +2,7 @@
 
 import std/sets
 import std/tables
+import std/options
 
 import pkg/chronos
 import pkg/kvstore
@@ -739,7 +740,7 @@ proc storeManifestBlock*(
     else:
       self.clock.now() + self.overlayTtl
 
-  let
+  var
     # initial key -> record mapping
     overlaysMap = rootCids.mapIt(
       (
@@ -747,7 +748,7 @@ proc storeManifestBlock*(
         KVRecord[OverlayMetadata].init(
           ?overlayKey(it),
           OverlayMetadata(
-            manifestCid: manifestBlk.cid.some,
+            manifestCid: Cid.none,
             status: Pending,
             expiry: overlayExpiry,
             blocks: BitSeq.init(0),
@@ -756,28 +757,45 @@ proc storeManifestBlock*(
       )
     ).toTable
 
+  let
     # get the current overlays and create a map of key -> record
     overlayRecsMap = (?await self.metaDs.get(toSeq(overlaysMap.keys), OverlayMetadata)).mapIt(
       (it.key, it)
     ).toTable
 
-  # filter out either those that exist but don't have a manifestCid set or don't exist at all
-  var overlaysToUpdate = toSeq(overlaysMap.values).filterIt(it.key notin overlayRecsMap)
-  overlaysToUpdate &=
-    toSeq(overlayRecsMap.values).filterIt(not it.val.manifestCid.isSome)
+  for (key, val) in toSeq(overlaysMap.pairs):
+    var rec = overlayRecsMap.getOrDefault(key, val)
+      # get rec from kvstore recs, or the new rec
+    if rec.val.manifestCid.isNone:
+      rec.val.manifestCid = manifestBlk.cid.some
+      overlaysMap[key] = rec
+    else:
+      if rec.val.manifestCid.get != manifestBlk.cid:
+        trace "Existing overlay manifestCid, doesn't match provided",
+          existing = rec.val.manifestCid.get, provided = manifestBlk.cid
+        return failure(
+          newException(
+            ArchivistError, "Existing overlay manifestCid, doesn't match provided"
+          )
+        )
+      else:
+        # manifest already set, we don't need to update it or update manifest refCount
+        overlaysMap.del(key)
+        continue
 
-  # set manifestCid on all overlays
-  for item in overlaysToUpdate.mitems:
-    item.val.manifestCid = manifestBlk.cid.some
+  if overlaysMap.len == 0:
+    trace "No overlays to attach manifest", manifestCid = manifestBlk.cid
+    return success manifestBlk
 
   let
     blkMetaKey = ?blockMetaKey(manifestBlk.cid)
+    # init block meta with correct refCount
     blkMetaRec = KVRecord[BlockMetadata].init(
-      blkMetaKey, BlockMetadata(cid: manifestBlk.cid, refCount: overlaysToUpdate.len)
+      blkMetaKey, BlockMetadata(cid: manifestBlk.cid, refCount: overlaysMap.len)
     )
 
   ?await self.metaDs.tryPutAtomic(
-    @[blkMetaRec.toRaw] & overlaysToUpdate.mapIt(it.toRaw),
+    @[blkMetaRec.toRaw] & toSeq(overlaysMap.values).mapIt(it.toRaw),
     maxRetries = 10,
     proc(
         records: seq[RawKVRecord], conflicts: seq[Key]
@@ -785,16 +803,23 @@ proc storeManifestBlock*(
       var records = records.mapIt((it.key, it)).toTable
       let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
 
-      var overlaysCount = overlaysToUpdate.len
+      var overlaysCount = overlaysMap.len
       for raw in refreshed.values:
         if ArchivistOverlaysKey.ancestor(raw.key):
           var record = ?toRecord[OverlayMetadata](raw)
           if not record.val.manifestCid.isSome:
             record.val.manifestCid = manifestBlk.cid.some
             records[record.key] = record.toRaw
-          else:
+          elif record.val.manifestCid.get == manifestBlk.cid:
+            # already attached, keep refreshed record in batch (no-op write)
             overlaysCount.dec
-            records.del(record.key)
+            records[record.key] = record.toRaw
+          else:
+            return failure(
+              newException(
+                ArchivistError, "Existing overlay manifestCid, doesn't match provided"
+              )
+            )
 
       records[blkMetaKey] =
         if blkMetaKey in refreshed:
@@ -875,14 +900,21 @@ proc dropManifest*(
       var records = records.mapIt((it.key, it)).toTable
       let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
 
+      var shouldDecRef = true
       if key in refreshed:
         var rec = ?toRecord[OverlayMetadata](?catch(refreshed[key]))
-        rec.val.manifestCid = Cid.none
-        records[key] = rec.toRaw
+        if rec.val.manifestCid == manifestCid.some:
+          rec.val.manifestCid = Cid.none
+          records[key] = rec.toRaw
+        else:
+          # manifest already detached or replaced by concurrent writer, skip
+          # keep refreshed record in batch (no-op write)
+          shouldDecRef = false
+          records[key] = rec.toRaw
 
       if blkMetaKey in refreshed:
         var rec = ?toRecord[BlockMetadata](?catch(refreshed[blkMetaKey]))
-        if rec.val.refCount > 0:
+        if shouldDecRef and rec.val.refCount > 0:
           rec.val.refCount.dec
         records[blkMetaKey] = rec.toRaw
 
@@ -891,9 +923,7 @@ proc dropManifest*(
   )
 
   self.overlayCache.del(key)
-
   discard ?await self.tryDeleteBlocks(manifestCid)
-
   trace "Manifest detached from overlay", manifestCid
 
   success()
