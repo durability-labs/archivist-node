@@ -74,7 +74,7 @@ proc map(
       continue
     result.add(mapped)
 
-proc map*(
+proc map(
     traversal: NatTraversal, addresses: seq[MultiAddress], callback: OnPortsMapped
 ) {.async: (raises: [CancelledError]).} =
   debug "mapping ports", addresses
@@ -86,6 +86,12 @@ proc map*(
     callback(mapped)
   else:
     trace "port mappings remain unchanged"
+
+proc mapPorts*(
+    traversal: NatTraversal, addresses: seq[MultiAddress], callback: OnPortsMapped
+) {.async: (raises: [CancelledError]).} =
+  await traversal.map(addresses, callback)
+  traversal.callbacks[addresses] = callback
 
 proc renew(traversal: NatTraversal) {.async: (raises: []).} =
   try:

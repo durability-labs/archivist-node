@@ -37,7 +37,7 @@ suite "NAT Traversal":
 
     var mapped: seq[MultiAddress]
 
-    await nat.map(addresses) do(result: seq[MultiAddress]):
+    await nat.mapPorts(addresses) do(result: seq[MultiAddress]):
       mapped = result
 
     check mapped == expected

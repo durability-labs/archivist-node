@@ -13,4 +13,4 @@ export traversal.NatTraversal
 export traversal.new
 export traversal.start
 export traversal.stop
-export traversal.map
+export traversal.mapPorts
