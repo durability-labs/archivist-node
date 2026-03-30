@@ -59,6 +59,6 @@ proc addPortMapping*(
   )
   without externalPortString =? attempt2:
     return failure $(attempt2.error)
-  without externalPort =? parseInt(externalPortString).catch, error:
+  without externalPort =? parseInt(externalPortString).catch:
     return failure "received invalid external port: " & externalPortString
   return success Port(externalPort)
