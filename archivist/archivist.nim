@@ -99,12 +99,12 @@ proc start*(s: NodeServer) {.async.} =
 
   await s.natTraversal.start()
 
-  let discoveryAddress =
-    MultiAddress.init(IPv4_any(), udpProtocol, s.config.discoveryPort)
+  let announceAddresses = s.archivistNode.switch.peerInfo.addrs
+  let discoveryPort = s.config.discoveryPort
+  let discoveryAddress = MultiAddress.init(IPv4_any(), udpProtocol, discoveryPort)
   await s.natTraversal.mapPorts(@[discoveryAddress]) do(mapped: seq[MultiAddress]):
     s.archivistNode.discovery.updateDhtRecord(mapped)
-
-  await s.natTraversal.mapPorts(s.config.listenAddrs) do(mapped: seq[MultiAddress]):
+  await s.natTraversal.mapPorts(announceAddresses) do(mapped: seq[MultiAddress]):
     s.archivistNode.discovery.updateAnnounceRecord(mapped)
 
   await s.connectMarketplace()
