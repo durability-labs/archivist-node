@@ -80,7 +80,7 @@ method run*(
       return some State(SaleErrored(error: err))
     let periodAtFinish = periodicity.periodOf(StorageTimestamp.init(clock.now()))
     if periodAtFinish != provingPeriod:
-      warn "Failed to generate initial proof in time",
+      warn "Initial proof generated after period rollover",
         provingPeriod = provingPeriod, periodAtFinish = periodAtFinish
 
     context.metrics.increaseNumberOfProofs(provingPeriod)

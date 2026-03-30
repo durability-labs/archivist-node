@@ -100,7 +100,7 @@ proc proveLoop(
           continue
         let periodAtFinish = getCurrentPeriod()
         if periodAtFinish != provingPeriod:
-          warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
+          warn "Proof generated after period rollover", periodAtFinish = periodAtFinish
     of SlotState.Cancelled:
       debug "Slot reached cancelled state"
       # do nothing, let onCancelled callback take care of it
