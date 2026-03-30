@@ -22,6 +22,7 @@ type NodeBuilder = ref object
   apiBindAddress: ?IpAddress
   apiPort: ?Port
   discoveryPort: ?Port
+  nat: ?string
   bootstrapNodes: ?seq[string]
   logToFile: bool
   logTopics: seq[string]
@@ -61,6 +62,10 @@ func apiPort*(builder: NodeBuilder, port: Port): NodeBuilder =
 
 func discoveryPort*(builder: NodeBuilder, port: Port): NodeBuilder =
   builder.discoveryPort = some port
+  builder
+
+func nat*(builder: NodeBuilder, config: string): NodeBuilder =
+  builder.nat = some config
   builder
 
 func bootstrapNodes*(builder: NodeBuilder, sprs: seq[string]): NodeBuilder =
@@ -193,6 +198,9 @@ proc discoveryPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
   const address = parseIpAddress("0.0.0.0")
   builder.discoveryPort |? await findFreePort(address, Port(8090), Udp)
 
+proc natResolved(builder: NodeBuilder): string =
+  builder.nat |? "extip:127.0.0.1"
+
 proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.} =
   if nodes =? builder.bootstrapNodes:
     return nodes
@@ -242,7 +250,7 @@ func circomGraphResolved(builder: NodeBuilder): ?string =
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
   arguments.add("--disc-port=" & $(await builder.discoveryPortResolved))
-  arguments.add("--nat=none") # don't need nat for integration tests
+  arguments.add("--nat=" & builder.natResolved)
   for bootstrapNode in await builder.bootstrapNodesResolved:
     arguments.add("--bootstrap-node=" & bootstrapNode)
   if builder.logTopics.len > 0:
