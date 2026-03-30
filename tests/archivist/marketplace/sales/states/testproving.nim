@@ -101,3 +101,30 @@ asyncchecksuite "sales state 'proving'":
     check challenge == marketplace.proofChallenge
 
     await future.cancelAndWait()
+
+  test "continues proving loop after proof generation timeout":
+    marketplace.slotState[slot.id] = SlotState.Filled
+    marketplace.setProofRequired(slot.id, true)
+    storage.proveSlotShouldHang = true
+
+    let future = state.run(agent)
+    await marketplace.advanceToNextPeriod()
+
+    # Wait for the proving loop to enter proveSlot and register the timeout
+    check eventually storage.proveSlotCalls.len == 1
+
+    # Advance clock past periodEnd to trigger clock-based timeout
+    let periodicity = marketplace.periodicity()
+    let provingPeriod = periodicity.periodOf(clock.now())
+    let periodEnd = periodicity.periodEnd(provingPeriod)
+    clock.set(periodEnd.toSecondsSince1970 + 1)
+
+    # Loop should survive the timeout and wait for next period.
+    # Finish the slot so the loop exits cleanly.
+    storage.proveSlotShouldHang = false
+    marketplace.setProofRequired(slot.id, false)
+    marketplace.slotState[slot.id] = SlotState.Finished
+    await marketplace.advanceToNextPeriod()
+
+    check eventually future.finished
+    check !(future.read()) of SalePayout

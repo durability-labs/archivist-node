@@ -1,5 +1,6 @@
 import std/options
 import pkg/questionable/results
+import pkg/chronos
 import ../../../clock
 import ../../../logutils
 import ../../../utils/exceptions
@@ -85,10 +86,21 @@ proc proveLoop(
           (await marketplace.willProofBeRequired(slotId)):
         let challenge = await marketplace.getChallenge(slotId)
         info "Generating required proof", challenge = challenge
-        await state.prove(slot, challenge, context, provingPeriod)
+        # Deadline is the end of the current proving period. Proof must be
+        # generated and submitted before periodEnd.
+        let periodicity = marketplace.periodicity()
+        let periodEnd = (periodicity.periodStart(provingPeriod) + periodicity.seconds).toSecondsSince1970
+        try:
+          await state.prove(slot, challenge, context, provingPeriod).withTimeout(
+            clock, periodEnd
+          )
+        except Timeout:
+          warn "Proof generation timed out", provingPeriod = provingPeriod
+          await waitUntilPeriod(provingPeriod + 1'u8)
+          continue
         let periodAtFinish = getCurrentPeriod()
         if periodAtFinish != provingPeriod:
-          warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
+          warn "Proof generated after period rollover", periodAtFinish = periodAtFinish
     of SlotState.Cancelled:
       debug "Slot reached cancelled state"
       # do nothing, let onCancelled callback take care of it
@@ -123,7 +135,6 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
   let context = SalesAgent(machine).context
-  let clock = context.clock
 
   without request =? data.request:
     raiseAssert "no sale request"

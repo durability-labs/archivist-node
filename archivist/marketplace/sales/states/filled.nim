@@ -55,10 +55,18 @@ method run*(
       if onFilled =? agent.onFilled:
         onFilled(request, data.slotIndex)
 
+      # Add buffer past contract end so overlay data survives through the
+      # last proof window. Buffer covers period (last proof window) +
+      # proofTimeout (challenge window). Without this, maintenance can drop
+      # the overlay while the proving loop is still running its last proof.
       let expiry = await marketplace.getRequestEnd(data.requestId)
+      let periodicity = marketplace.periodicity()
+      let buffer = periodicity.seconds + marketplace.proofTimeout()
+      let expiryWithBuffer = expiry + buffer
       let cid = request.content.cid
       let slotIndex = data.slotIndex
-      if err =? (await storage.updateSlotExpiry(cid, slotIndex, expiry)).errorOption:
+      if err =?
+          (await storage.updateSlotExpiry(cid, slotIndex, expiryWithBuffer)).errorOption:
         return some State(SaleErrored(error: err))
 
       when defined(archivist_system_testing_options):
