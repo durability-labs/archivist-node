@@ -34,6 +34,6 @@ proc addPortMapping*(
   )
   if reslt.isOk:
     {.hint[ConvFromXtoItselfNotNeeded]: off.}:
-      success Port(result.value)
+      success Port(reslt.value)
   else:
     Port.failure reslt.error
