@@ -6,12 +6,16 @@ import pkg/questionable
 import pkg/questionable/results
 import pkg/nat_traversal/miniupnpc
 import pkg/nat_traversal/natpmp
+import pkg/chronicles
 import ./config
 import ./multiaddress
 import ./pmp
 import ./upnp
 
 {.push raises: [].}
+
+logScope:
+  topics = "nat"
 
 type PortMapping* = object
   config: NatConfig
@@ -92,17 +96,26 @@ proc mapUpnp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
   success MultiAddress.init(externalIp, protocol, mapped)
 
 proc mapAny(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
-  if mapped =? mapping.mapRoutingTable(address):
+  let routingResult = mapping.mapRoutingTable(address)
+  if mapped =? routingResult:
     mapping.config = NatConfig.noNat
-    success mapped
-  elif mapped =? mapping.mapUpnp(address):
+    return success mapped
+
+  let upnpResult = mapping.mapUpnp(address)
+  if mapped =? upnpResult:
     mapping.config = NatConfig.upnp
-    success mapped
-  elif mapped =? mapping.mapPmp(address):
+    return success mapped
+
+  let pmpResult = mapping.mapPmp(address)
+  if mapped =? pmpResult:
     mapping.config = NatConfig.pmp(mapping.config.gateway)
-    success mapped
-  else:
-    failure "UPnP/NAT-PMP failed"
+    return success mapped
+
+  debug "port mapping using routing table failed", error = routingResult.error.msg
+  debug "port mapping using upnp failed", error = upnpResult.error.msg
+  debug "port mapping using pmp failed", error = pmpResult.error.msg
+
+  failure "UPnP/NAT-PMP failed"
 
 proc map*(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
   case mapping.config.strategy
