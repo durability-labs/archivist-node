@@ -30,8 +30,6 @@ suite "NAT Traversal":
     let expected =
       @[
         MultiAddress.init("/ip4/8.8.8.8/tcp/5000").get(),
-        MultiAddress.init("/ip4/8.8.8.8/tcp/5000").get(),
-        MultiAddress.init("/ip4/8.8.8.8/tcp/5000").get(),
         MultiAddress.init("/ip4/8.8.8.8/udp/1234").get(),
       ]
 

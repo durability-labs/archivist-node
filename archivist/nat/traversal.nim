@@ -72,7 +72,8 @@ proc map(
     without mapped =? await traversal.map(address), error:
       warn "port mapping failed", address, error = error.msg
       continue
-    result.add(mapped)
+    if mapped notin result:
+      result.add(mapped)
 
 proc map(
     traversal: NatTraversal, addresses: seq[MultiAddress], callback: OnPortsMapped
