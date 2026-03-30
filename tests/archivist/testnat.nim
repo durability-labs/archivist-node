@@ -12,7 +12,7 @@ suite "NAT Traversal":
   var nat: NatTraversal
 
   setup:
-    nat = !NatTraversal.new(config, TaskPool.new(1))
+    nat = !NatTraversal.new(config, TaskPool.new(2))
     await nat.start()
 
   teardown:
