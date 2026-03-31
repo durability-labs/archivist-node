@@ -60,3 +60,12 @@ suite "Node datasets":
       fail()
     except HttpError as error:
       check "404" in error.msg
+
+  test "cannot upload dataset that would exceed quota":
+    let smallNode = await testbed.node.storageQuota(1024 * 1024).start()
+
+    try:
+      discard await testbed.dataset.data(2 * 1024 * 1024).upload(smallNode)
+      fail()
+    except HttpError as error:
+      check "413" in error.msg

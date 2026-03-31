@@ -547,8 +547,11 @@ proc store*(
           blockBatch.setLen(0)
 
         await allFutures(inFlight)
-        # return the first failed fut
-        discard inFlight.mapIt(?catch(it.read))
+        for fut in inFlight:
+          if err =? catchAsync(?fut.read).errorOption:
+            error "Unable to store uploaded data", err = err.msg
+            return failure(err)
+
         inFlight.setLen(0)
 
         let

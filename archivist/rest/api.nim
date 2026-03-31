@@ -240,6 +240,8 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
           mimetype = mimetype,
         )
       ), error:
+        if error of QuotaNotEnoughError:
+          return RestApiResponse.error(Http413, error.msg)
         error "Error uploading file", exc = error.msg
         return RestApiResponse.error(Http500, error.msg)
 
