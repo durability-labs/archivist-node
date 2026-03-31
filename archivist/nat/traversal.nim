@@ -35,7 +35,6 @@ proc start*(traversal: NatTraversal) {.async: (raises: [CancelledError]).} =
 
 proc stop*(traversal: NatTraversal) {.async: (raises: []).} =
   await traversal.renewing.cancelAndWait()
-  traversal.taskPool.shutdown()
   debug "stopped nat traversal"
 
 proc mapTask(
