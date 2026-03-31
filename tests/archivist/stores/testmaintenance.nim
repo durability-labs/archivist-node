@@ -305,3 +305,60 @@ suite "BlockMaintainer":
 
     check repo.quotaUsedBytes == 0.NBytes
     check repo.totalBlocks == 0.Natural
+
+  test "Should drop multiple expired overlays concurrently":
+    var cids: seq[Cid]
+    for i in 0 ..< 5:
+      let cid = Cid.example
+      cids.add(cid)
+      (await repo.putOverlay(cid, status = Completed.some, expiry = 50)).tryGet()
+
+    maintainer.start()
+    await mockTimer.invokeCallback()
+
+    for cid in cids:
+      check (await repo.getOverlay(cid)).isErr
+
+  test "Should drop all expired overlays when count exceeds maxConcurrent":
+    let smallMaintainer = BlockMaintainer.new(
+      repo, interval, maxConcurrent = 2, timer = mockTimer, clock = mockClock
+    )
+
+    var cids: seq[Cid]
+    for i in 0 ..< 6:
+      let cid = Cid.example
+      cids.add(cid)
+      (await repo.putOverlay(cid, status = Completed.some, expiry = 50)).tryGet()
+
+    smallMaintainer.start()
+    await mockTimer.invokeCallback()
+
+    for cid in cids:
+      check (await repo.getOverlay(cid)).isErr
+
+  test "Should retain non-expired overlays with concurrent drops":
+    let smallMaintainer = BlockMaintainer.new(
+      repo, interval, maxConcurrent = 2, timer = mockTimer, clock = mockClock
+    )
+
+    var
+      expiredCids: seq[Cid]
+      retainedCids: seq[Cid]
+
+    for i in 0 ..< 4:
+      let cid = Cid.example
+      expiredCids.add(cid)
+      (await repo.putOverlay(cid, status = Completed.some, expiry = 50)).tryGet()
+
+    for i in 0 ..< 3:
+      let cid = Cid.example
+      retainedCids.add(cid)
+      (await repo.putOverlay(cid, status = Completed.some, expiry = 200)).tryGet()
+
+    smallMaintainer.start()
+    await mockTimer.invokeCallback()
+
+    for cid in expiredCids:
+      check (await repo.getOverlay(cid)).isErr
+    for cid in retainedCids:
+      check (await repo.getOverlay(cid)).isOk
