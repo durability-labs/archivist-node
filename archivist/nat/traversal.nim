@@ -20,12 +20,22 @@ type
     mappings: Table[seq[MultiAddress], seq[MultiAddress]]
     taskpool: TaskPool
     renewing: Future[void].Raising([])
+    renewalInterval: Duration
 
   OnPortsMapped* = proc(addresses: seq[MultiAddress]) {.gcsafe, raises: [].}
 
-proc new*(_: type NatTraversal, config: NatConfig, taskpool: TaskPool): ?!NatTraversal =
+proc new*(
+  _: type NatTraversal,
+  config: NatConfig,
+  renewalInterval: Duration,
+  taskpool: TaskPool
+): ?!NatTraversal =
   let portmapping = ?PortMapping.init(config)
-  success NatTraversal(portmapping: portmapping, taskpool: taskpool)
+  success NatTraversal(
+    portmapping: portmapping,
+    renewalInterval: renewalInterval,
+    taskpool: taskpool
+  )
 
 proc renew(traversal: NatTraversal) {.async: (raises: []).}
 
@@ -96,7 +106,7 @@ proc mapPorts*(
 proc renew(traversal: NatTraversal) {.async: (raises: []).} =
   try:
     while true:
-      let interval = traversal.portmapping.portMappingLifetime div 3
+      let interval = traversal.renewalInterval
       trace "waiting before renewing port mappings", interval
       await sleepAsync(interval)
       trace "renewing port mappings"

@@ -151,6 +151,13 @@ type
       name: "nat"
     .}: NatConfig
 
+    natRenewal* {.
+      desc: "Time interval for renewing port mappings (NAT-PMP, UPnP)"
+      defaultValue: 20.minutes,
+      defaultValueDesc: "20m",
+      name: "nat-renewal"
+    .}: Duration
+
     discoveryPort* {.
       desc: "Discovery (UDP) port",
       defaultValue: 8090.Port,

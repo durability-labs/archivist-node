@@ -224,7 +224,7 @@ proc new*(
     maintenance =
       BlockMaintainer.new(repoStore, interval = config.overlayMaintenanceInterval)
 
-    natTraversal = !NatTraversal.new(config.nat, tp)
+    natTraversal = !NatTraversal.new(config.nat, config.natRenewal, tp)
 
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
