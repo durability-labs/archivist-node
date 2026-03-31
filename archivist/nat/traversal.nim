@@ -25,16 +25,14 @@ type
   OnPortsMapped* = proc(addresses: seq[MultiAddress]) {.gcsafe, raises: [].}
 
 proc new*(
-  _: type NatTraversal,
-  config: NatConfig,
-  renewalInterval: Duration,
-  taskpool: TaskPool
+    _: type NatTraversal,
+    config: NatConfig,
+    renewalInterval: Duration,
+    taskpool: TaskPool,
 ): ?!NatTraversal =
   let portmapping = ?PortMapping.init(config)
   success NatTraversal(
-    portmapping: portmapping,
-    renewalInterval: renewalInterval,
-    taskpool: taskpool
+    portmapping: portmapping, renewalInterval: renewalInterval, taskpool: taskpool
   )
 
 proc renew(traversal: NatTraversal) {.async: (raises: []).}
