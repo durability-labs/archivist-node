@@ -56,10 +56,14 @@ suite "Marketplace storage interface implementation":
     check metadata.expiry == expiry
 
   proc checkSlotExpiry(cid: Cid, slotIndex: uint64, expiry: int64) {.async.} =
-    # TODO: updateSlotExpiry currently updates the entire dataset expiry,
-    # not per-slot expiry, so we just check the manifest overlay
-    discard slotIndex
-    await checkOverlayExpiry(cid, expiry)
+    let
+      localStore = temporary.localStore
+      manifestBlock = !await localStore.getBlock(cid)
+      manifest = !Manifest.decode(manifestBlock)
+      slotCid = manifest.slotRoots[slotIndex]
+      metadata = !await localStore.getOverlay(slotCid)
+
+    check metadata.expiry == expiry
 
   test "updates expiry of slot blocks":
     let cid = await storeVerifiableData()

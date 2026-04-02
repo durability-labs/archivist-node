@@ -1079,6 +1079,97 @@ proc testLifecycle*(
       # Quota should not increase (block already on disk)
       check repo.quotaUsedBytes == quotaAfterFirst
 
+    test "Should refresh expiry on existing overlay when storing manifest with explicit expiry":
+      # Create a protected manifest first (use 4 blocks for ecK=2, ecM=2 = 4 slots)
+      var blocks: seq[bt.Block]
+      for size in [100, 101, 102, 103]:
+        blocks.add(createTestBlock(size))
+
+      let
+        (baseManifest, tree) = makeManifestAndTree(blocks).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        protManifest = Manifest.new(
+          manifest = baseManifest,
+          treeCid = treeCid,
+          datasetSize = NBytes(8 * 103),
+          ecK = 2,
+          ecM = 2,
+        )
+
+      # Create 4 slot roots (numSlots = ecK + ecM = 4)
+      var slotRoots: seq[Cid]
+      for _ in 0 ..< 4:
+        slotRoots.add(Cid.example)
+
+      let verManifest = !Manifest.new(protManifest, Cid.example, slotRoots)
+      let newExpiry = now + 2000
+
+      # Store verifiable manifest first (without explicit expiry)
+      let manifestBlk1 = (await repo.storeVerifiableManifest(verManifest)).tryGet()
+
+      # Get the slot overlay (slot 0) - check expiry was set from first call (TTL-based)
+      let slotOverlay1 = (await repo.getOverlay(slotRoots[0])).tryGet()
+      check slotOverlay1.manifestCid == manifestBlk1.cid.some
+      let firstExpiry = slotOverlay1.expiry
+
+      # Store same verifiable manifest again with explicit expiry - should refresh expiry
+      # without incrementing refCount (overlay already has manifestCid)
+      let manifestBlk2 =
+        (await repo.storeVerifiableManifest(verManifest, expiry = newExpiry)).tryGet()
+      check manifestBlk1.cid == manifestBlk2.cid
+
+      # Expiry should be updated to explicit value, not the first TTL-based value
+      let slotOverlay2 = (await repo.getOverlay(slotRoots[0])).tryGet()
+      check slotOverlay2.expiry == newExpiry # Explicit expiry should be applied
+      check slotOverlay2.expiry != firstExpiry # Should be different from TTL-based
+
+      # RefCount should remain 4 (one per slot root) since we didn't add new attachments
+      check (await repo.blockRefCount(manifestBlk1.cid)).tryGet() == 4.Natural
+
+    test "Should not double-count refCount when storing same slot concurrently":
+      var blocks: seq[bt.Block]
+      for size in [100, 101, 102, 103]:
+        blocks.add(createTestBlock(size))
+
+      let
+        (baseManifest, tree) = makeManifestAndTree(blocks).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        protManifest = Manifest.new(
+          manifest = baseManifest,
+          treeCid = treeCid,
+          datasetSize = NBytes(8 * 103),
+          ecK = 2,
+          ecM = 2,
+        )
+
+      var slotRoots: seq[Cid]
+      for _ in 0 ..< 4:
+        slotRoots.add(Cid.example)
+
+      let
+        verManifest = !Manifest.new(protManifest, Cid.example, slotRoots)
+        newExpiry = now + 3000
+
+      let futures =
+        @[
+          repo.storeVerifiableManifest(
+            verManifest, slotIdx = 0.Natural.some, expiry = newExpiry
+          ),
+          repo.storeVerifiableManifest(
+            verManifest, slotIdx = 0.Natural.some, expiry = newExpiry
+          ),
+        ]
+
+      await allFutures(futures)
+
+      for fut in futures:
+        check fut.read.isOk
+
+      let manifestBlk = futures[0].read.tryGet()
+      check futures[1].read.tryGet().cid == manifestBlk.cid
+      check (await repo.blockRefCount(manifestBlk.cid)).tryGet() == 1.Natural
+      check (await repo.getOverlay(slotRoots[0])).tryGet().expiry == newExpiry
+
     test "Should succeed dropManifest on overlay without manifestCid":
       let treeCid = Cid.example
 
