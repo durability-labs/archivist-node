@@ -89,7 +89,7 @@ proc proveLoop(
         # Deadline is the end of the current proving period. Proof must be
         # generated and submitted before periodEnd.
         let periodicity = marketplace.periodicity()
-        let periodEnd = (periodicity.periodStart(provingPeriod) + periodicity.seconds).toSecondsSince1970
+        let periodEnd = periodicity.periodEnd(provingPeriod).toSecondsSince1970
         try:
           await state.prove(slot, challenge, context, provingPeriod).withTimeout(
             clock, periodEnd
@@ -100,7 +100,7 @@ proc proveLoop(
           continue
         let periodAtFinish = getCurrentPeriod()
         if periodAtFinish != provingPeriod:
-          warn "Proof generated after period rollover", periodAtFinish = periodAtFinish
+          warn "Failed to generate proof in time", periodAtFinish = periodAtFinish
     of SlotState.Cancelled:
       debug "Slot reached cancelled state"
       # do nothing, let onCancelled callback take care of it
