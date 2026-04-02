@@ -535,15 +535,35 @@ proc delLeafBlockMetadata*(
 
   trace "Deleting leaf and block metadata"
 
+  # Mark overlay as Deleting BEFORE draining the barrier.
+  # This prevents new writers from entering the barrier after drain completes
+  # but before the atomic metadata update.
+  let
+    ovKey = ?overlayKey(treeCid)
+    preDeleteOverlay = ?await self.metaDs.get(ovKey, OverlayMetadata)
+
+  var preDeleteMeta = preDeleteOverlay.val
+  preDeleteMeta.status = Deleting
+  ?await self.metaDs.tryPut(preDeleteOverlay.fromRecord(preDeleteMeta), maxRetries = 3)
+  # Update cache so concurrent readers see Deleting immediately
+  self.overlayCache[ovKey] = preDeleteMeta
+
   await self.deletingLock.drain(treeCid)
 
+  # Re-fetch overlay after drain to get latest state
   let
-    existingOverlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
+    existingOverlayMeta = ?await self.metaDs.get(ovKey, OverlayMetadata)
     uniqueIdxs = index.deduplicate()
 
   var overlayMeta = existingOverlayMeta.val
   if not uniqueIdxs.anyIt(it < overlayMeta.blocks.len and overlayMeta.blocks[it]):
     trace "No bits set in BitSeq for indices to delete, fast-path return"
+    # Restore previous status since nothing is actually being deleted
+    overlayMeta.status = preDeleteOverlay.val.status
+    ?await self.metaDs.tryPut(
+      existingOverlayMeta.fromRecord(overlayMeta), maxRetries = 3
+    )
+    self.overlayCache[ovKey] = overlayMeta
     return success()
 
   let
@@ -666,7 +686,7 @@ proc delLeafBlockMetadata*(
   )
 
   # cache the final overlay after delete
-  self.overlayCache[?overlayKey(treeCid)] = overlayMeta
+  self.overlayCache[ovKey] = overlayMeta
 
   let
     toDeleteLeafMeta =
