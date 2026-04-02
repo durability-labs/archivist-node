@@ -72,7 +72,7 @@ method run*(
     let challenge = await context.marketplace.getChallenge(slot.id)
     # Deadline is periodEnd - proof must be generated before the period closes.
     let periodEnd =
-      (periodicity.periodStart(provingPeriod) + periodicity.seconds).toSecondsSince1970
+      periodicity.periodEnd(provingPeriod).toSecondsSince1970
 
     without proof =?
       (await storage.proveSlot(cid, slotIndex, challenge).withTimeout(clock, periodEnd)),
