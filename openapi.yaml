@@ -553,6 +553,8 @@ paths:
             text/plain:
               schema:
                 type: string
+        "413":
+          description: The upload would exceed the node's storage quota
         "422":
           description: The mimetype of the filename is invalid
         "500":

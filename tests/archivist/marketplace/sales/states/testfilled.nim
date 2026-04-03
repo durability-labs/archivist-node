@@ -49,8 +49,11 @@ suite "sales state 'filled'":
     slot.host = await marketplace.getSigner()
     marketplace.filled = @[slot]
 
-    let expectedExpiry = 123'StorageTimestamp
-    marketplace.requestEnds[request.id] = expectedExpiry
+    let requestEnd = 123'StorageTimestamp
+    marketplace.requestEnds[request.id] = requestEnd
+    # Expiry includes a buffer of period + proofTimeout past contract end
+    let periodicity = marketplace.periodicity()
+    let expectedExpiry = requestEnd + periodicity.seconds + marketplace.proofTimeout()
     let next = await state.run(agent)
     check !next of SaleProving
     check storage.updateSlotExpiryCalls.len > 0

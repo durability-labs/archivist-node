@@ -11,6 +11,7 @@ type MockStorage* = ref object of StorageInterface
   proveSlotResult: ?!Groth16Proof
   updateSlotExpiryResult: ?!void
   slotFailedResult: ?!void
+  proveSlotShouldHang*: bool
   storeSlotCalls: seq[(Cid, uint64, uint64, StorageTimestamp, bool)]
   proveSlotCalls: seq[(Cid, uint64, ProofChallenge)]
   updateSlotExpiryCalls: seq[(Cid, uint64, StorageTimestamp)]
@@ -71,6 +72,8 @@ method proveSlot*(
     mock: MockStorage, cid: Cid, slotIndex: uint64, challenge: ProofChallenge
 ): Future[?!Groth16Proof] {.async: (raises: [CancelledError]).} =
   mock.proveSlotCalls.add((cid, slotIndex, challenge))
+  if mock.proveSlotShouldHang:
+    await sleepAsync(1.hours)
   mock.proveSlotResult
 
 method updateSlotExpiry*(

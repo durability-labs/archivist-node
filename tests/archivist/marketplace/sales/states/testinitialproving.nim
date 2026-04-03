@@ -96,3 +96,21 @@ asyncchecksuite "sales state 'initialproving'":
     let next = await future
 
     check !next of SaleErrored
+
+  test "switches to errored state when proof generation times out":
+    storage.proveSlotShouldHang = true
+
+    let future = state.run(agent)
+    await allowProofToStart()
+
+    # Yield to let state machine enter proveSlot and register the timeout
+    check eventually storage.proveSlotCalls.len == 1
+
+    # Advance clock past periodEnd to trigger clock-based timeout
+    let periodicity = marketplace.periodicity()
+    let provingPeriod = periodicity.periodOf(clock.now())
+    let periodEnd = periodicity.periodEnd(provingPeriod)
+    clock.set(periodEnd.toSecondsSince1970 + 1)
+
+    let next = await future
+    check !next of SaleErrored

@@ -2,6 +2,7 @@
 
 import std/sets
 import std/tables
+import std/options
 
 import pkg/chronos
 import pkg/kvstore
@@ -20,6 +21,7 @@ import ../../blocktype
 import ../../clock
 import ../../logutils
 import ../../merkletree
+import ../../manifest
 import ../../utils
 
 logScope:
@@ -169,7 +171,7 @@ proc delFromBlocksStore*(
     # bypases CAS for cituations like this)
     toDelete = ?await self.repoDs.get(keys)
 
-    # delete on disk blocks first  - best effort if crash
+    # delete on disk blocks first - best effort if crash
     # occurs we might miss some blocks, but we can recover
     # the delete, since the metadata is still present
     skipped = (?await self.repoDs.delete(toDelete.toKeyRecord)).toHashSet
@@ -250,7 +252,9 @@ proc tryDeleteBlocks*(
   self.tryDeleteBlocks(@[cid])
 
 type BlockLeafTuple =
-  tuple[index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ArchivistProof]
+  tuple[
+    index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ArchivistProof, data: seq[byte]
+  ]
 
 proc putLeafBlockMetaImpl(
     self: RepoStore, treeCid: Cid, blocks: seq[BlockLeafTuple]
@@ -287,12 +291,16 @@ proc putLeafBlockMetaImpl(
   if overlayMeta.status == Deleting:
     return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
 
+  self.deletingLock.enter(treeCid)
+  defer:
+    self.deletingLock.leave(treeCid)
+
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
     blocksBits = BitSeq.init(blocks.mapIt(it[0]).max() + 1)
 
-  for (index, blkCid, cellCid, proof) in blocks:
+  for (index, blkCid, cellCid, proof, data) in blocks:
     let
       blkKey = ?blockMetaKey(blkCid)
       leafKey = ?blockLeafKey(treeCidStr, index)
@@ -361,7 +369,6 @@ proc putLeafBlockMetaImpl(
     for rec in refreshed:
       var record = rec
 
-      trace "Processing record", key = record.key
       if BlockLeafKey.ancestor(record.key):
         let incomingLeafRec = ?toRecord[LeafMetadata](?catch(leafsMap[record.key]))
         var currentLeafRec = ?toRecord[LeafMetadata](record)
@@ -423,6 +430,32 @@ proc putLeafBlockMetaImpl(
   # cache the final overlay
   self.overlayCache[?overlayKey(treeCid)] = overlayMeta
 
+  # Write block data to disk and update counters (inside semaphore)
+  var
+    diskRecords: seq[RawKVRecord]
+    diskKeySizes: seq[(Key, int)]
+    seen: HashSet[Cid]
+
+  for (index, blkCid, cellCid, proof, data) in blocks:
+    if data.len > 0 and not blkCid.isEmpty and blkCid notin seen:
+      seen.incl(blkCid)
+      let key = ?makePrefixKey(self.postFixLen, blkCid)
+      diskKeySizes.add((key, data.len))
+      diskRecords.add(RawKVRecord.init(key, data))
+
+  if diskRecords.len > 0:
+    trace "Writing blocks to disk", count = diskRecords.len
+    let skipped = (?await self.repoDs.put(move(diskRecords))).toHashSet
+
+    var newBlocks, newBytes = 0
+    for (key, size) in diskKeySizes:
+      if key notin skipped:
+        newBytes += size
+        newBlocks += 1
+
+    if newBlocks > 0:
+      ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+
   success()
 
 proc putLeafBlockMeta*(
@@ -430,7 +463,20 @@ proc putLeafBlockMeta*(
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   ## Put or update leaf and block metadata (plain blocks).
   ##
-  self.putLeafBlockMetaImpl(treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2])))
+  self.putLeafBlockMetaImpl(
+    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2], newSeq[byte]()))
+  )
+
+proc putLeafBlockMeta*(
+    self: RepoStore,
+    treeCid: Cid,
+    blocks: seq[(Natural, Cid, ArchivistProof, seq[byte])],
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
+  ## Put or update leaf and block metadata with block data.
+  ##
+  self.putLeafBlockMetaImpl(
+    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2], it[3]))
+  )
 
 proc putLeafBlockMeta*(
     self: RepoStore, treeCid: Cid, index: Natural, blkCid: Cid, proof: ArchivistProof
@@ -452,7 +498,15 @@ proc putCellLeafBlockMeta*(
 
   self.putLeafBlockMetaImpl(
     treeCid,
-    blocks.mapIt((index: it[0], blkCid: it[2], cellCid: it[1].some, proof: it[3])),
+    blocks.mapIt(
+      (
+        index: it[0],
+        blkCid: it[2],
+        cellCid: it[1].some,
+        proof: it[3],
+        data: newSeq[byte](),
+      )
+    ),
   )
 
 proc delLeafBlockMetadata*(
@@ -481,16 +535,37 @@ proc delLeafBlockMetadata*(
 
   trace "Deleting leaf and block metadata"
 
+  # Mark overlay as Deleting BEFORE draining the barrier.
+  # This prevents new writers from entering the barrier after drain completes
+  # but before the atomic metadata update.
   let
-    existingOverlayMeta = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
+    ovKey = ?overlayKey(treeCid)
+    preDeleteOverlay = ?await self.metaDs.get(ovKey, OverlayMetadata)
+
+  var preDeleteMeta = preDeleteOverlay.val
+  preDeleteMeta.status = Deleting
+  ?await self.metaDs.tryPut(preDeleteOverlay.fromRecord(preDeleteMeta), maxRetries = 3)
+  # Update cache so concurrent readers see Deleting immediately
+  self.overlayCache[ovKey] = preDeleteMeta
+
+  await self.deletingLock.drain(treeCid)
+
+  # Re-fetch overlay after drain to get latest state
+  let
+    existingOverlayMeta = ?await self.metaDs.get(ovKey, OverlayMetadata)
     uniqueIdxs = index.deduplicate()
 
   var overlayMeta = existingOverlayMeta.val
   if not uniqueIdxs.anyIt(it < overlayMeta.blocks.len and overlayMeta.blocks[it]):
     trace "No bits set in BitSeq for indices to delete, fast-path return"
+    # Restore previous status since nothing is actually being deleted
+    overlayMeta.status = preDeleteOverlay.val.status
+    ?await self.metaDs.tryPut(
+      existingOverlayMeta.fromRecord(overlayMeta), maxRetries = 3
+    )
+    self.overlayCache[ovKey] = overlayMeta
     return success()
 
-  # Continue with existing logic
   let
     treeCidStr = $treeCid
     leafKeys = uniqueIdxs.mapIt(?blockLeafKey(treeCidStr, it))
@@ -562,7 +637,6 @@ proc delLeafBlockMetadata*(
     trace "Got refreshed metadata", count = refreshed.len
     for rec in refreshed:
       var record = rec
-      trace "Processing record", key = record.key
       if BlockLeafKey.ancestor(record.key):
         var leaf = ?toRecord[LeafMetadata](record)
         leaf.val.deleted = true # mark for delete
@@ -612,7 +686,7 @@ proc delLeafBlockMetadata*(
   )
 
   # cache the final overlay after delete
-  self.overlayCache[?overlayKey(treeCid)] = overlayMeta
+  self.overlayCache[ovKey] = overlayMeta
 
   let
     toDeleteLeafMeta =
@@ -666,3 +740,234 @@ proc getLeafMetadata*(
       return failure(err)
 
   success(leafMd.val)
+
+proc storeManifestBlock*(
+    self: RepoStore, rootCids: seq[Cid], manifest: Manifest, expiry = ZeroSeconds
+): Future[?!Block] {.async: (raises: [CancelledError]), gcsafe.} =
+  ## Low-level manifest storage: creates/updates overlays for each rootCid
+  ## with manifestCid set, atomically manages BlockMetadata.refCount, and
+  ## writes the manifest block to disk.
+  ##
+  ## This proc is rootCid-agnostic -- callers decide whether rootCids are
+  ## treeCids or slotRoots.
+  ##
+
+  let manifestBlk = ?manifest.toBlock
+
+  let overlayExpiry =
+    if expiry != ZeroSeconds:
+      expiry
+    else:
+      self.clock.now() + self.overlayTtl
+
+  var
+    # initial key -> record mapping
+    overlaysMap = rootCids.mapIt(
+      (
+        ?overlayKey(it),
+        KVRecord[OverlayMetadata].init(
+          ?overlayKey(it),
+          OverlayMetadata(
+            manifestCid: Cid.none,
+            status: Pending,
+            expiry: overlayExpiry,
+            blocks: BitSeq.init(0),
+          ),
+        ),
+      )
+    ).toTable
+
+  # Get existing overlays from KVStore to check their manifestCid state
+  let overlayRecsMap = (
+    ?await self.metaDs.get(toSeq(overlaysMap.keys), OverlayMetadata)
+  ).mapIt((it.key, it)).toTable
+
+  # Track which overlays require a new manifest attachment for refCount updates.
+  var newAttachmentKeys: seq[Key]
+
+  for (key, val) in toSeq(overlaysMap.pairs):
+    var rec = overlayRecsMap.getOrDefault(key, val)
+      # get rec from kvstore recs, or the new rec
+    if rec.val.manifestCid.isNone:
+      newAttachmentKeys.add(key)
+      # If explicit expiry provided, refresh expiry even when attaching manifest
+      if expiry != ZeroSeconds:
+        rec.val.expiry = overlayExpiry
+      rec.val.manifestCid = manifestBlk.cid.some
+      overlaysMap[key] = rec
+    else:
+      if rec.val.manifestCid.get != manifestBlk.cid:
+        trace "Existing overlay manifestCid, doesn't match provided",
+          existing = rec.val.manifestCid.get, provided = manifestBlk.cid
+        return failure(
+          newException(
+            ArchivistError, "Existing overlay manifestCid, doesn't match provided"
+          )
+        )
+      else:
+        # If explicit expiry provided, we need to refresh expiry on already-attached overlay
+        # Keep it in overlaysMap so it gets written through CAS
+        if expiry != ZeroSeconds:
+          rec.val.expiry = overlayExpiry
+          overlaysMap[key] = rec
+        else:
+          # manifest already set, we don't need to update it or update manifest refCount
+          overlaysMap.del(key)
+          continue
+
+  if overlaysMap.len == 0:
+    trace "No overlays to attach manifest", manifestCid = manifestBlk.cid
+    return success manifestBlk
+
+  let
+    blkMetaKey = ?blockMetaKey(manifestBlk.cid)
+    # init block meta with correct refCount - only count new attachments
+    blkMetaRec = KVRecord[BlockMetadata].init(
+      blkMetaKey,
+      BlockMetadata(cid: manifestBlk.cid, refCount: newAttachmentKeys.len.Natural),
+    )
+
+  ?await self.metaDs.tryPutAtomic(
+    @[blkMetaRec.toRaw] & toSeq(overlaysMap.values).mapIt(it.toRaw),
+    maxRetries = 10,
+    proc(
+        records: seq[RawKVRecord], conflicts: seq[Key]
+    ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
+      var records = records.mapIt((it.key, it)).toTable
+      let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
+
+      var newAttachmentsCount = newAttachmentKeys.len
+      for raw in refreshed.values:
+        if ArchivistOverlaysKey.ancestor(raw.key):
+          var record = ?toRecord[OverlayMetadata](raw)
+          let wasNewAttachment = raw.key in newAttachmentKeys
+          if not record.val.manifestCid.isSome:
+            if not wasNewAttachment:
+              newAttachmentsCount.inc
+            # New attachment - refresh expiry if explicit
+            if expiry != ZeroSeconds:
+              record.val.expiry = overlayExpiry
+            record.val.manifestCid = manifestBlk.cid.some
+            records[record.key] = record.toRaw
+          elif record.val.manifestCid.get == manifestBlk.cid:
+            if wasNewAttachment:
+              newAttachmentsCount.dec
+            # Already attached to same manifest - refresh expiry if explicit
+            # Don't increment refCount (overlay already had manifestCid)
+            if expiry != ZeroSeconds:
+              record.val.expiry = overlayExpiry
+            # already attached, keep refreshed record in batch (no-op write)
+            records[record.key] = record.toRaw
+          else:
+            return failure(
+              newException(
+                ArchivistError, "Existing overlay manifestCid, doesn't match provided"
+              )
+            )
+
+      records[blkMetaKey] =
+        if blkMetaKey in refreshed:
+          var rec = ?toRecord[BlockMetadata](?catch(refreshed[blkMetaKey]))
+          rec.val.refCount += newAttachmentsCount.Natural
+          rec.toRaw
+        else:
+          var rec = ?toRecord[BlockMetadata](?catch(records[blkMetaKey]))
+          rec.val.refCount = newAttachmentsCount.Natural
+          rec.toRaw
+
+      success toSeq(records.values)
+    ,
+  )
+
+  for rootCid in rootCids:
+    let key = ?overlayKey(rootCid)
+    self.overlayCache.del(key)
+
+  if err =? (
+    await self.repoDs.put(
+      RawKVRecord.init(
+        ?makePrefixKey(self.postFixLen, manifestBlk.cid), manifestBlk.data
+      )
+    )
+  ).errorOption:
+    if err of KVConflictError:
+      trace "Manifest already on disk, skipping write", cid = manifestBlk.cid
+    else:
+      trace "Error storing manifest", cid = manifestBlk.cid
+      return failure(err)
+  else:
+    ?await self.updateCounters(quotaDelta = manifestBlk.data.len, blocksDelta = 1)
+    if onBlock =? self.onBlockStored:
+      await onBlock(manifestBlk.cid)
+
+  trace "Stored manifest block", cid = manifestBlk.cid
+
+  success manifestBlk
+
+proc dropManifest*(
+    self: RepoStore, treeCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]), gcsafe.} =
+  ## Detach a manifest from an overlay, atomically decrementing the
+  ## manifest's BlockMetadata.refCount. If refCount reaches 0,
+  ## tryDeleteBlocks will delete the manifest block from disk.
+  ##
+
+  logScope:
+    treeCid = treeCid
+
+  let key = ?overlayKey(treeCid)
+  without var overlayRec =? (await self.metaDs.get(key, OverlayMetadata)), err:
+    if err of KVStoreKeyNotFound:
+      trace "Overlay not found, nothing to detach"
+      return success()
+    return failure(err)
+
+  without manifestCid =? overlayRec.val.manifestCid:
+    trace "Overlay has no manifest attached"
+    return success()
+
+  trace "Detaching manifest from overlay", manifestCid
+
+  overlayRec.val.manifestCid = Cid.none
+
+  let blkMetaKey = ?blockMetaKey(manifestCid)
+  var blkMetaRec = ?await self.metaDs.get(blkMetaKey, BlockMetadata)
+  if blkMetaRec.val.refCount > 0:
+    blkMetaRec.val.refCount.dec
+
+  ?await self.metaDs.tryPutAtomic(
+    @[overlayRec.toRaw, blkMetaRec.toRaw],
+    maxRetries = 10,
+    proc(
+        records: seq[RawKVRecord], conflicts: seq[Key]
+    ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
+      var records = records.mapIt((it.key, it)).toTable
+      let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
+
+      var shouldDecRef = true
+      if key in refreshed:
+        var rec = ?toRecord[OverlayMetadata](?catch(refreshed[key]))
+        if rec.val.manifestCid == manifestCid.some:
+          rec.val.manifestCid = Cid.none
+          records[key] = rec.toRaw
+        else:
+          # manifest already detached or replaced by concurrent writer, skip
+          # keep refreshed record in batch (no-op write)
+          shouldDecRef = false
+          records[key] = rec.toRaw
+
+      if blkMetaKey in refreshed:
+        var rec = ?toRecord[BlockMetadata](?catch(refreshed[blkMetaKey]))
+        if shouldDecRef and rec.val.refCount > 0:
+          rec.val.refCount.dec
+        records[blkMetaKey] = rec.toRaw
+
+      success toSeq(records.values)
+    ,
+  )
+
+  self.overlayCache.del(key)
+  discard ?await self.tryDeleteBlocks(manifestCid)
+  trace "Manifest detached from overlay", manifestCid
+
+  success()

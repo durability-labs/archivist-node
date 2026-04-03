@@ -155,6 +155,33 @@ proc updateExpiry*(
 
   await self.updateExpiry(manifest, expiry)
 
+proc updateSlotExpiry*(
+    self: ArchivistNodeRef,
+    manifestCid: Cid,
+    slotIndex: uint64,
+    expiry: SecondsSince1970,
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Update expiry for both the tree overlay and the slot overlay
+  ##
+
+  without manifest =? await self.fetchManifest(manifestCid), error:
+    trace "Unable to fetch manifest for cid", manifestCid
+    return failure(error)
+
+  # Validate before any mutations
+  if not manifest.verifiable or slotIndex.int > manifest.slotRoots.high:
+    error "Slot not found in manifest", manifestCid, slotIndex
+    return failure(newException(ArchivistError, "Slot not found in manifest"))
+
+  # Update tree overlay expiry
+  ?await self.repoStore.putOverlay(manifest.treeCid, expiry = expiry)
+
+  # Update slot overlay expiry
+  let slotRoot = manifest.slotRoots[slotIndex.int]
+  ?await self.repoStore.putOverlay(slotRoot, expiry = expiry)
+
+  return success()
+
 proc fetchBatched*(
     self: ArchivistNodeRef,
     cid: Cid,
@@ -355,8 +382,11 @@ proc retrieve*(
 
     return await self.streamSingleBlock(cid)
 
-  # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlay(manifest.treeCid, manifestCid = cid.some)
+  let blk = ?await self.repoStore.storeManifest(manifest)
+
+  if blk.cid != cid:
+    error "Retrieved manifest cid dont match!", original = cid, retrieved = blk.cid
+    return failure(newException(ArchivistError, "Retrieved manifest cid dont match!"))
 
   await self.streamEntireDataset(manifest, cid)
 
@@ -376,18 +406,12 @@ proc deleteEntireDataset(
   # Deletion is a strictly local operation
   var store = self.networkStore.localStore
 
-  without manifestBlock =? await store.getBlock(cid), err:
-    return failure(err)
-
-  without manifest =? Manifest.decode(manifestBlock), err:
+  without manifest =? (await self.repoStore.fetchManifest(cid)), err:
     return failure(err)
 
   if err =? (await self.repoStore.dropOverlay(manifest.treeCid)).errorOption:
     error "Error dropping manifest overlay", cid, err = err.msg
     return failure(err)
-
-  if err =? (await store.delBlock(cid)).errorOption:
-    warn "Manifest block already removed", cid, err = err.msg
 
   success()
 
@@ -523,8 +547,11 @@ proc store*(
           blockBatch.setLen(0)
 
         await allFutures(inFlight)
-        # return the first failed fut
-        discard inFlight.mapIt(?catch(it.read))
+        for fut in inFlight:
+          if err =? catchAsync(?fut.read).errorOption:
+            error "Unable to store uploaded data", err = err.msg
+            return failure(err)
+
         inFlight.setLen(0)
 
         let
@@ -566,9 +593,6 @@ proc store*(
 
   # store the manifest
   let manifestBlk = ?await self.repoStore.storeManifest(manifest)
-
-  # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlay(treeCid, manifestCid = manifestBlk.cid.some)
 
   info "Stored data",
     manifestCid = manifestBlk.cid,
@@ -621,7 +645,6 @@ proc ensureProtectedManifest(
       leoDecoderProvider, self.taskpool,
     )
     encodedManifest = ?await erasure.encode(manifest, ecK, ecM)
-    manifestBlk = ?await self.repoStore.storeManifest(encodedManifest)
 
   success encodedManifest
 
@@ -737,6 +760,37 @@ proc requestStorage*(
     return failure err
 
   let purchase = ?await purchasing.purchase(request)
+
+  # Clean up verifiable and slot overlays when purchase completes (success or failure).
+  # The original dataset overlay is not touched - it has its own TTL.
+  let
+    self = self
+    verifiableCid = request.content.cid
+
+  proc cleanupPurchaseOverlays() {.async: (raises: []).} =
+    try:
+      await purchase.future
+    except CatchableError as exc:
+      trace "Purchase future failed, cleaning up overlays", error = exc.msg
+
+    try:
+      without manifest =? await self.fetchManifest(verifiableCid), err:
+        warn "Unable to fetch manifest for purchase cleanup",
+          cid = verifiableCid, error = err.msg
+        return
+
+      for slotRoot in manifest.slotRoots:
+        if err =? (await self.repoStore.dropOverlay(slotRoot)).errorOption:
+          warn "Error dropping slot overlay", slotRoot, error = err.msg
+
+      if err =? (await self.repoStore.dropOverlay(manifest.treeCid)).errorOption:
+        warn "Error dropping verifiable overlay",
+          treeCid = manifest.treeCid, error = err.msg
+    except CancelledError:
+      trace "Purchase overlay cleanup cancelled"
+
+  self.trackedFutures.track(cleanupPurchaseOverlays())
+
   success purchase.id
 
 proc validateVerifiableManifest(manifest: Manifest, slotSize: uint64): ?!void =
@@ -770,9 +824,6 @@ proc storeSlot*(
     error "Validation of verifiable manifest failed", err = err.msg
     return failure(err)
 
-  # track manifest CID in overlay for cleanup
-  ?await self.repoStore.putOverlay(manifest.treeCid, manifestCid = cid.some)
-
   if err =? (await self.updateExpiry(manifest, expiry)).errorOption:
     error "Unable to update manifest expiry", cid, err = err.msg
     return failure(err)
@@ -797,7 +848,7 @@ proc storeSlot*(
     return failure(err)
 
   if repair:
-    trace "start repairing slot", slotIdx
+    trace "Start repairing slot", slotIdx
     let erasure = Erasure.new(
       self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
       self.taskpool,
@@ -826,6 +877,12 @@ proc storeSlot*(
       manifest = manifest.slotRoots[slotIndex.int], recovered = slotRoot.toSlotCid()
     return failure(newException(ArchivistError, "Slot root mismatch"))
 
+  # Track verifiable manifest CID on the slot overlay for cleanup
+  discard
+    ?await self.repoStore.storeVerifiableManifest(
+      manifest, slotIdx = slotIndex.Natural.some, expiry = expiry
+    )
+
   trace "Slot successfully retrieved and reconstructed"
 
   return success()
@@ -847,7 +904,7 @@ proc proveSlot*(
     trace "Prover enabled"
 
     let
-      manifest = ?await self.fetchManifest(cid)
+      manifest = ?await self.repoStore.fetchManifest(cid)
       builder =
         ?Poseidon2Builder.new(
           self.networkStore, self.repoStore, manifest, manifest.verifiableStrategy
@@ -890,20 +947,12 @@ proc deleteSlot*(
 
   let slotCid = manifest.slotRoots[slotIdx]
 
-  # Mark slot overlay as Failure so maintenance will drop it and cleanup manifest
-  if err =? (
-    await self.repoStore.putOverlay(
-      slotCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
-    )
-  ).errorOption:
+  # Delete slot overlay
+  if err =? (await self.repoStore.dropOverlay(slotCid)).errorOption:
     warn "Error marking slot overlay failed", err = err.msg
 
-  # Mark tree overlay as Failure so maintenance will drop it and cleanup manifest
-  if err =? (
-    await self.repoStore.putOverlay(
-      manifest.treeCid, status = OverlayStatus.Failure.some, manifestCid = cid.some
-    )
-  ).errorOption:
+  # Delete mainfest overlay
+  if err =? (await self.repoStore.dropOverlay(manifest.treeCid)).errorOption:
     warn "Error marking tree overlay failed", err = err.msg
 
   trace "Slot marked as failed"

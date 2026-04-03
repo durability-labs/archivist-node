@@ -80,8 +80,8 @@ func jsonToProofInput*(
             big: BigInt[256]
             hash: Poseidon2Hash
             data: array[32, byte]
-          assert bool(big.fromDecimal(it.str))
-          assert data.marshal(big, littleEndian)
+          doAssert bool(big.fromDecimal(it.str))
+          doAssert data.marshal(big, littleEndian)
 
           Poseidon2Hash.fromBytes(data).get
       ).concat # flatten out elements
@@ -93,7 +93,7 @@ func jsonToProofInput*(
           var
             big: BigInt[254]
             hash: Poseidon2Hash
-          assert bool(big.fromDecimal(it.getStr))
+          doAssert bool(big.fromDecimal(it.getStr))
           hash.fromBig(big)
           hash
       )
@@ -104,7 +104,7 @@ func jsonToProofInput*(
         var
           big: BigInt[254]
           hash: Poseidon2Hash
-        assert bool(big.fromDecimal(it.str))
+        doAssert bool(big.fromDecimal(it.str))
         hash.fromBig(big)
         hash
     )
@@ -113,7 +113,7 @@ func jsonToProofInput*(
       var
         big: BigInt[254]
         hash: Poseidon2Hash
-      assert bool(big.fromDecimal(inputJson["dataSetRoot"].str))
+      doAssert bool(big.fromDecimal(inputJson["dataSetRoot"].str))
       hash.fromBig(big)
       hash
 
@@ -121,7 +121,7 @@ func jsonToProofInput*(
       var
         big: BigInt[254]
         hash: Poseidon2Hash
-      assert bool(big.fromDecimal(inputJson["slotRoot"].str))
+      doAssert bool(big.fromDecimal(inputJson["slotRoot"].str))
       hash.fromBig(big)
       hash
 
@@ -129,7 +129,7 @@ func jsonToProofInput*(
       var
         big: BigInt[254]
         hash: Poseidon2Hash
-      assert bool(big.fromDecimal(inputJson["entropy"].str))
+      doAssert bool(big.fromDecimal(inputJson["entropy"].str))
       hash.fromBig(big)
       hash
 

@@ -8,6 +8,8 @@ import pkg/archivist/discovery
 import pkg/archivist/stores
 import pkg/archivist/blockexchange
 import pkg/archivist/node
+import pkg/archivist/clock
+import pkg/archivist/systemclock
 
 type TemporaryNode* = ref object
   repoDs: KVStore
@@ -24,11 +26,12 @@ type TemporaryNode* = ref object
   networkStore: NetworkStore
   node: ArchivistNodeRef
 
-proc initializeLocalStore(temporary: TemporaryNode) =
+proc initializeLocalStore(temporary: TemporaryNode, clock: Clock = SystemClock.new()) =
   temporary.tp = Taskpool.new(num_threads = 4)
   temporary.repoDs = SQLiteKVStore.new(SqliteMemory, temporary.tp).tryGet()
   temporary.metaDs = SQLiteKVStore.new(SqliteMemory, temporary.tp).tryGet()
-  temporary.localStore = RepoStore.new(temporary.repoDs, temporary.metaDs)
+  temporary.localStore =
+    RepoStore.new(temporary.repoDs, temporary.metaDs, clock = clock)
 
 proc initializeNetwork(temporary: TemporaryNode) =
   temporary.p2p = newStandardSwitch()
@@ -71,9 +74,11 @@ proc initializeNode(temporary: TemporaryNode) =
     Taskpool.new(),
   )
 
-proc create*(_: type TemporaryNode): Future[TemporaryNode] {.async.} =
+proc create*(
+    _: type TemporaryNode, clock: Clock = SystemClock.new()
+): Future[TemporaryNode] {.async.} =
   let temporary = TemporaryNode()
-  temporary.initializeLocalStore()
+  temporary.initializeLocalStore(clock)
   temporary.initializeNetwork()
   temporary.initializePendingBlocks()
   temporary.initializeDiscovery()

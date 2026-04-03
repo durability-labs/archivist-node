@@ -3,7 +3,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/strutils
 import std/tables
 
 import pkg/chronos
@@ -271,59 +270,37 @@ proc dropOverlay*(
   logScope:
     treeCid = treeCid
 
-  if treeCid in self.deletingLock:
-    trace "Overlay deletion already in progress, skipping"
-    return success()
-
-  self.deletingLock.incl(treeCid)
-  defer:
-    self.deletingLock.excl(treeCid)
-
   trace "Dropping overlay and cleaning up blocks"
 
   if err =? (await self.putOverlay(treeCid, status = Deleting.some)).errorOption:
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)
 
-  # Read overlay metadata to get manifestCid before deletion
-  var manifestCid: ?Cid
-  if meta =? (await self.getOverlay(treeCid)):
-    manifestCid = meta.manifestCid
+  while true:
+    without overlay =? (await self.getOverlay(treeCid)), err:
+      if err of KVStoreKeyNotFound:
+        trace "Overlay already deleted", treeCid
+        break
+      warn "Overlay missing", treeCid, err = err.msg
+      return failure(err)
 
-  # Query all leaf records for this tree
-  let
-    queryKey = ?blockLeafQueryKey(treeCid)
-    iter = ?(await query(self.metaDs, Query.init(queryKey), LeafMetadata))
+    var indices: seq[Natural]
+    for i in 0 ..< overlay.blocks.len:
+      if overlay.blocks[i.Natural]:
+        indices.add(i.Natural)
 
-  # Extract indices from the leaf keys
-  var indices: seq[Natural]
-  for recordFut in iter:
-    if record =? ?catchAsync(?(await recordFut)):
-      # Key format: /meta/leafs/{treeCid}/{index}
-      # Extract index from last namespace segment
-      let indexStr = record.key.value
-      without idx =? parseInt(indexStr).catch, err:
-        return failure(
-          newException(
-            ValueError, "Invalid index in key: " & indexStr & " - " & err.msg
-          )
-        )
-      indices.add(idx.Natural)
+    # Delete leaf metadata and decrement refcounts (two-phase atomic)
+    if indices.len == 0:
+      break
 
-  # Delete leaf metadata and decrement refcounts (two-phase atomic)
-  if indices.len > 0:
-    ?await delLeafBlockMetadata(self, treeCid, indices)
+    ?await self.delLeafBlockMetadata(treeCid, indices)
     trace "Deleted leaf metadata and updated refcounts", count = indices.len
+
+  # Detach manifest and try to delete if refcount reaches 0
+  ?await self.dropManifest(treeCid)
 
   # Delete overlay metadata
   ?await self.deleteOverlay(treeCid)
-
-  if cid =? manifestCid:
-    let
-      key = ?makePrefixKey(self.postFixLen, cid)
-      record = ?await self.repoDs.get(key)
-
-    ?await self.repoDs.tryDelete(record)
 
   trace "Overlay dropped successfully"
 

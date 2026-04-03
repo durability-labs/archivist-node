@@ -70,10 +70,14 @@ method run*(
     let cid = request.content.cid
     let slotIndex = data.slotIndex
     let challenge = await context.marketplace.getChallenge(slot.id)
-    without proof =? await storage.proveSlot(cid, slotIndex, challenge), err:
+    # Deadline is periodEnd - proof must be generated before the period closes.
+    let periodEnd = periodicity.periodEnd(provingPeriod).toSecondsSince1970
+
+    without proof =?
+      (await storage.proveSlot(cid, slotIndex, challenge).withTimeout(clock, periodEnd)),
+      err:
       error "Failed to generate initial proof", error = err.msg
       return some State(SaleErrored(error: err))
-
     let periodAtFinish = periodicity.periodOf(StorageTimestamp.init(clock.now()))
     if periodAtFinish != provingPeriod:
       warn "Failed to generate initial proof in time",

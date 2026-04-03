@@ -7,23 +7,25 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-import std/sets
-
 import pkg/chronos
 import pkg/kvstore
 import pkg/taskpools
 import pkg/questionable
 import pkg/questionable/results
 import pkg/stew/byteutils
+import pkg/stew/bitseqs
 
 import pkg/libp2p/multicodec
 
 import pkg/archivist/blocktype as bt
+import pkg/archivist/merkletree
 import pkg/archivist/stores
+import pkg/archivist/utils/asyncbarrier
 
 import ../../asynctest
 import ../helpers/mocktimer
 import ../helpers/mockclock
+import ../helpers
 import ../examples
 
 import archivist/stores/maintenance
@@ -155,21 +157,25 @@ suite "BlockMaintainer":
 
     check (await repo.getOverlay(treeCid)).isErr
 
-  test "Should skip overlay actively being deleted (runtime lock)":
+  test "Should handle concurrent dropOverlay on same treeCid":
     let treeCid = Cid.example
 
     (await repo.putOverlay(treeCid, status = Deleting.some, expiry = 200)).tryGet()
 
-    # Simulate an active deletion by holding the lock
-    repo.deletingLock.incl(treeCid)
+    # Simulate an in-flight put by entering the barrier
+    repo.deletingLock.enter(treeCid)
 
     maintainer.start()
+    # Timer callback calls dropOverlay, which enters delLeafBlockMetadata
+    # and blocks on acquire (waiting for the put to finish).
+    # But since this overlay has no blocks, the loop breaks before
+    # reaching delLeafBlockMetadata, so it completes and deletes the overlay.
     await mockTimer.invokeCallback()
 
-    # Overlay should still exist because the lock prevented re-deletion
-    check (await repo.getOverlay(treeCid)).isOk
+    # Overlay is gone - dropOverlay found no blocks and cleaned up metadata
+    check (await repo.getOverlay(treeCid)).isErr
 
-    repo.deletingLock.excl(treeCid)
+    repo.deletingLock.leave(treeCid)
 
   test "Should drop expired Pending overlay":
     let treeCid = Cid.example
@@ -190,3 +196,112 @@ suite "BlockMaintainer":
     await mockTimer.invokeCallback()
 
     check (await repo.getOverlay(treeCid)).isOk
+
+  test "Should return quota to zero when dropping expired overlay with manifest":
+    let
+      blk = bt.Block.new("test-data-for-maintenance".toBytes).tryGet()
+      (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      proof = tree.getProof(0).tryGet()
+
+    var blocks = BitSeq.init(1)
+    blocks.setBit(0)
+
+    (
+      await repo.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = blocks, expiry = 50
+      )
+    ).tryGet()
+
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    discard (await repo.storeManifest(manifest)).tryGet()
+
+    check repo.quotaUsedBytes > 0.NBytes
+    check repo.totalBlocks > 0.Natural
+
+    maintainer.start()
+    await mockTimer.invokeCallback()
+
+    check repo.quotaUsedBytes == 0.NBytes
+    check repo.totalBlocks == 0.Natural
+
+  test "Should cleanup protected and verifiable manifests via maintenance expiry":
+    var blocks: seq[bt.Block]
+    for i in 0 ..< 4:
+      blocks.add(bt.Block.new(("block-data-" & $i & "-for-maint").toBytes).tryGet())
+
+    let
+      (baseManifest, tree) = makeManifestAndTree(blocks).tryGet()
+      treeCid = tree.rootCid.tryGet()
+      maxDataLen = 22 # length of each "block-data-X-for-maint" string
+      protManifest = Manifest.new(
+        manifest = baseManifest,
+        treeCid = treeCid,
+        datasetSize = NBytes(8 * maxDataLen),
+        ecK = 2,
+        ecM = 2,
+      )
+
+    var slotRoots: seq[Cid]
+    for _ in 0 ..< 4:
+      slotRoots.add(Cid.example)
+
+    let verManifest = Manifest.new(protManifest, Cid.example, slotRoots).tryGet()
+
+    # Create tree overlay with expiry in the past (clock is at 100)
+    var bits = BitSeq.init(blocks.len)
+    for i in 0 ..< blocks.len:
+      bits.setBit(i)
+
+    (
+      await repo.putOverlay(
+        treeCid = treeCid, status = Completed.some, blocks = bits, expiry = 50
+      )
+    ).tryGet()
+
+    # Store data blocks
+    var blkProofs: seq[(bt.Block, Natural, ArchivistProof)]
+    for i, blk in blocks:
+      blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet()))
+    (await repo.putBlocks(treeCid, blkProofs)).tryGet()
+
+    # Store protected manifest on tree overlay
+    discard (await repo.storeManifest(protManifest)).tryGet()
+
+    # Store verifiable manifest on slot overlays
+    let verManifestBlk = (await repo.storeVerifiableManifest(verManifest)).tryGet()
+    let verifiableManifestBytes = verManifestBlk.data.len.NBytes
+
+    # Create slot overlays with expiry in the future (200 > 100)
+    for slotRoot in slotRoots:
+      (await repo.putOverlay(slotRoot, status = Completed.some, expiry = 200)).tryGet()
+
+    check repo.quotaUsedBytes > 0.NBytes
+    check repo.totalBlocks > 0.Natural
+
+    # Fire maintenance: tree overlay (expiry=50) is expired -> drops it
+    # Protected manifest deleted, data blocks deleted, verifiable manifest kept
+    maintainer.start()
+    await mockTimer.invokeCallback()
+
+    # Slot overlays (expiry=200) still alive
+    for slotRoot in slotRoots:
+      check (await repo.getOverlay(slotRoot)).isOk
+
+    # Verifiable manifest still exists (slot overlays alive)
+    check (await repo.getBlock(verManifestBlk.cid)).isOk
+
+    # Only the verifiable manifest block remains
+    check repo.quotaUsedBytes == verifiableManifestBytes
+    check repo.totalBlocks == 1.Natural
+
+    # Advance clock past slot expiry
+    mockClock.set(300)
+    await mockTimer.invokeCallback()
+
+    # All slot overlays dropped -> verifiable manifest deleted
+    for slotRoot in slotRoots:
+      check (await repo.getOverlay(slotRoot)).isErr
+
+    check repo.quotaUsedBytes == 0.NBytes
+    check repo.totalBlocks == 0.Natural

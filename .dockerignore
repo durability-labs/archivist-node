@@ -4,3 +4,5 @@ docs
 metrics
 nimcache
 tests
+vendor/nimble/nat_traversal/vendor/miniupnp/miniupnpc/build
+vendor/nimble/nat_traversal/vendor/libnatpmp-upstream/libnatpmp.a

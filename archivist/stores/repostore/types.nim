@@ -22,6 +22,7 @@ import ../../errors
 import ../../merkletree
 import ../../systemclock
 import ../../units
+import ../../utils/asyncbarrier
 
 const
   DefaultOverlayTtl* = SecondsSince1970 30.days.seconds # ttl in seconds
@@ -42,7 +43,7 @@ type
     totalBlocks*: Natural
     overlayTtl*: SecondsSince1970
     started*: bool
-    deletingLock*: HashSet[Cid]
+    deletingLock*: KeyedBarrier[Cid]
     overlayCache*: Table[Key, OverlayMetadata]
 
   QuotaUsage* {.serialize.} = object
@@ -146,4 +147,5 @@ func new*(
     quotaMaxBytes: quotaMaxBytes,
     overlayTtl: overlayTtl,
     onBlockStored: CidCallback.none,
+    deletingLock: KeyedBarrier[Cid].new(),
   )

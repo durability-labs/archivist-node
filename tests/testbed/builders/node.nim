@@ -242,6 +242,7 @@ func circomGraphResolved(builder: NodeBuilder): ?string =
 proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   var arguments: seq[string]
   arguments.add("--disc-port=" & $(await builder.discoveryPortResolved))
+  arguments.add("--nat=none") # don't need nat for integration tests
   for bootstrapNode in await builder.bootstrapNodesResolved:
     arguments.add("--bootstrap-node=" & bootstrapNode)
   if builder.logTopics.len > 0:

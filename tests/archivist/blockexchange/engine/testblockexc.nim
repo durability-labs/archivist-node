@@ -10,6 +10,7 @@ import pkg/archivist/blockexchange
 import pkg/archivist/chunker
 import pkg/archivist/discovery
 import pkg/archivist/blocktype as bt
+import pkg/archivist/manifest
 
 import ../../../asynctest
 import ../../examples
@@ -23,13 +24,26 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     peerCtx1, peerCtx2: BlockExcPeerCtx
     pricing1, pricing2: Pricing
     blocks1, blocks2: seq[bt.Block]
+    manifest1, manifest2: Manifest
     pendingBlocks1, pendingBlocks2: seq[BlockHandle]
 
   setup:
     blocks1 = (await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)).tryGet
     blocks2 = (await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)).tryGet
-    nodeCmps1 = generateNodes(1, blocks1).components[0]
-    nodeCmps2 = generateNodes(1, blocks2).components[0]
+    nodeCmps1 = generateNodes(1).components[0]
+    nodeCmps2 = generateNodes(1).components[0]
+
+    # Store blocks as trees on each node
+    manifest1 = (await storeDataGetManifest(nodeCmps1.localStore, blocks1)).tryGet()
+    manifest2 = (await storeDataGetManifest(nodeCmps2.localStore, blocks2)).tryGet()
+
+    # Attach manifests to their local overlays
+    discard (await nodeCmps1.localStore.storeManifest(manifest1)).tryGet()
+    discard (await nodeCmps2.localStore.storeManifest(manifest2)).tryGet()
+
+    # Pre-create overlays on the opposite nodes so they can receive leaf blocks
+    discard (await nodeCmps1.localStore.storeManifest(manifest2)).tryGet()
+    discard (await nodeCmps2.localStore.storeManifest(manifest1)).tryGet()
 
     await allFuturesThrowing(
       nodeCmps1.switch.start(),
@@ -40,12 +54,18 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
       nodeCmps2.engine.start(),
     )
 
-    # initialize our want lists
-    pendingBlocks1 =
-      blocks2[0 .. 3].mapIt(nodeCmps1.pendingBlocks.getWantHandle(it.cid))
+    # Use leaf addresses for want handles
+    pendingBlocks1 = blocks2[0 .. 3].mapIt(
+      nodeCmps1.pendingBlocks.getWantHandle(
+        BlockAddress.init(manifest2.treeCid, blocks2.find(it).Natural)
+      )
+    )
 
-    pendingBlocks2 =
-      blocks1[0 .. 3].mapIt(nodeCmps2.pendingBlocks.getWantHandle(it.cid))
+    pendingBlocks2 = blocks1[0 .. 3].mapIt(
+      nodeCmps2.pendingBlocks.getWantHandle(
+        BlockAddress.init(manifest1.treeCid, blocks1.find(it).Natural)
+      )
+    )
 
     pricing1 = Pricing.example()
     pricing2 = Pricing.example()
@@ -81,12 +101,20 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     await allFuturesThrowing(allFinished(pendingBlocks2)).wait(10.seconds)
 
     check:
-      (await allFinished(blocks1[0 .. 3].mapIt(nodeCmps2.localStore.getBlock(it.cid))))
+      (
+        await allFinished(
+          (0 .. 3).mapIt(nodeCmps2.localStore.getBlock(manifest1.treeCid, it.Natural))
+        )
+      )
       .filterIt(it.completed and it.read.isOk)
       .mapIt($it.read.get.cid)
       .sorted(cmp[string]) == blocks1[0 .. 3].mapIt($it.cid).sorted(cmp[string])
 
-      (await allFinished(blocks2[0 .. 3].mapIt(nodeCmps1.localStore.getBlock(it.cid))))
+      (
+        await allFinished(
+          (0 .. 3).mapIt(nodeCmps1.localStore.getBlock(manifest2.treeCid, it.Natural))
+        )
+      )
       .filterIt(it.completed and it.read.isOk)
       .mapIt($it.read.get.cid)
       .sorted(cmp[string]) == blocks2[0 .. 3].mapIt($it.cid).sorted(cmp[string])
@@ -96,12 +124,22 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     check peerCtx2.account .? address == pricing2.address.some
 
   test "Should send want-have for block":
-    let blk = bt.Block.new("Block 1".toBytes).tryGet()
-    let blkFut = nodeCmps1.pendingBlocks.getWantHandle(blk.cid)
-    (await nodeCmps2.localStore.putBlock(blk)).tryGet()
+    let
+      blk = bt.Block.new("Block 1".toBytes).tryGet()
+      senderManifest =
+        (await storeDataGetManifest(nodeCmps2.localStore, @[blk])).tryGet()
+
+    # Attach manifest to sender's overlay
+    discard (await nodeCmps2.localStore.storeManifest(senderManifest)).tryGet()
+    # Pre-create overlay on receiver
+    discard (await nodeCmps1.localStore.storeManifest(senderManifest)).tryGet()
+
+    let
+      leafAddr = BlockAddress.init(senderManifest.treeCid, 0.Natural)
+      blkFut = nodeCmps1.pendingBlocks.getWantHandle(leafAddr)
 
     let entry = WantListEntry(
-      address: blk.address,
+      address: leafAddr,
       priority: 1,
       cancel: false,
       wantType: WantType.WantBlock,
@@ -111,12 +149,15 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     peerCtx1.peerWants.add(entry)
     check nodeCmps2.engine.taskQueue.pushOrUpdateNoWait(peerCtx1).isOk
 
-    check eventually (await nodeCmps1.localStore.hasBlock(blk.cid)).tryGet()
+    check eventually (
+      await nodeCmps1.localStore.hasBlock(senderManifest.treeCid, 0.Natural)
+    ).tryGet()
     check eventually (await blkFut) == blk
 
   test "Should get blocks from remote":
-    let blocks =
-      await allFinished(blocks2[4 .. 7].mapIt(nodeCmps1.networkStore.getBlock(it.cid)))
+    let blocks = await allFinished(
+      (4 .. 7).mapIt(nodeCmps1.networkStore.getBlock(manifest2.treeCid, it.Natural))
+    )
 
     check blocks.mapIt(it.read().tryGet()) == blocks2[4 .. 7]
 
@@ -126,20 +167,25 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     # should fail retrieving block from remote
     check not await blk.cid in nodeCmps1.networkStore
 
-    # second trigger blockexc to resolve any pending requests
-    # for the block
-    (await nodeCmps2.networkStore.putBlock(blk)).tryGet()
+    # Store as tree on sender
+    let senderManifest =
+      (await storeDataGetManifest(nodeCmps2.localStore, @[blk])).tryGet()
+
+    # Attach manifest to sender's overlay
+    discard (await nodeCmps2.localStore.storeManifest(senderManifest)).tryGet()
+    # Pre-create overlay on receiver
+    discard (await nodeCmps1.localStore.storeManifest(senderManifest)).tryGet()
 
     # should succeed retrieving block from remote
-    check await nodeCmps1.networkStore.getBlock(blk.cid).withTimeout(100.millis)
-      # should succeed
+    check await nodeCmps1.networkStore
+    .getBlock(senderManifest.treeCid, 0.Natural)
+    .withTimeout(100.millis)
 
   test "Should receive payments for blocks that were sent":
-    discard
-      await allFinished(blocks2[4 .. 7].mapIt(nodeCmps2.networkStore.putBlock(it)))
-
-    discard
-      await allFinished(blocks2[4 .. 7].mapIt(nodeCmps1.networkStore.getBlock(it.cid)))
+    # blocks2 already stored as tree on nodeCmps2, overlay on nodeCmps1
+    discard await allFinished(
+      (4 .. 7).mapIt(nodeCmps1.networkStore.getBlock(manifest2.treeCid, it.Natural))
+    )
 
     let
       channel = !peerCtx1.paymentChannel
@@ -151,10 +197,32 @@ asyncchecksuite "NetworkStore - multiple nodes":
   var
     nodes: seq[NodesComponents]
     blocks: seq[bt.Block]
+    manifest0, manifest1, manifest2, manifest3: Manifest
 
   setup:
     blocks = (await makeRandomBlocks(datasetSize = 4096, blockSize = 256'nb)).tryGet
     nodes = generateNodes(5)
+
+    # Store blocks as trees on each source node (4 blocks per node)
+    manifest0 =
+      (await storeDataGetManifest(nodes[0].localStore, blocks[0 .. 3])).tryGet()
+    manifest1 =
+      (await storeDataGetManifest(nodes[1].localStore, blocks[4 .. 7])).tryGet()
+    manifest2 =
+      (await storeDataGetManifest(nodes[2].localStore, blocks[8 .. 11])).tryGet()
+    manifest3 =
+      (await storeDataGetManifest(nodes[3].localStore, blocks[12 .. 15])).tryGet()
+
+    # Attach manifests to their local overlays
+    discard (await nodes[0].localStore.storeManifest(manifest0)).tryGet()
+    discard (await nodes[1].localStore.storeManifest(manifest1)).tryGet()
+    discard (await nodes[2].localStore.storeManifest(manifest2)).tryGet()
+    discard (await nodes[3].localStore.storeManifest(manifest3)).tryGet()
+
+    # Pre-create overlays on downloader (node 4) for the shards it will request
+    discard (await nodes[4].localStore.storeManifest(manifest0)).tryGet()
+    discard (await nodes[4].localStore.storeManifest(manifest3)).tryGet()
+
     for e in nodes:
       await e.engine.start()
 
@@ -170,14 +238,18 @@ asyncchecksuite "NetworkStore - multiple nodes":
       downloader = nodes[4].networkStore
       engine = downloader.engine
 
-    # Add blocks from 1st peer to want list
-    let
-      downloadCids = blocks[0 .. 3].mapIt(it.cid) & blocks[12 .. 15].mapIt(it.cid)
-
-      pendingBlocks = downloadCids.mapIt(engine.pendingBlocks.getWantHandle(it))
-
-    for i in 0 .. 15:
-      (await nodes[i div 4].networkStore.engine.localStore.putBlock(blocks[i])).tryGet()
+    # Add blocks from 1st and 4th peers to want list using leaf addresses
+    let pendingBlocks =
+      (0 .. 3).mapIt(
+        engine.pendingBlocks.getWantHandle(
+          BlockAddress.init(manifest0.treeCid, it.Natural)
+        )
+      ) &
+      (0 .. 3).mapIt(
+        engine.pendingBlocks.getWantHandle(
+          BlockAddress.init(manifest3.treeCid, it.Natural)
+        )
+      )
 
     await connectNodes(nodes)
     await sleepAsync(100.millis)
@@ -185,24 +257,36 @@ asyncchecksuite "NetworkStore - multiple nodes":
     await allFuturesThrowing(allFinished(pendingBlocks))
 
     check:
-      (await allFinished(downloadCids.mapIt(downloader.localStore.getBlock(it))))
+      (
+        await allFinished(
+          (0 .. 3).mapIt(downloader.localStore.getBlock(manifest0.treeCid, it.Natural)) &
+            (0 .. 3).mapIt(
+              downloader.localStore.getBlock(manifest3.treeCid, it.Natural)
+            )
+        )
+      )
       .filterIt(it.completed and it.read.isOk)
       .mapIt($it.read.get.cid)
-      .sorted(cmp[string]) == downloadCids.mapIt($it).sorted(cmp[string])
+      .sorted(cmp[string]) ==
+        (blocks[0 .. 3] & blocks[12 .. 15]).mapIt($it.cid).sorted(cmp[string])
 
   test "Should exchange blocks with multiple nodes":
     let
       downloader = nodes[4].networkStore
       engine = downloader.engine
 
-    # Add blocks from 1st peer to want list
+    # Add blocks from 1st and 4th peers to want list
     let
-      pendingBlocks1 = blocks[0 .. 3].mapIt(engine.pendingBlocks.getWantHandle(it.cid))
-      pendingBlocks2 =
-        blocks[12 .. 15].mapIt(engine.pendingBlocks.getWantHandle(it.cid))
-
-    for i in 0 .. 15:
-      (await nodes[i div 4].networkStore.engine.localStore.putBlock(blocks[i])).tryGet()
+      pendingBlocks1 = (0 .. 3).mapIt(
+        engine.pendingBlocks.getWantHandle(
+          BlockAddress.init(manifest0.treeCid, it.Natural)
+        )
+      )
+      pendingBlocks2 = (0 .. 3).mapIt(
+        engine.pendingBlocks.getWantHandle(
+          BlockAddress.init(manifest3.treeCid, it.Natural)
+        )
+      )
 
     await connectNodes(nodes)
     await sleepAsync(100.millis)

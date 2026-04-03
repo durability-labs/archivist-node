@@ -56,10 +56,14 @@ suite "Marketplace storage interface implementation":
     check metadata.expiry == expiry
 
   proc checkSlotExpiry(cid: Cid, slotIndex: uint64, expiry: int64) {.async.} =
-    # TODO: updateSlotExpiry currently updates the entire dataset expiry,
-    # not per-slot expiry, so we just check the manifest overlay
-    discard slotIndex
-    await checkOverlayExpiry(cid, expiry)
+    let
+      localStore = temporary.localStore
+      manifestBlock = !await localStore.getBlock(cid)
+      manifest = !Manifest.decode(manifestBlock)
+      slotCid = manifest.slotRoots[slotIndex]
+      metadata = !await localStore.getOverlay(slotCid)
+
+    check metadata.expiry == expiry
 
   test "updates expiry of slot blocks":
     let cid = await storeVerifiableData()
@@ -99,7 +103,7 @@ suite "Marketplace storage interface implementation":
     )
     await checkOverlayExpiry(cid, expiry)
 
-  test "deleteSlot marks overlay as Failure":
+  test "deleteSlot drops overlay":
     let
       cid = await storeVerifiableData()
       localStore = temporary.localStore
@@ -113,12 +117,11 @@ suite "Marketplace storage interface implementation":
 
     !await storage.deleteSlot(cid, 0)
 
-    # Check that slot overlay status is now Failure
+    # Check that slot overlay is gone
     let slotCid = manifest.slotRoots[0]
-    let metadata = !await localStore.getOverlay(slotCid)
-    check metadata.status == OverlayStatus.Failure
+    check (await localStore.getOverlay(slotCid)).isErr
 
-  test "deleteSlot marks overlay as Failure for different slot indices":
+  test "deleteSlot drops overlay for different slot indices":
     let
       cid = await storeVerifiableData()
       localStore = temporary.localStore
@@ -132,7 +135,6 @@ suite "Marketplace storage interface implementation":
 
     !await storage.deleteSlot(cid, 1)
 
-    # Check that slot overlay status is now Failure
+    # Check that slot overlay is gone
     let slotCid = manifest.slotRoots[1]
-    let metadata = !await localStore.getOverlay(slotCid)
-    check metadata.status == OverlayStatus.Failure
+    check (await localStore.getOverlay(slotCid)).isErr

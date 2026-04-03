@@ -634,6 +634,12 @@ proc decode*(
   ##             be recovered
   ##
 
+  logScope:
+    treeCid = encoded.treeCid
+    originalTreeCid = encoded.originalTreeCid
+
+  trace "Preparing to decode dataset"
+
   let
     emptyCid = ?emptyCid(encoded.version, encoded.hcodec, encoded.codec)
     params = EncodingParams.initFromEncoded(encoded, emptyCid)
@@ -663,6 +669,7 @@ proc decode*(
       if err =? (await self.repoStore.putSomeProofs(tree, idxIter)).errorOption:
         return failure(err)
 
+      trace "Successfully decoded original dataset"
       success(),
   )
 
@@ -689,6 +696,12 @@ proc repair*(
   ## to avoid leaving garbage in the store
   ##
 
+  logScope:
+    treeCid = encoded.treeCid
+    originalTreeCid = encoded.originalTreeCid
+
+  trace "Preparing to repair dataset"
+
   let
     emptyCid = ?emptyCid(encoded.version, encoded.hcodec, encoded.codec)
     params = EncodingParams.initFromEncoded(encoded, emptyCid)
@@ -708,8 +721,9 @@ proc repair*(
           "Original tree root differs from the tree root computed out of recovered data"
         )
 
-      await self.repoStore.putAllProofs(tree)
-    ,
+      ?await self.repoStore.putAllProofs(tree)
+      trace "Successfully repaired original dataset"
+      success(),
   )
 
   # TODO: We don't get valid parity data from leopard,
@@ -719,6 +733,7 @@ proc repair*(
   let repaired =
     ?(await self.encode(encoded, encoded.ecK, encoded.ecM, encoded.protectedStrategy))
 
+  trace "Successfully re-encoded original dataset"
   if repaired.treeCid != encoded.treeCid:
     return failure(
       "Original tree root differs from the repaired tree root encoded out of recovered data"

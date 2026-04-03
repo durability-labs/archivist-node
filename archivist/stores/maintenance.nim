@@ -18,7 +18,6 @@ import pkg/questionable/results
 
 import ./repostore
 import ../utils/timer
-import ../utils/safeasynciter
 import ../clock
 import ../logutils
 import ../systemclock
@@ -40,7 +39,6 @@ proc new*(
     T: type BlockMaintainer,
     repoStore: RepoStore,
     interval: Duration,
-    numberOfBlocksPerInterval = 100,
     timer = Timer.new("maintenance"),
     clock: Clock = SystemClock.new(),
 ): BlockMaintainer =
@@ -53,25 +51,15 @@ proc new*(
 proc dropExpiredOverlays(
     self: BlockMaintainer
 ): Future[void] {.async: (raises: [CancelledError]).} =
-  without iter =? (await self.repoStore.listOverlays()), err:
+  without overlays =? (
+    await self.repoStore.listOverlaysByExpiry(limit = -1, offset = 0)
+  ), err:
     warn "Unable to list overlays", err = err.msg
     return
 
-  defer:
-    if err =? (await iter.dispose()).errorOption:
-      warn "Error disposing overlay iterator", err = err.msg
-
   let now = self.clock.now
 
-  for cidFut in iter:
-    without treeCid =? (await cidFut), err:
-      warn "Unable to get overlay CID from iterator", err = err.msg
-      continue
-
-    without meta =? (await self.repoStore.getOverlay(treeCid)), err:
-      warn "Unable to get overlay metadata", treeCid, err = err.msg
-      continue
-
+  for (treeCid, meta) in overlays:
     # Deleting - finish cleanup, if delete in progress, dropOverlay will
     # no-op
     # Failure - always drop
@@ -84,10 +72,6 @@ proc dropExpiredOverlays(
       trace "Dropping overlay", treeCid, status = meta.status, expiry = meta.expiry
       if err =? (await self.repoStore.dropOverlay(treeCid)).errorOption:
         error "Error dropping overlay", treeCid, status = meta.status, err = err.msg
-
-      if manifestCid =? meta.manifestCid:
-        if err =? (await self.repoStore.delBlock(manifestCid)).errorOption:
-          warn "Error dropping manifest", err = err.msg
 
     await sleepAsync(1.millis) # cooperative scheduling
 

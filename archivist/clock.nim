@@ -30,6 +30,19 @@ proc withTimeout*(
     await future.cancelAndWait()
     raise newException(Timeout, "Timed out")
 
+proc withTimeout*[T](
+    future: Future[T], clock: Clock, expiry: SecondsSince1970
+): Future[T] {.async.} =
+  let timeout = clock.waitUntil(expiry)
+  try:
+    await future or timeout
+  finally:
+    await timeout.cancelAndWait()
+  if not future.completed:
+    await future.cancelAndWait()
+    raise newException(Timeout, "Timed out")
+  return future.read()
+
 proc toBytes*(i: SecondsSince1970): seq[byte] =
   let asUint = cast[uint64](i)
   @(asUint.toBytes)

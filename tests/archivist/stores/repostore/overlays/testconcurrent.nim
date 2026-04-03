@@ -91,6 +91,9 @@ proc testConcurrent*(
       let inconsistencies = (await repo.verifyBlockBitState(treeCid)).tryGet()
       check inconsistencies.len == 0
 
+      check repo.quotaUsedBytes == NBytes(800 + 801 + 802)
+      check repo.totalBlocks == 3.Natural
+
     test "Sequential CAS updates handle retries correctly":
       let
         blk1 = createTestBlock(840)
@@ -201,6 +204,9 @@ proc testConcurrent*(
       check (await repo.getBlock(blk3.cid)).isErr
       check (await repo.getBlock(blk4.cid)).isErr
 
+      check repo.quotaUsedBytes == NBytes(900 + 901)
+      check repo.totalBlocks == 2.Natural
+
     test "putBlocks aborts when delete started first":
       let
         blk1 = createTestBlock(910)
@@ -241,25 +247,29 @@ proc testConcurrent*(
         )
       ).tryGet()
 
-      (await repo.putBlocks(treeCid, @[(blk1, 0.Natural, proof1)])).tryGet()
-
-      let
-        putFuture = repo.putBlocks(
-          treeCid, @[(blk2, 1.Natural, proof2), (blk3, 2.Natural, proof3)]
-        )
-        dropFuture = repo.dropOverlay(treeCid)
-
-      await allFutures(@[putFuture, dropFuture])
+      # TODO: the correct way to test this is with a mock of the kvstore,
+      # but that breaks the structure of the tests and it's a significant
+      # amount of effort - but this is one of the few legitimate usages
+      # of mocking ;)
+      let putFuture = repo.putBlocks(
+        treeCid,
+        @[
+          (blk1, 0.Natural, proof1),
+          (blk2, 1.Natural, proof2),
+          (blk3, 2.Natural, proof3),
+        ],
+      )
+      (await repo.dropOverlay(treeCid)).tryGet
 
       let putResult = await putFuture
-      let dropResult = await dropFuture
-
-      check dropResult.isOk
 
       if putResult.isErr:
         check putResult.error() of OverlayDeletingError
 
       check (await repo.getOverlay(treeCid)).isErr
+
+      check repo.quotaUsedBytes == 0.NBytes
+      check repo.totalBlocks == 0.Natural
 
 proc runFsSqliteTests() =
   let repoDir = createTempDir("archivist-", "-repostore")
