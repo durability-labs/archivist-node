@@ -36,8 +36,7 @@ import ./stores
 import ./marketplace
 import ./units
 import ./utils
-import ./nat
-import ./utils/natutils
+import ./conf/nat
 
 when defaultChroniclesStream.outputs.type.arity == 3:
   import std/terminal
@@ -146,7 +145,7 @@ type
     nat* {.
       desc:
         "Specify method to use for determining public address. " &
-        "Must be one of: any, none, upnp, pmp, extip:<IP>",
+        "Must be one of: any, none, upnp, pmp, extip:<IP>, pmp:<gateway>, any:<gateway>",
       defaultValue: defaultNatConfig(),
       defaultValueDesc: "any",
       name: "nat"
@@ -498,7 +497,7 @@ func defaultAddress*(conf: NodeConf): IpAddress =
   result = static parseIpAddress("127.0.0.1")
 
 func defaultNatConfig*(): NatConfig =
-  result = NatConfig(hasExtIp: false, nat: NatStrategy.NatAny)
+  result = NatConfig.anyStrategy()
 
 proc circuitDirPath*(self: NodeConf): string =
   ## Returns the circuit directory as an absolute path
@@ -570,27 +569,10 @@ proc parseCmdArg*(T: type SignedPeerRecord, uri: string): T =
     quit QuitFailure
   res
 
-func parseCmdArg*(T: type NatConfig, p: string): T {.raises: [ValueError].} =
-  case p.toLowerAscii
-  of "any":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatAny)
-  of "none":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatNone)
-  of "upnp":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatUpnp)
-  of "pmp":
-    NatConfig(hasExtIp: false, nat: NatStrategy.NatPmp)
-  else:
-    if p.startsWith("extip:"):
-      try:
-        let ip = parseIpAddress(p[6 ..^ 1])
-        NatConfig(hasExtIp: true, extIp: ip)
-      except ValueError:
-        let error = "Not a valid IP address: " & p[6 ..^ 1]
-        raise newException(ValueError, error)
-    else:
-      let error = "Not a valid NAT option: " & p
-      raise newException(ValueError, error)
+func parseCmdArg*(T: type NatConfig, nat: string): T {.raises: [ValueError].} =
+  without config =? parseNatConfig(nat), error:
+    raise newException(ValueError, error.msg)
+  config
 
 proc completeCmdArg*(T: type NatConfig, val: string): seq[string] =
   return @[]

@@ -12,7 +12,7 @@ import pkg/archivist/blocktype as bt
 import pkg/archivist/blockexchange
 import pkg/archivist/systemclock
 import pkg/archivist/nat
-import pkg/archivist/utils/natutils
+import pkg/archivist/nat/config
 import pkg/archivist/slots
 
 import pkg/archivist/node
@@ -191,11 +191,8 @@ proc generateNodes*(
 
         if config.enableBootstrap:
           waitFor switch.peerInfo.update()
-          let (announceAddrs, discoveryAddrs) = nattedAddress(
-            NatConfig(hasExtIp: false, nat: NatNone),
-            switch.peerInfo.addrs,
-            bindPort.Port,
-          )
+          let (announceAddrs, discoveryAddrs) =
+            nattedAddress(NatConfig.noNat, switch.peerInfo.addrs, bindPort.Port)
           blockDiscovery.updateAnnounceRecord(announceAddrs)
           blockDiscovery.updateDhtRecord(discoveryAddrs)
           if blockDiscovery.dhtRecord.isSome:

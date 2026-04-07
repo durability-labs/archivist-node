@@ -111,9 +111,6 @@
 [submodule "vendor/nimble/contractabi"]
 	path = vendor/nimble/contractabi
 	url = https://github.com/durability-labs/nim-contract-abi
-[submodule "vendor/nimble/nat_traversal"]
-	path = vendor/nimble/nat_traversal
-	url = https://github.com/status-im/nim-nat-traversal
 [submodule "vendor/nimble/minilru"]
 	path = vendor/nimble/minilru
 	url = https://github.com/status-im/nim-minilru
@@ -160,3 +157,6 @@
 [submodule "vendor/nimble/threading"]
 	path = vendor/nimble/threading
 	url = https://github.com/nim-lang/threading.git
+[submodule "vendor/nimble/nat_traversal"]
+	path = vendor/nimble/nat_traversal
+	url = https://github.com/durability-labs/nim-nat-traversal.git

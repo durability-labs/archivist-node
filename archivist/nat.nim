@@ -11,6 +11,7 @@
 
 import
   std/[options, os, times, net, atomics],
+  std/exitprocs,
   nat_traversal/[miniupnpc, natpmp],
   json_serialization/std/net
 
@@ -20,8 +21,9 @@ import pkg/chronicles
 import pkg/libp2p
 
 import ./utils
-import ./utils/natutils
 import ./utils/addrutils
+import ./nat/config
+import ./nat/utils
 
 const
   UPNP_TIMEOUT = 200 # ms
@@ -36,17 +38,12 @@ type PortMappings* = object
   description: string
 
 type PortMappingArgs =
-  tuple[strategy: NatStrategy, tcpPort, udpPort: Port, description: string]
-
-type NatConfig* = object
-  case hasExtIp*: bool
-  of true: extIp*: IpAddress
-  of false: nat*: NatStrategy
+  tuple[config: NatConfig, tcpPort, udpPort: Port, description: string]
 
 var
   upnp {.threadvar.}: Miniupnp
   npmp {.threadvar.}: NatPmp
-  strategy = NatStrategy.NatNone
+  natConfig = NatConfig.noNat
   natClosed: Atomic[bool]
   extIp: Option[IpAddress]
   activeMappings: seq[PortMappings]
@@ -64,10 +61,10 @@ type PrefSrcStatus = enum
 
 ## Also does threadvar initialisation.
 ## Must be called before redirectPorts() in each thread.
-proc getExternalIP*(natStrategy: NatStrategy, quiet = false): Option[IpAddress] =
+proc getExternalIP*(config: NatConfig, quiet = false): Option[IpAddress] =
   var externalIP: IpAddress
 
-  if natStrategy == NatStrategy.NatAny or natStrategy == NatStrategy.NatUpnp:
+  if config.strategy in [NatStrategy.Any, NatStrategy.Upnp]:
     if upnp == nil:
       upnp = newMiniupnp()
 
@@ -103,16 +100,20 @@ proc getExternalIP*(natStrategy: NatStrategy, quiet = false): Option[IpAddress] 
           # if we got this far, UPnP is working and we don't need to try NAT-PMP
           try:
             externalIP = parseIpAddress(ires.value)
-            strategy = NatStrategy.NatUpnp
+            natConfig = NatConfig.upnp()
             return some(externalIP)
           except ValueError as e:
             error "parseIpAddress() exception", err = e.msg
             return
 
-  if natStrategy == NatStrategy.NatAny or natStrategy == NatStrategy.NatPmp:
+  if config.strategy in [NatStrategy.Any, NatStrategy.Pmp]:
     if npmp == nil:
       npmp = newNatPmp()
-    let nres = npmp.init()
+    var nres: Result[bool, cstring]
+    if gateway =? config.gateway:
+      nres = npmp.init(gateway)
+    else:
+      nres = npmp.init()
     if nres.isErr:
       debug "NAT-PMP", msg = nres.error
     else:
@@ -122,7 +123,7 @@ proc getExternalIP*(natStrategy: NatStrategy, quiet = false): Option[IpAddress] 
       else:
         try:
           externalIP = parseIpAddress($(nires.value))
-          strategy = NatStrategy.NatPmp
+          natConfig = NatConfig.pmp(config.gateway)
           return some(externalIP)
         except ValueError as e:
           error "parseIpAddress() exception", err = e.msg
@@ -155,7 +156,7 @@ proc getRoutePrefSrc(bindIp: IpAddress): (Option[IpAddress], PrefSrcStatus) =
 
 # Try to detect a public IP assigned to this host, before trying NAT traversal.
 proc getPublicRoutePrefSrcOrExternalIP*(
-    natStrategy: NatStrategy, bindIp: IpAddress, quiet = true
+    config: NatConfig, bindIp: IpAddress, quiet = true
 ): Option[IpAddress] =
   let (prefSrcIp, prefSrcStatus) = getRoutePrefSrc(bindIp)
 
@@ -163,7 +164,7 @@ proc getPublicRoutePrefSrcOrExternalIP*(
   of NoRoutingInfo, PrefSrcIsPublic, BindAddressIsPublic:
     return prefSrcIp
   of PrefSrcIsPrivate, BindAddressIsPrivate:
-    let extIp = getExternalIP(natStrategy, quiet)
+    let extIp = getExternalIP(config, quiet)
     if extIp.isSome:
       return some(extIp.get)
 
@@ -174,7 +175,7 @@ proc doPortMapping(
     extTcpPort: Port
     extUdpPort: Port
 
-  if strategy == NatStrategy.NatUpnp:
+  if strategy == NatStrategy.Upnp:
     for t in [(tcpPort, UPNPProtocol.TCP), (udpPort, UPNPProtocol.UDP)]:
       let
         (port, protocol) = t
@@ -204,7 +205,7 @@ proc doPortMapping(
           extTcpPort = port
         of UPNPProtocol.UDP:
           extUdpPort = port
-  elif strategy == NatStrategy.NatPmp:
+  elif strategy == NatStrategy.Pmp:
     for t in [(tcpPort, NatPmpProtocol.TCP), (udpPort, NatPmpProtocol.UDP)]:
       let
         (port, protocol) = t
@@ -228,10 +229,10 @@ proc doPortMapping(
           extUdpPort = extPort
   return some((extTcpPort, extUdpPort))
 
-proc repeatPortMapping(args: PortMappingArgs) {.thread, raises: [ValueError].} =
+proc repeatPortMapping(args: PortMappingArgs) {.thread.} =
   ignoreSignalsInThread()
   let
-    (strategy, tcpPort, udpPort, description) = args
+    (config, tcpPort, udpPort, description) = args
     interval = initDuration(seconds = PORT_MAPPING_INTERVAL)
     sleepDuration = 1_000 # in ms, also the maximum delay after pressing Ctrl-C
 
@@ -241,7 +242,7 @@ proc repeatPortMapping(args: PortMappingArgs) {.thread, raises: [ValueError].} =
   # C pointers with other instances that have already been garbage collected, so
   # we use threadvars instead and initialise them again with getExternalIP(),
   # even though we don't need the external IP's value.
-  let ipres = getExternalIP(strategy, quiet = true)
+  let ipres = getExternalIP(config, quiet = true)
   if ipres.isSome:
     while natClosed.load() == false:
       let
@@ -249,7 +250,7 @@ proc repeatPortMapping(args: PortMappingArgs) {.thread, raises: [ValueError].} =
         # select on Nim channels like on Go ones
         currTime = now()
       if currTime >= (lastUpdate + interval):
-        discard doPortMapping(strategy, tcpPort, udpPort, description)
+        discard doPortMapping(config.strategy, tcpPort, udpPort, description)
         lastUpdate = currTime
 
         sleep(sleepDuration)
@@ -272,9 +273,9 @@ proc stopNatThreads() {.noconv.} =
   # In Windows, a new thread is created for the signal handler, so we need to
   # initialise our threadvars again.
 
-  let ipres = getExternalIP(strategy, quiet = true)
+  let ipres = getExternalIP(natConfig, quiet = true)
   if ipres.isSome:
-    if strategy == NatStrategy.NatUpnp:
+    if natConfig.strategy == NatStrategy.Upnp:
       for entry in activeMappings:
         for t in [
           (entry.externalTcpPort, entry.internalTcpPort, UPNPProtocol.TCP),
@@ -288,7 +289,7 @@ proc stopNatThreads() {.noconv.} =
           else:
             debug "UPnP: deleted port mapping",
               externalPort = eport, internalPort = iport, protocol = protocol
-    elif strategy == NatStrategy.NatPmp:
+    elif natConfig.strategy == NatStrategy.Pmp:
       for entry in activeMappings:
         for t in [
           (entry.externalTcpPort, entry.internalTcpPort, NatPmpProtocol.TCP),
@@ -306,9 +307,9 @@ proc stopNatThreads() {.noconv.} =
               externalPort = eport, internalPort = iport, protocol = protocol
 
 proc redirectPorts*(
-    strategy: NatStrategy, tcpPort, udpPort: Port, description: string
+    config: NatConfig, tcpPort, udpPort: Port, description: string
 ): Option[(Port, Port)] =
-  result = doPortMapping(strategy, tcpPort, udpPort, description)
+  result = doPortMapping(config.strategy, tcpPort, udpPort, description)
   if result.isSome:
     let (externalTcpPort, externalUdpPort) = result.get()
     # needed by NAT-PMP on port mapping deletion
@@ -327,30 +328,30 @@ proc redirectPorts*(
     try:
       natThreads.add(Thread[PortMappingArgs]())
       natThreads[^1].createThread(
-        repeatPortMapping, (strategy, externalTcpPort, externalUdpPort, description)
+        repeatPortMapping, (config, externalTcpPort, externalUdpPort, description)
       )
       # atexit() in disguise
       if natThreads.len == 1:
         # we should register the thread termination function only once
-        addQuitProc(stopNatThreads)
+        addExitProc(stopNatThreads)
     except Exception as exc:
       warn "Failed to create NAT port mapping renewal thread", exc = exc.msg
 
 proc setupNat*(
-    natStrategy: NatStrategy, tcpPort, udpPort: Port, clientId: string
+    config: NatConfig, tcpPort, udpPort: Port, clientId: string
 ): tuple[ip: Option[IpAddress], tcpPort, udpPort: Option[Port]] =
   ## Setup NAT port mapping and get external IP address.
   ## If any of this fails, we don't return any IP address but do return the
   ## original ports as best effort.
   ## TODO: Allow for tcp or udp port mapping to be optional.
   if extIp.isNone:
-    extIp = getExternalIP(natStrategy)
+    extIp = getExternalIP(config)
   if extIp.isSome:
     let ip = extIp.get
     let extPorts = (
       {.gcsafe.}:
         redirectPorts(
-          strategy, tcpPort = tcpPort, udpPort = udpPort, description = clientId
+          config, tcpPort = tcpPort, udpPort = udpPort, description = clientId
         )
     )
     if extPorts.isSome:
@@ -372,20 +373,19 @@ proc setupAddress*(
   ## external IP can be figured out by other means at a later stage.
   ## TODO: Allow for tcp or udp bind ports to be optional.
 
-  if natConfig.hasExtIp:
+  case natConfig.strategy
+  of NatStrategy.ExternalIp:
     # any required port redirection must be done by hand
-    return (some(natConfig.extIp), some(tcpPort), some(udpPort))
-
-  case natConfig.nat
-  of NatStrategy.NatAny:
+    return (natConfig.externalIp, some(tcpPort), some(udpPort))
+  of NatStrategy.Any:
     let (prefSrcIp, prefSrcStatus) = getRoutePrefSrc(bindIp)
 
     case prefSrcStatus
     of NoRoutingInfo, PrefSrcIsPublic, BindAddressIsPublic:
       return (prefSrcIp, some(tcpPort), some(udpPort))
     of PrefSrcIsPrivate, BindAddressIsPrivate:
-      return setupNat(natConfig.nat, tcpPort, udpPort, clientId)
-  of NatStrategy.NatNone:
+      return setupNat(natConfig, tcpPort, udpPort, clientId)
+  of NatStrategy.None:
     let (prefSrcIp, prefSrcStatus) = getRoutePrefSrc(bindIp)
 
     case prefSrcStatus
@@ -397,8 +397,8 @@ proc setupAddress*(
     of BindAddressIsPrivate:
       error "Bind IP is not a public IP address. Should not use --nat:none option"
       return (none(IpAddress), some(tcpPort), some(udpPort))
-  of NatStrategy.NatUpnp, NatStrategy.NatPmp:
-    return setupNat(natConfig.nat, tcpPort, udpPort, clientId)
+  of NatStrategy.Upnp, NatStrategy.Pmp:
+    return setupNat(natConfig, tcpPort, udpPort, clientId)
 
 proc nattedAddress*(
     natConfig: NatConfig, addresses: seq[MultiAddress], udpPort: Port

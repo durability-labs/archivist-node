@@ -5,14 +5,14 @@ import pkg/libp2p/[multiaddress, multihash, multicodec]
 import pkg/results
 
 import ../../archivist/nat
-import ../../archivist/utils
+import ../../archivist/nat/config
 
 suite "NAT Address Tests":
   test "nattedAddress with local addresses":
     # Setup test data
     let
       udpPort = Port(1234)
-      natConfig = NatConfig(hasExtIp: true, extIp: parseIpAddress("8.8.8.8"))
+      natConfig = NatConfig.externalIp(parseIpAddress("8.8.8.8"))
 
       # Create test addresses
       localAddr = MultiAddress.init("/ip4/127.0.0.1/tcp/5000").expect("valid multiaddr")
