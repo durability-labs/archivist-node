@@ -109,16 +109,16 @@ proc markProofsAsMissing(validation: Validation) {.async.} =
 
 proc run(validation: Validation) {.async: (raises: []).} =
   info "Validation started"
-  try:
-    while true:
+  while true:
+    try:
       await validation.waitUntilNextPeriod()
       await validation.removeSlotsThatHaveEnded()
       await validation.markProofsAsMissing()
-  except CancelledError:
-    trace "Validation stopped"
-    discard # do not propagate as run is asyncSpawned
-  except CatchableError as e:
-    error "Validation failed", msg = e.msg
+    except CancelledError:
+      trace "Validation stopped"
+      break # do not propagate as run is asyncSpawned
+    except CatchableError as e:
+      error "Validation error", msg = e.msg
 
 proc findEpoch(validation: Validation, secondsAgo: uint64): SecondsSince1970 =
   return validation.clock.now - secondsAgo.int64
