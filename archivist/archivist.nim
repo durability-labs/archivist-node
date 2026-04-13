@@ -182,7 +182,6 @@ proc new*(
       store = discoveryStore,
     )
 
-    wallet = WalletRef.new(EthPrivateKey.random())
     network = BlockExcNetwork.new(switch)
 
     repoData: KVStore =
@@ -225,7 +224,7 @@ proc new*(
     blockDiscovery =
       DiscoveryEngine.new(repoStore, peerStore, network, discovery, pendingBlocks)
     engine = BlockExcEngine.new(
-      repoStore, wallet, network, blockDiscovery, advertiser, peerStore, pendingBlocks
+      repoStore, network, blockDiscovery, advertiser, peerStore, pendingBlocks
     )
     store = NetworkStore.new(engine, repoStore)
     prover =

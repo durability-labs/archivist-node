@@ -1,7 +1,6 @@
 import pkg/chronos
 import pkg/questionable/results
 import pkg/libp2p/builders
-import pkg/nitro/wallet
 import pkg/taskpools
 import pkg/kvstore
 import pkg/archivist/discovery
@@ -53,10 +52,9 @@ proc initializeDiscovery(temporary: TemporaryNode) =
   )
 
 proc initializeBlockExchange(temporary: TemporaryNode) =
-  let wallet = WalletRef.new(EthPrivateKey.random())
   let advertiser = Advertiser.new(temporary.localStore, temporary.discoveryNetwork)
   temporary.exchangeEngine = BlockExcEngine.new(
-    temporary.localStore, wallet, temporary.exchangeNetwork, temporary.discoveryEngine,
+    temporary.localStore, temporary.exchangeNetwork, temporary.discoveryEngine,
     advertiser, temporary.peerStore, temporary.pendingBlocks,
   )
 

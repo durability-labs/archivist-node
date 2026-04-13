@@ -1,5 +1,4 @@
 import std/sequtils
-import std/random
 import std/algorithm
 
 import pkg/stew/byteutils
@@ -24,7 +23,6 @@ import pkg/archivist/utils/asyncheapqueue
 
 import ../../../asynctest
 import ../../helpers
-import ../../examples
 
 const NopSendWantCancellationsProc = proc(
     id: PeerId, addresses: seq[BlockAddress]
@@ -37,7 +35,6 @@ asyncchecksuite "NetworkStore engine basic":
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
-    wallet: WalletRef
     blockDiscovery: Discovery
     peerStore: PeerCtxStore
     pendingBlocks: PendingBlocksManager
@@ -54,7 +51,6 @@ asyncchecksuite "NetworkStore engine basic":
     seckey = PrivateKey.random(rng[]).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     chunker = RandomChunker.new(Rng.instance(), size = 1024'nb, chunkSize = 256'nb)
-    wallet = WalletRef.example
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
@@ -99,43 +95,12 @@ asyncchecksuite "NetworkStore engine basic":
       )
       advertiser = Advertiser.new(localStore, blockDiscovery)
       engine = BlockExcEngine.new(
-        localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
+        localStore, network, discovery, advertiser, peerStore, pendingBlocks
       )
 
     for b in blocks:
       discard engine.pendingBlocks.getWantHandle(b.cid)
 
-    await engine.setupPeer(peerId)
-
-    await done.wait(100.millis)
-
-  test "Should send account to new peers":
-    let pricing = Pricing.example
-
-    proc sendAccount(
-        peer: PeerId, account: Account
-    ) {.async: (raises: [CancelledError]).} =
-      check account.address == pricing.address
-      done.complete()
-
-    let
-      network = BlockExcNetwork(request: BlockExcRequest(sendAccount: sendAccount))
-
-      localStore = RepoStore.new(
-        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
-        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
-      )
-      discovery = DiscoveryEngine.new(
-        localStore, peerStore, network, blockDiscovery, pendingBlocks
-      )
-
-      advertiser = Advertiser.new(localStore, blockDiscovery)
-
-      engine = BlockExcEngine.new(
-        localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
-      )
-
-    engine.pricing = pricing.some
     await engine.setupPeer(peerId)
 
     await done.wait(100.millis)
@@ -149,7 +114,6 @@ asyncchecksuite "NetworkStore engine handlers":
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
-    wallet: WalletRef
     blockDiscovery: Discovery
     peerStore: PeerCtxStore
     pendingBlocks: PendingBlocksManager
@@ -180,7 +144,6 @@ asyncchecksuite "NetworkStore engine handlers":
     treeCid = tree.rootCid.tryGet()
     seckey = PrivateKey.random(rng[]).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
-    wallet = WalletRef.example
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
@@ -198,7 +161,7 @@ asyncchecksuite "NetworkStore engine handlers":
     advertiser = Advertiser.new(localStore, blockDiscovery)
 
     engine = BlockExcEngine.new(
-      localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
+      localStore, network, discovery, advertiser, peerStore, pendingBlocks
     )
 
     peerCtx = BlockExcPeerCtx(id: peerId)
@@ -209,28 +172,33 @@ asyncchecksuite "NetworkStore engine handlers":
 
   test "Should schedule block requests":
     let wantList = makeWantList(blocks.mapIt(it.cid), wantType = WantType.WantBlock)
-      # only `wantBlock` are stored in `peerWants`
+      # only `wantBlock` are stored in `wantedBlocks`
 
     proc handler() {.async.} =
       let ctx = await engine.taskQueue.pop()
       check ctx.id == peerId
       # only `wantBlock` scheduled
-      check ctx.peerWants.mapIt(it.address.cidOrTreeCid) == blocks.mapIt(it.cid)
+      check ctx.wantedBlocks.toSeq.mapIt($it.cidOrTreeCid).sorted ==
+        blocks.mapIt($it.cid).sorted
 
     let done = handler()
     await engine.wantListHandler(peerId, wantList)
     await done
 
   test "Should handle want list":
-    let
+    let wantList = makeWantList(blocks.mapIt(it.cid))
+    var
       done = newFuture[void]()
-      wantList = makeWantList(blocks.mapIt(it.cid))
+      received: seq[BlockPresence]
 
     proc sendPresence(
         peerId: PeerId, presence: seq[BlockPresence]
     ) {.async: (raises: [CancelledError]).} =
-      check presence.mapIt(it.address) == wantList.entries.mapIt(it.address)
-      done.complete()
+      received.add(presence)
+      if received.len == wantList.entries.len:
+        check received.mapIt($it.address).sorted(cmp[string]) ==
+          wantList.entries.mapIt($it.address).sorted(cmp[string])
+        done.complete()
 
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
@@ -242,19 +210,21 @@ asyncchecksuite "NetworkStore engine handlers":
     await done
 
   test "Should handle want list - `dont-have`":
-    let
+    let wantList = makeWantList(blocks.mapIt(it.cid), sendDontHave = true)
+    var
       done = newFuture[void]()
-      wantList = makeWantList(blocks.mapIt(it.cid), sendDontHave = true)
+      received: seq[BlockPresence]
 
     proc sendPresence(
         peerId: PeerId, presence: seq[BlockPresence]
     ) {.async: (raises: [CancelledError]).} =
-      check presence.mapIt(it.address) == wantList.entries.mapIt(it.address)
-      for p in presence:
-        check:
-          p.`type` == BlockPresenceType.DontHave
-
-      done.complete()
+      received.add(presence)
+      if received.len == wantList.entries.len:
+        check received.mapIt($it.address).sorted(cmp[string]) ==
+          wantList.entries.mapIt($it.address).sorted(cmp[string])
+        for p in received:
+          check p.`type` == BlockPresenceType.DontHave
+        done.complete()
 
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
@@ -263,21 +233,24 @@ asyncchecksuite "NetworkStore engine handlers":
     await done
 
   test "Should handle want list - `dont-have` some blocks":
-    let
+    let wantList = makeWantList(blocks.mapIt(it.cid), sendDontHave = true)
+    var
       done = newFuture[void]()
-      wantList = makeWantList(blocks.mapIt(it.cid), sendDontHave = true)
+      received: seq[BlockPresence]
 
     proc sendPresence(
         peerId: PeerId, presence: seq[BlockPresence]
     ) {.async: (raises: [CancelledError]).} =
-      for p in presence:
-        if p.address.cidOrTreeCid != blocks[0].cid and
-            p.address.cidOrTreeCid != blocks[1].cid:
-          check p.`type` == BlockPresenceType.DontHave
-        else:
-          check p.`type` == BlockPresenceType.Have
+      received.add(presence)
+      if received.len == wantList.entries.len:
+        for p in received:
+          if p.address.cidOrTreeCid != blocks[0].cid and
+              p.address.cidOrTreeCid != blocks[1].cid:
+            check p.`type` == BlockPresenceType.DontHave
+          else:
+            check p.`type` == BlockPresenceType.Have
 
-      done.complete()
+        done.complete()
 
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
@@ -312,7 +285,7 @@ asyncchecksuite "NetworkStore engine handlers":
       request: BlockExcRequest(sendWantCancellations: NopSendWantCancellationsProc)
     )
 
-    await engine.blocksDeliveryHandler(peerId, blocksDelivery)
+    await engine.blocksDeliveryHandler(peerId, blocksDelivery, allowSpurious = true)
     let resolved = await allFinished(pending)
     check resolved.mapIt(it.read) == blocks
 
@@ -321,8 +294,7 @@ asyncchecksuite "NetworkStore engine handlers":
       let present = await engine.localStore.hasBlock(treeCid, i)
       check present.tryGet()
 
-  test "Should resolve non-leaf block deliveries without persistence":
-    # Non-leaf deliveries are validated and resolved but NOT persisted
+  test "Should reject non-manifest non-leaf block deliveries":
     let pending = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
 
     let blocksDelivery = blocks.mapIt(BlockDelivery(blk: it, address: it.address))
@@ -333,50 +305,14 @@ asyncchecksuite "NetworkStore engine handlers":
     )
 
     await engine.blocksDeliveryHandler(peerId, blocksDelivery)
-    let resolved = await allFinished(pending)
-    check resolved.mapIt(it.read) == blocks
 
-    # Non-leaf non-manifest deliveries are NOT persisted
     for b in blocks:
       let present = await engine.localStore.hasBlock(b.cid)
       check not present.tryGet()
 
-  test "Should send payments for received blocks":
-    let
-      done = newFuture[void]()
-      account = Account(address: EthAddress.example)
-      peerContext = peerStore.get(peerId)
-
-    peerContext.account = account.some
-    peerContext.blocks = blocks.mapIt(
-      (it.address, Presence(address: it.address, price: rand(uint16).u256, have: true))
-    ).toTable
-
-    engine.network = BlockExcNetwork(
-      request: BlockExcRequest(
-        sendPayment: proc(
-            receiver: PeerId, payment: SignedState
-        ) {.async: (raises: [CancelledError]).} =
-          let
-            amount =
-              blocks.mapIt(peerContext.blocks[it.address].catch.get.price).foldl(a + b)
-            balances = !payment.state.outcome.balances(Asset)
-
-          check receiver == peerId
-          check balances[account.address.toDestination].catch.get == amount
-          done.complete(),
-
-        # Install NOP for want list cancellations so they don't cause a crash
-        sendWantCancellations: NopSendWantCancellationsProc,
-      )
-    )
-
-    let requestedBlocks = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.address))
-    await engine.blocksDeliveryHandler(
-      peerId, blocks.mapIt(BlockDelivery(blk: it, address: it.address))
-    )
-    await done.wait(100.millis)
-    await allFuturesThrowing(requestedBlocks).wait(100.millis)
+    for fut in pending:
+      check not fut.finished
+      await fut.cancelAndWait()
 
   test "Should handle block presence":
     var handles:
@@ -403,31 +339,42 @@ asyncchecksuite "NetworkStore engine handlers":
     # only Cids in peer want lists are requested
     handles = blocks.mapIt((it.cid, engine.pendingBlocks.getWantHandle(it.cid))).toTable
 
-    let price = UInt256.example
     await engine.blockPresenceHandler(
       peerId,
       blocks.mapIt(
-        PresenceMessage.init(Presence(address: it.address, have: true, price: price))
+        PresenceMessage.init(
+          Presence(address: it.address, have: true, price: default(UInt256))
+        )
       ),
     )
 
     for a in blocks.mapIt(it.address):
       check a in peerCtx.peerHave
-      check peerCtx.blocks[a].price == price
 
   test "Should send cancellations for received blocks":
-    let
-      pending = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
-      blocksDelivery = blocks.mapIt(BlockDelivery(blk: it, address: it.address))
-      cancellations = newTable(blocks.mapIt((it.address, newFuture[void]())).toSeq)
+    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
 
-    peerCtx.blocks = blocks.mapIt(
-      (it.address, Presence(address: it.address, have: true, price: UInt256.example))
-    ).toTable
+    let
+      requestedIndices = @[0.Natural, 1.Natural]
+      otherPeerId =
+        PeerId.init(PrivateKey.random(rng[]).tryGet().getPublicKey().tryGet()).tryGet()
+      pending = requestedIndices.mapIt(
+        engine.pendingBlocks.getWantHandle(BlockAddress.init(treeCid, it))
+      )
+      blocksDelivery = requestedIndices.mapIt(
+        BlockDelivery(
+          blk: blocks[it],
+          address: BlockAddress.init(treeCid, it),
+          proof: tree.getProof(it).tryGet().some,
+        )
+      )
+      cancellations =
+        newTable(blocksDelivery.mapIt((it.address, newFuture[void]())).toSeq)
 
     proc sendWantCancellations(
         id: PeerId, addresses: seq[BlockAddress]
     ) {.async: (raises: [CancelledError]).} =
+      check id == otherPeerId
       for address in addresses:
         cancellations[address].catch.expect("address should exist").complete()
 
@@ -435,8 +382,15 @@ asyncchecksuite "NetworkStore engine handlers":
       request: BlockExcRequest(sendWantCancellations: sendWantCancellations)
     )
 
+    let otherPeerCtx = BlockExcPeerCtx(id: otherPeerId)
+    engine.peers.add(otherPeerCtx)
+
+    for delivery in blocksDelivery:
+      peerCtx.blocksRequested.incl(delivery.address)
+      otherPeerCtx.blocksRequested.incl(delivery.address)
+
     await engine.blocksDeliveryHandler(peerId, blocksDelivery)
-    discard await allFinished(pending).wait(100.millis)
+    discard await allFinished(pending).wait(1.seconds)
     await allFuturesThrowing(cancellations.values().toSeq)
 
 asyncchecksuite "Block Download":
@@ -445,7 +399,6 @@ asyncchecksuite "Block Download":
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
-    wallet: WalletRef
     blockDiscovery: Discovery
     peerStore: PeerCtxStore
     pendingBlocks: PendingBlocksManager
@@ -471,7 +424,6 @@ asyncchecksuite "Block Download":
 
     seckey = PrivateKey.random(rng[]).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
-    wallet = WalletRef.example
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
@@ -489,7 +441,7 @@ asyncchecksuite "Block Download":
     advertiser = Advertiser.new(localStore, blockDiscovery)
 
     engine = BlockExcEngine.new(
-      localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
+      localStore, network, discovery, advertiser, peerStore, pendingBlocks
     )
 
     peerCtx = BlockExcPeerCtx(id: peerId)
@@ -513,7 +465,7 @@ asyncchecksuite "Block Download":
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
       check wantType == WantHave
-      check not engine.pendingBlocks.isInFlight(address)
+      check not engine.pendingBlocks.isRequested(address)
       check engine.pendingBlocks.retries(address) == retries
       retries -= 1
 
@@ -543,11 +495,11 @@ asyncchecksuite "Block Download":
     ) {.async: (raises: [CancelledError]).} =
       case wantType
       of WantHave:
-        check engine.pendingBlocks.isInFlight(address) == false
+        check engine.pendingBlocks.isRequested(address) == false
         check engine.pendingBlocks.retriesExhausted(address) == false
         steps.fire()
       of WantBlock:
-        check engine.pendingBlocks.isInFlight(address) == true
+        check engine.pendingBlocks.isRequested(address) == true
         check engine.pendingBlocks.retriesExhausted(address) == false
         steps.fire()
 
@@ -562,17 +514,13 @@ asyncchecksuite "Block Download":
     let pending = engine.requestBlock(address)
     await steps.wait()
 
-    # add blocks precense
-    peerCtx.blocks = blocks.mapIt(
-      (it.address, Presence(address: it.address, have: true, price: UInt256.example))
-    ).toTable
+    await engine.blockPresenceHandler(
+      peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
+    )
 
-    steps.clear()
     await steps.wait()
 
-    await engine.blocksDeliveryHandler(
-      peerId, @[BlockDelivery(blk: blocks[0], address: address)]
-    )
+    engine.completeBlock(address, blocks[0])
     check (await pending).tryGet() == blocks[0]
 
   test "Should cancel block request":
@@ -612,7 +560,6 @@ asyncchecksuite "Task Handler":
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
-    wallet: WalletRef
     blockDiscovery: Discovery
     peerStore: PeerCtxStore
     pendingBlocks: PendingBlocksManager
@@ -644,7 +591,6 @@ asyncchecksuite "Task Handler":
     treeCid = tree.rootCid.tryGet()
     seckey = PrivateKey.random(rng[]).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
-    wallet = WalletRef.example
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
@@ -662,7 +608,7 @@ asyncchecksuite "Task Handler":
     advertiser = Advertiser.new(localStore, blockDiscovery)
 
     engine = BlockExcEngine.new(
-      localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
+      localStore, network, discovery, advertiser, peerStore, pendingBlocks
     )
     peersCtx = @[]
 
@@ -673,46 +619,24 @@ asyncchecksuite "Task Handler":
       peersCtx.add(BlockExcPeerCtx(id: peers[i]))
       peerStore.add(peersCtx[i])
 
-    engine.pricing = Pricing.example.some
-
   teardown:
     tp.shutdown()
 
-  test "Should send want-blocks in priority order":
+  test "Should send wanted blocks":
     proc sendBlocksDelivery(
         id: PeerId, blocksDelivery: seq[BlockDelivery]
     ) {.async: (raises: [CancelledError]).} =
       check blocksDelivery.len == 2
-      check:
-        blocksDelivery[1].address == blocks[0].address
-        blocksDelivery[0].address == blocks[1].address
+      check blocksDelivery.mapIt($it.address).sorted(cmp[string]) ==
+        @[blocks[0].address, blocks[1].address].mapIt($it).sorted(cmp[string])
 
     # Store blocks with tree context
     (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
 
     engine.network.request.sendBlocksDelivery = sendBlocksDelivery
 
-    # second block to send by priority
-    peersCtx[0].peerWants.add(
-      WantListEntry(
-        address: blocks[0].address,
-        priority: 49,
-        cancel: false,
-        wantType: WantType.WantBlock,
-        sendDontHave: false,
-      )
-    )
-
-    # first block to send by priority
-    peersCtx[0].peerWants.add(
-      WantListEntry(
-        address: blocks[1].address,
-        priority: 50,
-        cancel: false,
-        wantType: WantType.WantBlock,
-        sendDontHave: false,
-      )
-    )
+    peersCtx[0].wantedBlocks.incl(blocks[0].address)
+    peersCtx[0].wantedBlocks.incl(blocks[1].address)
 
     await engine.taskHandler(peersCtx[0])
 
@@ -720,91 +644,18 @@ asyncchecksuite "Task Handler":
     proc sendBlocksDelivery(
         id: PeerId, blocksDelivery: seq[BlockDelivery]
     ) {.async: (raises: [CancelledError]).} =
-      check peersCtx[0].peerWants[0].inFlight
+      check blocks[0].address in peersCtx[0].blocksSent
 
     # Store blocks with tree context
     (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
 
     engine.network.request.sendBlocksDelivery = sendBlocksDelivery
 
-    peersCtx[0].peerWants.add(
-      WantListEntry(
-        address: blocks[0].address,
-        priority: 50,
-        cancel: false,
-        wantType: WantType.WantBlock,
-        sendDontHave: false,
-        inFlight: false,
-      )
-    )
+    peersCtx[0].wantedBlocks.incl(blocks[0].address)
     await engine.taskHandler(peersCtx[0])
 
   test "Should clear in-flight when local lookup fails":
-    peersCtx[0].peerWants.add(
-      WantListEntry(
-        address: blocks[0].address,
-        priority: 50,
-        cancel: false,
-        wantType: WantType.WantBlock,
-        sendDontHave: false,
-        inFlight: false,
-      )
-    )
+    peersCtx[0].wantedBlocks.incl(blocks[0].address)
     await engine.taskHandler(peersCtx[0])
 
-    check not peersCtx[0].peerWants[0].inFlight
-
-  test "Should send presence":
-    let present = blocks
-    let missing = @[Block.new("missing".toBytes).tryGet()]
-    let price = (!engine.pricing).price
-
-    proc sendPresence(
-        id: PeerId, presence: seq[BlockPresence]
-    ) {.async: (raises: [CancelledError]).} =
-      check presence.mapIt(!Presence.init(it)) ==
-        @[
-          Presence(address: present[0].address, have: true, price: price),
-          Presence(address: present[1].address, have: true, price: price),
-          Presence(address: missing[0].address, have: false),
-        ]
-
-    # Store blocks with tree context
-    (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
-
-    engine.network.request.sendPresence = sendPresence
-
-    # have block
-    peersCtx[0].peerWants.add(
-      WantListEntry(
-        address: present[0].address,
-        priority: 1,
-        cancel: false,
-        wantType: WantType.WantHave,
-        sendDontHave: false,
-      )
-    )
-
-    # have block
-    peersCtx[0].peerWants.add(
-      WantListEntry(
-        address: present[1].address,
-        priority: 1,
-        cancel: false,
-        wantType: WantType.WantHave,
-        sendDontHave: false,
-      )
-    )
-
-    # don't have block
-    peersCtx[0].peerWants.add(
-      WantListEntry(
-        address: missing[0].address,
-        priority: 1,
-        cancel: false,
-        wantType: WantType.WantHave,
-        sendDontHave: false,
-      )
-    )
-
-    await engine.taskHandler(peersCtx[0])
+    check blocks[0].address notin peersCtx[0].blocksSent

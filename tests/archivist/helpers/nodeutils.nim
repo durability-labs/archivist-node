@@ -171,7 +171,7 @@ proc generateNodes*(
       )
       advertiser = Advertiser.new(localStore, blockDiscovery)
       engine = BlockExcEngine.new(
-        localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
+        localStore, network, discovery, advertiser, peerStore, pendingBlocks
       )
       networkStore = NetworkStore.new(engine, localStore)
 

@@ -61,17 +61,22 @@ type
     full: bool = false,
     sendDontHave: bool = false,
   ) {.async: (raises: [CancelledError]).}
+
   WantCancellationSender* = proc(peer: PeerId, addresses: seq[BlockAddress]) {.
     async: (raises: [CancelledError])
   .}
+
   BlocksDeliverySender* = proc(peer: PeerId, blocksDelivery: seq[BlockDelivery]) {.
     async: (raises: [CancelledError])
   .}
+
   PresenceSender* = proc(peer: PeerId, presence: seq[BlockPresence]) {.
     async: (raises: [CancelledError])
   .}
+
   AccountSender* =
     proc(peer: PeerId, account: Account) {.async: (raises: [CancelledError]).}
+
   PaymentSender* =
     proc(peer: PeerId, payment: SignedState) {.async: (raises: [CancelledError]).}
 

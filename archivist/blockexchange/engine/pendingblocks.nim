@@ -42,7 +42,7 @@ type
 
   BlockReq* = object
     handle*: BlockHandle
-    inFlight*: bool
+    requested*: ?PeerId
     blockRetries*: int
     startTime*: int64
 
@@ -50,12 +50,13 @@ type
     blockRetries*: int = DefaultBlockRetries
     retryInterval*: Duration = DefaultRetryInterval
     blocks*: Table[BlockAddress, BlockReq] # pending Block requests
+    lastInclusion*: Moment
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
 
 proc getWantHandle*(
-    self: PendingBlocksManager, address: BlockAddress, inFlight = false
+    self: PendingBlocksManager, address: BlockAddress, requested: ?PeerId = PeerId.none
 ): Future[Block] {.async: (raw: true, raises: [CancelledError, RetriesExhaustedError]).} =
   ## Add an event for a block
   ##
@@ -65,11 +66,12 @@ proc getWantHandle*(
   do:
     let blk = BlockReq(
       handle: newFuture[Block]("pendingBlocks.getWantHandle"),
-      inFlight: inFlight,
+      requested: requested,
       blockRetries: self.blockRetries,
       startTime: getMonoTime().ticks,
     )
     self.blocks[address] = blk
+    self.lastInclusion = Moment.now()
     let handle = blk.handle
 
     proc cleanUpBlock(data: pointer) {.raises: [].} =
@@ -86,9 +88,9 @@ proc getWantHandle*(
     return handle
 
 proc getWantHandle*(
-    self: PendingBlocksManager, cid: Cid, inFlight = false
+    self: PendingBlocksManager, cid: Cid, requested = PeerId.none
 ): Future[Block] {.async: (raw: true, raises: [CancelledError, RetriesExhaustedError]).} =
-  self.getWantHandle(BlockAddress.init(cid), inFlight)
+  self.getWantHandle(BlockAddress.init(cid), requested)
 
 proc completeWantHandle*(
     self: PendingBlocksManager, address: BlockAddress, blk: Block
@@ -141,19 +143,32 @@ func retriesExhausted*(self: PendingBlocksManager, address: BlockAddress): bool 
   self.blocks.withValue(address, pending):
     result = pending[].blockRetries <= 0
 
-func setInFlight*(self: PendingBlocksManager, address: BlockAddress, inFlight = true) =
-  ## Set inflight status for a block
-  ##
-
+func isRequested*(self: PendingBlocksManager, address: BlockAddress): bool =
   self.blocks.withValue(address, pending):
-    pending[].inFlight = inFlight
+    result = pending[].requested.isSome
 
-func isInFlight*(self: PendingBlocksManager, address: BlockAddress): bool =
-  ## Check if a block is in flight
-  ##
-
+func getRequestPeer*(self: PendingBlocksManager, address: BlockAddress): ?PeerId =
   self.blocks.withValue(address, pending):
-    result = pending[].inFlight
+    result = pending[].requested
+
+proc markRequested*(
+    self: PendingBlocksManager, address: BlockAddress, peer: PeerId
+): bool =
+  self.blocks.withValue(address, pending):
+    if pending[].requested.isSome:
+      return false
+
+    pending[].requested = peer.some
+    return true
+
+  false
+
+proc clearRequest*(
+    self: PendingBlocksManager, address: BlockAddress, peer: ?PeerId = PeerId.none
+) =
+  self.blocks.withValue(address, pending):
+    if peer.isNone or peer == pending[].requested:
+      pending[].requested = PeerId.none
 
 func contains*(self: PendingBlocksManager, cid: Cid): bool =
   BlockAddress.init(cid) in self.blocks
