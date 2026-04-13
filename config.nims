@@ -16,14 +16,11 @@ switch("define", "useMalloc")
 
 when defined(release):
   switch("define", "danger")
-  # enable LTO
-  switch("define", "lto")
-  switch("define", "lto_incremental")
-  switch("passC", "-flto")
-  switch("passL", "-flto")
-  # CPU-specific optimizations (use native arch)
-  switch("passC", "-march=native")
-  switch("passL", "-march=native")
-  # Optimize for speed over size
   switch("opt", "speed")
-  switch("passC", "-O3")
+
+  # Opt-in for local builds on toolchains known to support LTO.
+  when defined(archivist_release_lto):
+    switch("define", "lto")
+    switch("define", "lto_incremental")
+    switch("passC", "-flto")
+    switch("passL", "-flto")
