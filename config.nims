@@ -20,10 +20,10 @@ when defined(release):
   switch("define", "lto")
   switch("define", "lto_incremental")
   switch("passC", "-flto")
-  switch("passl", "-flto")
+  switch("passL", "-flto")
   # CPU-specific optimizations (use native arch)
   switch("passC", "-march=native")
-  switch("passl", "-march=native")
+  switch("passL", "-march=native")
   # Optimize for speed over size
   switch("opt", "speed")
   switch("passC", "-O3")
