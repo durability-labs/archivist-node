@@ -748,7 +748,7 @@ proc storeManifestBlock*(
   ## with manifestCid set, atomically manages BlockMetadata.refCount, and
   ## writes the manifest block to disk.
   ##
-  ## This proc is rootCid-agnostic -- callers decide whether rootCids are
+  ## This proc is rootCid-agnostic - callers decide whether rootCids are
   ## treeCids or slotRoots.
   ##
 
@@ -760,62 +760,60 @@ proc storeManifestBlock*(
     else:
       self.clock.now() + self.overlayTtl
 
-  var
-    # initial key -> record mapping
-    overlaysMap = rootCids.mapIt(
-      (
+  var overlayUpdates = rootCids.mapIt(
+    (
+      ?overlayKey(it),
+      KVRecord[OverlayMetadata].init(
         ?overlayKey(it),
-        KVRecord[OverlayMetadata].init(
-          ?overlayKey(it),
-          OverlayMetadata(
-            manifestCid: Cid.none,
-            status: Pending,
-            expiry: overlayExpiry,
-            blocks: BitSeq.init(0),
-          ),
+        OverlayMetadata(
+          manifestCid: Cid.none,
+          status: Pending,
+          expiry: overlayExpiry,
+          blocks: BitSeq.init(0),
         ),
-      )
-    ).toTable
+      ),
+    )
+  ).toTable
 
   # Get existing overlays from KVStore to check their manifestCid state
-  let overlayRecsMap = (
-    ?await self.metaDs.get(toSeq(overlaysMap.keys), OverlayMetadata)
-  ).mapIt((it.key, it)).toTable
+  let overlayRecsById = (
+    ?await self.metaDs.get(toSeq(overlayUpdates.keys), OverlayMetadata)
+  ).mapIt((it.key.id, it)).toTable
 
   # Track which overlays require a new manifest attachment for refCount updates.
-  var newAttachmentKeys: seq[Key]
+  var newOverlayAttachmentIds = initHashSet[string]()
 
-  for (key, val) in toSeq(overlaysMap.pairs):
-    var rec = overlayRecsMap.getOrDefault(key, val)
-      # get rec from kvstore recs, or the new rec
+  for (key, val) in toSeq(overlayUpdates.pairs):
+    var rec = overlayRecsById.getOrDefault(key.id, val)
+
     if rec.val.manifestCid.isNone:
-      newAttachmentKeys.add(key)
+      newOverlayAttachmentIds.incl(key.id)
       # If explicit expiry provided, refresh expiry even when attaching manifest
       if expiry != ZeroSeconds:
         rec.val.expiry = overlayExpiry
       rec.val.manifestCid = manifestBlk.cid.some
-      overlaysMap[key] = rec
-    else:
-      if rec.val.manifestCid.get != manifestBlk.cid:
-        trace "Existing overlay manifestCid, doesn't match provided",
-          existing = rec.val.manifestCid.get, provided = manifestBlk.cid
-        return failure(
-          newException(
-            ArchivistError, "Existing overlay manifestCid, doesn't match provided"
-          )
-        )
-      else:
-        # If explicit expiry provided, we need to refresh expiry on already-attached overlay
-        # Keep it in overlaysMap so it gets written through CAS
-        if expiry != ZeroSeconds:
-          rec.val.expiry = overlayExpiry
-          overlaysMap[key] = rec
-        else:
-          # manifest already set, we don't need to update it or update manifest refCount
-          overlaysMap.del(key)
-          continue
+      overlayUpdates[key] = rec
+      continue
 
-  if overlaysMap.len == 0:
+    if rec.val.manifestCid.get != manifestBlk.cid:
+      trace "Existing overlay manifestCid, doesn't match provided",
+        existing = rec.val.manifestCid.get, provided = manifestBlk.cid
+      return failure(
+        newException(
+          ArchivistError, "Existing overlay manifestCid, doesn't match provided"
+        )
+      )
+
+    # If explicit expiry provided, refresh expiry on already-attached overlays.
+    if expiry != ZeroSeconds:
+      rec.val.expiry = overlayExpiry
+      overlayUpdates[key] = rec
+    else:
+      # Manifest already set, so neither the overlay nor the refCount need updates.
+      overlayUpdates.del(key)
+      continue
+
+  if overlayUpdates.len == 0:
     trace "No overlays to attach manifest", manifestCid = manifestBlk.cid
     return success manifestBlk
 
@@ -824,23 +822,26 @@ proc storeManifestBlock*(
     # init block meta with correct refCount - only count new attachments
     blkMetaRec = KVRecord[BlockMetadata].init(
       blkMetaKey,
-      BlockMetadata(cid: manifestBlk.cid, refCount: newAttachmentKeys.len.Natural),
+      BlockMetadata(cid: manifestBlk.cid, refCount: newOverlayAttachmentIds.len.Natural),
     )
 
   ?await self.metaDs.tryPutAtomic(
-    @[blkMetaRec.toRaw] & toSeq(overlaysMap.values).mapIt(it.toRaw),
+    @[blkMetaRec.toRaw] & toSeq(overlayUpdates.values).mapIt(it.toRaw),
     maxRetries = 10,
     proc(
         records: seq[RawKVRecord], conflicts: seq[Key]
     ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
-      var records = records.mapIt((it.key, it)).toTable
-      let refreshed = (?await self.metaDs.get(conflicts)).mapIt((it.key, it)).toTable
+      # Keep exactly one record per logical key id. KVStore duplicate detection
+      # and atomic batch identity are both defined in terms of key.id.
+      var recordsById = records.mapIt((it.key.id, it)).toTable
+      let refreshedById =
+        (?await self.metaDs.get(conflicts)).mapIt((it.key.id, it)).toTable
 
-      var newAttachmentsCount = newAttachmentKeys.len
-      for raw in refreshed.values:
+      var newAttachmentsCount = newOverlayAttachmentIds.len
+      for raw in refreshedById.values:
         if ArchivistOverlaysKey.ancestor(raw.key):
           var record = ?toRecord[OverlayMetadata](raw)
-          let wasNewAttachment = raw.key in newAttachmentKeys
+          let wasNewAttachment = raw.key.id in newOverlayAttachmentIds
           if not record.val.manifestCid.isSome:
             if not wasNewAttachment:
               newAttachmentsCount.inc
@@ -848,7 +849,7 @@ proc storeManifestBlock*(
             if expiry != ZeroSeconds:
               record.val.expiry = overlayExpiry
             record.val.manifestCid = manifestBlk.cid.some
-            records[record.key] = record.toRaw
+            recordsById[record.key.id] = record.toRaw
           elif record.val.manifestCid.get == manifestBlk.cid:
             if wasNewAttachment:
               newAttachmentsCount.dec
@@ -857,7 +858,7 @@ proc storeManifestBlock*(
             if expiry != ZeroSeconds:
               record.val.expiry = overlayExpiry
             # already attached, keep refreshed record in batch (no-op write)
-            records[record.key] = record.toRaw
+            recordsById[record.key.id] = record.toRaw
           else:
             return failure(
               newException(
@@ -865,17 +866,17 @@ proc storeManifestBlock*(
               )
             )
 
-      records[blkMetaKey] =
-        if blkMetaKey in refreshed:
-          var rec = ?toRecord[BlockMetadata](?catch(refreshed[blkMetaKey]))
+      recordsById[blkMetaKey.id] =
+        if blkMetaKey.id in refreshedById:
+          var rec = ?toRecord[BlockMetadata](?catch(refreshedById[blkMetaKey.id]))
           rec.val.refCount += newAttachmentsCount.Natural
           rec.toRaw
         else:
-          var rec = ?toRecord[BlockMetadata](?catch(records[blkMetaKey]))
+          var rec = ?toRecord[BlockMetadata](?catch(recordsById[blkMetaKey.id]))
           rec.val.refCount = newAttachmentsCount.Natural
           rec.toRaw
 
-      success toSeq(records.values)
+      success toSeq(recordsById.values)
     ,
   )
 
