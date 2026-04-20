@@ -28,9 +28,7 @@ type
     onCleanUp*: OnCleanUp
     onFilled*: ?OnFilled
 
-  OnCleanUp* = proc(reprocessSlot = false, returnedCollateral = Tokens.none) {.
-    async: (raises: [])
-  .}
+  OnCleanUp* = proc(reprocessSlot = false) {.async: (raises: []).}
   OnFilled* = proc(request: StorageRequest, slotIndex: uint64) {.gcsafe, raises: [].}
 
   SalesAgentError = object of ArchivistError

@@ -80,7 +80,7 @@ proc remove(sales: Sales, agent: SalesAgent) {.async: (raises: []).} =
     sales.agents.keepItIf(it != agent)
 
 proc cleanUp(
-    sales: Sales, agent: SalesAgent, reprocessSlot: bool, returnedCollateral: ?Tokens
+    sales: Sales, agent: SalesAgent, reprocessSlot: bool
 ) {.async: (raises: []).} =
   let data = agent.data
 
@@ -111,11 +111,9 @@ proc processSlot(
 
   let completed = newAsyncEvent()
 
-  agent.onCleanUp = proc(
-      reprocessSlot = false, returnedCollateral = Tokens.none
-  ) {.async: (raises: []).} =
+  agent.onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
     trace "slot cleanup"
-    await sales.cleanUp(agent, reprocessSlot, returnedCollateral)
+    await sales.cleanUp(agent, reprocessSlot)
     completed.fire()
 
   agent.onFilled = some proc(request: StorageRequest, slotIndex: uint64) =
@@ -148,14 +146,9 @@ proc load(sales: Sales) {.async.} =
   for slotId in await sales.context.marketplace.mySlots():
     let slotInfo = SlotInfo.init(slotId)
     let agent = newSalesAgent(sales.context, slotInfo)
-    agent.onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = Tokens.none
-    ) {.async: (raises: []).} =
-      await sales.cleanUp(agent, reprocessSlot, returnedCollateral)
 
-    # There is no need to assign agent.onFilled as slots loaded from `mySlots`
-    # are inherently already filled and so assigning agent.onFilled would be
-    # superfluous.
+    agent.onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
+      await sales.cleanUp(agent, reprocessSlot)
 
     agent.start(SaleUnknown())
     sales.agents.add agent
@@ -173,9 +166,7 @@ proc onStorageRequested(
 
   trace "storage requested, adding slots to queue"
 
-  let collateral = ask.collateralPerSlot()
-
-  without items =? SlotQueueItem.init(requestId, ask, expiry, collateral).catch, err:
+  without items =? SlotQueueItem.init(requestId, ask, expiry).catch, err:
     if err of SlotsOutOfRangeError:
       warn "Too many slots, cannot add to queue"
     else:
@@ -219,8 +210,7 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
         return
 
       without slotQueueItem =?
-        SlotQueueItem.init(request, slotIndex.uint16, collateral, repairReward).catch,
-        err:
+        SlotQueueItem.init(request, slotIndex.uint16, repairReward).catch, err:
         warn "Too many slots, cannot add to queue", error = err.msgDetail
         return
 

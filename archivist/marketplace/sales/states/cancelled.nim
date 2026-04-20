@@ -31,20 +31,14 @@ method run*(
   try:
     if await slotIsFilledByMe(marketplace, data.slotInfo.slotId):
       debug "Collecting collateral and partial payout", slotId = data.slotInfo.slotId
-    var returnedCollateral = Tokens.none
-
-
-      let currentCollateral = await marketplace.currentCollateral(slot.id)
 
       try:
         await marketplace.freeSlot(data.slotInfo.slotId)
       except SlotStateMismatchError as e:
         warn "Failed to free slot because slot is already free", error = e.msg
 
-      returnedCollateral = currentCollateral.some
-
     if onCleanUp =? agent.onCleanUp:
-      await onCleanUp(reprocessSlot = false, returnedCollateral = returnedCollateral)
+      await onCleanUp(reprocessSlot = false)
 
     warn "Sale cancelled due to timeout", slotId = data.slotInfo.slotId
   except CancelledError as e:

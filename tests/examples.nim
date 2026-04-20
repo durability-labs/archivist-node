@@ -85,8 +85,7 @@ proc example*(_: type Slot): Slot =
 proc example*(_: type SlotQueueItem): SlotQueueItem =
   let request = StorageRequest.example
   let slot = Slot.example
-  let collateral = request.ask.collateralPerSlot
-  SlotQueueItem.init(request, slot.slotIndex.uint16, collateral)
+  SlotQueueItem.init(request, slot.slotIndex.uint16)
 
 proc example(_: type G1Point): G1Point =
   G1Point(x: UInt256.example, y: UInt256.example)

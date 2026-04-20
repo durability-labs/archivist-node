@@ -21,29 +21,18 @@ asyncchecksuite "sales state 'ignored'":
   var state: SaleIgnored
   var agent: SalesAgent
   var reprocessSlotWas = false
-  var returnedCollateralValue: ?Tokens
 
   setup:
-    let onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = Tokens.none
-    ) {.async: (raises: []).} =
+    let onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
       reprocessSlotWas = reprocessSlot
-      returnedCollateralValue = returnedCollateral
 
     let context = SalesContext(marketplace: marketplace, clock: clock)
     agent = newSalesAgent(context, SlotInfo.init(slot.id))
     agent.onCleanUp = onCleanUp
     state = SaleIgnored.new()
-    returnedCollateralValue = Tokens.none
     reprocessSlotWas = false
 
   test "calls onCleanUp with values assigned to SaleIgnored":
     state = SaleIgnored(reprocessSlot: true)
     discard await state.run(agent)
     check eventually reprocessSlotWas == true
-    check eventually returnedCollateralValue.isNone
-
-  test "returns collateral when returnsCollateral is true":
-    state = SaleIgnored(reprocessSlot: false, returnsCollateral: true)
-    discard await state.run(agent)
-    check eventually returnedCollateralValue.isSome

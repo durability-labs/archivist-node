@@ -28,9 +28,7 @@ asyncchecksuite "sales state 'errored'":
   var expBackoff: MockExponentialBackoff
 
   setup:
-    let onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = Tokens.none
-    ) {.async: (raises: []).} =
+    let onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
       reprocessSlotWas = reprocessSlot
 
     marketplace = MockMarketplace.new()

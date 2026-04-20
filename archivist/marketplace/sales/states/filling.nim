@@ -47,7 +47,7 @@ method run*(
       )
     except SlotStateMismatchError:
       debug "Slot is already filled, ignoring slot"
-      return some State(SaleIgnored(reprocessSlot: false, returnsCollateral: true))
+      return some State(SaleIgnored(reprocessSlot: false))
     except MarketplaceError as e:
       return some State(SaleErrored(error: e))
 

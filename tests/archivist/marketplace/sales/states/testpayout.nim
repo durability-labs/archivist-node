@@ -32,7 +32,7 @@ asyncchecksuite "sales state 'payout'":
     agent = newSalesAgent(context, SlotInfo.init(slot.id))
     state = SalePayout.new()
 
-  test "switches to 'finished' state and provides returnedCollateral":
+  test "switches to 'finished' state":
     marketplace.fillSlot(
       requestId = request.id,
       slotIndex = slotIndex,
@@ -42,4 +42,3 @@ asyncchecksuite "sales state 'payout'":
     )
     let next = await state.run(agent)
     check !next of SaleFinished
-    check SaleFinished(!next).returnedCollateral == some currentCollateral

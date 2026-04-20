@@ -29,11 +29,10 @@ method run*(
   let marketplace = SalesAgent(machine).context.marketplace
 
   try:
-    let currentCollateral = await marketplace.currentCollateral(slot.id)
     debug "Collecting finished slot's reward", slotId = data.slotInfo.slotId
     await marketplace.freeSlot(data.slotInfo.slotId)
 
-    return some State(SaleFinished(returnedCollateral: some currentCollateral))
+    return some State(SaleFinished())
   except CancelledError as e:
     trace "SalePayout.run was cancelled", error = e.msgDetail
   except CatchableError as e:
