@@ -40,7 +40,7 @@ when defined(archivist_system_testing_options):
           warn "Submitting INVALID proof", period = currentPeriod, slotId = slot.id
           let marketplace = context.marketplace
           await marketplace.submitProof(slot.id, Groth16Proof.default)
-        except ProofInvalidError as e:
+        except ProofInvalidError:
           discard # expected
         except CancelledError as error:
           raise error
