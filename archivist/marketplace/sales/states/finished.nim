@@ -32,11 +32,7 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
 
-  without request =? data.request:
-    raiseAssert "no sale request"
-
-  info "Slot finished and paid out",
-    requestId = data.requestId, slotIndex = data.slotIndex
+  info "Slot finished and paid out", slotId = data.slotInfo.slotId
 
   try:
     if onCleanUp =? agent.onCleanUp:

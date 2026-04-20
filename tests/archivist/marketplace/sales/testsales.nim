@@ -94,12 +94,8 @@ asyncchecksuite "Sales - start":
     !await sales.start()
 
     check eventually sales.agents.len == 2
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 0.uint64
-    )
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 1.uint64
-    )
+    check sales.agents.any(agent => agent.data.slotInfo.slotId == slotId(request.id, 0))
+    check sales.agents.any(agent => agent.data.slotInfo.slotId == slotId(request.id, 1))
 
 asyncchecksuite "Sales":
   let proof = Groth16Proof.example
@@ -306,38 +302,3 @@ asyncchecksuite "Sales":
     check marketplace.filled[0].slotIndex < request.ask.slots
     check marketplace.filled[0].proof == proof
     check marketplace.filled[0].host == await marketplace.getSigner()
-
-  test "loads active slots from marketplace":
-    let me = await marketplace.getSigner()
-
-    request.ask.slots = 2
-    marketplace.requested = @[request]
-    marketplace.requestState[request.id] = RequestState.New
-    marketplace.requestEnds[request.id] =
-      StorageTimestamp.init(clock.now()) + request.expiry
-
-    proc fillSlot(slotIdx: uint64 = 0) {.async.} =
-      let address = await marketplace.getSigner()
-      let slot =
-        MockSlot(requestId: request.id, slotIndex: slotIdx, proof: proof, host: address)
-      marketplace.filled.add slot
-      marketplace.slotState[slotId(request.id, slotIdx)] = SlotState.Filled
-
-    let slot0 = MockSlot(requestId: request.id, slotIndex: 0, proof: proof, host: me)
-    await fillSlot(slot0.slotIndex)
-
-    let slot1 = MockSlot(requestId: request.id, slotIndex: 1, proof: proof, host: me)
-    await fillSlot(slot1.slotIndex)
-    marketplace.activeSlots[me] = @[request.slotId(0), request.slotId(1)]
-    marketplace.requested = @[request]
-    marketplace.activeRequests[me] = @[request.id]
-
-    await sales.load()
-
-    check eventually sales.agents.len == 2
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 0.uint64
-    )
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 1.uint64
-    )

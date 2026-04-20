@@ -86,8 +86,7 @@ proc cleanUp(
 
   logScope:
     topics = "sales cleanUp"
-    requestId = data.requestId
-    slotIndex = data.slotIndex
+    slotId = data.slotInfo.slotId
 
   trace "cleaning up sales agent"
 
@@ -106,10 +105,9 @@ proc processSlot(
     sales: Sales, item: SlotQueueItem
 ) {.async: (raises: [CancelledError]).} =
   debug "Processing slot from queue", requestId = item.requestId, slot = item.slotIndex
-
-  let agent = newSalesAgent(
-    sales.context, item.requestId, item.slotIndex, none StorageRequest, some item
-  )
+  var slotInfo = SlotInfo.init(item.requestId, item.slotIndex)
+  slotInfo.ask = item.ask
+  let agent = newSalesAgent(sales.context, slotInfo, some item)
 
   let completed = newAsyncEvent()
 
@@ -131,37 +129,25 @@ proc processSlot(
   await completed.wait()
   trace "slot processing completed"
 
-proc getSlots*(sales: Sales): Future[seq[Slot]] {.async.} =
-  let marketplace = sales.context.marketplace
-  let slotIds = await marketplace.mySlots()
-  var slots: seq[Slot] = @[]
-
-  info "Loading active slots", slotsCount = len(slots)
-  for slotId in slotIds:
-    if slot =? (await marketplace.getActiveSlot(slotId)):
-      slots.add slot
-
-  return slots
+proc getSlots*(sales: Sales): Future[seq[SlotId]] {.async.} =
+  sales.agents.mapIt(it.data.slotInfo.slotId)
 
 proc getSalesAgent(sales: Sales, slotId: SlotId): Future[?SalesAgent] {.async.} =
   for agent in sales.agents:
-    if slotId(agent.data.requestId, agent.data.slotIndex) == slotId:
+    if agent.data.slotInfo.slotId == slotId:
       return some agent
 
 proc getSlot*(sales: Sales, slotId: SlotId): Future[?SalesSlot] {.async.} =
-  without agent =? await sales.getSalesAgent(slotId):
-    return none SalesSlot
-  some SalesSlot.init(
-    agent.data.requestId, agent.data.slotIndex, agent.data.request, agent.state
-  )
+  if agent =? await sales.getSalesAgent(slotId):
+    if slot =? agent.data.slotInfo.slot:
+      return some SalesSlot.init(
+        slot.request.id, slot.slotIndex, some slot.request, agent.state,
+      )
 
-proc load*(sales: Sales) {.async.} =
-  let activeSlots = await sales.getSlots()
-
-  for slot in activeSlots:
-    let agent =
-      newSalesAgent(sales.context, slot.request.id, slot.slotIndex, some slot.request)
-
+proc load(sales: Sales) {.async.} =
+  for slotId in await sales.context.marketplace.mySlots():
+    let slotInfo = SlotInfo.init(slotId)
+    let agent = newSalesAgent(sales.context, slotInfo)
     agent.onCleanUp = proc(
         reprocessSlot = false, returnedCollateral = Tokens.none
     ) {.async: (raises: []).} =

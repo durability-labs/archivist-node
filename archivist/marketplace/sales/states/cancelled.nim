@@ -14,9 +14,9 @@ method `$`*(state: SaleCancelled): string =
   "SaleCancelled"
 
 proc slotIsFilledByMe(
-    marketplace: AbstractMarketplace, requestId: RequestId, slotIndex: uint64
+    marketplace: AbstractMarketplace, slot: SlotId
 ): Future[bool] {.async: (raises: [CancelledError, MarketplaceError]).} =
-  let host = await marketplace.getHost(requestId, slotIndex)
+  let host = await marketplace.getHost(slot)
   let me = await marketplace.getSigner()
 
   return host == me.some
@@ -28,21 +28,16 @@ method run*(
   let data = agent.data
   let marketplace = agent.context.marketplace
 
-  without request =? data.request:
-    raiseAssert "no sale request"
-
   try:
+    if await slotIsFilledByMe(marketplace, data.slotInfo.slotId):
+      debug "Collecting collateral and partial payout", slotId = data.slotInfo.slotId
     var returnedCollateral = Tokens.none
 
-    if await slotIsFilledByMe(marketplace, data.requestId, data.slotIndex):
-      debug "Collecting collateral and partial payout",
-        requestId = data.requestId, slotIndex = data.slotIndex
 
-      let slot = Slot(request: request, slotIndex: data.slotIndex)
       let currentCollateral = await marketplace.currentCollateral(slot.id)
 
       try:
-        await marketplace.freeSlot(slot.id)
+        await marketplace.freeSlot(data.slotInfo.slotId)
       except SlotStateMismatchError as e:
         warn "Failed to free slot because slot is already free", error = e.msg
 
@@ -51,8 +46,7 @@ method run*(
     if onCleanUp =? agent.onCleanUp:
       await onCleanUp(reprocessSlot = false, returnedCollateral = returnedCollateral)
 
-    warn "Sale cancelled due to timeout",
-      requestId = data.requestId, slotIndex = data.slotIndex
+    warn "Sale cancelled due to timeout", slotId = data.slotInfo.slotId
   except CancelledError as e:
     trace "SaleCancelled.run was cancelled", error = e.msgDetail
   except CatchableError as e:

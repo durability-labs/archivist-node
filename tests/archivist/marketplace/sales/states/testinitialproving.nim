@@ -22,6 +22,7 @@ asyncchecksuite "sales state 'initialproving'":
   let proof = Groth16Proof.example
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
 
   var state: SaleInitialProving
   var agent: SalesAgent
@@ -34,7 +35,9 @@ asyncchecksuite "sales state 'initialproving'":
     storage = MockStorage.new()
     clock = MockClock.new()
     let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo)
     state = SaleInitialProving.new()
 
   proc allowProofToStart() {.async.} =

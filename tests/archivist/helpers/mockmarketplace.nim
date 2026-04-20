@@ -219,13 +219,13 @@ method requestExpiresAt*(
   return marketplace.requestExpiry[id]
 
 method getHost*(
-    marketplace: MockMarketplace, requestId: RequestId, slotIndex: uint64
+    marketplace: MockMarketplace, slotId: SlotId
 ): Future[?Address] {.async: (raises: [CancelledError, MarketplaceError]).} =
   if error =? marketplace.errorOnGetHost:
     raise error
 
   for slot in marketplace.filled:
-    if slot.requestId == requestId and slot.slotIndex == slotIndex:
+    if slotId(slot.requestId, slot.slotIndex) == slotId:
       return some slot.host
   return none Address
 

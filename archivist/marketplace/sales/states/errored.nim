@@ -18,16 +18,7 @@ logScope:
 method `$`*(state: SaleErrored): string =
   "SaleErrored"
 
-proc isMySlot(
-    marketplace: AbstractMarketplace, data: SalesData
-): Future[bool] {.async.} =
-  let slotId = slotId(data.requestId, data.slotIndex)
-  let slotIds = await marketplace.mySlots()
-  return slotId in slotIds
-
-proc performCleanUpExit(
-    state: SaleErrored, agent: SalesAgent
-): Future[?State] {.async: (raises: []).} =
+proc performCleanUpExit(state: SaleErrored, agent: SalesAgent) {.async: (raises: []).} =
   trace "SaleErrored: Cleanup and exit"
   try:
     if onCleanUp =? agent.onCleanUp:
@@ -36,7 +27,6 @@ proc performCleanUpExit(
     trace "SaleErrored.performCleanUpExit was cancelled", error = e.msgDetail
   except CatchableError as e:
     error "Error during SaleErrored.performCleanUpExit", error = e.msgDetail
-  return none State
 
 method run*(
     state: SaleErrored, machine: Machine
@@ -44,18 +34,16 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let marketplace = agent.context.marketplace
-  let slotIndex = data.slotIndex
 
   logScope:
-    requestId = data.requestId
-    slotIndex = data.slotIndex
+    slotId = data.slotInfo.slotId
 
   error "Error", error = state.error
 
   try:
     await data.errorBackoff.applyDelay()
 
-    if await isMySlot(marketplace, data):
+    if data.slotInfo.slotId in await marketplace.mySlots():
       debug "Errored slot is in MySlots. Restarting state machine..."
       return some State(SaleUnknown())
     else:
@@ -66,4 +54,4 @@ method run*(
     error "Error during SaleError.isMySlot", error = e.msgDetail
     return some State(SaleErrored(error: e))
 
-  return await performCleanUpExit(state, agent)
+  await performCleanUpExit(state, agent)

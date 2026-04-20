@@ -31,7 +31,9 @@ asyncchecksuite "sales state 'proving'":
     marketplace = MockMarketplace.new()
     storage = MockStorage.new()
     let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
-    agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo)
     state = SaleProving.new()
 
   proc advanceToNextPeriod(marketplace: AbstractMarketplace) {.async.} =

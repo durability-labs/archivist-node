@@ -3,7 +3,6 @@ import pkg/questionable
 
 import ../../../logutils
 import ../../../utils/exceptions
-import ../../contracts/requests
 import ../statemachine
 import ../salesagent
 import ./types

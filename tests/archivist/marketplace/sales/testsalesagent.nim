@@ -33,32 +33,31 @@ method onSlotFilled*(
 
 asyncchecksuite "Sales agent":
   let request = StorageRequest.example
+  let slot = Slot(request: request, slotIndex: 0)
   var agent: SalesAgent
   var context: SalesContext
-  var slotIndex: uint64
   var marketplace: MockMarketplace
   var clock: MockClock
 
   setup:
     marketplace = MockMarketplace.new()
+    marketplace.requested = @[request]
     marketplace.requestExpiry[request.id] =
       StorageTimestamp.init(getTime().toUnix()) + request.expiry
     clock = MockClock.new()
     context = SalesContext(marketplace: marketplace, clock: clock)
-    slotIndex = 0.uint64
     onCancelCalled = false
     onFailedCalled = false
     onSlotFilledCalled = false
-    agent = newSalesAgent(context, request.id, slotIndex, some request)
+    agent = newSalesAgent(context, SlotInfo.init(slot.request.id, slot.slotIndex))
 
   teardown:
     await agent.stop()
 
-  test "can retrieve request":
-    agent = newSalesAgent(context, request.id, slotIndex, none StorageRequest)
-    marketplace.requested = @[request]
-    await agent.retrieveRequest()
-    check agent.data.request == some request
+  test "can retrieve slot":
+    check agent.data.slotInfo.slot.isNone
+    await agent.retrieveSlot()
+    check agent.data.slotInfo.slot == some slot
 
   test "subscribe assigns cancelled future":
     await agent.subscribe()

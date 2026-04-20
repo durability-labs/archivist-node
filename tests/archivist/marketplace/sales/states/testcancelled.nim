@@ -17,6 +17,7 @@ import ../../../helpers/mockclock
 asyncchecksuite "sales state 'cancelled'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   let clock = MockClock.new()
 
   let currentCollateral = Tokens.example
@@ -36,7 +37,7 @@ asyncchecksuite "sales state 'cancelled'":
       returnedCollateralValue = returnedCollateral
 
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    agent = newSalesAgent(context, SlotInfo.init(slot.id))
     agent.onCleanUp = onCleanUp
     state = SaleCancelled.new()
     reprocessSlotWas = bool.none

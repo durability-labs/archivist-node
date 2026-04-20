@@ -30,19 +30,20 @@ method run*(
   let data = SalesAgent(machine).data
   let marketplace = SalesAgent(machine).context.marketplace
 
-  without (request =? data.request):
-    raiseAssert "Request not set"
+  without slot =? data.slotInfo.slot:
+    raiseAssert "slot not set"
 
   logScope:
-    requestId = data.requestId
-    slotIndex = data.slotIndex
+    slotId = slot.id
+    requestId = slot.request.id
+    slotIndex = slot.slotIndex
 
-  let collateral = request.ask.collateralPerSlot()
+  let collateral = slot.request.ask.collateralPerSlot()
   try:
     debug "Filling slot"
     try:
       await marketplace.fillSlot(
-        data.requestId, data.slotIndex, state.proof, collateral
+        slot.request.id, slot.slotIndex, state.proof, collateral
       )
     except SlotStateMismatchError:
       debug "Slot is already filled, ignoring slot"

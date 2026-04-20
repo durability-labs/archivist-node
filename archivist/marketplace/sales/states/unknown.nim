@@ -5,7 +5,6 @@ import ../../abstractmarketplace
 import ../statemachine
 import ../salesagent
 import ./filled
-import ./finished
 import ./failed
 import ./types
 import ./proving
@@ -36,22 +35,16 @@ method run*(
   let marketplace = agent.context.marketplace
 
   try:
-    await agent.retrieveRequest()
-    await agent.subscribe()
+    await agent.retrieveSlot()
 
-    without request =? data.request:
-      error "request could not be retrieved", id = data.requestId
-      let error = newException(SaleError, "request could not be retrieved")
+    if data.slotInfo.slot.isNone:
+      error "slot could not be retrieved", id = data.slotInfo.slotId
+      let error = newException(SaleError, "slot could not be retrieved")
       return some State(SaleErrored(error: error))
 
-    let slotId = slotId(data.requestId, data.slotIndex)
-    let slotState = await marketplace.slotState(slotId)
+    let slotState = await marketplace.slotState(data.slotInfo.slotId)
 
     case slotState
-    of SlotState.Free:
-      let error =
-        newException(UnexpectedSlotError, "Slot state on chain should not be 'free'")
-      return some State(SaleErrored(error: error))
     of SlotState.Filled:
       return some State(SaleFilled())
     of SlotState.Finished:
@@ -60,10 +53,13 @@ method run*(
       return some State(SaleFailed())
     of SlotState.Cancelled:
       return some State(SaleCancelled())
+    of SlotState.Free:
+      let message = "Slot state on chain should not be 'free'"
+      let error = newException(UnexpectedSlotError, message)
+      return some State(SaleErrored(error: error))
     of SlotState.Repair:
-      let error = newException(
-        SlotFreedError, "Slot was forcible freed and host was removed from its hosting"
-      )
+      let message = "Slot was forcible freed and host was removed from its hosting"
+      let error = newException(SlotFreedError, message)
       return some State(SaleErrored(error: error))
   except CancelledError as e:
     trace "SaleUnknown.run was cancelled", error = e.msgDetail

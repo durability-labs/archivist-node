@@ -52,23 +52,22 @@ method run*(
   let storage = context.storage
   let clock = context.clock
 
-  without request =? data.request:
-    raiseAssert "no sale request"
+  without slot =? data.slotInfo.slot:
+    raiseAssert "no sale slot"
 
   try:
     let periodicity = marketplace.periodicity()
 
     debug "Waiting for a proof challenge that is valid for the entire period"
-    let slot = Slot(request: request, slotIndex: data.slotIndex)
     await waitForStableChallenge(marketplace, clock, periodicity, slot.id)
     let provingPeriod = periodicity.periodOf(StorageTimestamp.init(clock.now()))
 
     info "Generating initial proof",
       provingPeriod = provingPeriod,
-      requestId = data.requestId,
-      slotIndex = data.slotIndex
-    let cid = request.content.cid
-    let slotIndex = data.slotIndex
+      requestId = slot.request.id,
+      slotIndex = slot.slotIndex
+    let cid = slot.request.content.cid
+    let slotIndex = slot.slotIndex
     let challenge = await context.marketplace.getChallenge(slot.id)
     # Deadline is periodEnd - proof must be generated before the period closes.
     let periodEnd = periodicity.periodEnd(provingPeriod).toSecondsSince1970
@@ -87,12 +86,12 @@ method run*(
 
     info "Finished initial proof calculation",
       provingPeriod = periodAtFinish,
-      requestId = data.requestId,
-      slotIndex = data.slotIndex
+      requestId = slot.request.id,
+      slotIndex = slot.slotIndex
 
     return some State(SaleFilling(proof: proof))
   except CancelledError as e:
-    trace "SaleInitialProving.run onCleanUp was cancelled", error = e.msgDetail
+    trace "SaleInitialProving.run was cancelled", error = e.msgDetail
   except CatchableError as e:
     error "Error during SaleInitialProving.run", error = e.msgDetail
     return some State(SaleErrored(error: e))

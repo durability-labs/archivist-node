@@ -718,7 +718,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Slot"
+                  $ref: "#/components/schemas/SlotId"
 
         "503":
           description: Persistence is not enabled
@@ -733,8 +733,7 @@ paths:
           name: slotId
           required: true
           schema:
-            $ref: "#/components/schemas/Cid"
-          description: File to be downloaded.
+            $ref: "#/components/schemas/SlotId"
       responses:
         "200":
           description: Retrieved active slot

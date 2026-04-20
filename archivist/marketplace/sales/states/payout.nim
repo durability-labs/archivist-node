@@ -28,19 +28,14 @@ method run*(
   let data = SalesAgent(machine).data
   let marketplace = SalesAgent(machine).context.marketplace
 
-  without request =? data.request:
-    raiseAssert "no sale request"
-
   try:
-    let slot = Slot(request: request, slotIndex: data.slotIndex)
-    debug "Collecting finished slot's reward",
-      requestId = data.requestId, slotIndex = data.slotIndex
     let currentCollateral = await marketplace.currentCollateral(slot.id)
-    await marketplace.freeSlot(slot.id)
+    debug "Collecting finished slot's reward", slotId = data.slotInfo.slotId
+    await marketplace.freeSlot(data.slotInfo.slotId)
 
     return some State(SaleFinished(returnedCollateral: some currentCollateral))
   except CancelledError as e:
-    trace "SalePayout.run onCleanUp was cancelled", error = e.msgDetail
+    trace "SalePayout.run was cancelled", error = e.msgDetail
   except CatchableError as e:
     error "Error during SalePayout.run", error = e.msgDetail
     return some State(SaleErrored(error: e))

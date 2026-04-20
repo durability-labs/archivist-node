@@ -43,32 +43,32 @@ method run*(
   let marketplace = context.marketplace
 
   try:
-    await agent.retrieveRequest()
-    await agent.subscribe()
-
-    without request =? data.request:
-      error "request could not be retrieved", id = data.requestId
-      let error = newException(SaleError, "request could not be retrieved")
-      return some State(SaleErrored(error: error))
-
-    let slotId = slotId(data.requestId, data.slotIndex)
-    let state = await marketplace.slotState(slotId)
+    let state = await marketplace.slotState(data.slotInfo.slotId)
     if state != SlotState.Free and state != SlotState.Repair:
       return some State(SaleIgnored(reprocessSlot: false))
+
+    await agent.retrieveSlot()
+    await agent.subscribe()
+
+    without slot =? data.slotInfo.slot:
+      error "slot could not be retrieved", id = data.slotInfo.slotId
+      let error = newException(SaleError, "slot could not be retrieved")
+      return some State(SaleErrored(error: error))
+
 
     # TODO: Once implemented, check to ensure the host is allowed to fill the slot,
     # due to the [sliding window mechanism](https://github.com/logos-storage/codex-research/blob/master/design/marketplace.md#dispersal)
 
     logScope:
-      requestId = data.requestId
-      slotIndex = data.slotIndex
-      slotSize = request.ask.slotSize
-      duration = request.ask.duration
-      pricePerBytePerSecond = request.ask.pricePerBytePerSecond
-      collateralPerByte = request.ask.collateralPerByte
+      requestId = slot.request.id
+      slotIndex = slot.slotIndex
+      slotSize = slot.request.ask.slotSize
+      duration = slot.request.ask.duration
+      pricePerBytePerSecond = slot.request.ask.pricePerBytePerSecond
+      collateralPerByte = slot.request.ask.collateralPerByte
 
-    let requestEnd = await marketplace.getRequestEnd(data.requestId)
-    let ask = request.ask
+    let requestEnd = await marketplace.getRequestEnd(slot.request.id)
+    let ask = slot.request.ask
 
     without terms =? context.availabilityTerms:
       debug "No availability terms set"

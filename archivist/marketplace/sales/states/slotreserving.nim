@@ -34,16 +34,19 @@ method run*(
   let context = agent.context
   let marketplace = context.marketplace
 
+  without slot =? data.slotInfo.slot:
+    raiseAssert "no sale slot"
+
   logScope:
-    requestId = data.requestId
-    slotIndex = data.slotIndex
+    requestId = slot.request.id
+    slotIndex = slot.slotIndex
 
   try:
-    let canReserve = await marketplace.canReserveSlot(data.requestId, data.slotIndex)
+    let canReserve = await marketplace.canReserveSlot(slot.request.id, slot.slotIndex)
     if canReserve:
       try:
         trace "Reserving slot"
-        await marketplace.reserveSlot(data.requestId, data.slotIndex)
+        await marketplace.reserveSlot(slot.request.id, slot.slotIndex)
       except SlotReservationNotAllowedError as e:
         debug "Slot cannot be reserved, ignoring", error = e.msg
         return some State(SaleIgnored(reprocessSlot: false, returnsCollateral: true))

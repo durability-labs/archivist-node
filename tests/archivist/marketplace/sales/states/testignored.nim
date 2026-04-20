@@ -1,4 +1,3 @@
-import pkg/questionable
 import pkg/chronos
 import pkg/archivist/marketplace/contracts/requests
 import pkg/archivist/marketplace/sales/states/ignored
@@ -15,6 +14,7 @@ import ../../../helpers/mockclock
 asyncchecksuite "sales state 'ignored'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   let marketplace = MockMarketplace.new()
   let clock = MockClock.new()
 
@@ -31,7 +31,7 @@ asyncchecksuite "sales state 'ignored'":
       returnedCollateralValue = returnedCollateral
 
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    agent = newSalesAgent(context, SlotInfo.init(slot.id))
     agent.onCleanUp = onCleanUp
     state = SaleIgnored.new()
     returnedCollateralValue = Tokens.none
