@@ -76,9 +76,12 @@ func state*(agent: SalesAgent): ?string =
 
   agent.query(description)
 
-proc subscribeCancellation(agent: SalesAgent) {.async.} =
+proc subscribeCancellation*(agent: SalesAgent) {.async.} =
   let data = agent.data
   let clock = agent.context.clock
+
+  if data.cancelled != nil:
+    return
 
   proc onCancelled() {.async: (raises: []).} =
     without slot =? data.slotInfo.slot:
@@ -117,6 +120,12 @@ proc subscribeCancellation(agent: SalesAgent) {.async.} =
 
   data.cancelled = onCancelled()
 
+proc unsubscribeCancellation*(agent: SalesAgent) {.async: (raises: []).} =
+  let data = agent.data
+  if data.cancelled != nil:
+    await data.cancelled.cancelAndWait()
+    data.cancelled = nil
+
 method onFulfilled*(
     agent: SalesAgent, requestId: RequestId
 ) {.base, gcsafe, raises: [].} =
@@ -138,24 +147,6 @@ method onSlotFilled*(
   if agent.data.slotInfo.slotId == slotId:
     agent.schedule(slotFilledEvent(requestId, slotIndex))
 
-proc subscribe*(agent: SalesAgent) {.async.} =
-  if agent.subscribed:
-    return
-
-  await agent.subscribeCancellation()
-  agent.subscribed = true
-
-proc unsubscribe*(agent: SalesAgent) {.async: (raises: []).} =
-  if not agent.subscribed:
-    return
-
-  let data = agent.data
-  if not data.cancelled.isNil and not data.cancelled.finished:
-    await data.cancelled.cancelAndWait()
-    data.cancelled = nil
-
-  agent.subscribed = false
-
 proc stop*(agent: SalesAgent) {.async: (raises: []).} =
   await Machine(agent).stop()
-  await agent.unsubscribe()
+  await agent.unsubscribeCancellation()

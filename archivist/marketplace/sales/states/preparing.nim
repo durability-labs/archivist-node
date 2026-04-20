@@ -48,13 +48,13 @@ method run*(
       return some State(SaleIgnored(reprocessSlot: false))
 
     await agent.retrieveSlot()
-    await agent.subscribe()
 
     without slot =? data.slotInfo.slot:
       error "slot could not be retrieved", id = data.slotInfo.slotId
       let error = newException(SaleError, "slot could not be retrieved")
       return some State(SaleErrored(error: error))
 
+    await agent.subscribeCancellation()
 
     # TODO: Once implemented, check to ensure the host is allowed to fill the slot,
     # due to the [sliding window mechanism](https://github.com/logos-storage/codex-research/blob/master/design/marketplace.md#dispersal)
