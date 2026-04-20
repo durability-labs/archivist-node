@@ -92,7 +92,7 @@ proc cleanUp(
 
   # Re-add items back into the queue to prevent small availabilities from
   # draining the queue. Seen items will be ordered last.
-  if reprocessSlot and request =? data.request and var item =? agent.data.slotQueueItem:
+  if reprocessSlot and var item =? agent.data.slotQueueItem:
     let queue = sales.context.slotQueue
     trace "pushing ignored item to queue"
     if err =? queue.push(item).errorOption:
