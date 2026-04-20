@@ -54,7 +54,6 @@ proc getBlocksBitmap*(
   let key = ?overlayKey(treeCid)
 
   self.overlayCache.withValue(key, cached):
-    trace "Overlay cache hit", treeCid
     return success(cached[].blocks)
 
   without overlayMeta =? await self.metaDs.get(key, OverlayMetadata), err:
@@ -83,7 +82,6 @@ proc checkBitmap*(
 
   let bits = ?await self.getBlocksBitmap(treeCid)
   if index >= bits.len or not bits[index]:
-    trace "Block not in overlay BitSeq, fast-path rejection", treeCid, index
     return success(false)
 
   success(true)
