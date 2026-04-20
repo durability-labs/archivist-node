@@ -29,7 +29,7 @@ type
     onFilled*: ?OnFilled
 
   OnCleanUp* = proc(reprocessSlot = false) {.async: (raises: []).}
-  OnFilled* = proc(request: StorageRequest, slotIndex: uint64) {.gcsafe, raises: [].}
+  OnFilled* = proc() {.gcsafe, raises: [].}
 
   SalesAgentError = object of ArchivistError
   AllSlotsFilledError* = object of SalesAgentError

@@ -52,7 +52,7 @@ method run*(
         raiseAssert "no sale slot"
 
       if onFilled =? agent.onFilled:
-        onFilled(request, data.slotIndex)
+        onFilled()
 
       # Add buffer past contract end so overlay data survives through the
       # last proof window. Buffer covers period (last proof window) +

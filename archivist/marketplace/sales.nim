@@ -116,7 +116,7 @@ proc processSlot(
     await sales.cleanUp(agent, reprocessSlot)
     completed.fire()
 
-  agent.onFilled = some proc(request: StorageRequest, slotIndex: uint64) =
+  agent.onFilled = some proc() =
     trace "slot filled"
     completed.fire()
 
