@@ -139,7 +139,7 @@ proc getSlot*(sales: Sales, slotId: SlotId): Future[?SalesSlot] {.async.} =
   if agent =? await sales.getSalesAgent(slotId):
     if slot =? agent.data.slotInfo.slot:
       return some SalesSlot.init(
-        slot.request.id, slot.slotIndex, some slot.request, agent.state,
+        slot.request.id, slot.slotIndex, some slot.request, agent.state
       )
 
 proc load(sales: Sales) {.async.} =

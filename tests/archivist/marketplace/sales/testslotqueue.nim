@@ -131,11 +131,13 @@ suite "Slot queue":
     var requestA = StorageRequest.example
     requestA.ask.slotSize = 1.uint64
     requestA.ask.duration = 1'StorageDuration
-    requestA.ask.pricePerBytePerSecond = 2'TokensPerSecond # profitability is higher (good)
+    requestA.ask.pricePerBytePerSecond = 2'TokensPerSecond
+      # profitability is higher (good)
     requestA.ask.collateralPerByte = 1'Tokens
     var requestB = requestA
     requestB.ask.pricePerBytePerSecond = 1'TokensPerSecond # profitability is lower (bad)
-    let itemA = SlotQueueItem.init(requestA, 0, availabilitiesVersion = 2) # (bad), more weight than profitability
+    let itemA = SlotQueueItem.init(requestA, 0, availabilitiesVersion = 2)
+      # (bad), more weight than profitability
     let itemB = SlotQueueItem.init(requestB, 0, availabilitiesVersion = 1) # (good)
     check itemB < itemA # B higher priority than A
     check itemA > itemB
@@ -147,7 +149,8 @@ suite "Slot queue":
     requestA.ask.pricePerBytePerSecond = 1'TokensPerSecond # reward is lower (bad)
     requestA.ask.collateralPerByte = 1'Tokens # collateral is lower (good)
     var requestB = requestA
-    requestB.ask.pricePerBytePerSecond = 2'TokensPerSecond # reward is higher (good), more weight than collateral
+    requestB.ask.pricePerBytePerSecond = 2'TokensPerSecond
+      # reward is higher (good), more weight than collateral
     requestB.ask.collateralPerByte = 2'Tokens # collateral is higher (bad)
     let itemA = SlotQueueItem.init(requestA, 0)
     let itemB = SlotQueueItem.init(requestB, 0)
@@ -160,9 +163,14 @@ suite "Slot queue":
     requestA.ask.pricePerBytePerSecond = 1'TokensPerSecond
     requestA.ask.collateralPerByte = 2'Tokens # collateral is higher (bad)
     var requestB = requestA
-    requestB.ask.collateralPerByte = 1'Tokens # collateral is lower (good), more weight than expiry
-    let itemA = SlotQueueItem.init(requestA.id, 0, requestA.ask, expiry = 2'StorageTimestamp) # expiry is longer (good)
-    let itemB = SlotQueueItem.init(requestB.id, 0, requestB.ask, expiry = 1'StorageTimestamp) # expiry is shorter (bad)
+    requestB.ask.collateralPerByte = 1'Tokens
+      # collateral is lower (good), more weight than expiry
+    let itemA =
+      SlotQueueItem.init(requestA.id, 0, requestA.ask, expiry =
+          2'StorageTimestamp) # expiry is longer (good)
+    let itemB =
+      SlotQueueItem.init(requestB.id, 0, requestB.ask, expiry =
+          1'StorageTimestamp) # expiry is shorter (bad)
     check itemB < itemA # < indicates higher priority
 
   test "correct prioritizes SlotQueueItems based on expiry":
@@ -173,8 +181,12 @@ suite "Slot queue":
     requestA.ask.collateralPerByte = 1'Tokens
     var requestB = requestA
     requestB.ask.slotSize = 2.uint64 # slotSize is larger (bad)
-    let itemA = SlotQueueItem.init(requestA.id, 0, requestA.ask, expiry = 1'StorageTimestamp) # expiry is shorter (bad)
-    let itemB = SlotQueueItem.init(requestB.id, 0, requestB.ask, expiry = 2'StorageTimestamp) # expiry is longer (good), more weight than slotSize
+    let itemA =
+      SlotQueueItem.init(requestA.id, 0, requestA.ask, expiry =
+          1'StorageTimestamp) # expiry is shorter (bad)
+    let itemB =
+      SlotQueueItem.init(requestB.id, 0, requestB.ask, expiry =
+          2'StorageTimestamp) # expiry is longer (good), more weight than slotSize
     check itemB < itemA # < indicates higher priority
 
   test "correct prioritizes SlotQueueItems based on slotSize":

@@ -152,7 +152,8 @@ proc init*(
     availabilitiesVersion = 0'u64,
 ): SlotQueueItem =
   SlotQueueItem.init(
-    request.id, slotIndex, request.ask, StorageTimestamp.none, repairReward, availabilitiesVersion
+    request.id, slotIndex, request.ask, StorageTimestamp.none, repairReward,
+    availabilitiesVersion,
   )
 
 proc init(

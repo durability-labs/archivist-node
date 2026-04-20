@@ -46,9 +46,7 @@ proc newSalesAgent*(
   let agent = SalesAgent.new()
   agent.context = context
   agent.data = SalesData(
-    slotInfo: slotInfo,
-    slotQueueItem: slotQueueItem,
-    errorBackoff: errorBackoff
+    slotInfo: slotInfo, slotQueueItem: slotQueueItem, errorBackoff: errorBackoff
   )
   return agent
 
@@ -112,7 +110,6 @@ proc subscribeCancellation*(agent: SalesAgent) {.async.} =
 
         debug "The request is not yet canceled, even though it should be. Waiting for some more time.",
           currentState = state, now = clock.now
-
     except CancelledError:
       trace "Waiting for expiry to lapse was cancelled", requestId = slot.request.id
     except CatchableError as e:
