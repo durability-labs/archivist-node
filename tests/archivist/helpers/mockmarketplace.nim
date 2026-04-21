@@ -556,8 +556,7 @@ method queryPastSlotFilledEvents*(
     slot => SlotFilled(requestId: slot.requestId, slotIndex: slot.slotIndex)
   )
 
-method unsubscribe*(subscription: Subscription) {.async: (raises: []).} =
-  let subscription = MockSubscription(subscription)
+method unsubscribe*(subscription: MockSubscription) {.async: (raises: []).} =
   let marketplace = subscription.marketplace
   marketplace.subscriptions.onRequest.keepItIf(subscription != it)
   marketplace.subscriptions.onFulfillment.keepItIf(subscription != it)
