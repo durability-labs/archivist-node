@@ -324,6 +324,9 @@ method withdrawFunds*(
     marketplace: MockMarketplace, requestId: RequestId
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.withdrawn.add(requestId)
+  if var myRequests =? marketplace.activeRequests.?[marketplace.signer]:
+    myRequests.keepItIf(it != requestId)
+    marketplace.activeRequests[marketplace.signer] = myRequests
 
 proc setProofRequired*(mock: MockMarketplace, id: SlotId, required: bool) =
   if required:
