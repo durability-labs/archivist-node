@@ -3,7 +3,7 @@ import pkg/metrics
 import ../../../logutils
 import ../../ ../utils/exceptions
 import ../statemachine
-import ./error
+import ./errored
 
 declareCounter(archivist_purchases_cancelled, "archivist purchases cancelled")
 

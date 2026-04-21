@@ -5,7 +5,7 @@ import ../../../utils/exceptions
 import ../statemachine
 import ./started
 import ./cancelled
-import ./error
+import ./errored
 
 logScope:
   topics = "marketplace purchases submitted"

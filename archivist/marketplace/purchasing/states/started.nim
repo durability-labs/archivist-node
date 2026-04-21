@@ -5,7 +5,7 @@ import ../../../utils/exceptions
 import ../statemachine
 import ./finished
 import ./failed
-import ./error
+import ./errored
 
 declareCounter(archivist_purchases_started, "archivist purchases started")
 

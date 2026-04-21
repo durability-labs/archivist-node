@@ -7,7 +7,7 @@ import ./started
 import ./cancelled
 import ./finished
 import ./failed
-import ./error
+import ./errored
 
 declareCounter(archivist_purchases_unknown, "archivist purchases unknown")
 
