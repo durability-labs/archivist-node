@@ -1,6 +1,5 @@
 import ./statemachine
-import ./states/pending
-import ./states/unknown
+import ./states
 import ./purchaseid
 
 # Purchase is implemented as a state machine.

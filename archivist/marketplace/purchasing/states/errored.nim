@@ -2,14 +2,12 @@ import pkg/metrics
 import ../statemachine
 import ../../../utils/exceptions
 import ../../../logutils
+import ./types
 
 declareCounter(archivist_purchases_error, "archivist purchases error")
 
 logScope:
   topics = "marketplace purchases errored"
-
-type PurchaseErrored* = ref object of PurchaseState
-  error*: ref CatchableError
 
 method `$`*(state: PurchaseErrored): string =
   "errored"

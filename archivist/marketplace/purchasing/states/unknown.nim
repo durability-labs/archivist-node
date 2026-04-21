@@ -2,16 +2,9 @@ import pkg/metrics
 import ../../../utils/exceptions
 import ../../../logutils
 import ../statemachine
-import ./submitted
-import ./started
-import ./cancelled
-import ./finished
-import ./failed
-import ./errored
+import ./types
 
 declareCounter(archivist_purchases_unknown, "archivist purchases unknown")
-
-type PurchaseUnknown* = ref object of PurchaseState
 
 method `$`*(state: PurchaseUnknown): string =
   "unknown"
