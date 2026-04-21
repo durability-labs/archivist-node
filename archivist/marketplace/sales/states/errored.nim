@@ -51,7 +51,7 @@ method run*(
   except CancelledError as e:
     trace "SaleErrored.run was cancelled", error = e.msgDetail
   except CatchableError as e:
-    error "Error during SaleError.isMySlot", error = e.msgDetail
+    error "Error during SaleErrored.run", error = e.msgDetail
     return some State(SaleErrored(error: e))
 
   await performCleanUpExit(state, agent)
