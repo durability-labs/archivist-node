@@ -170,7 +170,7 @@ method requestStorage*(
     subscription.callback(request.id, request.ask, requestExpiresAt)
 
 method myRequests*(marketplace: MockMarketplace): Future[seq[RequestId]] {.async.} =
-  return marketplace.activeRequests[marketplace.signer]
+  marketplace.activeRequests.?[marketplace.signer] |? @[]
 
 method mySlots*(marketplace: MockMarketplace): Future[seq[SlotId]] {.async.} =
   return marketplace.activeSlots[marketplace.signer]
