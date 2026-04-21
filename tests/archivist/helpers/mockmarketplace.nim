@@ -170,7 +170,7 @@ method requestStorage*(
     subscription.callback(request.id, request.ask, requestExpiresAt)
 
 method myRequests*(marketplace: MockMarketplace): Future[seq[RequestId]] {.async.} =
-  marketplace.activeRequests.?[marketplace.signer] |? @[]
+  marketplace.activeRequests .? [marketplace.signer] |? @[]
 
 method mySlots*(marketplace: MockMarketplace): Future[seq[SlotId]] {.async.} =
   return marketplace.activeSlots[marketplace.signer]
@@ -324,7 +324,7 @@ method withdrawFunds*(
     marketplace: MockMarketplace, requestId: RequestId
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.withdrawn.add(requestId)
-  if var myRequests =? marketplace.activeRequests.?[marketplace.signer]:
+  if var myRequests =? marketplace.activeRequests .? [marketplace.signer]:
     myRequests.keepItIf(it != requestId)
     marketplace.activeRequests[marketplace.signer] = myRequests
 

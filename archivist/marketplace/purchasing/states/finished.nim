@@ -10,7 +10,6 @@ declareCounter(archivist_purchases_finished, "archivist purchases finished")
 logScope:
   topics = "marketplace purchases finished"
 
-
 method `$`*(state: PurchaseFinished): string =
   "finished"
 
