@@ -65,9 +65,15 @@ proc map(
   var mapped: ?!MultiAddress
   trace "spawning port mapping background task", address
   traversal.taskpool.spawn mapTask(portmapping, address, signal, addr mapped)
-  if error =? catchAsync(await signal.wait()).errorOption:
-    discard signal.close()
-    return failure error
+  let waiting = signal.wait()
+  if error =? catch(await waiting.join()).errorOption:
+    if error of CancelledError:
+      discard catch(await noCancel waiting)
+      discard signal.close()
+      raise (ref CancelledError) error
+    else:
+      discard signal.close()
+      return failure error
   if error =? signal.close().errorOption:
     return failure error
   mapped
