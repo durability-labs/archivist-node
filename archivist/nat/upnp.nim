@@ -9,7 +9,7 @@ proc new*(_: type Miniupnp): Miniupnp =
   newMiniupnp()
 
 proc discoverGateways*(upnp: Miniupnp, timeout: Duration): ?!void =
-  upnp.discoverDelay = timeout.seconds.cint
+  upnp.discoverDelay = timeout.milliseconds.cint
   if error =? upnp.discover().errorOption:
     return failure $error
   success()
