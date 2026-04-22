@@ -48,3 +48,16 @@ proc addPortMapping*(
       success Port(reslt.value)
   else:
     Port.failure reslt.error
+
+proc deletePortMapping*(
+    pmp: NatPmp, external: Port, internal: Port, protocol: IpTransportProtocol
+): ?!void =
+  let reslt = pmp.deletePortMapping(
+    eport = external.cushort,
+    iport = internal.cushort,
+    protocol = protocol.toNatPmpProtocol,
+  )
+  if reslt.isOk:
+    success()
+  else:
+    failure reslt.error

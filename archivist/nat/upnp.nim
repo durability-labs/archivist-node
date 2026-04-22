@@ -65,3 +65,13 @@ proc addPortMapping*(
   without externalPort =? parseInt(externalPortString).catch:
     return failure "received invalid external port: " & externalPortString
   return success Port(externalPort)
+
+proc deletePortMapping*(
+    upnp: Miniupnp, external: Port, protocol: IpTransportProtocol
+): ?!void =
+  let reslt =
+    upnp.deletePortMapping(externalPort = $external, protocol = protocol.toUpnpProtocol)
+  if reslt.isOk:
+    success()
+  else:
+    failure $reslt.error

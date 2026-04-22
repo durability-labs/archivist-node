@@ -115,3 +115,27 @@ proc map*(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
     mapping.mapExternalIp(address)
   of NatStrategy.None:
     mapping.mapRoutingTable(address)
+
+proc deleteUpnpMappings(mapping: var PortMapping): ?!void =
+  for (address, external) in mapping.externalPorts.pairs:
+    if protocol =? address.protocol:
+      if upnp =? mapping.upnp:
+        ?upnp.deletePortMapping(external, protocol)
+  success()
+
+proc deletePmpMappings(mapping: var PortMapping): ?!void =
+  for (address, external) in mapping.externalPorts.pairs:
+    if protocol =? address.protocol and internal =? address.port:
+      if pmp =? mapping.pmp:
+        ?pmp.deletePortMapping(external, internal, protocol)
+  success()
+
+proc deleteMappings*(mapping: var PortMapping): ?!void =
+  case mapping.config.strategy
+  of NatStrategy.Upnp:
+    ?mapping.deleteUpnpMappings()
+  of NatStrategy.Pmp:
+    ?mapping.deletePmpMappings()
+  else:
+    discard
+  success()

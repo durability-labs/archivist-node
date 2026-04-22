@@ -43,6 +43,9 @@ proc start*(traversal: NatTraversal) {.async: (raises: [CancelledError]).} =
 
 proc stop*(traversal: NatTraversal) {.async: (raises: []).} =
   await traversal.renewing.cancelAndWait()
+  debug "removing port mappings"
+  if error =? traversal.portmapping.deleteMappings().errorOption:
+    warn "removing port mappings failed", error = error.msg
   debug "stopped nat traversal"
 
 proc mapTask(
