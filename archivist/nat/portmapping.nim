@@ -19,33 +19,15 @@ logScope:
 
 type PortMapping* = object
   config: NatConfig
-  upnp: Miniupnp
-  pmp: NatPmp
+  upnp: ?Miniupnp
+  pmp: ?NatPmp
   externalPorts: Table[MultiAddress, Port]
   upnpDiscoverTimeout*: Duration = 200.milliseconds
   portMappingLifetime*: Duration = 1.hours
   portMappingDescription*: string = "archivist"
 
-proc initUpnp(mapping: var PortMapping) =
-  mapping.upnp = newMiniupnp()
-
-proc initPmp(mapping: var PortMapping): ?!void =
-  mapping.pmp = newNatPmp()
-  if gateway =? mapping.config.gateway:
-    if error =? mapping.pmp.init(gateway).errorOption:
-      return failure $error
-  else:
-    if error =? mapping.pmp.init().errorOption:
-      return failure $error
-  success()
-
-proc init*(_: type PortMapping, config: NatConfig): ?!PortMapping =
-  var mapping = PortMapping(config: config)
-  if config.strategy in [NatStrategy.Upnp, NatStrategy.Any]:
-    mapping.initUpnp()
-  if config.strategy in [NatStrategy.Pmp, NatStrategy.Any]:
-    ?mapping.initPmp()
-  success mapping
+proc init*(_: type PortMapping, config: NatConfig): PortMapping =
+  PortMapping(config: config)
 
 proc mapExternalIp(mapping: PortMapping, address: MultiAddress): ?!MultiAddress =
   without protocol =? address.protocol and port =? address.port:
@@ -68,7 +50,9 @@ proc mapRoutingTable(mapping: PortMapping, address: MultiAddress): ?!MultiAddres
 proc mapPmp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
   without protocol =? address.protocol and internal =? address.port:
     return failure "Missing port in multiaddress"
-  let pmp = mapping.pmp
+  without var pmp =? mapping.pmp:
+    pmp = ?NatPmp.new(mapping.config)
+    mapping.pmp = some pmp
   without externalIp =? pmp.requestExternalIp(), error:
     return failure "NAT-PMP request external address failed: " & error.msg
   let lifetime = mapping.portMappingLifetime
@@ -81,7 +65,9 @@ proc mapPmp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
 proc mapUpnp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
   without protocol =? address.protocol and internal =? address.port:
     return failure "Missing port in multiaddress"
-  let upnp = mapping.upnp
+  without var upnp =? mapping.upnp:
+    upnp = Miniupnp.new()
+    mapping.upnp = some upnp
   ?upnp.discoverGateways(mapping.upnpDiscoverTimeout)
   ?upnp.selectGateway()
   without externalIp =? upnp.requestExternalIp(), error:

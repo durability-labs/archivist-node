@@ -5,6 +5,9 @@ import pkg/libp2p/multiaddress
 import pkg/chronos
 import pkg/questionable/results
 
+proc new*(_: type Miniupnp): Miniupnp =
+  newMiniupnp()
+
 proc discoverGateways*(upnp: Miniupnp, timeout: Duration): ?!void =
   upnp.discoverDelay = timeout.seconds.cint
   if error =? upnp.discover().errorOption:

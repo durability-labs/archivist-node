@@ -3,8 +3,19 @@ import pkg/nat_traversal/natpmp
 import pkg/libp2p/multiaddress
 import pkg/chronos
 import pkg/questionable/results
+import ./config
 
 {.push raises: [].}
+
+proc new*(_: type NatPmp, config: NatConfig): ?!NatPmp =
+  let pmp = newNatPmp()
+  if gateway =? config.gateway:
+    if error =? pmp.init(gateway).errorOption:
+      return failure $error
+  else:
+    if error =? pmp.init().errorOption:
+      return failure $error
+  success pmp
 
 proc requestExternalIp*(pmp: NatPmp): ?!IpAddress =
   let reslt = pmp.externalIPAddress()

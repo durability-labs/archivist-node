@@ -29,9 +29,9 @@ proc new*(
     config: NatConfig,
     renewalInterval: Duration,
     taskpool: TaskPool,
-): ?!NatTraversal =
-  let portmapping = ?PortMapping.init(config)
-  success NatTraversal(
+): NatTraversal =
+  let portmapping = PortMapping.init(config)
+  NatTraversal(
     portmapping: portmapping, renewalInterval: renewalInterval, taskpool: taskpool
   )
 
