@@ -10,7 +10,7 @@ type ExponentialBackoff* = ref object of RootObj
 
 method applyDelay*(
     eb: ExponentialBackoff
-): Future[void] {.base, async: (raises: [CancelledError]).} =
+) {.base, async: (raises: [CancelledError]).} =
   if Moment.now() - eb.lastHit > BackoffTimeout:
     # The last hit was too long ago. Reset.
     eb.backoffDelay = 0.seconds

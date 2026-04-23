@@ -10,5 +10,6 @@ func new*(_: type MockExponentialBackoff): MockExponentialBackoff =
 
 method applyDelay*(
     eb: MockExponentialBackoff
-): Future[void] {.async: (raises: [CancelledError]).} =
+) {.async: (raises: [CancelledError]).} =
   inc eb.callCount
+  await sleepAsync(1.millis)
