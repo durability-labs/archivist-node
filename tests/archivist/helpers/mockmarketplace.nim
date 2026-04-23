@@ -52,6 +52,8 @@ type
     errorOnFillSlot*: ?(ref MarketplaceError)
     errorOnFreeSlot*: ?(ref MarketplaceError)
     errorOnGetHost*: ?(ref MarketplaceError)
+    errorOnSlotState*: ?(ref MarketplaceError)
+    errorOnQueryPastSlotFilledEvents*: ?(ref MarketplaceError)
     clock: Clock
 
   Fulfillment* = object
@@ -200,6 +202,9 @@ method requestState*(
 method slotState*(
     marketplace: MockMarketplace, slotId: SlotId
 ): Future[SlotState] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  if error =? marketplace.errorOnSlotState:
+    raise error
+
   if slotId notin marketplace.slotState:
     return SlotState.Free
 
@@ -534,6 +539,9 @@ method queryPastStorageRequestedEvents*(
 method queryPastSlotFilledEvents*(
     marketplace: MockMarketplace, fromBlock: BlockTag
 ): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  if error =? marketplace.errorOnQueryPastSlotFilledEvents:
+    raise error
+
   return marketplace.filled.map(
     slot => SlotFilled(requestId: slot.requestId, slotIndex: slot.slotIndex)
   )
@@ -541,6 +549,9 @@ method queryPastSlotFilledEvents*(
 method queryPastSlotFilledEvents*(
     marketplace: MockMarketplace, blocksAgo: int
 ): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  if error =? marketplace.errorOnQueryPastSlotFilledEvents:
+    raise error
+
   return marketplace.filled.map(
     slot => SlotFilled(requestId: slot.requestId, slotIndex: slot.slotIndex)
   )
@@ -548,6 +559,9 @@ method queryPastSlotFilledEvents*(
 method queryPastSlotFilledEvents*(
     marketplace: MockMarketplace, fromTime: SecondsSince1970
 ): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  if error =? marketplace.errorOnQueryPastSlotFilledEvents:
+    raise error
+
   let filtered = marketplace.filled.filter(
     proc(slot: MockSlot): bool =
       return slot.timestamp >= fromTime
