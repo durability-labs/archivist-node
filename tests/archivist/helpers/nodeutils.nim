@@ -57,7 +57,6 @@ type
     findFreePorts*: bool = false
     basePort*: int = 8080
     createFullNode*: bool = false
-    enableBootstrap*: bool = false
 
 converter toTuple*(
     nc: NodesComponents
@@ -119,7 +118,7 @@ proc generateNodes*(
 
       switch = newStandardSwitch(
         transportFlags = {ServerFlags.ReuseAddr},
-        sendSignedPeerRecord = config.enableBootstrap,
+        sendSignedPeerRecord = true,
         addrs =
           if config.findFreePorts:
             listenAddr
@@ -179,7 +178,7 @@ proc generateNodes*(
 
     let node =
       if config.createFullNode:
-        let fullNode = ArchivistNodeRef.new(
+        ArchivistNodeRef.new(
           switch = switch,
           networkStore = networkStore,
           repoStore = localStore,
@@ -188,17 +187,6 @@ proc generateNodes*(
           discovery = blockDiscovery,
           taskpool = taskpool,
         )
-
-        if config.enableBootstrap:
-          waitFor switch.peerInfo.update()
-          let (announceAddrs, discoveryAddrs) =
-            nattedAddress(NatConfig.noNat, switch.peerInfo.addrs, bindPort.Port)
-          blockDiscovery.updateAnnounceRecord(announceAddrs)
-          blockDiscovery.updateDhtRecord(discoveryAddrs)
-          if blockDiscovery.dhtRecord.isSome:
-            bootstrapNodes.add !blockDiscovery.dhtRecord
-
-        fullNode
       else:
         nil
 

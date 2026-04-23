@@ -38,12 +38,7 @@ proc flatten[T](s: seq[seq[T]]): seq[T] =
 suite "Test Node - Slot Repair":
   let
     numNodes = 12
-    config = NodeConfig(
-      useRepoStore: true,
-      findFreePorts: true,
-      createFullNode: true,
-      enableBootstrap: true,
-    )
+    config = NodeConfig(useRepoStore: true, findFreePorts: true, createFullNode: true)
   var
     manifest: Manifest
     builder: Poseidon2Builder
