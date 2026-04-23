@@ -283,17 +283,17 @@ method unsubscribe*(subscription: Subscription) {.base, async: (raises: []).} =
 
 method queryPastSlotFilledEvents*(
     marketplace: AbstractMarketplace, fromBlock: BlockTag
-): Future[seq[SlotFilled]] {.base, async.} =
+): Future[seq[SlotFilled]] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
   raiseAssert("not implemented")
 
 method queryPastSlotFilledEvents*(
     marketplace: AbstractMarketplace, blocksAgo: int
-): Future[seq[SlotFilled]] {.base, async.} =
+): Future[seq[SlotFilled]] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
   raiseAssert("not implemented")
 
 method queryPastSlotFilledEvents*(
     marketplace: AbstractMarketplace, fromTime: SecondsSince1970
-): Future[seq[SlotFilled]] {.base, async.} =
+): Future[seq[SlotFilled]] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
   raiseAssert("not implemented")
 
 method queryPastStorageRequestedEvents*(

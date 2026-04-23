@@ -533,21 +533,21 @@ method queryPastStorageRequestedEvents*(
 
 method queryPastSlotFilledEvents*(
     marketplace: MockMarketplace, fromBlock: BlockTag
-): Future[seq[SlotFilled]] {.async.} =
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
   return marketplace.filled.map(
     slot => SlotFilled(requestId: slot.requestId, slotIndex: slot.slotIndex)
   )
 
 method queryPastSlotFilledEvents*(
     marketplace: MockMarketplace, blocksAgo: int
-): Future[seq[SlotFilled]] {.async.} =
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
   return marketplace.filled.map(
     slot => SlotFilled(requestId: slot.requestId, slotIndex: slot.slotIndex)
   )
 
 method queryPastSlotFilledEvents*(
     marketplace: MockMarketplace, fromTime: SecondsSince1970
-): Future[seq[SlotFilled]] {.async.} =
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
   let filtered = marketplace.filled.filter(
     proc(slot: MockSlot): bool =
       return slot.timestamp >= fromTime

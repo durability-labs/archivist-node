@@ -480,14 +480,14 @@ method unsubscribe*(subscription: OnChainMarketSubscription) {.async: (raises: [
 
 method queryPastSlotFilledEvents*(
     marketplace: OnChainMarketplace, fromBlock: BlockTag
-): Future[seq[SlotFilled]] {.async.} =
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to get past SlotFilled events from block"):
     return
       await marketplace.contract.queryFilter(SlotFilled, fromBlock, BlockTag.latest)
 
 method queryPastSlotFilledEvents*(
     marketplace: OnChainMarketplace, blocksAgo: int
-): Future[seq[SlotFilled]] {.async.} =
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to get past SlotFilled events"):
     let fromBlock = await marketplace.contract.provider.pastBlockTag(blocksAgo)
 
@@ -495,7 +495,7 @@ method queryPastSlotFilledEvents*(
 
 method queryPastSlotFilledEvents*(
     marketplace: OnChainMarketplace, fromTime: SecondsSince1970
-): Future[seq[SlotFilled]] {.async.} =
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to get past SlotFilled events from time"):
     let fromBlock = await marketplace.contract.provider.blockNumberForEpoch(fromTime)
     return await marketplace.queryPastSlotFilledEvents(BlockTag.init(fromBlock))
