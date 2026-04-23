@@ -5,6 +5,7 @@ import pkg/questionable/results
 import pkg/stew/endians2
 import ../clock
 import ../logutils
+import ../utils/exponentialbackoff
 import ./abstractmarketplace
 import ./validation/validationconfig
 
@@ -19,6 +20,7 @@ type Validation* = ref object
   subscriptions: seq[Subscription]
   running: Future[void]
   config: ValidationConfig
+  errorBackoff: ExponentialBackoff
 
 logScope:
   topics = "archivist validator"
@@ -28,8 +30,9 @@ proc new*(
     clock: Clock,
     marketplace: AbstractMarketplace,
     config: ValidationConfig,
+    errorBackoff = ExponentialBackoff()
 ): Validation =
-  Validation(clock: clock, marketplace: marketplace, config: config)
+  Validation(clock: clock, marketplace: marketplace, config: config, errorBackoff: errorBackoff)
 
 proc slots*(validation: Validation): seq[SlotId] =
   validation.slots.toSeq
@@ -123,17 +126,38 @@ proc run(validation: Validation) {.async: (raises: []).} =
 proc findEpoch(validation: Validation, secondsAgo: uint64): SecondsSince1970 =
   return validation.clock.now - secondsAgo.int64
 
-proc restoreHistoricalState(validation: Validation) {.async.} =
+proc queryPastSlotFilledEvents(
+  validation: Validation,
+  fromTime: SecondsSince1970
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError]).} =
+  while true:
+    try:
+      return await validation.marketplace.queryPastSlotFilledEvents(fromTime)
+    except MarketplaceError as error:
+      trace "querying past slot filled events failed, retrying", error = error.msg
+      await validation.errorBackoff.applyDelay()
+
+proc slotState(
+  validation: Validation,
+  slotId: SlotId
+): Future[SlotState] {.async: (raises: [CancelledError]).} =
+  while true:
+    try:
+      return await validation.marketplace.slotState(slotId)
+    except MarketplaceError as error:
+      trace "retrieving slot state failed, retrying", error = error.msg
+      await validation.errorBackoff.applyDelay()
+
+proc restoreHistoricalState(validation: Validation) {.async: (raises: [CancelledError]).} =
   info "Restoring historical state..."
   let requestDurationLimit = validation.marketplace.requestDurationLimit
   let startTimeEpoch = validation.findEpoch(secondsAgo = requestDurationLimit.u64)
-  let slotFilledEvents =
-    await validation.marketplace.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
+  let slotFilledEvents = await validation.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
   for event in slotFilledEvents:
     if not validation.maxSlotsConstraintRespected:
       break
     let slotId = slotId(event.requestId, event.slotIndex)
-    let slotState = await validation.marketplace.slotState(slotId)
+    let slotState = await validation.slotState(slotId)
     if slotState == SlotState.Filled and validation.shouldValidateSlot(slotId):
       trace "Adding slot [historical]", slotId
       validation.slots.incl(slotId)

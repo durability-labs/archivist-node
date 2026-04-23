@@ -9,6 +9,7 @@ import archivist/clock
 import ../../asynctest
 import ../helpers/mockmarketplace
 import ../helpers/mockclock
+import ../helpers/mockexponentialbackoff
 import ../examples
 import ../helpers
 
@@ -28,6 +29,7 @@ asyncchecksuite "validation":
   var clock: MockClock
   var groupIndex: uint16
   var validation: Validation
+  var backoff: MockExponentialBackoff
 
   proc initValidationConfig(
       maxSlots: MaxSlots, validationGroups: ?ValidationGroups, groupIndex: uint16 = 0
@@ -45,12 +47,13 @@ asyncchecksuite "validation":
       groupIndex: uint16 = 0,
   ): Validation =
     let validationConfig = initValidationConfig(maxSlots, validationGroups, groupIndex)
-    Validation.new(clock, marketplace, validationConfig)
+    Validation.new(clock, marketplace, validationConfig, backoff)
 
   setup:
     groupIndex = groupIndexForSlotId(slot.id, !validationGroups)
     clock = MockClock.new()
     marketplace = MockMarketplace.new(clock)
+    backoff = MockExponentialBackoff.new()
     marketplace.config.proofs.period = period
     marketplace.config.proofs.timeout = timeout
     validation =
@@ -237,4 +240,17 @@ asyncchecksuite "validation":
     !await validation.start()
     check validation.slots == @[slot.id]
 
+  test "retries when querying slot filled events fails":
+    let error = newException(MarketplaceError, "some error")
+    marketplace.errorOnQueryPastSlotFilledEvents = some error
+    let starting = validation.start()
+    check eventually backoff.callCount > 0
+    await starting.cancelAndWait()
 
+  test "retries when retrieving slot state fails":
+    await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
+    let error = newException(MarketplaceError, "some error")
+    marketplace.errorOnSlotState = some error
+    let starting = validation.start()
+    check eventually backoff.callCount > 0
+    await starting.cancelAndWait()
