@@ -162,12 +162,13 @@ proc restoreHistoricalState(
     if not validation.maxSlotsConstraintRespected:
       break
     let slotId = slotId(event.requestId, event.slotIndex)
-    let slotState = await validation.slotState(slotId)
-    if slotState == SlotState.Filled and validation.shouldValidateSlot(slotId):
-      trace "Adding slot [historical]", slotId
-      validation.slots.incl(slotId)
-    else:
-      trace "Ignoring slot [historical]", slotId, slotState
+    if validation.shouldValidateSlot(slotId):
+      let slotState = await validation.slotState(slotId)
+      if slotState == SlotState.Filled:
+        trace "Adding slot [historical]", slotId
+        validation.slots.incl(slotId)
+      else:
+        trace "Ignoring slot [historical]", slotId, slotState
   info "Historical state restored", numberOfSlots = validation.slots.len
 
 proc start*(
