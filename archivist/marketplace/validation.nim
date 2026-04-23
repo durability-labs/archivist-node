@@ -101,23 +101,25 @@ proc removeSlotsThatHaveEnded(validation: Validation) {.async.} =
 
 proc markProofAsMissing(
     validation: Validation, slotId: SlotId, period: ProofPeriod
-) {.async.} =
+) {.async: (raises: [CancelledError]).} =
   logScope:
     currentPeriod = validation.getCurrentPeriod()
 
-  try:
-    if await validation.marketplace.canMarkProofAsMissing(slotId, period):
-      trace "Marking proof as missing", slotId, periodProofMissed = period
-      await validation.marketplace.markProofAsMissing(slotId, period)
-    else:
-      let inDowntime {.used.} = await validation.marketplace.inDowntime(slotId)
-      trace "Proof not missing", checkedPeriod = period, inDowntime
-  except CancelledError:
-    raise
-  except CatchableError as e:
-    error "Marking proof as missing failed", msg = e.msg
+  while true:
+    try:
+      if await validation.marketplace.canMarkProofAsMissing(slotId, period):
+        trace "Marking proof as missing", slotId, periodProofMissed = period
+        await validation.marketplace.markProofAsMissing(slotId, period)
+      else:
+        trace "Proof not missing", checkedPeriod = period
+      break
+    except CancelledError as error:
+      raise error
+    except MarketplaceError as error:
+      trace "Marking proof as missing failed, retrying", error = error.msg
+      await validation.errorBackoff.applyDelay()
 
-proc markProofsAsMissing(validation: Validation) {.async.} =
+proc markProofsAsMissing(validation: Validation) {.async: (raises: [CancelledError]).} =
   let slots = validation.slots
   for slotId in slots:
     let previousPeriod = validation.getCurrentPeriod() - 1'u8
