@@ -156,6 +156,7 @@ proc restoreHistoricalState(
   let startTimeEpoch = validation.findEpoch(secondsAgo = requestDurationLimit.u64)
   let slotFilledEvents =
     await validation.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
+  trace "Loading historical slots", amount = slotFilledEvents.len
   for event in slotFilledEvents:
     if not validation.maxSlotsConstraintRespected:
       break
@@ -164,6 +165,8 @@ proc restoreHistoricalState(
     if slotState == SlotState.Filled and validation.shouldValidateSlot(slotId):
       trace "Adding slot [historical]", slotId
       validation.slots.incl(slotId)
+    else:
+      trace "Ignoring slot [historical]", slotId, slotState
   info "Historical state restored", numberOfSlots = validation.slots.len
 
 proc start*(
