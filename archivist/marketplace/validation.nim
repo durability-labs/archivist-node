@@ -1,5 +1,6 @@
 import std/sets
 import std/sequtils
+import std/algorithm
 import pkg/chronos
 import pkg/questionable/results
 import pkg/stew/endians2
@@ -157,7 +158,7 @@ proc restoreHistoricalState(
   let slotFilledEvents =
     await validation.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
   trace "Loading historical slots", amount = slotFilledEvents.len
-  for event in slotFilledEvents:
+  for event in slotFilledEvents.reversed:
     if not validation.maxSlotsConstraintRespected:
       break
     let slotId = slotId(event.requestId, event.slotIndex)
