@@ -185,8 +185,7 @@ asyncchecksuite "validation":
     let duration: times.Duration = initDuration(days = 30)
     clock.set(fromTime + duration.inSeconds + 1)
 
-    validation =
-      newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
+    validation = newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
     !await validation.start()
 
     check validation.slots == @[slot.id]
@@ -228,8 +227,7 @@ asyncchecksuite "validation":
 
   test "slot should be observed if maxSlots is set to 0":
     await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
-    validation =
-      newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
+    validation = newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
     !await validation.start()
     check validation.slots == @[slot.id]
 

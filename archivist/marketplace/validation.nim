@@ -30,9 +30,11 @@ proc new*(
     clock: Clock,
     marketplace: AbstractMarketplace,
     config: ValidationConfig,
-    errorBackoff = ExponentialBackoff()
+    errorBackoff = ExponentialBackoff(),
 ): Validation =
-  Validation(clock: clock, marketplace: marketplace, config: config, errorBackoff: errorBackoff)
+  Validation(
+    clock: clock, marketplace: marketplace, config: config, errorBackoff: errorBackoff
+  )
 
 proc slots*(validation: Validation): seq[SlotId] =
   validation.slots.toSeq
@@ -127,8 +129,7 @@ proc findEpoch(validation: Validation, secondsAgo: uint64): SecondsSince1970 =
   return validation.clock.now - secondsAgo.int64
 
 proc queryPastSlotFilledEvents(
-  validation: Validation,
-  fromTime: SecondsSince1970
+    validation: Validation, fromTime: SecondsSince1970
 ): Future[seq[SlotFilled]] {.async: (raises: [CancelledError]).} =
   while true:
     try:
@@ -138,8 +139,7 @@ proc queryPastSlotFilledEvents(
       await validation.errorBackoff.applyDelay()
 
 proc slotState(
-  validation: Validation,
-  slotId: SlotId
+    validation: Validation, slotId: SlotId
 ): Future[SlotState] {.async: (raises: [CancelledError]).} =
   while true:
     try:
@@ -148,11 +148,14 @@ proc slotState(
       trace "retrieving slot state failed, retrying", error = error.msg
       await validation.errorBackoff.applyDelay()
 
-proc restoreHistoricalState(validation: Validation) {.async: (raises: [CancelledError]).} =
+proc restoreHistoricalState(
+    validation: Validation
+) {.async: (raises: [CancelledError]).} =
   info "Restoring historical state..."
   let requestDurationLimit = validation.marketplace.requestDurationLimit
   let startTimeEpoch = validation.findEpoch(secondsAgo = requestDurationLimit.u64)
-  let slotFilledEvents = await validation.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
+  let slotFilledEvents =
+    await validation.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
   for event in slotFilledEvents:
     if not validation.maxSlotsConstraintRespected:
       break
