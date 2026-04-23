@@ -79,11 +79,21 @@ proc subscribeSlotFilled(validation: Validation) {.async.} =
   let subscription = await validation.marketplace.subscribeSlotFilled(onSlotFilled)
   validation.subscriptions.add(subscription)
 
+proc slotState(
+    validation: Validation, slotId: SlotId
+): Future[SlotState] {.async: (raises: [CancelledError]).} =
+  while true:
+    try:
+      return await validation.marketplace.slotState(slotId)
+    except MarketplaceError as error:
+      trace "retrieving slot state failed, retrying", error = error.msg
+      await validation.errorBackoff.applyDelay()
+
 proc removeSlotsThatHaveEnded(validation: Validation) {.async.} =
   var ended: HashSet[SlotId]
   let slots = validation.slots
   for slotId in slots:
-    let state = await validation.marketplace.slotState(slotId)
+    let state = await validation.slotState(slotId)
     if state != SlotState.Filled:
       trace "Removing slot", slotId, slotState = state
       ended.incl(slotId)
@@ -137,16 +147,6 @@ proc queryPastSlotFilledEvents(
       return await validation.marketplace.queryPastSlotFilledEvents(fromTime)
     except MarketplaceError as error:
       trace "querying past slot filled events failed, retrying", error = error.msg
-      await validation.errorBackoff.applyDelay()
-
-proc slotState(
-    validation: Validation, slotId: SlotId
-): Future[SlotState] {.async: (raises: [CancelledError]).} =
-  while true:
-    try:
-      return await validation.marketplace.slotState(slotId)
-    except MarketplaceError as error:
-      trace "retrieving slot state failed, retrying", error = error.msg
       await validation.errorBackoff.applyDelay()
 
 proc restoreHistoricalState(
