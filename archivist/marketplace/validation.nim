@@ -84,7 +84,9 @@ proc slotState(
 ): Future[SlotState] {.async: (raises: [CancelledError]).} =
   while true:
     try:
-      return await validation.marketplace.slotState(slotId)
+      let state = await validation.marketplace.slotState(slotId)
+      validation.errorBackoff.clear()
+      return state
     except MarketplaceError as error:
       trace "retrieving slot state failed, retrying", error = error.msg
       await validation.errorBackoff.applyDelay()
@@ -112,6 +114,7 @@ proc markProofAsMissing(
         await validation.marketplace.markProofAsMissing(slotId, period)
       else:
         trace "Proof not missing", checkedPeriod = period
+      validation.errorBackoff.clear()
       break
     except CancelledError as error:
       raise error
@@ -146,7 +149,9 @@ proc queryPastSlotFilledEvents(
 ): Future[seq[SlotFilled]] {.async: (raises: [CancelledError]).} =
   while true:
     try:
-      return await validation.marketplace.queryPastSlotFilledEvents(fromTime)
+      let events = await validation.marketplace.queryPastSlotFilledEvents(fromTime)
+      validation.errorBackoff.clear()
+      return events
     except MarketplaceError as error:
       trace "querying past slot filled events failed, retrying", error = error.msg
       await validation.errorBackoff.applyDelay()

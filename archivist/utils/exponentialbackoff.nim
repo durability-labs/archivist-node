@@ -8,6 +8,9 @@ type ExponentialBackoff* = ref object of RootObj
   lastHit: Moment
   backoffDelay: Duration
 
+func clear*(backoff: ExponentialBackoff) =
+  backoff.backoffDelay = 0.seconds
+
 method applyDelay*(eb: ExponentialBackoff) {.base, async: (raises: [CancelledError]).} =
   if Moment.now() - eb.lastHit > BackoffTimeout:
     # The last hit was too long ago. Reset.
