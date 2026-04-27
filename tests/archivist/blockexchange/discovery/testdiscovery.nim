@@ -34,7 +34,6 @@ suite "Block Advertising and Discovery":
     blockDiscovery: MockDiscovery
     discovery: DiscoveryEngine
     advertiser: Advertiser
-    wallet: WalletRef
     network: BlockExcNetwork
     localStore: BlockStore
     engine: BlockExcEngine
@@ -51,7 +50,6 @@ suite "Block Advertising and Discovery":
 
     switch = newStandardSwitch(transportFlags = {ServerFlags.ReuseAddr})
     blockDiscovery = MockDiscovery.new()
-    wallet = WalletRef.example
     network = BlockExcNetwork.new(switch)
     tp = Taskpool.new(num_threads = 4)
     localStore = RepoStore.new(
@@ -81,7 +79,7 @@ suite "Block Advertising and Discovery":
     advertiser = Advertiser.new(localStore, blockDiscovery)
 
     engine = BlockExcEngine.new(
-      localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
+      localStore, network, discovery, advertiser, peerStore, pendingBlocks
     )
 
     switch.mount(network)
@@ -207,7 +205,6 @@ suite "E2E - Multiple Nodes Discovery":
       let
         s = newStandardSwitch(transportFlags = {ServerFlags.ReuseAddr})
         blockDiscovery = MockDiscovery.new()
-        wallet = WalletRef.example
         network = BlockExcNetwork.new(s)
         localStore = RepoStore.new(
           SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
@@ -228,7 +225,7 @@ suite "E2E - Multiple Nodes Discovery":
         advertiser = Advertiser.new(localStore, blockDiscovery)
 
         engine = BlockExcEngine.new(
-          localStore, wallet, network, discovery, advertiser, peerStore, pendingBlocks
+          localStore, network, discovery, advertiser, peerStore, pendingBlocks
         )
         networkStore = NetworkStore.new(engine, localStore)
 
@@ -284,6 +281,7 @@ suite "E2E - Multiple Nodes Discovery":
           blk: mBlocks[0], address: BlockAddress(leaf: false, cid: mBlocks[0].cid)
         )
       ],
+      allowSpurious = true,
     )
 
     discard blockexc[2].engine.pendingBlocks.getWantHandle(mBlocks[1].cid)
@@ -294,6 +292,7 @@ suite "E2E - Multiple Nodes Discovery":
           blk: mBlocks[1], address: BlockAddress(leaf: false, cid: mBlocks[1].cid)
         )
       ],
+      allowSpurious = true,
     )
 
     discard blockexc[3].engine.pendingBlocks.getWantHandle(mBlocks[2].cid)
@@ -304,6 +303,7 @@ suite "E2E - Multiple Nodes Discovery":
           blk: mBlocks[2], address: BlockAddress(leaf: false, cid: mBlocks[2].cid)
         )
       ],
+      allowSpurious = true,
     )
 
     MockDiscovery(blockexc[0].engine.discovery.discovery).findBlockProvidersHandler = proc(
@@ -353,6 +353,7 @@ suite "E2E - Multiple Nodes Discovery":
           blk: mBlocks[0], address: BlockAddress(leaf: false, cid: mBlocks[0].cid)
         )
       ],
+      allowSpurious = true,
     )
 
     discard blockexc[2].engine.pendingBlocks.getWantHandle(mBlocks[1].cid)
@@ -363,6 +364,7 @@ suite "E2E - Multiple Nodes Discovery":
           blk: mBlocks[1], address: BlockAddress(leaf: false, cid: mBlocks[1].cid)
         )
       ],
+      allowSpurious = true,
     )
 
     discard blockexc[3].engine.pendingBlocks.getWantHandle(mBlocks[2].cid)
@@ -373,6 +375,7 @@ suite "E2E - Multiple Nodes Discovery":
           blk: mBlocks[2], address: BlockAddress(leaf: false, cid: mBlocks[2].cid)
         )
       ],
+      allowSpurious = true,
     )
 
     MockDiscovery(blockexc[0].engine.discovery.discovery).findBlockProvidersHandler = proc(

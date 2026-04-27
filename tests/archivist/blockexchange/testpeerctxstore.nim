@@ -5,7 +5,6 @@ import pkg/unittest2
 import pkg/libp2p
 
 import pkg/archivist/blockexchange/peers
-import pkg/archivist/blockexchange/protobuf/blockexc
 import pkg/archivist/blockexchange/protobuf/presence
 
 import ../helpers
@@ -71,18 +70,9 @@ suite "Peer Context Store Peer Selection":
     check peerCtxs[5] in peers
 
   test "Should select peers that want Cid":
-    let entries = addresses.mapIt(
-      WantListEntry(
-        address: it,
-        priority: 1,
-        cancel: false,
-        wantType: WantType.WantBlock,
-        sendDontHave: false,
-      )
-    )
-
-    peerCtxs[0].peerWants = entries
-    peerCtxs[5].peerWants = entries
+    for address in addresses:
+      peerCtxs[0].wantedBlocks.incl(address)
+      peerCtxs[5].wantedBlocks.incl(address)
 
     let peers = store.peersWant(addresses[4])
 

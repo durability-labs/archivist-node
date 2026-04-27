@@ -1,6 +1,5 @@
 import std/sequtils
 import std/algorithm
-import std/importutils
 
 import pkg/chronos
 import pkg/stew/byteutils
@@ -13,7 +12,6 @@ import pkg/archivist/blocktype as bt
 import pkg/archivist/manifest
 
 import ../../../asynctest
-import ../../examples
 import ../../helpers
 
 import ../../helpers/nodeutils
@@ -22,7 +20,6 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
   var
     nodeCmps1, nodeCmps2: NodesComponents
     peerCtx1, peerCtx2: BlockExcPeerCtx
-    pricing1, pricing2: Pricing
     blocks1, blocks2: seq[bt.Block]
     manifest1, manifest2: Manifest
     pendingBlocks1, pendingBlocks2: seq[BlockHandle]
@@ -66,14 +63,6 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
         BlockAddress.init(manifest1.treeCid, blocks1.find(it).Natural)
       )
     )
-
-    pricing1 = Pricing.example()
-    pricing2 = Pricing.example()
-
-    pricing1.address = nodeCmps1.wallet.address
-    pricing2.address = nodeCmps2.wallet.address
-    nodeCmps1.engine.pricing = pricing1.some
-    nodeCmps2.engine.pricing = pricing2.some
 
     await nodeCmps1.switch.connect(
       nodeCmps2.switch.peerInfo.peerId, nodeCmps2.switch.peerInfo.addrs
@@ -119,10 +108,6 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
       .mapIt($it.read.get.cid)
       .sorted(cmp[string]) == blocks2[0 .. 3].mapIt($it.cid).sorted(cmp[string])
 
-  test "Should exchanges accounts on connect":
-    check peerCtx1.account .? address == pricing1.address.some
-    check peerCtx2.account .? address == pricing2.address.some
-
   test "Should send want-have for block":
     let
       blk = bt.Block.new("Block 1".toBytes).tryGet()
@@ -134,25 +119,12 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     # Pre-create overlay on receiver
     discard (await nodeCmps1.localStore.storeManifest(senderManifest)).tryGet()
 
-    let
-      leafAddr = BlockAddress.init(senderManifest.treeCid, 0.Natural)
-      blkFut = nodeCmps1.pendingBlocks.getWantHandle(leafAddr)
-
-    let entry = WantListEntry(
-      address: leafAddr,
-      priority: 1,
-      cancel: false,
-      wantType: WantType.WantBlock,
-      sendDontHave: false,
-    )
-
-    peerCtx1.peerWants.add(entry)
-    check nodeCmps2.engine.taskQueue.pushOrUpdateNoWait(peerCtx1).isOk
+    let blkFut = nodeCmps1.networkStore.getBlock(senderManifest.treeCid, 0.Natural)
 
     check eventually (
       await nodeCmps1.localStore.hasBlock(senderManifest.treeCid, 0.Natural)
     ).tryGet()
-    check eventually (await blkFut) == blk
+    check (await blkFut).tryGet() == blk
 
   test "Should get blocks from remote":
     let blocks = await allFinished(
@@ -180,18 +152,6 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     check await nodeCmps1.networkStore
     .getBlock(senderManifest.treeCid, 0.Natural)
     .withTimeout(100.millis)
-
-  test "Should receive payments for blocks that were sent":
-    # blocks2 already stored as tree on nodeCmps2, overlay on nodeCmps1
-    discard await allFinished(
-      (4 .. 7).mapIt(nodeCmps1.networkStore.getBlock(manifest2.treeCid, it.Natural))
-    )
-
-    let
-      channel = !peerCtx1.paymentChannel
-      wallet = nodeCmps2.wallet
-
-    check eventually wallet.balance(channel, Asset) > 0
 
 asyncchecksuite "NetworkStore - multiple nodes":
   var

@@ -34,9 +34,6 @@ proc example*(_: type SignedState): SignedState =
   let channel = wallet.openLedgerChannel(hub, chainId, nonce, asset, amount).get
   wallet.pay(channel, asset, receiver, amount).get
 
-proc example*(_: type Pricing): Pricing =
-  Pricing(address: EthAddress.example, price: uint32.rand.u256)
-
 proc example*(_: type bt.Block, size: int = 4096): bt.Block =
   let length = rand(size)
   let bytes = newSeqWith(length, rand(uint8))
