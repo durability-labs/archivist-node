@@ -36,7 +36,7 @@ method run*(
   let marketplace = agent.context.marketplace
 
   logScope:
-    slotId = data.slotInfo.slotId
+    slot = data.slotInfo
 
   error "Error", error = state.error
 

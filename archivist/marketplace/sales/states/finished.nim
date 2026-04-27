@@ -30,7 +30,7 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
 
-  info "Slot finished and paid out", slotId = data.slotInfo.slotId
+  info "Slot finished and paid out", slot = data.slotInfo
 
   try:
     if onCleanUp =? agent.onCleanUp:

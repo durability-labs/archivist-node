@@ -29,7 +29,7 @@ method run*(
   let marketplace = SalesAgent(machine).context.marketplace
 
   try:
-    debug "Collecting finished slot's reward", slotId = data.slotInfo.slotId
+    debug "Collecting finished slot's reward", slot = data.slotInfo
     await marketplace.freeSlot(data.slotInfo.slotId)
 
     return some State(SaleFinished())

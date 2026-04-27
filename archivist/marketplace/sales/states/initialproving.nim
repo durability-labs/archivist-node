@@ -62,10 +62,7 @@ method run*(
     await waitForStableChallenge(marketplace, clock, periodicity, slot.id)
     let provingPeriod = periodicity.periodOf(StorageTimestamp.init(clock.now()))
 
-    info "Generating initial proof",
-      provingPeriod = provingPeriod,
-      requestId = slot.request.id,
-      slotIndex = slot.slotIndex
+    info "Generating initial proof", provingPeriod = provingPeriod, slot = slot
     let cid = slot.request.content.cid
     let slotIndex = slot.slotIndex
     let challenge = await context.marketplace.getChallenge(slot.id)
@@ -85,9 +82,7 @@ method run*(
     context.metrics.increaseNumberOfProofs(provingPeriod)
 
     info "Finished initial proof calculation",
-      provingPeriod = periodAtFinish,
-      requestId = slot.request.id,
-      slotIndex = slot.slotIndex
+      provingPeriod = periodAtFinish, slot = slot
 
     return some State(SaleFilling(proof: proof))
   except CancelledError as e:

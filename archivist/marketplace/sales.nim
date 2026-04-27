@@ -86,7 +86,7 @@ proc cleanUp(
 
   logScope:
     topics = "sales cleanUp"
-    slotId = data.slotInfo.slotId
+    slot = data.slotInfo
 
   trace "cleaning up sales agent"
 

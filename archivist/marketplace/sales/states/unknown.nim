@@ -38,7 +38,7 @@ method run*(
     await agent.retrieveSlot()
 
     if data.slotInfo.slot.isNone:
-      error "slot could not be retrieved", id = data.slotInfo.slotId
+      error "slot could not be retrieved", slot = data.slotInfo
       let error = newException(SaleError, "slot could not be retrieved")
       return some State(SaleErrored(error: error))
 

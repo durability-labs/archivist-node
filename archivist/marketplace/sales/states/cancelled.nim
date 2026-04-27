@@ -30,7 +30,7 @@ method run*(
 
   try:
     if await slotIsFilledByMe(marketplace, data.slotInfo.slotId):
-      debug "Collecting collateral and partial payout", slotId = data.slotInfo.slotId
+      debug "Collecting collateral and partial payout", slot = data.slotInfo
 
       try:
         await marketplace.freeSlot(data.slotInfo.slotId)
@@ -40,7 +40,7 @@ method run*(
     if onCleanUp =? agent.onCleanUp:
       await onCleanUp(reprocessSlot = false)
 
-    warn "Sale cancelled due to timeout", slotId = data.slotInfo.slotId
+    warn "Sale cancelled due to timeout", slot = data.slotInfo
   except CancelledError as e:
     trace "SaleCancelled.run was cancelled", error = e.msgDetail
   except CatchableError as e:

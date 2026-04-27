@@ -30,13 +30,11 @@ method run*(
   let data = SalesAgent(machine).data
   let marketplace = SalesAgent(machine).context.marketplace
 
+  logScope:
+    slot = data.slotInfo
+
   without slot =? data.slotInfo.slot:
     raiseAssert "slot not set"
-
-  logScope:
-    slotId = slot.id
-    requestId = slot.request.id
-    slotIndex = slot.slotIndex
 
   let collateral = slot.request.ask.collateralPerSlot()
   try:

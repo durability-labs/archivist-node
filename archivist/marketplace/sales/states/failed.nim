@@ -27,7 +27,7 @@ method run*(
   let storage = context.storage
 
   try:
-    debug "Removing slot from mySlots", slotId = data.slotInfo.slotId
+    debug "Removing slot from mySlots", slot = data.slotInfo
     await marketplace.freeSlot(data.slotInfo.slotId)
 
     if slot =? data.slotInfo.slot:

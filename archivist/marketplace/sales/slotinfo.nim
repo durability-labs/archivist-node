@@ -70,3 +70,12 @@ func request*(info: SlotInfo): ?StorageRequest =
 
 func slot*(info: SlotInfo): ?Slot =
   info.slot
+
+func `$`*(info: SlotInfo): string =
+  result &= "Slot("
+  result &= "id: " & $info.slotId
+  if requestId =? info.requestId:
+    result &= ", request: " & $requestId
+  if slotIndex =? info.slotIndex:
+    result &= ", index: " & $slotIndex
+  result &= ")*"

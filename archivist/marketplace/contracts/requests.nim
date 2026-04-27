@@ -207,3 +207,7 @@ func collateralPerSlot*(ask: StorageAsk): Tokens =
 
 func size*(ask: StorageAsk): uint64 =
   ask.slots * ask.slotSize
+
+func `$`*(slot: Slot): string =
+  "Slot(id: " & $slot.id & ", request: " & $slot.request.id & ", index: " &
+    $slot.slotIndex & ")"

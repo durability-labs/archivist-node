@@ -46,7 +46,7 @@ method run*(
     let me = await marketplace.getSigner()
 
     if host == me.some:
-      info "Slot succesfully filled", slotId = data.slotInfo.slotId
+      info "Slot succesfully filled", slot = data.slotInfo
 
       without slot =? data.slotInfo.slot:
         raiseAssert "no sale slot"

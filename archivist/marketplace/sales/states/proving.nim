@@ -40,14 +40,14 @@ method prove*(
       # In this state, there's nothing we can do except try again next time.
       return
     context.metrics.increaseNumberOfProofs(provingPeriod)
-    info "Submitting proof", provingPeriod = provingPeriod, slotId = slot.id
+    info "Submitting proof", provingPeriod = provingPeriod, slot = slot
     await marketplace.submitProof(slot.id, proof)
   except CancelledError as error:
     trace "Submitting proof cancelled"
     raise error
   except CatchableError as e:
     error "Submitting proof failed",
-      provingPeriod = provingPeriod, slotId = slot.id, msg = e.msgDetail
+      provingPeriod = provingPeriod, slot = slot, msg = e.msgDetail
 
 proc proveLoop(state: SaleProving, context: SalesContext, slot: Slot) {.async.} =
   let marketplace = context.marketplace
@@ -55,7 +55,7 @@ proc proveLoop(state: SaleProving, context: SalesContext, slot: Slot) {.async.} 
 
   logScope:
     provingPeriod = provingPeriod
-    slotId = slot.id
+    slot = slot
 
   proc getCurrentPeriod(): ProofPeriod =
     let periodicity = marketplace.periodicity()
@@ -132,7 +132,7 @@ method run*(
 
   try:
     await state.proveLoop(context, slot)
-    debug "Stopping proving.", slotId = slot.id
+    debug "Stopping proving.", slot = data.slotInfo
     return some State(SalePayout())
   except CancelledError:
     trace "proving loop cancelled"
