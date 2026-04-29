@@ -199,7 +199,7 @@ proc discoveryPortResolved(builder: NodeBuilder): Future[Port] {.async.} =
   builder.discoveryPort |? await findFreePort(address, Port(8090), Udp)
 
 proc natResolved(builder: NodeBuilder): string =
-  builder.nat |? "extip:127.0.0.1"
+  builder.nat |? "none"
 
 proc bootstrapNodesResolved(builder: NodeBuilder): Future[seq[string]] {.async.} =
   if nodes =? builder.bootstrapNodes:
