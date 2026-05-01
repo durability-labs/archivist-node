@@ -107,7 +107,6 @@ proc start*(s: NodeServer) {.async.} =
   await s.natTraversal.mapPorts(@[discoveryAddress]) do(mapped: seq[MultiAddress]):
     s.archivistNode.discovery.updateDhtRecord(mapped)
 
-
   await s.connectMarketplace()
   await s.archivistNode.start()
   s.restServer.start()
