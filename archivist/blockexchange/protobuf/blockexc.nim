@@ -18,7 +18,6 @@ import ../../blocktype
 export Message, protobufEncode, protobufDecode
 export Wantlist, WantType, WantListEntry
 export BlockDelivery, BlockPresenceType, BlockPresence
-export AccountMessage, StateChannelUpdate
 
 proc hash*(a: BlockAddress): Hash =
   if a.leaf:

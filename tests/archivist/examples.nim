@@ -1,8 +1,8 @@
 import std/random
 import std/sequtils
 import pkg/libp2p
-import pkg/nitro
-import pkg/stint
+import pkg/ethers
+import pkg/archivist/conf
 import pkg/archivist/rng
 import pkg/archivist/stores
 import pkg/archivist/blocktype as bt
@@ -14,25 +14,7 @@ import ../examples
 export examples
 
 proc example*(_: type EthAddress): EthAddress =
-  EthPrivateKey.random().toPublicKey.toAddress
-
-proc example*(_: type UInt48): UInt48 =
-  # workaround for https://github.com/nim-lang/Nim/issues/17670
-  uint64.rand mod (UInt48.high + 1)
-
-proc example*(_: type Wallet): Wallet =
-  Wallet.init(EthPrivateKey.random())
-
-proc example*(_: type WalletRef): WalletRef =
-  WalletRef.new(EthPrivateKey.random())
-
-proc example*(_: type SignedState): SignedState =
-  var wallet = Wallet.example
-  let hub, asset, receiver = EthAddress.example
-  let chainId, amount = UInt256.example
-  let nonce = UInt48.example
-  let channel = wallet.openLedgerChannel(hub, chainId, nonce, asset, amount).get
-  wallet.pay(channel, asset, receiver, amount).get
+  Wallet.createRandom().address
 
 proc example*(_: type bt.Block, size: int = 4096): bt.Block =
   let length = rand(size)
@@ -40,7 +22,7 @@ proc example*(_: type bt.Block, size: int = 4096): bt.Block =
   bt.Block.new(bytes).tryGet()
 
 proc example*(_: type PeerId): PeerId =
-  let key = PrivateKey.random(Rng.instance[]).get
+  let key = libp2p.PrivateKey.random(rng.Rng.instance[]).get
   PeerId.init(key.getPublicKey().get).get
 
 proc example*(_: type BlockExcPeerCtx): BlockExcPeerCtx =

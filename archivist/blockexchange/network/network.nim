@@ -14,18 +14,15 @@ import pkg/chronos
 
 import pkg/libp2p
 import pkg/libp2p/utils/semaphore
-import pkg/questionable
-import pkg/questionable/results
 
 import ../../blocktype as bt
 import ../../logutils
 import ../protobuf/blockexc as pb
-import ../protobuf/payments
 import ../../utils/trackedfutures
 
 import ./networkpeer
 
-export networkpeer, payments
+export networkpeer
 
 logScope:
   topics = "archivist blockexcnetwork"
@@ -41,16 +38,11 @@ type
     proc(peer: PeerId, blocks: seq[BlockDelivery]) {.gcsafe, async: (raises: []).}
   BlockPresenceHandler* =
     proc(peer: PeerId, precense: seq[BlockPresence]) {.gcsafe, async: (raises: []).}
-  AccountHandler* = proc(peer: PeerId, account: Account) {.gcsafe, async: (raises: []).}
-  PaymentHandler* =
-    proc(peer: PeerId, payment: SignedState) {.gcsafe, async: (raises: []).}
 
   BlockExcHandlers* = object
     onWantList*: WantListHandler
     onBlocksDelivery*: BlocksDeliveryHandler
     onPresence*: BlockPresenceHandler
-    onAccount*: AccountHandler
-    onPayment*: PaymentHandler
 
   WantListSender* = proc(
     id: PeerId,
@@ -74,19 +66,11 @@ type
     async: (raises: [CancelledError])
   .}
 
-  AccountSender* =
-    proc(peer: PeerId, account: Account) {.async: (raises: [CancelledError]).}
-
-  PaymentSender* =
-    proc(peer: PeerId, payment: SignedState) {.async: (raises: [CancelledError]).}
-
   BlockExcRequest* = object
     sendWantList*: WantListSender
     sendWantCancellations*: WantCancellationSender
     sendBlocksDelivery*: BlocksDeliverySender
     sendPresence*: PresenceSender
-    sendAccount*: AccountSender
-    sendPayment*: PaymentSender
 
   BlockExcNetwork* = ref object of LPProtocol
     peers*: Table[PeerId, NetworkPeer]
@@ -210,40 +194,6 @@ proc sendBlockPresence*(
 
   b.send(id, Message(blockPresences: @presence))
 
-proc handleAccount(
-    network: BlockExcNetwork, peer: NetworkPeer, account: Account
-) {.async: (raises: []).} =
-  ## Handle account info
-  ##
-
-  if not network.handlers.onAccount.isNil:
-    await network.handlers.onAccount(peer.id, account)
-
-proc sendAccount*(
-    b: BlockExcNetwork, id: PeerId, account: Account
-) {.async: (raw: true, raises: [CancelledError]).} =
-  ## Send account info to remote
-  ##
-
-  b.send(id, Message(account: AccountMessage.init(account)))
-
-proc sendPayment*(
-    b: BlockExcNetwork, id: PeerId, payment: SignedState
-) {.async: (raw: true, raises: [CancelledError]).} =
-  ## Send payment to remote
-  ##
-
-  b.send(id, Message(payment: StateChannelUpdate.init(payment)))
-
-proc handlePayment(
-    network: BlockExcNetwork, peer: NetworkPeer, payment: SignedState
-) {.async: (raises: []).} =
-  ## Handle payment
-  ##
-
-  if not network.handlers.onPayment.isNil:
-    await network.handlers.onPayment(peer.id, payment)
-
 proc rpcHandler(
     b: BlockExcNetwork, peer: NetworkPeer, msg: Message
 ) {.async: (raises: []).} =
@@ -257,12 +207,6 @@ proc rpcHandler(
 
   if msg.blockPresences.len > 0:
     b.trackedFutures.track(b.handleBlockPresence(peer, msg.blockPresences))
-
-  if account =? Account.init(msg.account):
-    b.trackedFutures.track(b.handleAccount(peer, account))
-
-  if payment =? SignedState.init(msg.payment):
-    b.trackedFutures.track(b.handlePayment(peer, payment))
 
 proc getOrCreatePeer(b: BlockExcNetwork, peer: PeerId): NetworkPeer =
   ## Creates or retrieves a BlockExcNetwork Peer
@@ -396,23 +340,11 @@ proc new*(
   ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
     self.sendBlockPresence(id, presence)
 
-  proc sendAccount(
-      id: PeerId, account: Account
-  ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
-    self.sendAccount(id, account)
-
-  proc sendPayment(
-      id: PeerId, payment: SignedState
-  ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
-    self.sendPayment(id, payment)
-
   self.request = BlockExcRequest(
     sendWantList: sendWantList,
     sendWantCancellations: sendWantCancellations,
     sendBlocksDelivery: sendBlocksDelivery,
     sendPresence: sendPresence,
-    sendAccount: sendAccount,
-    sendPayment: sendPayment,
   )
 
   self.init()

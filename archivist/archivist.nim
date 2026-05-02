@@ -17,7 +17,6 @@ import pkg/presto
 import pkg/libp2p
 import pkg/confutils
 import pkg/confutils/defs
-import pkg/nitro
 import pkg/stew/io2
 import pkg/kvstore
 import pkg/ethers except Rng

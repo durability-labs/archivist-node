@@ -138,9 +138,6 @@
 [submodule "vendor/nimble/lrucache"]
 	path = vendor/nimble/lrucache
 	url = https://github.com/status-im/lrucache.nim
-[submodule "vendor/nimble/nitro"]
-	path = vendor/nimble/nitro
-	url = https://github.com/durability-labs/nim-nitro
 [submodule "vendor/nimble/presto"]
 	path = vendor/nimble/presto
 	url = https://github.com/status-im/nim-presto

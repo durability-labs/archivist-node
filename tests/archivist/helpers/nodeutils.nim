@@ -11,14 +11,11 @@ import pkg/archivist/stores
 import pkg/archivist/blocktype as bt
 import pkg/archivist/blockexchange
 import pkg/archivist/systemclock
-import pkg/archivist/nat
-import pkg/archivist/nat/config
 import pkg/archivist/slots
 
 import pkg/archivist/node
 
 import ../examples
-import ../../helpers
 
 proc nextFreePort*(startPort: int): Future[int] {.async.} =
   proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
@@ -38,7 +35,6 @@ type
   NodesComponents* = object
     switch*: Switch
     blockDiscovery*: Discovery
-    wallet*: WalletRef
     network*: BlockExcNetwork
     localStore*: RepoStore
     peerStore*: PeerCtxStore
@@ -63,7 +59,6 @@ converter toTuple*(
 ): tuple[
   switch: Switch,
   blockDiscovery: Discovery,
-  wallet: WalletRef,
   network: BlockExcNetwork,
   localStore: RepoStore,
   peerStore: PeerCtxStore,
@@ -73,7 +68,7 @@ converter toTuple*(
   networkStore: NetworkStore,
 ] =
   (
-    nc.switch, nc.blockDiscovery, nc.wallet, nc.network, nc.localStore, nc.peerStore,
+    nc.switch, nc.blockDiscovery, nc.network, nc.localStore, nc.peerStore,
     nc.pendingBlocks, nc.discovery, nc.engine, nc.networkStore,
   )
 
@@ -126,11 +121,6 @@ proc generateNodes*(
             MultiAddress.init("/ip4/127.0.0.1/tcp/0").expect("invalid multiaddress"),
       )
 
-      wallet =
-        if config.createFullNode:
-          WalletRef.new(EthPrivateKey.random())
-        else:
-          WalletRef.example
       network = BlockExcNetwork.new(switch)
       peerStore = PeerCtxStore.new()
       pendingBlocks = PendingBlocksManager.new()
@@ -193,7 +183,6 @@ proc generateNodes*(
     let nodeComponent = NodesComponents(
       switch: switch,
       blockDiscovery: blockDiscovery,
-      wallet: wallet,
       network: network,
       localStore: localStore,
       peerStore: peerStore,

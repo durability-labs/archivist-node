@@ -27,7 +27,7 @@ const
 
 type BlockExcPeerCtx* = ref object of RootObj
   id*: PeerId
-  blocks*: Table[BlockAddress, Presence] # remote peer have list including price
+  blocks*: Table[BlockAddress, Presence] # remote peer presence map
   wantedBlocks*: HashSet[BlockAddress] # blocks that the peer wants
   exchanged*: int # times peer has exchanged with us
   refreshInProgress*: bool
