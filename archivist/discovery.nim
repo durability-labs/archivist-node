@@ -185,9 +185,6 @@ proc updateAnnounceRecord*(d: Discovery, addrs: openArray[MultiAddress]) =
     .init(d.key, PeerRecord.init(d.peerId, d.announceAddrs))
     .expect("Should construct signed record").some
 
-  if not d.protocol.isNil:
-    d.protocol.updateRecord(d.providerRecord).expect("Should update SPR")
-
 proc updateDhtRecord*(d: Discovery, addrs: openArray[MultiAddress]) =
   ## Update providers record
   ##
