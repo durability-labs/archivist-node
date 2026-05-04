@@ -34,19 +34,6 @@ proc mapExternalIp(mapping: PortMapping, address: MultiAddress): ?!MultiAddress 
     return failure "Missing port in multiaddress"
   success MultiAddress.init(!mapping.config.externalIp, protocol, port)
 
-proc mapRoutingTable(mapping: PortMapping, address: MultiAddress): ?!MultiAddress =
-  without ip =? address.ip and port =? address.port:
-    return failure "Missing IP address or port in multiaddress"
-  let bindAddress = initTAddress(ip, port)
-  if bindAddress.isGlobal and bindAddress.isUnicast:
-    return success address
-  let destination = initTAddress(static parseIpAddress("1.1.1.1"), Port(0))
-  let route = getBestRoute(destination)
-  if route.source.isGlobal and route.source.isUnicast:
-    if source =? route.source.address.catch and protocol =? address.protocol:
-      return success MultiAddress.init(source, protocol, port)
-  failure "No routable IP address found, check your network connection"
-
 proc mapPmp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
   without protocol =? address.protocol and internal =? address.port:
     return failure "Missing port in multiaddress"
@@ -82,11 +69,6 @@ proc mapUpnp(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
   success MultiAddress.init(externalIp, protocol, mapped)
 
 proc mapAny(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
-  let routingResult = mapping.mapRoutingTable(address)
-  if mapped =? routingResult:
-    mapping.config = NatConfig.noNat
-    return success mapped
-
   let upnpResult = mapping.mapUpnp(address)
   if mapped =? upnpResult:
     mapping.config = NatConfig.upnp
@@ -97,7 +79,6 @@ proc mapAny(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
     mapping.config = NatConfig.pmp(mapping.config.gateway)
     return success mapped
 
-  debug "port mapping using routing table failed", error = routingResult.error.msg
   debug "port mapping using upnp failed", error = upnpResult.error.msg
   debug "port mapping using pmp failed", error = pmpResult.error.msg
 
@@ -114,7 +95,7 @@ proc map*(mapping: var PortMapping, address: MultiAddress): ?!MultiAddress =
   of NatStrategy.ExternalIp:
     mapping.mapExternalIp(address)
   of NatStrategy.None:
-    mapping.mapRoutingTable(address)
+    success address
 
 proc deleteUpnpMappings(mapping: var PortMapping): ?!void =
   for (address, external) in mapping.externalPorts.pairs:

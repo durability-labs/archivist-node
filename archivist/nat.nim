@@ -14,3 +14,7 @@ export traversal.new
 export traversal.start
 export traversal.stop
 export traversal.mapPorts
+
+import ./nat/discovery
+
+export discovery.discoveryAddresses
