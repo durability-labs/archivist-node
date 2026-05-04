@@ -3,16 +3,12 @@ import pkg/chronos
 import pkg/stint
 import pkg/archivist/marketplace/purchasing
 import pkg/archivist/marketplace/purchasing/purchase
-import pkg/archivist/marketplace/purchasing/states/finished
-import pkg/archivist/marketplace/purchasing/states/started
-import pkg/archivist/marketplace/purchasing/states/submitted
-import pkg/archivist/marketplace/purchasing/states/unknown
-import pkg/archivist/marketplace/purchasing/states/cancelled
-import pkg/archivist/marketplace/purchasing/states/failed
+import pkg/archivist/marketplace/purchasing/states
 
 import ../../asynctest
 import ../helpers/mockmarketplace
 import ../helpers/mockclock
+import ../helpers/mockexponentialbackoff
 import ../examples
 import ../helpers
 
@@ -256,3 +252,28 @@ suite "Purchasing state machine":
     let purchase = Purchase.new(request, marketplace, clock)
     discard await PurchaseCancelled().run(purchase)
     check request.id in marketplace.withdrawn
+
+  test "exits state machine when error occurs and request is not active":
+    let request = StorageRequest.example
+    let purchase = Purchase.new(request, marketplace, clock)
+    let error = newException(CatchableError, "some error")
+    let next = await PurchaseErrored(error: error).run(purchase)
+    check next.isNone
+
+  test "restarts state machine when error occurs while request is active":
+    let request = StorageRequest.example
+    let purchase = Purchase.new(request, marketplace, clock)
+    let error = newException(CatchableError, "some error")
+    let me = await marketplace.getSigner()
+    marketplace.activeRequests[me] = @[request.id]
+    let next = await PurchaseErrored(error: error).run(purchase)
+    check !next of PurchaseUnknown
+
+  test "uses exponential backoff for retries":
+    let request = StorageRequest.example
+    let purchase = Purchase.new(request, marketplace, clock)
+    let error = newException(CatchableError, "some error")
+    let backoff = MockExponentialBackoff()
+    purchase.errorBackoff = backoff
+    discard await PurchaseErrored(error: error).run(purchase)
+    check backoff.callCount == 1

@@ -170,7 +170,7 @@ method requestStorage*(
     subscription.callback(request.id, request.ask, requestExpiresAt)
 
 method myRequests*(marketplace: MockMarketplace): Future[seq[RequestId]] {.async.} =
-  return marketplace.activeRequests[marketplace.signer]
+  marketplace.activeRequests .? [marketplace.signer] |? @[]
 
 method mySlots*(marketplace: MockMarketplace): Future[seq[SlotId]] {.async.} =
   return marketplace.activeSlots[marketplace.signer]
@@ -324,6 +324,9 @@ method withdrawFunds*(
     marketplace: MockMarketplace, requestId: RequestId
 ) {.async: (raises: [CancelledError, MarketplaceError]).} =
   marketplace.withdrawn.add(requestId)
+  if var myRequests =? marketplace.activeRequests .? [marketplace.signer]:
+    myRequests.keepItIf(it != requestId)
+    marketplace.activeRequests[marketplace.signer] = myRequests
 
 proc setProofRequired*(mock: MockMarketplace, id: SlotId, required: bool) =
   if required:
@@ -553,8 +556,7 @@ method queryPastSlotFilledEvents*(
     slot => SlotFilled(requestId: slot.requestId, slotIndex: slot.slotIndex)
   )
 
-method unsubscribe*(subscription: Subscription) {.async: (raises: []).} =
-  let subscription = MockSubscription(subscription)
+method unsubscribe*(subscription: MockSubscription) {.async: (raises: []).} =
   let marketplace = subscription.marketplace
   marketplace.subscriptions.onRequest.keepItIf(subscription != it)
   marketplace.subscriptions.onFulfillment.keepItIf(subscription != it)

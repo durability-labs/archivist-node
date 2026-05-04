@@ -2,11 +2,9 @@ import pkg/metrics
 import ../statemachine
 import ../../../logutils
 import ../../../utils/exceptions
-import ./error
+import ./types
 
 declareCounter(archivist_purchases_failed, "archivist purchases failed")
-
-type PurchaseFailed* = ref object of PurchaseState
 
 method `$`*(state: PurchaseFailed): string =
   "failed"

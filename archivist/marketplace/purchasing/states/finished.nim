@@ -3,14 +3,12 @@ import pkg/metrics
 import ../statemachine
 import ../../../utils/exceptions
 import ../../../logutils
-import ./error
+import ./types
 
 declareCounter(archivist_purchases_finished, "archivist purchases finished")
 
 logScope:
   topics = "marketplace purchases finished"
-
-type PurchaseFinished* = ref object of PurchaseState
 
 method `$`*(state: PurchaseFinished): string =
   "finished"

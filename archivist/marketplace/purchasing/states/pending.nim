@@ -2,12 +2,9 @@ import pkg/metrics
 import ../../../logutils
 import ../../../utils/exceptions
 import ../statemachine
-import ./submitted
-import ./error
+import ./types
 
 declareCounter(archivist_purchases_pending, "archivist purchases pending")
-
-type PurchasePending* = ref object of PurchaseState
 
 method `$`*(state: PurchasePending): string =
   "pending"
