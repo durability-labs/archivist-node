@@ -16,6 +16,7 @@ import ../../../helpers/mockclock
 suite "sales state 'filling'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   var state: SaleFilling
   var marketplace: MockMarketplace
   var clock: MockClock
@@ -25,7 +26,9 @@ suite "sales state 'filling'":
     clock = MockClock.new()
     marketplace = MockMarketplace.new()
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo)
     state = SaleFilling.new()
 
   test "switches to cancelled state when request expires":

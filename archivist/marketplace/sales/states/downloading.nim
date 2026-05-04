@@ -43,18 +43,17 @@ method run*(
   let marketplace = context.marketplace
   let storage = context.storage
 
-  without request =? data.request:
-    raiseAssert "no sale request"
+  without slot =? data.slotInfo.slot:
+    raiseAssert "no sale slot"
 
   logScope:
-    requestId = request.id
-    slotIndex = data.slotIndex
+    requestId = slot.request.id
+    slotIndex = slot.slotIndex
 
   try:
-    let requestId = request.id
-    let slotId = slotId(requestId, data.slotIndex)
+    let requestId = slot.request.id
     let requestState = await marketplace.requestState(requestId)
-    let repair = (await marketplace.slotState(slotId)) == SlotState.Repair
+    let repair = (await marketplace.slotState(slot.id)) == SlotState.Repair
 
     trace "Retrieving expiry"
     var expiry: StorageTimestamp
@@ -66,7 +65,8 @@ method run*(
     debug "Starting download"
     if err =? (
       await storage.storeSlot(
-        request.content.cid, data.slotIndex, request.ask.slotSize, expiry, repair
+        slot.request.content.cid, slot.slotIndex, slot.request.ask.slotSize, expiry,
+        repair,
       )
     ).errorOption:
       return some State(SaleErrored(error: err, reprocessSlot: false))

@@ -23,6 +23,7 @@ import ../mockstorage
 asyncchecksuite "sales state 'preparing'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   var state: SalePreparing
   var agent: SalesAgent
   var marketplace: MockMarketplace
@@ -55,7 +56,9 @@ asyncchecksuite "sales state 'preparing'":
       availabilityTerms: some terms,
     )
 
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo)
 
     state = SalePreparing.new()
 
@@ -71,11 +74,11 @@ asyncchecksuite "sales state 'preparing'":
     let next = state.onSlotFilled(request.id, slotIndex)
     check !next of SaleFilled
 
-  test "switches to errored state when the request cannot be retrieved":
-    agent = newSalesAgent(context, request.id, slotIndex, StorageRequest.none)
+  test "switches to errored state when the slot cannot be retrieved":
+    agent = newSalesAgent(context, SlotInfo.init(slot.id))
     let next = !(await state.run(agent))
     check next of SaleErrored
-    check SaleErrored(next).error.msg == "request could not be retrieved"
+    check SaleErrored(next).error.msg == "slot could not be retrieved"
 
   test "switches to ignored state when there is no availability":
     context.availabilityTerms = none AvailabilityTerms

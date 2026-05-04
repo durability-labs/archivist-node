@@ -16,29 +16,23 @@ import ../../../helpers/mockclock
 asyncchecksuite "sales state 'finished'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   let clock = MockClock.new()
-
-  let currentCollateral = Tokens.example
 
   var marketplace: MockMarketplace
   var state: SaleFinished
   var agent: SalesAgent
   var reprocessSlotWas = bool.none
-  var returnedCollateralValue = Tokens.none
-  var saleCleared = bool.none
 
   setup:
     marketplace = MockMarketplace.new()
-    let onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = Tokens.none
-    ) {.async: (raises: []).} =
+    let onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
       reprocessSlotWas = some reprocessSlot
-      returnedCollateralValue = returnedCollateral
 
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    agent = newSalesAgent(context, SlotInfo.init(slot.id))
     agent.onCleanUp = onCleanUp
-    state = SaleFinished(returnedCollateral: some currentCollateral)
+    state = SaleFinished()
 
   test "switches to cancelled state when request expires":
     let next = state.onCancelled(request)
@@ -48,7 +42,6 @@ asyncchecksuite "sales state 'finished'":
     let next = state.onFailed(request)
     check !next of SaleFailed
 
-  test "calls onCleanUp with reprocessSlot = true, and returnedCollateral = currentCollateral":
+  test "calls onCleanUp with reprocessSlot = true":
     discard await state.run(agent)
     check eventually reprocessSlotWas == some false
-    check eventually returnedCollateralValue == some currentCollateral

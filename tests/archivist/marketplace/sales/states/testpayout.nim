@@ -16,6 +16,7 @@ import ../../../helpers/mockclock
 asyncchecksuite "sales state 'payout'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   let clock = MockClock.new()
 
   let currentCollateral = Tokens.example
@@ -28,10 +29,10 @@ asyncchecksuite "sales state 'payout'":
     marketplace = MockMarketplace.new()
 
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    agent = newSalesAgent(context, SlotInfo.init(slot.id))
     state = SalePayout.new()
 
-  test "switches to 'finished' state and provides returnedCollateral":
+  test "switches to 'finished' state":
     marketplace.fillSlot(
       requestId = request.id,
       slotIndex = slotIndex,
@@ -41,4 +42,3 @@ asyncchecksuite "sales state 'payout'":
     )
     let next = await state.run(agent)
     check !next of SaleFinished
-    check SaleFinished(!next).returnedCollateral == some currentCollateral

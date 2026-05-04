@@ -94,12 +94,8 @@ asyncchecksuite "Sales - start":
     !await sales.start()
 
     check eventually sales.agents.len == 2
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 0.uint64
-    )
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 1.uint64
-    )
+    check sales.agents.any(agent => agent.data.slotInfo.slotId == slotId(request.id, 0))
+    check sales.agents.any(agent => agent.data.slotInfo.slotId == slotId(request.id, 1))
 
 asyncchecksuite "Sales":
   let proof = Groth16Proof.example
@@ -181,8 +177,7 @@ asyncchecksuite "Sales":
     !await sales.updateAvailability(terms)
 
   proc notProcessed(itemsProcessed: seq[SlotQueueItem], request: StorageRequest): bool =
-    let collateral = request.ask.collateralPerSlot
-    let items = SlotQueueItem.init(request, collateral)
+    let items = SlotQueueItem.init(request)
     for i in 0 ..< items.len:
       if itemsProcessed.contains(items[i]):
         return false
@@ -216,8 +211,7 @@ asyncchecksuite "Sales":
       itemsProcessed.add item
     await setAvailability()
     await marketplace.requestStorage(request)
-    let collateral = request.ask.collateralPerSlot
-    let items = SlotQueueItem.init(request, collateral)
+    let items = SlotQueueItem.init(request)
     check eventually items.allIt(itemsProcessed.contains(it))
 
   test "removes request from slot queue once RequestFailed emitted":
@@ -233,15 +227,13 @@ asyncchecksuite "Sales":
   test "removes slot index from slot queue once SlotFilled emitted":
     let request1 = await addRequestToSaturatedQueue()
     marketplace.emitSlotFilled(request1.id, 1.uint64)
-    let collateral = request1.ask.collateralPerSlot
-    let expected = SlotQueueItem.init(request1, 1'u16, collateral)
+    let expected = SlotQueueItem.init(request1, 1'u16)
     check always (not itemsProcessed.contains(expected))
 
   test "removes slot index from slot queue once SlotReservationsFull emitted":
     let request1 = await addRequestToSaturatedQueue()
     marketplace.emitSlotReservationsFull(request1.id, 1.uint64)
-    let collateral = request1.ask.collateralPerSlot
-    let expected = SlotQueueItem.init(request1, 1'u16, collateral)
+    let expected = SlotQueueItem.init(request1, 1'u16)
     check always (not itemsProcessed.contains(expected))
 
   test "adds slot index to slot queue once SlotFreed emitted":
@@ -255,15 +247,13 @@ asyncchecksuite "Sales":
 
     marketplace.emitSlotFreed(request.id, 2.uint64)
 
-    let collateral = request.ask.collateralPerSlot
-    let expected = SlotQueueItem.init(request, 2.uint16, collateral)
+    let expected = SlotQueueItem.init(request, 2.uint16)
 
     check eventually itemsProcessed.contains(expected)
 
   test "items in queue are readded once ignored":
     await marketplace.requestStorage(request)
-    let collateral = request.ask.collateralPerSlot
-    let items = SlotQueueItem.init(request, collateral)
+    let items = SlotQueueItem.init(request)
     check eventually queue.len > 0
       # queue starts paused, allow items to be added to the queue
     check eventually queue.paused
@@ -306,38 +296,3 @@ asyncchecksuite "Sales":
     check marketplace.filled[0].slotIndex < request.ask.slots
     check marketplace.filled[0].proof == proof
     check marketplace.filled[0].host == await marketplace.getSigner()
-
-  test "loads active slots from marketplace":
-    let me = await marketplace.getSigner()
-
-    request.ask.slots = 2
-    marketplace.requested = @[request]
-    marketplace.requestState[request.id] = RequestState.New
-    marketplace.requestEnds[request.id] =
-      StorageTimestamp.init(clock.now()) + request.expiry
-
-    proc fillSlot(slotIdx: uint64 = 0) {.async.} =
-      let address = await marketplace.getSigner()
-      let slot =
-        MockSlot(requestId: request.id, slotIndex: slotIdx, proof: proof, host: address)
-      marketplace.filled.add slot
-      marketplace.slotState[slotId(request.id, slotIdx)] = SlotState.Filled
-
-    let slot0 = MockSlot(requestId: request.id, slotIndex: 0, proof: proof, host: me)
-    await fillSlot(slot0.slotIndex)
-
-    let slot1 = MockSlot(requestId: request.id, slotIndex: 1, proof: proof, host: me)
-    await fillSlot(slot1.slotIndex)
-    marketplace.activeSlots[me] = @[request.slotId(0), request.slotId(1)]
-    marketplace.requested = @[request]
-    marketplace.activeRequests[me] = @[request.id]
-
-    await sales.load()
-
-    check eventually sales.agents.len == 2
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 0.uint64
-    )
-    check sales.agents.any(
-      agent => agent.data.requestId == request.id and agent.data.slotIndex == 1.uint64
-    )

@@ -42,29 +42,28 @@ method run*(
   let storage = context.storage
 
   try:
-    let host = await marketplace.getHost(data.requestId, data.slotIndex)
+    let host = await marketplace.getHost(data.slotInfo.slotId)
     let me = await marketplace.getSigner()
 
     if host == me.some:
-      info "Slot succesfully filled",
-        requestId = data.requestId, slotIndex = data.slotIndex
+      info "Slot succesfully filled", slot = data.slotInfo
 
-      without request =? data.request:
-        raiseAssert "no sale request"
+      without slot =? data.slotInfo.slot:
+        raiseAssert "no sale slot"
 
       if onFilled =? agent.onFilled:
-        onFilled(request, data.slotIndex)
+        onFilled()
 
       # Add buffer past contract end so overlay data survives through the
       # last proof window. Buffer covers period (last proof window) +
       # proofTimeout (challenge window). Without this, maintenance can drop
       # the overlay while the proving loop is still running its last proof.
-      let expiry = await marketplace.getRequestEnd(data.requestId)
+      let expiry = await marketplace.getRequestEnd(slot.request.id)
       let periodicity = marketplace.periodicity()
       let buffer = periodicity.seconds + marketplace.proofTimeout()
       let expiryWithBuffer = expiry + buffer
-      let cid = request.content.cid
-      let slotIndex = data.slotIndex
+      let cid = slot.request.content.cid
+      let slotIndex = slot.slotIndex
       if err =?
           (await storage.updateSlotExpiry(cid, slotIndex, expiryWithBuffer)).errorOption:
         return some State(SaleErrored(error: err))

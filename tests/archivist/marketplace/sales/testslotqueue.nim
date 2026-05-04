@@ -9,7 +9,6 @@ import pkg/archivist/marketplace/sales/slotqueue
 import ../../../asynctest
 import ../../helpers
 import ../../helpers/mockmarketplace
-import ../../helpers/mockslotqueueitem
 import ../../examples
 
 suite "Slot queue start/stop":
@@ -123,138 +122,92 @@ suite "Slot queue":
     check requestB.ask.pricePerSlot == 100000'Tokens * requestB.ask.slotSize
     requestB.ask.collateralPerByte = 1'Tokens
 
-    let itemA = SlotQueueItem.init(requestA, 0, requestA.ask.collateralPerSlot)
-    let itemB = SlotQueueItem.init(requestB, 0, requestB.ask.collateralPerSlot)
+    let itemA = SlotQueueItem.init(requestA, 0)
+    let itemB = SlotQueueItem.init(requestB, 0)
     check itemB < itemA # B higher priority than A
     check itemA > itemB
 
   test "prioritizes items based on the availabilities version that it's seen":
-    let request = StorageRequest.example
-    let itemA = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64,
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 2'TokensPerSecond, # profitability is higher (good)
-      collateral: 1'Tokens,
-      expiry: 1'StorageTimestamp,
-      availabilitiesVersion: 2, # (bad), more weight than profitability
-    )
-    let itemB = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64,
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond, # profitability is lower (bad)
-      collateral: 1'Tokens,
-      expiry: 1'StorageTimestamp,
-      availabilitiesVersion: 1, # (good)
-    )
-    check itemB.toSlotQueueItem < itemA.toSlotQueueItem # B higher priority than A
-    check itemA.toSlotQueueItem > itemB.toSlotQueueItem
+    var requestA = StorageRequest.example
+    requestA.ask.slotSize = 1.uint64
+    requestA.ask.duration = 1'StorageDuration
+    requestA.ask.pricePerBytePerSecond = 2'TokensPerSecond
+      # profitability is higher (good)
+    requestA.ask.collateralPerByte = 1'Tokens
+    var requestB = requestA
+    requestB.ask.pricePerBytePerSecond = 1'TokensPerSecond # profitability is lower (bad)
+    let itemA = SlotQueueItem.init(requestA, 0, availabilitiesVersion = 2)
+      # (bad), more weight than profitability
+    let itemB = SlotQueueItem.init(requestB, 0, availabilitiesVersion = 1) # (good)
+    check itemB < itemA # B higher priority than A
+    check itemA > itemB
 
   test "correct prioritizes SlotQueueItems based on profitability":
-    let request = StorageRequest.example
-    let itemA = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64,
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond, # reward is lower (bad)
-      collateral: 1'Tokens, # collateral is lower (good)
-      expiry: 1'StorageTimestamp,
-    )
-    let itemB = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64,
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 2'TokensPerSecond,
-        # reward is higher (good), more weight than collateral
-      collateral: 2'Tokens, # collateral is higher (bad)
-      expiry: 1'StorageTimestamp,
-    )
-
-    check itemB.toSlotQueueItem < itemA.toSlotQueueItem # < indicates higher priority
+    var requestA = StorageRequest.example
+    requestA.ask.slotSize = 1.uint64
+    requestA.ask.duration = 1'StorageDuration
+    requestA.ask.pricePerBytePerSecond = 1'TokensPerSecond # reward is lower (bad)
+    requestA.ask.collateralPerByte = 1'Tokens # collateral is lower (good)
+    var requestB = requestA
+    requestB.ask.pricePerBytePerSecond = 2'TokensPerSecond
+      # reward is higher (good), more weight than collateral
+    requestB.ask.collateralPerByte = 2'Tokens # collateral is higher (bad)
+    let itemA = SlotQueueItem.init(requestA, 0)
+    let itemB = SlotQueueItem.init(requestB, 0)
+    check itemB < itemA # < indicates higher priority
 
   test "correct prioritizes SlotQueueItems based on collateral":
-    let request = StorageRequest.example
-    let itemA = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64,
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond,
-      collateral: 2'Tokens, # collateral is higher (bad)
-      expiry: 2'StorageTimestamp, # expiry is longer (good)
-    )
-    let itemB = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64,
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond,
-      collateral: 1'Tokens, # collateral is lower (good), more weight than expiry
-      expiry: 1'StorageTimestamp, # expiry is shorter (bad)
-    )
-
-    check itemB.toSlotQueueItem < itemA.toSlotQueueItem # < indicates higher priority
+    var requestA = StorageRequest.example
+    requestA.ask.slotSize = 1.uint64
+    requestA.ask.duration = 1'StorageDuration
+    requestA.ask.pricePerBytePerSecond = 1'TokensPerSecond
+    requestA.ask.collateralPerByte = 2'Tokens # collateral is higher (bad)
+    var requestB = requestA
+    requestB.ask.collateralPerByte = 1'Tokens
+      # collateral is lower (good), more weight than expiry
+    let itemA =
+      SlotQueueItem.init(requestA.id, 0, requestA.ask, expiry =
+          2'StorageTimestamp) # expiry is longer (good)
+    let itemB =
+      SlotQueueItem.init(requestB.id, 0, requestB.ask, expiry =
+          1'StorageTimestamp) # expiry is shorter (bad)
+    check itemB < itemA # < indicates higher priority
 
   test "correct prioritizes SlotQueueItems based on expiry":
-    let request = StorageRequest.example
-    let itemA = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64, # slotSize is smaller (good)
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond,
-      collateral: 1'Tokens,
-      expiry: 1'StorageTimestamp, # expiry is shorter (bad)
-    )
-    let itemB = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 2.uint64, # slotSize is larger (bad)
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond,
-      collateral: 1'Tokens,
-      expiry: 2'StorageTimestamp, # expiry is longer (good), more weight than slotSize
-    )
-
-    check itemB.toSlotQueueItem < itemA.toSlotQueueItem # < indicates higher priority
+    var requestA = StorageRequest.example
+    requestA.ask.slotSize = 1.uint64
+    requestA.ask.duration = 1'StorageDuration
+    requestA.ask.pricePerBytePerSecond = 1'TokensPerSecond
+    requestA.ask.collateralPerByte = 1'Tokens
+    var requestB = requestA
+    requestB.ask.slotSize = 2.uint64 # slotSize is larger (bad)
+    let itemA =
+      SlotQueueItem.init(requestA.id, 0, requestA.ask, expiry =
+          1'StorageTimestamp) # expiry is shorter (bad)
+    let itemB =
+      SlotQueueItem.init(requestB.id, 0, requestB.ask, expiry =
+          2'StorageTimestamp) # expiry is longer (good), more weight than slotSize
+    check itemB < itemA # < indicates higher priority
 
   test "correct prioritizes SlotQueueItems based on slotSize":
-    let request = StorageRequest.example
-    let itemA = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 2.uint64, # slotSize is larger (bad)
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond,
-      collateral: 1'Tokens,
-      expiry: 1'StorageTimestamp, # expiry is shorter (bad)
-    )
-    let itemB = MockSlotQueueItem(
-      requestId: request.id,
-      slotIndex: 0,
-      slotSize: 1.uint64, # slotSize is smaller (good)
-      duration: 1'StorageDuration,
-      pricePerBytePerSecond: 1'TokensPerSecond,
-      collateral: 1'Tokens,
-      expiry: 1'StorageTimestamp,
-    )
-
-    check itemA.toSlotQueueItem < itemB.toSlotQueueItem # < indicates higher priority
+    var requestA = StorageRequest.example
+    requestA.ask.slotSize = 2.uint64 # slotSize is larger (good, more profit)
+    requestA.ask.duration = 1'StorageDuration
+    requestA.ask.pricePerBytePerSecond = 1'TokensPerSecond
+    requestA.ask.collateralPerByte = 1'Tokens
+    var requestB = requestA
+    requestB.ask.slotSize = 1.uint64 # slotSize is smaller (bad, less profit)
+    let itemA = SlotQueueItem.init(requestA, 0)
+    let itemB = SlotQueueItem.init(requestB, 0)
+    check itemA < itemB # < indicates higher priority
 
   test "expands available all possible slot indices on init":
     let request = StorageRequest.example
-    let items = SlotQueueItem.init(request, request.ask.collateralPerSlot)
+    let items = SlotQueueItem.init(request)
     check items.len.uint64 == request.ask.slots
     var checked = 0
     for slotIndex in 0'u16 ..< request.ask.slots.uint16:
-      check items.anyIt(
-        it == SlotQueueItem.init(request, slotIndex, request.ask.collateralPerSlot)
-      )
+      check items.anyIt(it == SlotQueueItem.init(request, slotIndex))
       inc checked
     check checked == items.len
 
@@ -284,12 +237,7 @@ suite "Slot queue":
     let maxUInt16 = uint16.high
     let uint64Slots = uint64(maxUInt16)
     request.ask.slots = uint64Slots
-    let items = SlotQueueItem.init(
-      request.id,
-      request.ask,
-      0'StorageTimestamp,
-      collateral = request.ask.collateralPerSlot,
-    )
+    let items = SlotQueueItem.init(request.id, request.ask, 0'StorageTimestamp)
     check items.len.uint16 == maxUInt16
 
   test "cannot support greater than uint16.high slots":
@@ -298,12 +246,7 @@ suite "Slot queue":
     let uint64Slots = uint64(int32Slots)
     request.ask.slots = uint64Slots
     expect SlotsOutOfRangeError:
-      discard SlotQueueItem.init(
-        request.id,
-        request.ask,
-        0'StorageTimestamp,
-        collateral = request.ask.collateralPerSlot,
-      )
+      discard SlotQueueItem.init(request.id, request.ask, 0'StorageTimestamp)
 
   test "cannot push duplicate items":
     newSlotQueue(maxSize = 6, maxWorkers = 1, processSlotDelay = 15.millis)
@@ -344,8 +287,8 @@ suite "Slot queue":
     let request0 = StorageRequest.example
     var request1 = StorageRequest.example
     request1.ask.collateralPerByte += 1'Tokens
-    let items0 = SlotQueueItem.init(request0, request0.ask.collateralPerSlot)
-    let items1 = SlotQueueItem.init(request1, request1.ask.collateralPerSlot)
+    let items0 = SlotQueueItem.init(request0)
+    let items1 = SlotQueueItem.init(request1)
     check queue.push(items0).isOk
     check queue.push(items1).isOk
     let last = items1[items1.high]
@@ -358,8 +301,8 @@ suite "Slot queue":
     let request0 = StorageRequest.example
     var request1 = StorageRequest.example
     request1.ask.collateralPerByte += 1'Tokens
-    let items0 = SlotQueueItem.init(request0, request0.ask.collateralPerSlot)
-    let items1 = SlotQueueItem.init(request1, request1.ask.collateralPerSlot)
+    let items0 = SlotQueueItem.init(request0)
+    let items1 = SlotQueueItem.init(request1)
     check queue.push(items0).isOk
     check queue.push(items1).isOk
     queue.delete(request1.id)
@@ -378,53 +321,45 @@ suite "Slot queue":
     request3.ask.collateralPerByte = request2.ask.collateralPerByte + 1
     request4.ask.collateralPerByte = request3.ask.collateralPerByte + 1
     request5.ask.collateralPerByte = request4.ask.collateralPerByte + 1
-    let item0 = SlotQueueItem.init(request0, 0, request0.ask.collateralPerSlot)
-    let item1 = SlotQueueItem.init(request1, 0, request1.ask.collateralPerSlot)
-    let item2 = SlotQueueItem.init(request2, 0, request2.ask.collateralPerSlot)
-    let item3 = SlotQueueItem.init(request3, 0, request3.ask.collateralPerSlot)
-    let item4 = SlotQueueItem.init(request4, 0, request4.ask.collateralPerSlot)
-    let item5 = SlotQueueItem.init(request5, 0, request5.ask.collateralPerSlot)
+    let item0 = SlotQueueItem.init(request0, 0)
+    let item1 = SlotQueueItem.init(request1, 0)
+    let item2 = SlotQueueItem.init(request2, 0)
+    let item3 = SlotQueueItem.init(request3, 0)
+    let item4 = SlotQueueItem.init(request4, 0)
+    let item5 = SlotQueueItem.init(request5, 0)
     check queue.contains(item5) == false
     check queue.push(@[item0, item1, item2, item3, item4, item5]).isOk
     check queue.contains(item5)
 
   test "sorts items by profitability descending (higher pricePerBytePerSecond == higher priority == goes first in the list)":
     var request = StorageRequest.example
-    let item0 = SlotQueueItem.init(request, 0, request.ask.collateralPerSlot)
+    let item0 = SlotQueueItem.init(request, 0)
     request.ask.pricePerBytePerSecond += 1'TokensPerSecond
-    let item1 = SlotQueueItem.init(request, 1, request.ask.collateralPerSlot)
+    let item1 = SlotQueueItem.init(request, 1)
     check item1 < item0
 
   test "sorts items by collateral ascending (higher required collateral = lower priority == comes later in the list)":
     var request = StorageRequest.example
-    let item0 = SlotQueueItem.init(request, 0, request.ask.collateralPerSlot)
-    let item1 = SlotQueueItem.init(request, 1, request.ask.collateralPerSlot +
-        1'Tokens)
+    let item0 = SlotQueueItem.init(request, 0)
+    request.ask.collateralPerByte += 1'Tokens
+    let item1 = SlotQueueItem.init(request, 1)
     check item1 > item0
 
   test "sorts items by expiry descending (longer expiry = higher priority)":
     var request = StorageRequest.example
-    let item0 = SlotQueueItem.init(
-      request.id,
-      0,
-      request.ask,
-      expiry = 3'StorageTimestamp,
-      collateral = request.ask.collateralPerSlot,
-    )
-    let item1 = SlotQueueItem.init(
-      request.id,
-      1,
-      request.ask,
-      expiry = 7'StorageTimestamp,
-      collateral = request.ask.collateralPerSlot,
-    )
+    let item0 =
+      SlotQueueItem.init(request.id, 0, request.ask, expiry =
+          3'StorageTimestamp)
+    let item1 =
+      SlotQueueItem.init(request.id, 1, request.ask, expiry =
+          7'StorageTimestamp)
     check item1 < item0
 
   test "sorts items by slot size descending (bigger dataset = higher profitability = higher priority)":
     var request = StorageRequest.example
-    let item0 = SlotQueueItem.init(request, 0, request.ask.collateralPerSlot)
+    let item0 = SlotQueueItem.init(request, 0)
     request.ask.slotSize += 1
-    let item1 = SlotQueueItem.init(request, 1, request.ask.collateralPerSlot)
+    let item1 = SlotQueueItem.init(request, 1)
     check item1 < item0
 
   test "should call callback once an item is added":
@@ -445,13 +380,13 @@ suite "Slot queue":
     # sleeping after push allows the slotqueue loop to iterate,
     # calling the callback for each pushed/updated item
     var request = StorageRequest.example
-    let item0 = SlotQueueItem.init(request, 0, request.ask.collateralPerSlot)
+    let item0 = SlotQueueItem.init(request, 0)
     request.ask.pricePerBytePerSecond += 1'TokensPerSecond
-    let item1 = SlotQueueItem.init(request, 1, request.ask.collateralPerSlot)
+    let item1 = SlotQueueItem.init(request, 1)
     request.ask.pricePerBytePerSecond += 1'TokensPerSecond
-    let item2 = SlotQueueItem.init(request, 2, request.ask.collateralPerSlot)
+    let item2 = SlotQueueItem.init(request, 2)
     request.ask.pricePerBytePerSecond += 1'TokensPerSecond
-    let item3 = SlotQueueItem.init(request, 3, request.ask.collateralPerSlot)
+    let item3 = SlotQueueItem.init(request, 3)
 
     check queue.push(item0).isOk
     await sleepAsync(1.millis)
@@ -468,13 +403,13 @@ suite "Slot queue":
     # sleeping after push allows the slotqueue loop to iterate,
     # calling the callback for each pushed/updated item
     var request = StorageRequest.example
-    let item0 = SlotQueueItem.init(request, 0, request.ask.collateralPerSlot)
+    let item0 = SlotQueueItem.init(request, 0)
     request.ask.pricePerBytePerSecond += 1'TokensPerSecond
-    let item1 = SlotQueueItem.init(request, 1, request.ask.collateralPerSlot)
+    let item1 = SlotQueueItem.init(request, 1)
     request.ask.pricePerBytePerSecond += 1'TokensPerSecond
-    let item2 = SlotQueueItem.init(request, 2, request.ask.collateralPerSlot)
+    let item2 = SlotQueueItem.init(request, 2)
     request.ask.pricePerBytePerSecond += 1'TokensPerSecond
-    let item3 = SlotQueueItem.init(request, 3, request.ask.collateralPerSlot)
+    let item3 = SlotQueueItem.init(request, 3)
 
     check queue.push(item0).isOk
     check queue.push(item1).isOk
@@ -490,7 +425,7 @@ suite "Slot queue":
     queue.pause
 
     let request = StorageRequest.example
-    var items = SlotQueueItem.init(request, request.ask.collateralPerSlot)
+    var items = SlotQueueItem.init(request)
     check queue.push(items).isOk
     # check all items processed
     check eventually queue.len == 0
@@ -498,9 +433,7 @@ suite "Slot queue":
   test "pushing seen item does not unpause queue":
     newSlotQueue(maxSize = 4, maxWorkers = 4)
     let request = StorageRequest.example
-    let item = SlotQueueItem.init(
-      request.id, 0'u16, request.ask, 0'StorageTimestamp, request.ask.collateralPerSlot
-    )
+    let item = SlotQueueItem.init(request.id, 0'u16, request.ask, 0'StorageTimestamp)
     check queue.push(item).isOk
     check eventually onProcessSlotCalledWith.len == 1
     let seenItem = onProcessSlotCalledWith[0]
@@ -511,9 +444,7 @@ suite "Slot queue":
   test "paused queue waits for unpause before continuing processing":
     newSlotQueue(maxSize = 4, maxWorkers = 4)
     let request = StorageRequest.example
-    let item = SlotQueueItem.init(
-      request.id, 1'u16, request.ask, 0'StorageTimestamp, request.ask.collateralPerSlot
-    )
+    let item = SlotQueueItem.init(request.id, 1'u16, request.ask, 0'StorageTimestamp)
     check queue.paused
     # push causes unpause
     check queue.push(item).isOk
@@ -524,9 +455,7 @@ suite "Slot queue":
   test "processing a 'seen' item pauses the queue":
     newSlotQueue(maxSize = 4, maxWorkers = 4)
     let request = StorageRequest.example
-    let unseen = SlotQueueItem.init(
-      request.id, 0'u16, request.ask, 0'StorageTimestamp, request.ask.collateralPerSlot
-    )
+    let unseen = SlotQueueItem.init(request.id, 0'u16, request.ask, 0'StorageTimestamp)
     # push causes unpause
     check queue.push(unseen).isSuccess
     # check all items processed
@@ -540,9 +469,7 @@ suite "Slot queue":
   test "a change in availabilities unpauses queue":
     newSlotQueue(maxSize = 4, maxWorkers = 4)
     let request = StorageRequest.example
-    let item = SlotQueueItem.init(
-      request.id, 0'u16, request.ask, 0'StorageTimestamp, request.ask.collateralPerSlot
-    )
+    let item = SlotQueueItem.init(request.id, 0'u16, request.ask, 0'StorageTimestamp)
     # push causes unpause
     check queue.push(item).isSuccess
     # check all items processed

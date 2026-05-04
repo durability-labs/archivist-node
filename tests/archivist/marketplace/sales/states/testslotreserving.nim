@@ -19,6 +19,7 @@ import ../../../helpers/mockclock
 asyncchecksuite "sales state 'SlotReserving'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   var marketplace: MockMarketplace
   var clock: MockClock
   var agent: SalesAgent
@@ -31,8 +32,9 @@ asyncchecksuite "sales state 'SlotReserving'":
 
     state = SaleSlotReserving.new()
     context = SalesContext(marketplace: marketplace, clock: clock)
-
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo)
 
   test "switches to cancelled state when request expires":
     let next = state.onCancelled(request)

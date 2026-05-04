@@ -3,7 +3,6 @@ import pkg/chronos
 import pkg/archivist/marketplace/contracts/requests
 import pkg/archivist/marketplace/sales/states/types
 import pkg/archivist/marketplace/sales/states/errored
-import pkg/archivist/marketplace/sales/slotqueue
 import pkg/archivist/marketplace/sales/salesagent
 import pkg/archivist/marketplace/sales/salescontext
 import pkg/archivist/marketplace/sales/statemachine
@@ -19,6 +18,7 @@ import ../../../helpers/mockexponentialbackoff
 asyncchecksuite "sales state 'errored'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   let clock = MockClock.new()
 
   var marketplace: MockMarketplace
@@ -26,21 +26,15 @@ asyncchecksuite "sales state 'errored'":
   var agent: SalesAgent
   var reprocessSlotWas = false
   var expBackoff: MockExponentialBackoff
-  var slotId: SlotId
 
   setup:
-    let onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = Tokens.none
-    ) {.async: (raises: []).} =
+    let onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
       reprocessSlotWas = reprocessSlot
 
     marketplace = MockMarketplace.new()
     expBackoff = MockExponentialBackoff.new()
-    slotId = slotId(request.id, slotIndex)
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(
-      context, request.id, slotIndex, request.some, SlotQueueItem.none, expBackoff
-    )
+    agent = newSalesAgent(context, SlotInfo.init(slot.id), errorBackoff = expBackoff)
     agent.onCleanUp = onCleanUp
     state = SaleErrored(error: newException(ValueError, "oh no!"))
 
@@ -54,7 +48,7 @@ asyncchecksuite "sales state 'errored'":
 
   test "transits to unknown state when slot is active":
     let me = await marketplace.getSigner()
-    marketplace.activeSlots[me] = @[slotId]
+    marketplace.activeSlots[me] = @[slot.id]
 
     let nextState = await runState()
     check !nextState of SaleUnknown

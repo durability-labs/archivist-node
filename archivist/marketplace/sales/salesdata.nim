@@ -1,13 +1,11 @@
 import pkg/chronos
 import pkg/questionable
-import ../contracts/requests
-import ./slotqueue
 import ../../utils/exponentialbackoff
+import ./slotinfo
+import ./slotqueue
 
 type SalesData* = ref object
-  requestId*: RequestId
-  request*: ?StorageRequest
-  slotIndex*: uint64
-  cancelled*: Future[void]
+  slotInfo*: SlotInfo
   slotQueueItem*: ?SlotQueueItem
+  cancelled*: Future[void]
   errorBackoff*: ExponentialBackoff

@@ -31,7 +31,9 @@ asyncchecksuite "sales state 'proving'":
     marketplace = MockMarketplace.new()
     storage = MockStorage.new()
     let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
-    agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo)
     state = SaleProving.new()
 
   proc advanceToNextPeriod(marketplace: AbstractMarketplace) {.async.} =
@@ -54,7 +56,7 @@ asyncchecksuite "sales state 'proving'":
     proc onProofSubmission(id: SlotId) =
       receivedIds.add(id)
 
-    let subscription = await marketplace.subscribeProofSubmission(onProofSubmission)
+    discard await marketplace.subscribeProofSubmission(onProofSubmission)
     marketplace.slotState[slot.id] = SlotState.Filled
 
     let future = state.run(agent)
@@ -65,7 +67,6 @@ asyncchecksuite "sales state 'proving'":
     check eventually receivedIds.contains(slot.id)
 
     await future.cancelAndWait()
-    await subscription.unsubscribe()
 
   test "switches to payout state when request is finished":
     marketplace.slotState[slot.id] = SlotState.Filled

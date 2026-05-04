@@ -40,31 +40,22 @@ method prove*(
       # In this state, there's nothing we can do except try again next time.
       return
     context.metrics.increaseNumberOfProofs(provingPeriod)
-    info "Submitting proof", provingPeriod = provingPeriod, slotId = slot.id
+    info "Submitting proof", provingPeriod = provingPeriod, slot = slot
     await marketplace.submitProof(slot.id, proof)
   except CancelledError as error:
     trace "Submitting proof cancelled"
     raise error
   except CatchableError as e:
     error "Submitting proof failed",
-      provingPeriod = provingPeriod, slotId = slot.id, msg = e.msgDetail
+      provingPeriod = provingPeriod, slot = slot, msg = e.msgDetail
 
-proc proveLoop(
-    state: SaleProving,
-    context: SalesContext,
-    request: StorageRequest,
-    slotIndex: uint64,
-) {.async.} =
+proc proveLoop(state: SaleProving, context: SalesContext, slot: Slot) {.async.} =
   let marketplace = context.marketplace
   let clock = context.clock
-  let slot = Slot(request: request, slotIndex: slotIndex)
-  let slotId = slot.id
 
   logScope:
     provingPeriod = provingPeriod
-    requestId = request.id
-    slotIndex
-    slotId = slot.id
+    slot = slot
 
   proc getCurrentPeriod(): ProofPeriod =
     let periodicity = marketplace.periodicity()
@@ -82,9 +73,9 @@ proc proveLoop(
     case slotState
     of SlotState.Filled:
       debug "Proving for new period"
-      if (await marketplace.isProofRequired(slotId)) or
-          (await marketplace.willProofBeRequired(slotId)):
-        let challenge = await marketplace.getChallenge(slotId)
+      if (await marketplace.isProofRequired(slot.id)) or
+          (await marketplace.willProofBeRequired(slot.id)):
+        let challenge = await marketplace.getChallenge(slot.id)
         info "Generating required proof", challenge = challenge
         # Deadline is the end of the current proving period. Proof must be
         # generated and submitted before periodEnd.
@@ -136,12 +127,12 @@ method run*(
   let data = SalesAgent(machine).data
   let context = SalesAgent(machine).context
 
-  without request =? data.request:
-    raiseAssert "no sale request"
+  without slot =? data.slotInfo.slot:
+    raiseAssert "no sale slot"
 
   try:
-    await state.proveLoop(context, request, data.slotIndex)
-    debug "Stopping proving.", requestId = data.requestId, slotIndex = data.slotIndex
+    await state.proveLoop(context, slot)
+    debug "Stopping proving.", slot = data.slotInfo
     return some State(SalePayout())
   except CancelledError:
     trace "proving loop cancelled"

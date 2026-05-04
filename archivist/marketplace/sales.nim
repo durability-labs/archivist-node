@@ -80,20 +80,19 @@ proc remove(sales: Sales, agent: SalesAgent) {.async: (raises: []).} =
     sales.agents.keepItIf(it != agent)
 
 proc cleanUp(
-    sales: Sales, agent: SalesAgent, reprocessSlot: bool, returnedCollateral: ?Tokens
+    sales: Sales, agent: SalesAgent, reprocessSlot: bool
 ) {.async: (raises: []).} =
   let data = agent.data
 
   logScope:
     topics = "sales cleanUp"
-    requestId = data.requestId
-    slotIndex = data.slotIndex
+    slot = data.slotInfo
 
   trace "cleaning up sales agent"
 
   # Re-add items back into the queue to prevent small availabilities from
   # draining the queue. Seen items will be ordered last.
-  if reprocessSlot and request =? data.request and var item =? agent.data.slotQueueItem:
+  if reprocessSlot and var item =? agent.data.slotQueueItem:
     let queue = sales.context.slotQueue
     trace "pushing ignored item to queue"
     if err =? queue.push(item).errorOption:
@@ -106,21 +105,18 @@ proc processSlot(
     sales: Sales, item: SlotQueueItem
 ) {.async: (raises: [CancelledError]).} =
   debug "Processing slot from queue", requestId = item.requestId, slot = item.slotIndex
-
-  let agent = newSalesAgent(
-    sales.context, item.requestId, item.slotIndex, none StorageRequest, some item
-  )
+  var slotInfo = SlotInfo.init(item.requestId, item.slotIndex)
+  slotInfo.ask = item.ask
+  let agent = newSalesAgent(sales.context, slotInfo, some item)
 
   let completed = newAsyncEvent()
 
-  agent.onCleanUp = proc(
-      reprocessSlot = false, returnedCollateral = Tokens.none
-  ) {.async: (raises: []).} =
+  agent.onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
     trace "slot cleanup"
-    await sales.cleanUp(agent, reprocessSlot, returnedCollateral)
+    await sales.cleanUp(agent, reprocessSlot)
     completed.fire()
 
-  agent.onFilled = some proc(request: StorageRequest, slotIndex: uint64) =
+  agent.onFilled = some proc() =
     trace "slot filled"
     completed.fire()
 
@@ -131,45 +127,28 @@ proc processSlot(
   await completed.wait()
   trace "slot processing completed"
 
-proc getSlots*(sales: Sales): Future[seq[Slot]] {.async.} =
-  let marketplace = sales.context.marketplace
-  let slotIds = await marketplace.mySlots()
-  var slots: seq[Slot] = @[]
-
-  info "Loading active slots", slotsCount = len(slots)
-  for slotId in slotIds:
-    if slot =? (await marketplace.getActiveSlot(slotId)):
-      slots.add slot
-
-  return slots
+proc getSlots*(sales: Sales): Future[seq[SlotId]] {.async.} =
+  sales.agents.mapIt(it.data.slotInfo.slotId)
 
 proc getSalesAgent(sales: Sales, slotId: SlotId): Future[?SalesAgent] {.async.} =
   for agent in sales.agents:
-    if slotId(agent.data.requestId, agent.data.slotIndex) == slotId:
+    if agent.data.slotInfo.slotId == slotId:
       return some agent
 
 proc getSlot*(sales: Sales, slotId: SlotId): Future[?SalesSlot] {.async.} =
-  without agent =? await sales.getSalesAgent(slotId):
-    return none SalesSlot
-  some SalesSlot.init(
-    agent.data.requestId, agent.data.slotIndex, agent.data.request, agent.state
-  )
+  if agent =? await sales.getSalesAgent(slotId):
+    if slot =? agent.data.slotInfo.slot:
+      return some SalesSlot.init(
+        slot.request.id, slot.slotIndex, some slot.request, agent.state
+      )
 
-proc load*(sales: Sales) {.async.} =
-  let activeSlots = await sales.getSlots()
+proc load(sales: Sales) {.async.} =
+  for slotId in await sales.context.marketplace.mySlots():
+    let slotInfo = SlotInfo.init(slotId)
+    let agent = newSalesAgent(sales.context, slotInfo)
 
-  for slot in activeSlots:
-    let agent =
-      newSalesAgent(sales.context, slot.request.id, slot.slotIndex, some slot.request)
-
-    agent.onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = Tokens.none
-    ) {.async: (raises: []).} =
-      await sales.cleanUp(agent, reprocessSlot, returnedCollateral)
-
-    # There is no need to assign agent.onFilled as slots loaded from `mySlots`
-    # are inherently already filled and so assigning agent.onFilled would be
-    # superfluous.
+    agent.onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
+      await sales.cleanUp(agent, reprocessSlot)
 
     agent.start(SaleUnknown())
     sales.agents.add agent
@@ -187,9 +166,7 @@ proc onStorageRequested(
 
   trace "storage requested, adding slots to queue"
 
-  let collateral = ask.collateralPerSlot()
-
-  without items =? SlotQueueItem.init(requestId, ask, expiry, collateral).catch, err:
+  without items =? SlotQueueItem.init(requestId, ask, expiry).catch, err:
     if err of SlotsOutOfRangeError:
       warn "Too many slots, cannot add to queue"
     else:
@@ -233,8 +210,7 @@ proc onSlotFreed(sales: Sales, requestId: RequestId, slotIndex: uint64) =
         return
 
       without slotQueueItem =?
-        SlotQueueItem.init(request, slotIndex.uint16, collateral, repairReward).catch,
-        err:
+        SlotQueueItem.init(request, slotIndex.uint16, repairReward).catch, err:
         warn "Too many slots, cannot add to queue", error = err.msgDetail
         return
 

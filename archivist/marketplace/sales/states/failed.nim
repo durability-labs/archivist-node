@@ -26,20 +26,14 @@ method run*(
   let marketplace = context.marketplace
   let storage = context.storage
 
-  without request =? data.request:
-    raiseAssert "no sale request"
-
   try:
-    let slot = Slot(request: request, slotIndex: data.slotIndex)
-    debug "Removing slot from mySlots",
-      requestId = data.requestId, slotIndex = data.slotIndex
+    debug "Removing slot from mySlots", slot = data.slotInfo
+    await marketplace.freeSlot(data.slotInfo.slotId)
 
-    await marketplace.freeSlot(slot.id)
-
-    # Delete slot from the repostore
-    if request =? data.request:
-      if err =?
-          (await storage.deleteSlot(request.content.cid, data.slotIndex)).errorOption:
+    if slot =? data.slotInfo.slot:
+      let cid = slot.request.content.cid
+      let slotIndex = slot.slotIndex
+      if err =? (await storage.deleteSlot(cid, slotIndex)).errorOption:
         error "Failed to mark slot as failed", error = err.msg
 
     let error = newException(SaleFailedError, "Sale failed")

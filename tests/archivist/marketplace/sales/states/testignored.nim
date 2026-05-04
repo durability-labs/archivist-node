@@ -1,4 +1,3 @@
-import pkg/questionable
 import pkg/chronos
 import pkg/archivist/marketplace/contracts/requests
 import pkg/archivist/marketplace/sales/states/ignored
@@ -15,35 +14,25 @@ import ../../../helpers/mockclock
 asyncchecksuite "sales state 'ignored'":
   let request = StorageRequest.example
   let slotIndex = request.ask.slots div 2
+  let slot = Slot(request: request, slotIndex: slotIndex)
   let marketplace = MockMarketplace.new()
   let clock = MockClock.new()
 
   var state: SaleIgnored
   var agent: SalesAgent
   var reprocessSlotWas = false
-  var returnedCollateralValue: ?Tokens
 
   setup:
-    let onCleanUp = proc(
-        reprocessSlot = false, returnedCollateral = Tokens.none
-    ) {.async: (raises: []).} =
+    let onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
       reprocessSlotWas = reprocessSlot
-      returnedCollateralValue = returnedCollateral
 
     let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, request.id, slotIndex, request.some)
+    agent = newSalesAgent(context, SlotInfo.init(slot.id))
     agent.onCleanUp = onCleanUp
     state = SaleIgnored.new()
-    returnedCollateralValue = Tokens.none
     reprocessSlotWas = false
 
   test "calls onCleanUp with values assigned to SaleIgnored":
     state = SaleIgnored(reprocessSlot: true)
     discard await state.run(agent)
     check eventually reprocessSlotWas == true
-    check eventually returnedCollateralValue.isNone
-
-  test "returns collateral when returnsCollateral is true":
-    state = SaleIgnored(reprocessSlot: false, returnsCollateral: true)
-    discard await state.run(agent)
-    check eventually returnedCollateralValue.isSome

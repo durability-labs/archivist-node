@@ -147,9 +147,14 @@ method requestExpiresAt*(
   raiseAssert("not implemented")
 
 method getHost*(
-    marketplace: AbstractMarketplace, requestId: RequestId, slotIndex: uint64
+    marketplace: AbstractMarketplace, slotId: SlotId
 ): Future[?Address] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
   raiseAssert("not implemented")
+
+proc getHost*(
+    marketplace: AbstractMarketplace, requestId: RequestId, slotIndex: uint64
+): Future[?Address] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  await marketplace.getHost(slotId(requestId, slotIndex))
 
 method currentCollateral*(
     marketplace: AbstractMarketplace, slotId: SlotId

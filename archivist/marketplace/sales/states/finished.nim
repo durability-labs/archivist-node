@@ -1,6 +1,5 @@
 import pkg/chronos
 import pkg/questionable
-import pkg/stint
 
 import ../../../logutils
 import ../../../utils/exceptions
@@ -15,7 +14,6 @@ logScope:
   topics = "marketplace sales finished"
 
 type SaleFinished* = ref object of SaleState
-  returnedCollateral*: ?Tokens
 
 method `$`*(state: SaleFinished): string =
   "SaleFinished"
@@ -32,15 +30,11 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
 
-  without request =? data.request:
-    raiseAssert "no sale request"
-
-  info "Slot finished and paid out",
-    requestId = data.requestId, slotIndex = data.slotIndex
+  info "Slot finished and paid out", slot = data.slotInfo
 
   try:
     if onCleanUp =? agent.onCleanUp:
-      await onCleanUp(returnedCollateral = state.returnedCollateral)
+      await onCleanUp()
   except CancelledError as e:
     trace "SaleFilled.run onCleanUp was cancelled", error = e.msgDetail
   except CatchableError as e:

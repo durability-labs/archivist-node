@@ -11,7 +11,10 @@ import ../abstractmarketplace
 import ./statemachine
 import ./salescontext
 import ./salesdata
+import ./slotinfo
 import ./slotqueue
+
+export slotinfo
 
 logScope:
   topics = "marketplace sales"
@@ -25,46 +28,45 @@ type
     onCleanUp*: OnCleanUp
     onFilled*: ?OnFilled
 
-  OnCleanUp* = proc(reprocessSlot = false, returnedCollateral = Tokens.none) {.
-    async: (raises: [])
-  .}
-  OnFilled* = proc(request: StorageRequest, slotIndex: uint64) {.gcsafe, raises: [].}
+  OnCleanUp* = proc(reprocessSlot = false) {.async: (raises: []).}
+  OnFilled* = proc() {.gcsafe, raises: [].}
 
   SalesAgentError = object of ArchivistError
   AllSlotsFilledError* = object of SalesAgentError
 
 func `==`*(a, b: SalesAgent): bool =
-  a.data.requestId == b.data.requestId and a.data.slotIndex == b.data.slotIndex
+  a.data.slotInfo.slotId == b.data.slotInfo.slotId
 
 proc newSalesAgent*(
     context: SalesContext,
-    requestId: RequestId,
-    slotIndex: uint64,
-    request: ?StorageRequest,
+    slotInfo: SlotInfo,
     slotQueueItem = SlotQueueItem.none,
     errorBackoff = ExponentialBackoff(),
 ): SalesAgent =
-  var agent = SalesAgent.new()
+  let agent = SalesAgent.new()
   agent.context = context
   agent.data = SalesData(
-    requestId: requestId,
-    slotIndex: slotIndex,
-    request: request,
-    slotQueueItem: slotQueueItem,
-    errorBackoff: errorBackoff,
+    slotInfo: slotInfo, slotQueueItem: slotQueueItem, errorBackoff: errorBackoff
   )
   return agent
 
-proc retrieveRequest*(agent: SalesAgent) {.async.} =
+proc retrieveSlot*(agent: SalesAgent) {.async.} =
   let data = agent.data
   let marketplace = agent.context.marketplace
-  if data.request.isNone:
-    data.request = await marketplace.getRequest(data.requestId)
+  if data.slotInfo.slot.isNone:
+    if requestId =? data.slotInfo.requestId and data.slotInfo.slotIndex.isSome:
+      if request =? await marketplace.getRequest(requestId):
+        data.slotInfo.request = request
+    else:
+      if slot =? await marketplace.getActiveSlot(data.slotInfo.slotId):
+        data.slotInfo.slot = slot
 
 proc retrieveRequestState*(agent: SalesAgent): Future[?RequestState] {.async.} =
   let data = agent.data
   let marketplace = agent.context.marketplace
-  return await marketplace.requestState(data.requestId)
+  without requestId =? data.slotInfo.requestId:
+    return RequestState.none
+  return await marketplace.requestState(requestId)
 
 func state*(agent: SalesAgent): ?string =
   proc description(state: State): string =
@@ -72,18 +74,21 @@ func state*(agent: SalesAgent): ?string =
 
   agent.query(description)
 
-proc subscribeCancellation(agent: SalesAgent) {.async.} =
+proc subscribeCancellation*(agent: SalesAgent) {.async.} =
   let data = agent.data
   let clock = agent.context.clock
 
+  if data.cancelled != nil:
+    return
+
   proc onCancelled() {.async: (raises: []).} =
-    without request =? data.request:
+    without slot =? data.slotInfo.slot:
       return
 
     try:
       let marketplace = agent.context.marketplace
       let expiry =
-        (await marketplace.requestExpiresAt(data.requestId)).toSecondsSince1970
+        (await marketplace.requestExpiresAt(slot.request.id)).toSecondsSince1970
 
       while true:
         let deadline = max(clock.now, expiry) + 1
@@ -91,14 +96,14 @@ proc subscribeCancellation(agent: SalesAgent) {.async.} =
         await clock.waitUntil(deadline)
 
         without state =? await agent.retrieveRequestState():
-          error "Unknown request", requestId = data.requestId
+          error "Unknown request", requestId = slot.request.id
           return
 
         case state
         of New:
           discard
         of RequestState.Cancelled:
-          agent.schedule(cancelledEvent(request))
+          agent.schedule(cancelledEvent(slot.request))
           break
         of RequestState.Started, RequestState.Finished, RequestState.Failed:
           break
@@ -106,49 +111,39 @@ proc subscribeCancellation(agent: SalesAgent) {.async.} =
         debug "The request is not yet canceled, even though it should be. Waiting for some more time.",
           currentState = state, now = clock.now
     except CancelledError:
-      trace "Waiting for expiry to lapse was cancelled", requestId = data.requestId
+      trace "Waiting for expiry to lapse was cancelled", requestId = slot.request.id
     except CatchableError as e:
       error "Error while waiting for expiry to lapse", error = e.msgDetail
 
   data.cancelled = onCancelled()
 
+proc unsubscribeCancellation*(agent: SalesAgent) {.async: (raises: []).} =
+  let data = agent.data
+  if data.cancelled != nil:
+    await data.cancelled.cancelAndWait()
+    data.cancelled = nil
+
 method onFulfilled*(
     agent: SalesAgent, requestId: RequestId
 ) {.base, gcsafe, raises: [].} =
-  let cancelled = agent.data.cancelled
-  if agent.data.requestId == requestId and not cancelled.isNil and not cancelled.finished:
-    cancelled.cancelSoon()
+  if myRequestId =? agent.data.slotInfo.requestId:
+    if myRequestId == requestId:
+      let cancelled = agent.data.cancelled
+      if not cancelled.isNil and not cancelled.finished:
+        cancelled.cancelSoon()
 
 method onFailed*(agent: SalesAgent, requestId: RequestId) {.base, gcsafe, raises: [].} =
-  without request =? agent.data.request:
-    return
-  if agent.data.requestId == requestId:
-    agent.schedule(failedEvent(request))
+  if myRequest =? agent.data.slotInfo.request:
+    if myRequest.id == requestId:
+      agent.schedule(failedEvent(myRequest))
 
 method onSlotFilled*(
     agent: SalesAgent, requestId: RequestId, slotIndex: uint64
 ) {.base, gcsafe, raises: [].} =
-  if agent.data.requestId == requestId and agent.data.slotIndex == slotIndex:
+  let slotId = slotId(requestId, slotIndex)
+  if agent.data.slotInfo.slotId == slotId:
     agent.schedule(slotFilledEvent(requestId, slotIndex))
-
-proc subscribe*(agent: SalesAgent) {.async.} =
-  if agent.subscribed:
-    return
-
-  await agent.subscribeCancellation()
-  agent.subscribed = true
-
-proc unsubscribe*(agent: SalesAgent) {.async: (raises: []).} =
-  if not agent.subscribed:
-    return
-
-  let data = agent.data
-  if not data.cancelled.isNil and not data.cancelled.finished:
-    await data.cancelled.cancelAndWait()
-    data.cancelled = nil
-
-  agent.subscribed = false
 
 proc stop*(agent: SalesAgent) {.async: (raises: []).} =
   await Machine(agent).stop()
-  await agent.unsubscribe()
+  await agent.unsubscribeCancellation()

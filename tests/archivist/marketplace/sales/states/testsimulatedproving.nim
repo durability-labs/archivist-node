@@ -46,7 +46,9 @@ asyncchecksuite "sales state 'simulated-proving'":
     subscription = await marketplace.subscribeProofSubmission(onProofSubmission)
 
     let context = SalesContext(marketplace: marketplace, storage: storage, clock: clock)
-    agent = newSalesAgent(context, request.id, slot.slotIndex, request.some)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo)
     state = SaleProvingSimulated.new()
     state.failEveryNProofs = failEveryNProofs
 

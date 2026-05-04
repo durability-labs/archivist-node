@@ -190,10 +190,9 @@ method requestExpiresAt*(
     return await marketplace.contract.requestExpiry(id)
 
 method getHost(
-    marketplace: OnChainMarketplace, requestId: RequestId, slotIndex: uint64
+    marketplace: OnChainMarketplace, slotId: SlotId
 ): Future[?Address] {.async: (raises: [CancelledError, MarketplaceError]).} =
   convertEthersError("Failed to get slot's host"):
-    let slotId = slotId(requestId, slotIndex)
     let address = await marketplace.contract.getHost(slotId)
     if address != Address.default:
       return some address
