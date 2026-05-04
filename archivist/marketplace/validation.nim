@@ -1,10 +1,12 @@
 import std/sets
 import std/sequtils
+import std/algorithm
 import pkg/chronos
 import pkg/questionable/results
 import pkg/stew/endians2
 import ../clock
 import ../logutils
+import ../utils/exponentialbackoff
 import ./abstractmarketplace
 import ./validation/validationconfig
 
@@ -19,6 +21,7 @@ type Validation* = ref object
   subscriptions: seq[Subscription]
   running: Future[void]
   config: ValidationConfig
+  errorBackoff: ExponentialBackoff
 
 logScope:
   topics = "archivist validator"
@@ -28,8 +31,11 @@ proc new*(
     clock: Clock,
     marketplace: AbstractMarketplace,
     config: ValidationConfig,
+    errorBackoff = ExponentialBackoff(),
 ): Validation =
-  Validation(clock: clock, marketplace: marketplace, config: config)
+  Validation(
+    clock: clock, marketplace: marketplace, config: config, errorBackoff: errorBackoff
+  )
 
 proc slots*(validation: Validation): seq[SlotId] =
   validation.slots.toSeq
@@ -73,11 +79,23 @@ proc subscribeSlotFilled(validation: Validation) {.async.} =
   let subscription = await validation.marketplace.subscribeSlotFilled(onSlotFilled)
   validation.subscriptions.add(subscription)
 
+proc slotState(
+    validation: Validation, slotId: SlotId
+): Future[SlotState] {.async: (raises: [CancelledError]).} =
+  while true:
+    try:
+      let state = await validation.marketplace.slotState(slotId)
+      validation.errorBackoff.clear()
+      return state
+    except MarketplaceError as error:
+      trace "retrieving slot state failed, retrying", error = error.msg
+      await validation.errorBackoff.applyDelay()
+
 proc removeSlotsThatHaveEnded(validation: Validation) {.async.} =
   var ended: HashSet[SlotId]
   let slots = validation.slots
   for slotId in slots:
-    let state = await validation.marketplace.slotState(slotId)
+    let state = await validation.slotState(slotId)
     if state != SlotState.Filled:
       trace "Removing slot", slotId, slotState = state
       ended.incl(slotId)
@@ -85,23 +103,26 @@ proc removeSlotsThatHaveEnded(validation: Validation) {.async.} =
 
 proc markProofAsMissing(
     validation: Validation, slotId: SlotId, period: ProofPeriod
-) {.async.} =
+) {.async: (raises: [CancelledError]).} =
   logScope:
     currentPeriod = validation.getCurrentPeriod()
 
-  try:
-    if await validation.marketplace.canMarkProofAsMissing(slotId, period):
-      trace "Marking proof as missing", slotId, periodProofMissed = period
-      await validation.marketplace.markProofAsMissing(slotId, period)
-    else:
-      let inDowntime {.used.} = await validation.marketplace.inDowntime(slotId)
-      trace "Proof not missing", checkedPeriod = period, inDowntime
-  except CancelledError:
-    raise
-  except CatchableError as e:
-    error "Marking proof as missing failed", msg = e.msg
+  while true:
+    try:
+      if await validation.marketplace.canMarkProofAsMissing(slotId, period):
+        trace "Marking proof as missing", slotId, periodProofMissed = period
+        await validation.marketplace.markProofAsMissing(slotId, period)
+      else:
+        trace "Proof not missing", checkedPeriod = period
+      validation.errorBackoff.clear()
+      break
+    except CancelledError as error:
+      raise error
+    except MarketplaceError as error:
+      trace "Marking proof as missing failed, retrying", error = error.msg
+      await validation.errorBackoff.applyDelay()
 
-proc markProofsAsMissing(validation: Validation) {.async.} =
+proc markProofsAsMissing(validation: Validation) {.async: (raises: [CancelledError]).} =
   let slots = validation.slots
   for slotId in slots:
     let previousPeriod = validation.getCurrentPeriod() - 1'u8
@@ -109,34 +130,52 @@ proc markProofsAsMissing(validation: Validation) {.async.} =
 
 proc run(validation: Validation) {.async: (raises: []).} =
   info "Validation started"
-  try:
-    while true:
+  while true:
+    try:
       await validation.waitUntilNextPeriod()
       await validation.removeSlotsThatHaveEnded()
       await validation.markProofsAsMissing()
-  except CancelledError:
-    trace "Validation stopped"
-    discard # do not propagate as run is asyncSpawned
-  except CatchableError as e:
-    error "Validation failed", msg = e.msg
+    except CancelledError:
+      trace "Validation stopped"
+      break # do not propagate as run is asyncSpawned
+    except CatchableError as e:
+      error "Validation error", msg = e.msg
 
 proc findEpoch(validation: Validation, secondsAgo: uint64): SecondsSince1970 =
   return validation.clock.now - secondsAgo.int64
 
-proc restoreHistoricalState(validation: Validation) {.async.} =
+proc queryPastSlotFilledEvents(
+    validation: Validation, fromTime: SecondsSince1970
+): Future[seq[SlotFilled]] {.async: (raises: [CancelledError]).} =
+  while true:
+    try:
+      let events = await validation.marketplace.queryPastSlotFilledEvents(fromTime)
+      validation.errorBackoff.clear()
+      return events
+    except MarketplaceError as error:
+      trace "querying past slot filled events failed, retrying", error = error.msg
+      await validation.errorBackoff.applyDelay()
+
+proc restoreHistoricalState(
+    validation: Validation
+) {.async: (raises: [CancelledError]).} =
   info "Restoring historical state..."
   let requestDurationLimit = validation.marketplace.requestDurationLimit
   let startTimeEpoch = validation.findEpoch(secondsAgo = requestDurationLimit.u64)
   let slotFilledEvents =
-    await validation.marketplace.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
-  for event in slotFilledEvents:
+    await validation.queryPastSlotFilledEvents(fromTime = startTimeEpoch)
+  trace "Loading historical slots", amount = slotFilledEvents.len
+  for event in slotFilledEvents.reversed:
     if not validation.maxSlotsConstraintRespected:
       break
     let slotId = slotId(event.requestId, event.slotIndex)
-    let slotState = await validation.marketplace.slotState(slotId)
-    if slotState == SlotState.Filled and validation.shouldValidateSlot(slotId):
-      trace "Adding slot [historical]", slotId
-      validation.slots.incl(slotId)
+    if validation.shouldValidateSlot(slotId):
+      let slotState = await validation.slotState(slotId)
+      if slotState == SlotState.Filled:
+        trace "Adding slot [historical]", slotId
+        validation.slots.incl(slotId)
+      else:
+        trace "Ignoring slot [historical]", slotId, slotState
   info "Historical state restored", numberOfSlots = validation.slots.len
 
 proc start*(

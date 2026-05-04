@@ -9,6 +9,7 @@ import archivist/clock
 import ../../asynctest
 import ../helpers/mockmarketplace
 import ../helpers/mockclock
+import ../helpers/mockexponentialbackoff
 import ../examples
 import ../helpers
 
@@ -28,6 +29,7 @@ asyncchecksuite "validation":
   var clock: MockClock
   var groupIndex: uint16
   var validation: Validation
+  var backoff: MockExponentialBackoff
 
   proc initValidationConfig(
       maxSlots: MaxSlots, validationGroups: ?ValidationGroups, groupIndex: uint16 = 0
@@ -45,12 +47,13 @@ asyncchecksuite "validation":
       groupIndex: uint16 = 0,
   ): Validation =
     let validationConfig = initValidationConfig(maxSlots, validationGroups, groupIndex)
-    Validation.new(clock, marketplace, validationConfig)
+    Validation.new(clock, marketplace, validationConfig, backoff)
 
   setup:
     groupIndex = groupIndexForSlotId(slot.id, !validationGroups)
     clock = MockClock.new()
     marketplace = MockMarketplace.new(clock)
+    backoff = MockExponentialBackoff.new()
     marketplace.config.proofs.period = period
     marketplace.config.proofs.timeout = timeout
     validation =
@@ -170,70 +173,82 @@ asyncchecksuite "validation":
       await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
     check validation.slots.len == maxSlots
 
-  suite "restoring historical state":
-    test "it retrieves the historical state " & "for max 30 days in the past":
-      let earlySlot = Slot.example
-      await marketplace.fillSlot(
-        earlySlot.request.id, earlySlot.slotIndex, proof, collateral
-      )
-      let fromTime = clock.now()
-      clock.set(fromTime + 1)
-      await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
+  test "it retrieves the historical state " & "for max 30 days in the past":
+    let earlySlot = Slot.example
+    await marketplace.fillSlot(
+      earlySlot.request.id, earlySlot.slotIndex, proof, collateral
+    )
+    let fromTime = clock.now()
+    clock.set(fromTime + 1)
+    await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
 
-      let duration: times.Duration = initDuration(days = 30)
-      clock.set(fromTime + duration.inSeconds + 1)
+    let duration: times.Duration = initDuration(days = 30)
+    clock.set(fromTime + duration.inSeconds + 1)
+
+    validation = newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
+    !await validation.start()
+
+    check validation.slots == @[slot.id]
+
+  for state in [SlotState.Finished, SlotState.Failed]:
+    test "when restoring historical state, " & fmt"it excludes slots in {state} state":
+      let slot1 = Slot.example
+      let slot2 = Slot.example
+      await marketplace.fillSlot(slot1.request.id, slot1.slotIndex, proof, collateral)
+      await marketplace.fillSlot(slot2.request.id, slot2.slotIndex, proof, collateral)
+
+      marketplace.slotState[slot1.id] = state
 
       validation =
         newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
       !await validation.start()
 
-      check validation.slots == @[slot.id]
+      check validation.slots == @[slot2.id]
 
-    for state in [SlotState.Finished, SlotState.Failed]:
-      test "when restoring historical state, " & fmt"it excludes slots in {state} state":
-        let slot1 = Slot.example
-        let slot2 = Slot.example
-        await marketplace.fillSlot(slot1.request.id, slot1.slotIndex, proof, collateral)
-        await marketplace.fillSlot(slot2.request.id, slot2.slotIndex, proof, collateral)
-
-        marketplace.slotState[slot1.id] = state
-
-        validation =
-          newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
-        !await validation.start()
-
-        check validation.slots == @[slot2.id]
-
-    test "it does not monitor more than the maximum number of slots ":
-      for _ in 0 ..< maxSlots + 1:
-        let slot = Slot.example
-        await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
-      validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
-      !await validation.start()
-      check validation.slots.len == maxSlots
-
-    test "slot is not observed if it is not in the validation group":
+  test "it does not monitor more than the maximum number of slots ":
+    for _ in 0 ..< maxSlots + 1:
+      let slot = Slot.example
       await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
-      validation = newValidation(
-        clock,
-        marketplace,
-        maxSlots,
-        validationGroups,
-        (groupIndex + 1) mod uint16(!validationGroups),
-      )
-      !await validation.start()
-      check validation.slots.len == 0
+    validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
+    !await validation.start()
+    check validation.slots.len == maxSlots
 
-    test "slot should be observed if maxSlots is set to 0":
-      await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
-      validation =
-        newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
-      !await validation.start()
-      check validation.slots == @[slot.id]
+  test "slot is not observed if it is not in the validation group":
+    await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
+    validation = newValidation(
+      clock,
+      marketplace,
+      maxSlots,
+      validationGroups,
+      (groupIndex + 1) mod uint16(!validationGroups),
+    )
+    !await validation.start()
+    check validation.slots.len == 0
 
-    test "slot should be observed if validation " &
-      "group is not set (and maxSlots is not 0)":
-      await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
-      validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
-      !await validation.start()
-      check validation.slots == @[slot.id]
+  test "slot should be observed if maxSlots is set to 0":
+    await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
+    validation = newValidation(clock, marketplace, maxSlots = 0, ValidationGroups.none)
+    !await validation.start()
+    check validation.slots == @[slot.id]
+
+  test "slot should be observed if validation " &
+    "group is not set (and maxSlots is not 0)":
+    await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
+    validation = newValidation(clock, marketplace, maxSlots, ValidationGroups.none)
+    !await validation.start()
+    check validation.slots == @[slot.id]
+
+  test "retries when querying slot filled events fails":
+    let error = newException(MarketplaceError, "some error")
+    marketplace.errorOnQueryPastSlotFilledEvents = some error
+    let starting = validation.start()
+    check eventually backoff.callCount > 0
+    await starting.cancelAndWait()
+
+  test "retries when retrieving slot state fails":
+    await marketplace.fillSlot(slot.request.id, slot.slotIndex, proof, collateral)
+    let error = newException(MarketplaceError, "some error")
+    marketplace.errorOnSlotState = some error
+    let starting = validation.start()
+    check eventually backoff.callCount > 0
+    await starting.cancelAndWait()
