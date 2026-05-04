@@ -50,7 +50,7 @@
 	url = https://github.com/status-im/nim-http-utils
 [submodule "vendor/nimble/chronos"]
 	path = vendor/nimble/chronos
-	url = https://github.com/status-im/nim-chronos
+	url = https://github.com/durability-labs/nim-chronos
 [submodule "vendor/nimble/dnsclient"]
 	path = vendor/nimble/dnsclient
 	url = https://github.com/ba0f3/dnsclient.nim

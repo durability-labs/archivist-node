@@ -10,6 +10,7 @@ proc connect*(
   try:
     let jsonRpcOptions = JsonRpcOptions(
       maxPriorityFeePerGas: options.maxPriorityFeePerGas.u256,
+      httpPipelining: true,
       httpConcurrencyLimit: some 10,
     )
     let provider = await JsonRpcProvider.connect(url, jsonRpcOptions)
