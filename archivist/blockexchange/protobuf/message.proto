@@ -38,21 +38,14 @@ message Message {
   message BlockPresence {
     bytes cid = 1;
     BlockPresenceType type = 2;
-    bytes price = 3;    // Amount of assets to pay for the block (UInt256)
-  }
-
-  message AccountMessage {
-    bytes address = 1; // Ethereum address to which payments should be made
-  }
-
-  message StateChannelUpdate {
-    bytes update = 1; // Signed Nitro state, serialized as JSON
+    reserved 3;
+    reserved "price";
   }
 
   Wantlist wantlist = 1;
   repeated Block payload = 3;
   repeated BlockPresence blockPresences = 4;
   int32 pendingBytes = 5;
-  AccountMessage account = 6;
-  StateChannelUpdate payment = 7;
+  reserved 6, 7;
+  reserved "account", "payment";
 }

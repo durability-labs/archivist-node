@@ -154,7 +154,7 @@ suite "Block Advertising and Discovery":
       peerId = PeerId.example
       haves = collect(initTable()):
         for blk in blocks:
-          {blk.address: Presence(address: blk.address, price: 0.u256)}
+          {blk.address: Presence(address: blk.address)}
 
     engine.peers.add(BlockExcPeerCtx(id: peerId, blocks: haves))
 

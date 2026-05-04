@@ -1,9 +1,7 @@
 import std/sequtils
 import std/algorithm
 
-import pkg/stew/byteutils
 import pkg/chronos
-import pkg/libp2p/errors
 import pkg/libp2p/routing_record
 import pkg/stew/bitseqs
 import pkg/archivistdht/discv5/protocol as discv5
@@ -341,11 +339,7 @@ asyncchecksuite "NetworkStore engine handlers":
 
     await engine.blockPresenceHandler(
       peerId,
-      blocks.mapIt(
-        PresenceMessage.init(
-          Presence(address: it.address, have: true, price: default(UInt256))
-        )
-      ),
+      blocks.mapIt(PresenceMessage.init(Presence(address: it.address, have: true))),
     )
 
     for a in blocks.mapIt(it.address):

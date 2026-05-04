@@ -47,21 +47,12 @@ type
   BlockPresence* = object
     address*: BlockAddress
     `type`*: BlockPresenceType
-    price*: seq[byte] # Amount of assets to pay for the block (UInt256)
-
-  AccountMessage* = object
-    address*: seq[byte] # Ethereum address to which payments should be made
-
-  StateChannelUpdate* = object
-    update*: seq[byte] # Signed Nitro state, serialized as JSON
 
   Message* = object
     wantList*: WantList
     payload*: seq[BlockDelivery]
     blockPresences*: seq[BlockPresence]
     pendingBytes*: uint
-    account*: AccountMessage
-    payment*: StateChannelUpdate
 
 #
 # Encoding Message into seq[byte] in Protobuf format
@@ -111,19 +102,6 @@ proc write*(pb: var ProtoBuffer, field: int, value: BlockPresence) =
   var ipb = initProtoBuffer()
   ipb.write(1, value.address)
   ipb.write(2, value.`type`.uint)
-  ipb.write(3, value.price)
-  ipb.finish()
-  pb.write(field, ipb)
-
-proc write*(pb: var ProtoBuffer, field: int, value: AccountMessage) =
-  var ipb = initProtoBuffer()
-  ipb.write(1, value.address)
-  ipb.finish()
-  pb.write(field, ipb)
-
-proc write*(pb: var ProtoBuffer, field: int, value: StateChannelUpdate) =
-  var ipb = initProtoBuffer()
-  ipb.write(1, value.update)
   ipb.finish()
   pb.write(field, ipb)
 
@@ -135,8 +113,6 @@ proc protobufEncode*(value: Message): seq[byte] =
   for v in value.blockPresences:
     ipb.write(4, v)
   ipb.write(5, value.pendingBytes)
-  ipb.write(6, value.account)
-  ipb.write(7, value.payment)
   ipb.finish()
   ipb.buffer
 
@@ -236,19 +212,6 @@ proc decode*(_: type BlockPresence, pb: ProtoBuffer): ProtoResult[BlockPresence]
     value.address = ?BlockAddress.decode(ipb)
   if ?pb.getField(2, field):
     value.`type` = BlockPresenceType(field)
-  discard ?pb.getField(3, value.price)
-  ok(value)
-
-proc decode*(_: type AccountMessage, pb: ProtoBuffer): ProtoResult[AccountMessage] =
-  var value = AccountMessage()
-  discard ?pb.getField(1, value.address)
-  ok(value)
-
-proc decode*(
-    _: type StateChannelUpdate, pb: ProtoBuffer
-): ProtoResult[StateChannelUpdate] =
-  var value = StateChannelUpdate()
-  discard ?pb.getField(1, value.update)
   ok(value)
 
 proc protobufDecode*(_: type Message, msg: seq[byte]): ProtoResult[Message] =
@@ -266,8 +229,4 @@ proc protobufDecode*(_: type Message, msg: seq[byte]): ProtoResult[Message] =
     for item in sublist:
       value.blockPresences.add(?BlockPresence.decode(initProtoBuffer(item)))
   discard ?pb.getField(5, value.pendingBytes)
-  if ?pb.getField(6, ipb):
-    value.account = ?AccountMessage.decode(ipb)
-  if ?pb.getField(7, ipb):
-    value.payment = ?StateChannelUpdate.decode(ipb)
   ok(value)
