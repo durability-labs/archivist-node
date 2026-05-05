@@ -61,7 +61,9 @@ proc record(
   recording.subscription = await contract.subscribe(Event, onEvent)
   recording
 
-template waitForIt(recording: Recording, condition: untyped): Future[void] =
+template waitForIt(
+    recording: Recording, timeout: Duration, condition: untyped
+): Future[void] =
   block:
     proc waiting() {.gensym, async.} =
       while true:
@@ -70,7 +72,11 @@ template waitForIt(recording: Recording, condition: untyped): Future[void] =
           break
       await recording.subscription.unsubscribe()
 
-    waiting()
+    proc waitingTimeout() {.gensym, async.} =
+      if not await waiting().withTimeout(timeout):
+        raiseAssert "marketplace timeout exceeded (" & $timeout & ")"
+
+    waitingTimeout()
 
 proc recordStorageRequested*(
     builder: MarketplaceBuilder
@@ -78,19 +84,21 @@ proc recordStorageRequested*(
   await builder.record(builder.contract, StorageRequested)
 
 proc waitForStorageRequested*(
-    recording: Recording[StorageRequested], requestId: string
+    recording: Recording[StorageRequested], requestId: string, timeout = 10.minutes
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  await recording.waitForIt(it.requestId == requestid)
+  await recording.waitForIt(timeout, it.requestId == requestid)
 
 proc recordSlotFilled*(
     builder: MarketplaceBuilder
 ): Future[Recording[SlotFilled]] {.async.} =
   await builder.record(builder.contract, SlotFilled)
 
-proc waitForSlotFilled*(recording: Recording[SlotFilled], requestId: string) {.async.} =
+proc waitForSlotFilled*(
+    recording: Recording[SlotFilled], requestId: string, timeout = 10.minutes
+) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  await recording.waitForIt(it.requestId == requestid)
+  await recording.waitForIt(timeout, it.requestId == requestid)
 
 proc recordRequestStarted*(
     builder: MarketplaceBuilder
@@ -98,10 +106,10 @@ proc recordRequestStarted*(
   await builder.record(builder.contract, RequestFulfilled)
 
 proc waitForRequestStarted*(
-    recording: Recording[RequestFulfilled], requestId: string
+    recording: Recording[RequestFulfilled], requestId: string, timeout = 10.minutes
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  await recording.waitForIt(it.requestId == requestid)
+  await recording.waitForIt(timeout, it.requestId == requestid)
 
 proc recordRequestFailed*(
     builder: MarketplaceBuilder
@@ -109,36 +117,42 @@ proc recordRequestFailed*(
   await builder.record(builder.contract, RequestFailed)
 
 proc waitForRequestFailed*(
-    recording: Recording[RequestFailed], requestId: string
+    recording: Recording[RequestFailed], requestId: string, timeout = 10.minutes
 ) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  await recording.waitForIt(it.requestId == requestId)
+  await recording.waitForIt(timeout, it.requestId == requestId)
 
 proc recordProofSubmitted*(
     builder: MarketplaceBuilder
 ): Future[Recording[ProofSubmitted]] {.async.} =
   await builder.record(builder.contract, ProofSubmitted)
 
-proc waitForProofSubmitted*(recording: Recording[ProofSubmitted]) {.async.} =
-  await recording.waitForIt(true)
+proc waitForProofSubmitted*(
+    recording: Recording[ProofSubmitted], timeout = 10.minutes
+) {.async.} =
+  await recording.waitForIt(timeout, true)
 
 proc recordSlotFreed*(
     builder: MarketplaceBuilder
 ): Future[Recording[SlotFreed]] {.async.} =
   await builder.record(builder.contract, SlotFreed)
 
-proc waitForSlotFreed*(recording: Recording[SlotFreed], requestId: string) {.async.} =
+proc waitForSlotFreed*(
+    recording: Recording[SlotFreed], requestId: string, timeout = 10.minutes
+) {.async.} =
   let requestId = hexToByteArray(requestId, 32)
-  await recording.waitForIt(it.requestId == requestId)
+  await recording.waitForIt(timeout, it.requestId == requestId)
 
 proc recordTransfers*(
     builder: MarketplaceBuilder
 ): Future[Recording[Transfer]] {.async.} =
   await builder.record(await builder.token, Transfer)
 
-proc waitForTransferTo*(recording: Recording[Transfer], node: Node) {.async.} =
+proc waitForTransferTo*(
+    recording: Recording[Transfer], node: Node, timeout = 10.minutes
+) {.async.} =
   let builder = recording.builder
   let sender = await builder.vault
   without receiver =? await builder.testbed.api(node).getEthAddress():
     raise newException(TestbedError, "node does not have an eth address")
-  await recording.waitForIt(it.sender == sender and it.receiver == receiver)
+  await recording.waitForIt(timeout, it.sender == sender and it.receiver == receiver)
