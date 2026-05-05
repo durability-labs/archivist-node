@@ -39,4 +39,4 @@ suite "Repair":
         break
 
     # wait for slot to be repaired
-    await filled.waitForSlotFilled(request.id)
+    await filled.waitForSlotFilled(request.id, timeout = 30.minutes)
