@@ -4,11 +4,11 @@ include "vendor/nimble/install.nims"
 
 when defined(release):
   switch(
-    "nimcache", joinPath(currentSourcePath.parentDir, "nimcache/release/$projectName")
+    "nimcache", joinPath(currentSourcePath.parentDir, "nimcache/release")
   )
 else:
   switch(
-    "nimcache", joinPath(currentSourcePath.parentDir, "nimcache/debug/$projectName")
+    "nimcache", joinPath(currentSourcePath.parentDir, "nimcache/debug")
   )
 
 # bypass Nim TLSF allocator to avoid cross-thread leaks
