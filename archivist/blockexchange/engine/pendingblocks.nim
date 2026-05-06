@@ -15,11 +15,14 @@ import std/monotimes
 import pkg/chronos
 import pkg/libp2p
 import pkg/metrics
-import pkg/results
 
 import ../protobuf/blockexc
 import ../../blocktype
 import ../../logutils
+
+import ./errors
+
+export errors
 
 logScope:
   topics = "archivist pendingblocks"
@@ -38,16 +41,7 @@ const
   DefaultRetryInterval* = 500.millis
 
 type
-  BDError* = object of CatchableError
-    address*: BlockAddress
-
-  BDRetriesExhaustedError* = object of BDError
-  BDValidationRejectedError* = object of BDError
-  BDStorageFailedError* = object of BDError
-  BDEngineStoppedError* = object of BDError
-  BDQueueFailedError* = object of BDError
-
-  BlockHandle* = Future[BlockDelivery].Raising([CancelledError, BDError])
+  BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
   PendingBlocksCancelHandler* = proc(address: BlockAddress) {.gcsafe, raises: [].}
 
   BlockReq* = object
@@ -149,11 +143,13 @@ proc resolve*(
         trace "Block handle already finished", address = bd.address
 
 proc failWantHandle*(
-    self: PendingBlocksManager, address: BlockAddress, errType: typedesc, msg: string
+    self: PendingBlocksManager,
+    address: BlockAddress,
+    errType: typedesc[EngineError],
+    msg: string,
 ) =
   self.blocks.withValue(address, blockReq):
     if not blockReq[].handle.finished:
-      # trace "Failing want handle", address, kind, msg
       blockReq[].handle.fail(((ref errType)(address: address, msg: msg)))
 
 proc cancelAll*(self: PendingBlocksManager): Future[void] {.async: (raises: []).} =

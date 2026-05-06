@@ -313,8 +313,6 @@ asyncchecksuite "NetworkStore engine handlers":
       await fut.cancelAndWait()
 
   test "Should handle block presence":
-    var handles: Table[Cid, BlockHandle]
-
     proc sendWantList(
         id: PeerId,
         addresses: seq[BlockAddress],
@@ -334,7 +332,8 @@ asyncchecksuite "NetworkStore engine handlers":
       BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
 
     # only Cids in peer want lists are requested
-    handles = blocks.mapIt((it.cid, engine.pendingBlocks.getWantHandle(it.cid))).toTable
+    for blk in blocks:
+      discard engine.pendingBlocks.getWantHandle(blk.cid)
 
     await engine.blockPresenceHandler(
       peerId,
@@ -477,7 +476,7 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
 
-    expect BDRetriesExhaustedError:
+    expect RetriesExhaustedEngineError:
       discard await pending
 
   test "Should request delivery handles":
@@ -526,11 +525,11 @@ asyncchecksuite "Block Download":
       handles = (engine.requestDeliveries(@[address1, address2])).tryGet()
 
     engine.pendingBlocks.failWantHandle(
-      address1, BDValidationRejectedError, "Block validation failed"
+      address1, QueueFailedEngineError, "Block request queue failed"
     )
     engine.completeBlock(address2, blocks[1])
 
-    expect BDValidationRejectedError:
+    expect QueueFailedEngineError:
       discard await handles[0]
 
     let delivery = await handles[1]

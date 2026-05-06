@@ -35,9 +35,10 @@ import ../peers
 
 import ./discovery
 import ./advertiser
+import ./errors
 import ./pendingblocks
 
-export peers, pendingblocks, discovery
+export peers, pendingblocks, discovery, errors
 
 logScope:
   topics = "archivist blockexcengine"
@@ -288,7 +289,7 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, raises: [].} =
       if self.pendingBlocks.retriesExhausted(address):
         archivist_block_exchange_requests_failed_total.inc()
         self.pendingBlocks.failWantHandle(
-          address, BDRetriesExhaustedError, "Block request retries exhausted"
+          address, RetriesExhaustedEngineError, "Block request retries exhausted"
         )
       else:
         self.queueBlockRequest(address)
@@ -306,7 +307,7 @@ proc queueBlockRequest(
     self.requestQueue.putNoWait(address)
   except AsyncQueueFullError as exc:
     warn "Unable to queue block request", address, err = exc.msg
-    self.pendingBlocks.failWantHandle(address, BDQueueFailedError, exc.msg)
+    self.pendingBlocks.failWantHandle(address, QueueFailedEngineError, exc.msg)
 
 proc delayedQueueBlockRequest(
     self: BlockExcEngine, address: BlockAddress, delay: Duration
@@ -328,7 +329,10 @@ proc clearBlockRequestState(
   self.pendingBlocks.clearRequest(address)
 
 proc failBlockRequest(
-    self: BlockExcEngine, address: BlockAddress, errType: typedesc, msg: string
+    self: BlockExcEngine,
+    address: BlockAddress,
+    errType: typedesc[EngineError],
+    msg: string,
 ) {.raises: [].} =
   self.clearBlockRequestState(address)
   self.pendingBlocks.failWantHandle(address, errType, msg)
@@ -340,7 +344,7 @@ proc retryBlockRequest(
   if self.pendingBlocks.retriesExhausted(address):
     archivist_block_exchange_requests_failed_total.inc()
     self.failBlockRequest(
-      address, BDRetriesExhaustedError, "Retries exhausted for block"
+      address, RetriesExhaustedEngineError, "Retries exhausted for block"
     )
   else:
     self.trackedFutures.track(self.delayedQueueBlockRequest(address, delay))
@@ -384,7 +388,7 @@ proc scheduleRequestBatch(
 
     if self.pendingBlocks.retriesExhausted(address):
       self.failBlockRequest(
-        address, BDRetriesExhaustedError, "Block request retries exhausted"
+        address, RetriesExhaustedEngineError, "Block request retries exhausted"
       )
       continue
 
@@ -484,12 +488,9 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
 proc requestDeliveries*(
     self: BlockExcEngine, addresses: seq[BlockAddress], priority = 0
 ): ?!seq[BlockHandle] =
-  let addresses = addresses.deduplicate()
-  if addresses.len == 0:
-    return success(newSeq[BlockHandle]())
-
   var handles: seq[BlockHandle]
-  for address in addresses:
+
+  for address in addresses.deduplicate():
     let handle = self.pendingBlocks.getWantHandle(address)
     self.queueBlockRequest(address)
     handles.add(handle)
@@ -499,11 +500,9 @@ proc requestDeliveries*(
 proc requestDelivery*(
     self: BlockExcEngine, address: BlockAddress, priority = 0
 ): ?!BlockHandle =
-  let handles = ?self.requestDeliveries(@[address], priority)
-  if handles.len == 0:
-    return failure("No delivery handle returned")
-
-  success handles[0]
+  let handle = self.pendingBlocks.getWantHandle(address)
+  self.queueBlockRequest(address)
+  success handle
 
 proc completeBlock*(self: BlockExcEngine, address: BlockAddress, blk: Block) =
   if address in self.pendingBlocks.blocks:
@@ -515,9 +514,10 @@ proc blockPresenceHandler*(
     self: BlockExcEngine, peer: PeerId, blocks: seq[BlockPresence]
 ) {.async: (raises: []).} =
   trace "Received block presence from peer", peer, len = blocks.len
-  let
-    peerCtx = self.peers.get(peer)
-    ourWantList = toHashSet(self.pendingBlocks.wantList.toSeq)
+  let peerCtx = self.peers.get(peer)
+  var ourWantList: HashSet[BlockAddress]
+  for address in self.pendingBlocks.wantList:
+    ourWantList.incl(address)
 
   if peerCtx.isNil:
     return
@@ -559,12 +559,10 @@ proc cancelBlocks(
     return
 
   proc dispatchCancellations(
-      entry: tuple[peerId: PeerId, addresses: HashSet[BlockAddress]]
+      peerId: PeerId, addresses: HashSet[BlockAddress]
   ): Future[PeerId] {.async: (raises: [CancelledError]).} =
-    await self.network.request.sendWantCancellations(
-      entry.peerId, entry.addresses.toSeq
-    )
-    entry.peerId
+    await self.network.request.sendWantCancellations(peerId, addresses.toSeq)
+    peerId
 
   try:
     for peerCtx in self.peers.peers.values:
@@ -575,11 +573,13 @@ proc cancelBlocks(
     if scheduledCancellations.len == 0:
       return
 
-    let (succeededFuts, failedFuts) = await allFinishedFailed[PeerId](
-      toSeq(scheduledCancellations.pairs).map(dispatchCancellations)
-    )
+    var futures: seq[Future[PeerId]]
+    for peerId, addresses in scheduledCancellations:
+      futures.add(dispatchCancellations(peerId, addresses))
 
-    (await allFinished(succeededFuts)).mapIt(it.read).apply do(peerId: PeerId):
+    let (succeededFuts, failedFuts) = await allFinishedFailed[PeerId](futures)
+    for fut in succeededFuts:
+      let peerId = fut.read
       let ctx = self.peers.get(peerId)
       if not ctx.isNil:
         ctx.cleanPresence(addrs)
@@ -646,7 +646,7 @@ proc blocksDeliveryHandler*(
     blocksDelivery: seq[BlockDelivery],
     allowSpurious = false,
 ) {.async: (raises: [CancelledError]).} =
-  trace "Received blocks from peer", peer, blocks = blocksDelivery.mapIt(it.address)
+  trace "Received blocks from peer", peer, count = blocksDelivery.len
 
   var
     validatedBlocksDelivery: seq[BlockDelivery]
@@ -707,7 +707,7 @@ proc blocksDeliveryHandler*(
       error "Unable to store leaf blocks", treeCid, err = err.msg
       for delivery in validatedBlocksDelivery:
         if delivery.address.leaf and delivery.address.treeCid == treeCid:
-          self.failBlockRequest(delivery.address, BDStorageFailedError, err.msg)
+          self.failBlockRequest(delivery.address, StorageFailedEngineError, err.msg)
       validatedBlocksDelivery.keepItIf(
         not (it.address.leaf and it.address.treeCid == treeCid)
       )
@@ -731,7 +731,7 @@ proc blocksDeliveryHandler*(
     let storeResult = await self.localStore.storeManifest(manifest)
     if err =? storeResult.errorOption:
       error "Unable to store manifest", err = err.msg
-      self.failBlockRequest(bd.address, BDStorageFailedError, err.msg)
+      self.failBlockRequest(bd.address, StorageFailedEngineError, err.msg)
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
@@ -833,13 +833,6 @@ proc setupPeer*(
   let peerCtx = self.peers.get(peer)
   await self.refreshBlockKnowledge(peerCtx, skipDelta = true)
 
-proc splitBatches[T](values: seq[T], batchSize: int): seq[seq[T]] =
-  var offset = 0
-  while offset < values.len:
-    let batchEnd = min(offset + batchSize, values.len)
-    result.add(values[offset ..< batchEnd])
-    offset = batchEnd
-
 proc taskHandler*(
     self: BlockExcEngine, peerCtx: BlockExcPeerCtx
 ) {.gcsafe, async: (raises: [CancelledError]).} =
@@ -905,7 +898,7 @@ proc taskHandler*(
     if blockDeliveries.len == 0:
       return
 
-    for batch in splitBatches(blockDeliveries, self.maxBlocksPerMessage):
+    for batch in blockDeliveries.batches(self.maxBlocksPerMessage):
       await self.network.request.sendBlocksDelivery(peerCtx.id, batch)
       archivist_block_exchange_blocks_sent.inc(batch.len.int64)
       for delivery in batch:

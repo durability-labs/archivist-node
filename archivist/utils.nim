@@ -71,6 +71,13 @@ func roundUp*[T](a, b: T): T =
   ## Round up 'a' to the next value divisible by 'b'
   divUp(a, b) * b
 
+iterator batches*[T](values: openArray[T], batchSize: Positive): seq[T] =
+  var offset = 0
+  while offset < values.len:
+    let batchEnd = min(offset + batchSize, values.len)
+    yield @values[offset ..< batchEnd]
+    offset = batchEnd
+
 proc orElse*[A](a, b: Option[A]): Option[A] =
   if (a.isSome()): a else: b
 
