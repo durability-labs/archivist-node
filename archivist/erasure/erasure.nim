@@ -123,7 +123,9 @@ proc getPendingBlocks(
 ): AsyncIter[(?!bt.Block, int)] =
   ## Get pending blocks iterator
   ##
-  var pendingBlocks: seq[Future[(?!bt.Block, int)]] = @[]
+  var
+    pendingBlocks: seq[Future[(?!bt.Block, int)]] = @[]
+    disposed = false
 
   proc attachIndex(
       fut: Future[?!bt.Block], i: int
@@ -137,7 +139,14 @@ proc getPendingBlocks(
     pendingBlocks.add(attachIndex(fut, blockIndex))
 
   proc isFinished(): bool =
-    pendingBlocks.len == 0
+    disposed or pendingBlocks.len == 0
+
+  proc dispose(): Future[void] {.async.} =
+    disposed = true
+    pendingBlocks.setLen(0)
+
+  proc isDisposed(): bool =
+    disposed
 
   proc genNext(): Future[(?!bt.Block, int)] {.async.} =
     let completedFut = await one(pendingBlocks)
@@ -151,7 +160,7 @@ proc getPendingBlocks(
         "Future for block id not found, tree cid: " & $treeCid & ", index: " & $index,
       )
 
-  AsyncIter[(?!bt.Block, int)].new(genNext, isFinished)
+  AsyncIter[(?!bt.Block, int)].new(genNext, isFinished, dispose, isDisposed)
 
 proc prepareEncodingData(
     self: Erasure,
@@ -185,10 +194,14 @@ proc prepareEncodingData(
     pendingBlocksIter =
       self.getPendingBlocks(treeCid, indices.filterIt(it < params.blocksCount))
 
+  defer:
+    if err =? catchAsync(await pendingBlocksIter.dispose()).errorOption:
+      warn "Failed to dispose pending encoding block iterator", err = err.msg
+
   var resolved = 0
-  for fut in pendingBlocksIter:
+  while not pendingBlocksIter.finished:
     let
-      (blkOrErr, idx) = ?catchAsync(await fut)
+      (blkOrErr, idx) = ?catchAsync(await pendingBlocksIter.next())
       blk = ?blkOrErr
 
     let pos = indexToPos(params.steps, idx, step)
@@ -237,17 +250,18 @@ proc prepareDecodingData(
     indices = toSeq(?catch(strategy.getIndices(step)))
     pendingBlocksIter = self.getPendingBlocks(treeCid, indices)
 
+  defer:
+    if err =? catchAsync(await pendingBlocksIter.dispose()).errorOption:
+      warn "Failed to dispose pending decoding block iterator", err = err.msg
+
   var
     dataPieces = 0
     parityPieces = 0
     resolved = 0
-  for fut in pendingBlocksIter:
+  while not pendingBlocksIter.finished and resolved < params.ecK:
     # Continue to receive blocks until we have just enough for decoding
     # or no more blocks can arrive
-    if resolved >= params.ecK:
-      break
-
-    let (blkOrErr, idx) = ?catchAsync(await fut)
+    let (blkOrErr, idx) = ?catchAsync(await pendingBlocksIter.next())
     without blk =? blkOrErr, err:
       trace "Failed retrieving a block", idx, treeCid = treeCid, msg = err.msg
       continue
@@ -431,7 +445,7 @@ proc encodeData(
       idx.inc(params.steps)
 
     trace "Storing parity blocks", count = blocks.len
-    ?await self.repoStore.putBlocks(tmpTreeCid, blocks)
+    ?await self.networkStore.putBlocks(tmpTreeCid, blocks)
 
   trace "Encoding complete", encodedBlocksCount = params.encodedBlocksCount
   success cids
@@ -471,7 +485,7 @@ proc encode*(
     for index, cid in cids[]:
       proofItems.add((index.Natural, cid, ?tree.getProof(index)))
 
-    ?await self.repoStore.putCidsAndProofs(targetCid, proofItems)
+    ?await self.networkStore.putCidsAndProofs(targetCid, proofItems)
 
     trace "Tree and proofs stored", treeCid, blocks = blocks, parity = parity
     success treeCid
@@ -593,9 +607,18 @@ proc decodeInternal(
     parityData[].setLen(params.ecM) # set len to M
     recovered[] = newSeqWith(params.ecK, newSeqWith(params.blockSize.int, 0'u8))
 
-    let (dataPieces, _) =
+    let (dataPieces, parityPieces) =
       ?await self.prepareDecodingData(
         encodedTreeCid, params, step, data, parityData, cids, emptyBlock
+      )
+
+    if dataPieces + parityPieces < params.ecK:
+      return failure(
+        (ref InsufficientBlocksError)(
+          msg:
+            "Insufficient erasure pieces for decoding step " & $step & ": got " &
+            $(dataPieces + parityPieces) & ", need " & $params.ecK
+        )
       )
 
     if dataPieces >= params.ecK:

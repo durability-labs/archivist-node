@@ -253,5 +253,5 @@ asyncchecksuite "NetworkStore - multiple nodes":
 
     await allFuturesThrowing(allFinished(pendingBlocks1), allFinished(pendingBlocks2))
 
-    check pendingBlocks1.mapIt(it.read) == blocks[0 .. 3]
-    check pendingBlocks2.mapIt(it.read) == blocks[12 .. 15]
+    check pendingBlocks1.mapIt(it.read.blk) == blocks[0 .. 3]
+    check pendingBlocks2.mapIt(it.read.blk) == blocks[12 .. 15]

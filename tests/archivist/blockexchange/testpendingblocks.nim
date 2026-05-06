@@ -31,7 +31,8 @@ suite "Pending Blocks":
     await sleepAsync(0.millis)
       # trigger the event loop, otherwise the block finishes before poll runs
     let resolved = await handle
-    check resolved == blk
+    check resolved.blk == blk
+    check resolved.address == blk.address
     check blk.cid notin pendingBlocks
 
   test "Should cancel want handle":
@@ -43,6 +44,19 @@ suite "Pending Blocks":
     check blk.cid in pendingBlocks
     await handle.cancelAndWait()
     check blk.cid notin pendingBlocks
+
+  test "Should cancel all want handles":
+    let
+      pendingBlocks = PendingBlocksManager.new()
+      blks = (0 .. 9).mapIt(bt.Block.new(("Hello " & $it).toBytes).tryGet)
+      handles = blks.mapIt(pendingBlocks.getWantHandle(it.cid))
+
+    await pendingBlocks.cancelAll()
+
+    check pendingBlocks.len == 0
+    for handle in handles:
+      expect CancelledError:
+        discard await handle
 
   test "Should get wants list":
     let
@@ -66,8 +80,8 @@ suite "Pending Blocks":
     pendingBlocks.resolve(blks.mapIt(BlockDelivery(blk: it, address: it.address)))
 
     check:
-      (await allFinished(wantHandles)).mapIt($it.read.cid).sorted(cmp[string]) ==
-        (await allFinished(handles)).mapIt($it.read.cid).sorted(cmp[string])
+      (await allFinished(wantHandles)).mapIt($it.read.blk.cid).sorted(cmp[string]) ==
+        (await allFinished(handles)).mapIt($it.read.blk.cid).sorted(cmp[string])
 
   test "Should handle retry counters":
     let

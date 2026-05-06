@@ -285,7 +285,7 @@ asyncchecksuite "NetworkStore engine handlers":
 
     await engine.blocksDeliveryHandler(peerId, blocksDelivery, allowSpurious = true)
     let resolved = await allFinished(pending)
-    check resolved.mapIt(it.read) == blocks
+    check resolved.mapIt(it.read.blk) == blocks
 
     # Verify blocks are persisted with tree-aware hasBlock
     for i in indices:
@@ -313,8 +313,7 @@ asyncchecksuite "NetworkStore engine handlers":
       await fut.cancelAndWait()
 
   test "Should handle block presence":
-    var handles:
-      Table[Cid, Future[Block].Raising([CancelledError, RetriesExhaustedError])]
+    var handles: Table[Cid, BlockHandle]
 
     proc sendWantList(
         id: PeerId,
@@ -429,10 +428,16 @@ asyncchecksuite "Block Download":
     )
     network = BlockExcNetwork()
 
-    discovery =
-      DiscoveryEngine.new(localStore, peerStore, network, blockDiscovery, pendingBlocks)
+    discovery = DiscoveryEngine.new(
+      localStore,
+      peerStore,
+      network,
+      blockDiscovery,
+      pendingBlocks,
+      concurrentDiscReqs = 0,
+    )
 
-    advertiser = Advertiser.new(localStore, blockDiscovery)
+    advertiser = Advertiser.new(localStore, blockDiscovery, concurrentAdvReqs = 0)
 
     engine = BlockExcEngine.new(
       localStore, network, discovery, advertiser, peerStore, pendingBlocks
@@ -440,8 +445,10 @@ asyncchecksuite "Block Download":
 
     peerCtx = BlockExcPeerCtx(id: peerId)
     engine.peers.add(peerCtx)
+    await engine.start()
 
   teardown:
+    await engine.stop()
     tp.shutdown()
 
   test "Should exhaust retries":
@@ -468,10 +475,145 @@ asyncchecksuite "Block Download":
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
 
-    let pending = engine.requestBlock(address)
+    let pending = engine.requestDelivery(address).tryGet()
 
-    expect RetriesExhaustedError:
-      discard (await pending).tryGet()
+    expect BDRetriesExhaustedError:
+      discard await pending
+
+  test "Should request delivery handles":
+    let address = BlockAddress.init(blocks[0].cid)
+
+    let handles = (engine.requestDeliveries(@[address])).tryGet()
+    check handles.len == 1
+
+    engine.completeBlock(address, blocks[0])
+    let delivery = await handles[0]
+    check delivery.address == address
+    check delivery.blk == blocks[0]
+
+  test "Should deduplicate delivery requests":
+    let address = BlockAddress.init(blocks[0].cid)
+
+    let handles = (engine.requestDeliveries(@[address, address])).tryGet()
+
+    check handles.len == 1
+    check engine.pendingBlocks.wantListLen == 1
+
+  test "Should resolve delivery handles independently":
+    let
+      address1 = BlockAddress.init(blocks[0].cid)
+      address2 = BlockAddress.init(blocks[1].cid)
+      handles = (engine.requestDeliveries(@[address1, address2])).tryGet()
+
+    check handles.len == 2
+
+    engine.completeBlock(address1, blocks[0])
+    let delivery = await handles[0]
+
+    check delivery.address == address1
+    check delivery.blk == blocks[0]
+    check not handles[1].finished
+
+    engine.completeBlock(address2, blocks[1])
+    let delivery2 = await handles[1]
+    check delivery2.address == address2
+    check delivery2.blk == blocks[1]
+
+  test "Should isolate delivery handle failures":
+    let
+      address1 = BlockAddress.init(blocks[0].cid)
+      address2 = BlockAddress.init(blocks[1].cid)
+      handles = (engine.requestDeliveries(@[address1, address2])).tryGet()
+
+    engine.pendingBlocks.failWantHandle(
+      address1, BDValidationRejectedError, "Block validation failed"
+    )
+    engine.completeBlock(address2, blocks[1])
+
+    expect BDValidationRejectedError:
+      discard await handles[0]
+
+    let delivery = await handles[1]
+    check delivery.address == address2
+    check delivery.blk == blocks[1]
+
+  test "Should batch want block requests to one peer":
+    let
+      addresses = blocks[0 .. 2].mapIt(BlockAddress.init(it.cid))
+      done = newFuture[void]()
+
+    var wantBlockBatches: seq[seq[BlockAddress]]
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        wantBlockBatches.add(addresses)
+        done.complete()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    for address in addresses:
+      peerCtx.setPresence(Presence(address: address, have: true))
+
+    discard (engine.requestDeliveries(addresses)).tryGet()
+    await done.wait(100.millis)
+
+    check wantBlockBatches.len == 1
+    check wantBlockBatches[0].mapIt($it).sorted(cmp[string]) ==
+      addresses.mapIt($it).sorted(cmp[string])
+
+  test "Should ignore stale timeout for newer same-peer request":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      sent = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        sent.complete()
+
+    peerCtx.activityTimeout = 20.millis
+    peerCtx.setPresence(Presence(address: address, have: true))
+    engine.pendingBlocks.blockRetries = 3
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    discard (engine.requestDeliveries(@[address])).tryGet()
+    await sent.wait(100.millis)
+
+    let retriesBefore = engine.pendingBlocks.retries(address)
+    engine.pendingBlocks.clearRequest(address, peerId.some)
+    peerCtx.blockRequestCancelled(address)
+    let nextRequestId = engine.pendingBlocks.markRequested(address, peerId)
+    check nextRequestId.isSome
+    peerCtx.blockRequestScheduled(address)
+
+    await sleepAsync(50.millis)
+
+    check engine.pendingBlocks.isRequested(address)
+    check engine.pendingBlocks.getRequestPeer(address) == peerId.some
+    check engine.pendingBlocks.retries(address) == retriesBefore
 
   test "Should retry block request":
     var
@@ -505,7 +647,7 @@ asyncchecksuite "Block Download":
       )
     )
 
-    let pending = engine.requestBlock(address)
+    let pending = engine.requestDelivery(address).tryGet()
     await steps.wait()
 
     await engine.blockPresenceHandler(
@@ -515,7 +657,7 @@ asyncchecksuite "Block Download":
     await steps.wait()
 
     engine.completeBlock(address, blocks[0])
-    check (await pending).tryGet() == blocks[0]
+    check (await pending).blk == blocks[0]
 
   test "Should cancel block request":
     var
@@ -541,12 +683,12 @@ asyncchecksuite "Block Download":
       )
     )
 
-    let pending = engine.requestBlock(address)
+    let pending = engine.requestDelivery(address).tryGet()
     await done.wait(100.millis)
 
-    pending.cancel()
+    await pending.cancelAndWait()
     expect CancelledError:
-      discard (await pending).tryGet()
+      discard await pending
 
 asyncchecksuite "Task Handler":
   var

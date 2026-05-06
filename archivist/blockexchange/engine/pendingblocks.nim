@@ -2,7 +2,7 @@
 ## Copyright (c) 2021 Status Research & Development GmbH
 ## Licensed under either of
 ##  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE))
-##  * MIT license ([LICENSE-MIT](LICENSE-MIT))
+##  * MIT license, ([LICENSE-MIT](LICENSE-MIT))
 ## at your option.
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
@@ -15,6 +15,7 @@ import std/monotimes
 import pkg/chronos
 import pkg/libp2p
 import pkg/metrics
+import pkg/results
 
 import ../protobuf/blockexc
 import ../../blocktype
@@ -37,12 +38,22 @@ const
   DefaultRetryInterval* = 500.millis
 
 type
-  RetriesExhaustedError* = object of CatchableError
-  BlockHandle* = Future[Block].Raising([CancelledError, RetriesExhaustedError])
+  BDError* = object of CatchableError
+    address*: BlockAddress
+
+  BDRetriesExhaustedError* = object of BDError
+  BDValidationRejectedError* = object of BDError
+  BDStorageFailedError* = object of BDError
+  BDEngineStoppedError* = object of BDError
+  BDQueueFailedError* = object of BDError
+
+  BlockHandle* = Future[BlockDelivery].Raising([CancelledError, BDError])
+  PendingBlocksCancelHandler* = proc(address: BlockAddress) {.gcsafe, raises: [].}
 
   BlockReq* = object
     handle*: BlockHandle
     requested*: ?PeerId
+    requestId*: uint64
     blockRetries*: int
     startTime*: int64
 
@@ -51,28 +62,32 @@ type
     retryInterval*: Duration = DefaultRetryInterval
     blocks*: Table[BlockAddress, BlockReq] # pending Block requests
     lastInclusion*: Moment
+    onCancel*: PendingBlocksCancelHandler
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
 
 proc getWantHandle*(
     self: PendingBlocksManager, address: BlockAddress, requested: ?PeerId = PeerId.none
-): Future[Block] {.async: (raw: true, raises: [CancelledError, RetriesExhaustedError]).} =
+): BlockHandle =
   ## Add an event for a block
   ##
 
   self.blocks.withValue(address, blk):
     return blk[].handle
   do:
-    let blk = BlockReq(
-      handle: newFuture[Block]("pendingBlocks.getWantHandle"),
-      requested: requested,
-      blockRetries: self.blockRetries,
-      startTime: getMonoTime().ticks,
-    )
+    let
+      blk = BlockReq(
+        handle: BlockHandle.init("pendingBlocks.getWantHandle"),
+        requested: requested,
+        blockRetries: self.blockRetries,
+        startTime: getMonoTime().ticks,
+      )
+
+      handle = blk.handle
+
     self.blocks[address] = blk
     self.lastInclusion = Moment.now()
-    let handle = blk.handle
 
     proc cleanUpBlock(data: pointer) {.raises: [].} =
       self.blocks.del(address)
@@ -82,24 +97,28 @@ proc getWantHandle*(
     handle.cancelCallback = proc(data: pointer) {.raises: [].} =
       if not handle.finished:
         handle.removeCallback(cleanUpBlock)
+
+      if not self.onCancel.isNil:
+        self.onCancel(address)
       cleanUpBlock(nil)
 
     self.updatePendingBlockGauge()
+
     return handle
 
 proc getWantHandle*(
     self: PendingBlocksManager, cid: Cid, requested = PeerId.none
-): Future[Block] {.async: (raw: true, raises: [CancelledError, RetriesExhaustedError]).} =
+): BlockHandle =
   self.getWantHandle(BlockAddress.init(cid), requested)
 
 proc completeWantHandle*(
     self: PendingBlocksManager, address: BlockAddress, blk: Block
-) {.raises: [].} =
+) =
   ## Complete a pending want handle
   self.blocks.withValue(address, blockReq):
     if not blockReq[].handle.finished:
       trace "Completing want handle from provided block", address
-      blockReq[].handle.complete(blk)
+      blockReq[].handle.complete(BlockDelivery(blk: blk, address: address))
     else:
       trace "Want handle already completed", address
   do:
@@ -107,7 +126,7 @@ proc completeWantHandle*(
 
 proc resolve*(
     self: PendingBlocksManager, blocksDelivery: seq[BlockDelivery]
-) {.gcsafe, raises: [].} =
+) {.gcsafe.} =
   ## Resolve pending blocks
   ##
 
@@ -120,7 +139,7 @@ proc resolve*(
           stopTime = getMonoTime().ticks
           retrievalDurationUs = (stopTime - startTime) div 1000
 
-        blockReq.handle.complete(bd.blk)
+        blockReq.handle.complete(bd)
 
         archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
 
@@ -129,11 +148,31 @@ proc resolve*(
       else:
         trace "Block handle already finished", address = bd.address
 
+proc failWantHandle*(
+    self: PendingBlocksManager, address: BlockAddress, errType: typedesc, msg: string
+) =
+  self.blocks.withValue(address, blockReq):
+    if not blockReq[].handle.finished:
+      # trace "Failing want handle", address, kind, msg
+      blockReq[].handle.fail(((ref errType)(address: address, msg: msg)))
+
+proc cancelAll*(self: PendingBlocksManager): Future[void] {.async: (raises: []).} =
+  var handles: seq[BlockHandle]
+  for blockReq in self.blocks.values:
+    handles.add(blockReq.handle)
+
+  var cancellations: seq[Future[void]]
+  for handle in handles:
+    if not handle.finished:
+      cancellations.add(handle.cancelAndWait())
+
+  await noCancel allFutures(cancellations)
+
 func retries*(self: PendingBlocksManager, address: BlockAddress): int =
   self.blocks.withValue(address, pending):
-    result = pending[].blockRetries
+    return pending[].blockRetries
   do:
-    result = 0
+    return 0
 
 func decRetries*(self: PendingBlocksManager, address: BlockAddress) =
   self.blocks.withValue(address, pending):
@@ -141,27 +180,36 @@ func decRetries*(self: PendingBlocksManager, address: BlockAddress) =
 
 func retriesExhausted*(self: PendingBlocksManager, address: BlockAddress): bool =
   self.blocks.withValue(address, pending):
-    result = pending[].blockRetries <= 0
+    return pending[].blockRetries <= 0
+  false
 
 func isRequested*(self: PendingBlocksManager, address: BlockAddress): bool =
   self.blocks.withValue(address, pending):
-    result = pending[].requested.isSome
+    return pending[].requested.isSome
+  false
 
 func getRequestPeer*(self: PendingBlocksManager, address: BlockAddress): ?PeerId =
   self.blocks.withValue(address, pending):
-    result = pending[].requested
+    return pending[].requested
+  PeerId.none
 
 proc markRequested*(
     self: PendingBlocksManager, address: BlockAddress, peer: PeerId
-): bool =
+): ?uint64 =
   self.blocks.withValue(address, pending):
     if pending[].requested.isSome:
-      return false
+      return uint64.none
 
     pending[].requested = peer.some
-    return true
+    pending[].requestId.inc
+    return pending[].requestId.some
 
-  false
+  uint64.none
+
+func requestId*(self: PendingBlocksManager, address: BlockAddress): ?uint64 =
+  self.blocks.withValue(address, pending):
+    return pending[].requestId.some
+  uint64.none
 
 proc clearRequest*(
     self: PendingBlocksManager, address: BlockAddress, peer: ?PeerId = PeerId.none
@@ -193,7 +241,7 @@ iterator wantListCids*(self: PendingBlocksManager): Cid =
       yieldedCids.incl(cid)
       yield cid
 
-iterator wantHandles*(self: PendingBlocksManager): Future[Block] =
+iterator wantHandles*(self: PendingBlocksManager): BlockHandle =
   for v in self.blocks.values:
     yield v.handle
 
