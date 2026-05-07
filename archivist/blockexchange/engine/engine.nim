@@ -805,11 +805,7 @@ proc wantListHandler*(
           await self.network.request.sendPresence(peer, presence)
           presence = @[]
 
-        try:
-          await idleAsync()
-        except CancelledError:
-          trace "idle interrupted while processing want list", peer = peerCtx.id
-
+        await idleAsync()
         lastIdle = Moment.now()
 
     if presence.len > 0:
@@ -818,7 +814,7 @@ proc wantListHandler*(
     if schedulePeer:
       self.scheduleTask(peerCtx)
   except CancelledError as exc:
-    warn "Error processing want list", error = exc.msg
+    trace "want list handler cancelled", peer, error = exc.msg
 
 proc setupPeer*(
     self: BlockExcEngine, peer: PeerId
@@ -971,12 +967,12 @@ proc new*(
 
   proc blockWantListHandler(
       peer: PeerId, wantList: WantList
-  ): Future[void] {.async: (raises: []).} =
+  ): Future[void] {.async: (raw: true, raises: []).} =
     self.wantListHandler(peer, wantList)
 
   proc blockPresenceHandler(
       peer: PeerId, presence: seq[BlockPresence]
-  ): Future[void] {.async: (raises: []).} =
+  ): Future[void] {.async: (raw:true, raises: []).} =
     self.blockPresenceHandler(peer, presence)
 
   proc blocksDeliveryHandler(
