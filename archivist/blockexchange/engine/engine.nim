@@ -972,7 +972,7 @@ proc new*(
 
   proc blockPresenceHandler(
       peer: PeerId, presence: seq[BlockPresence]
-  ): Future[void] {.async: (raw:true, raises: []).} =
+  ): Future[void] {.async: (raw: true, raises: []).} =
     self.blockPresenceHandler(peer, presence)
 
   proc blocksDeliveryHandler(
