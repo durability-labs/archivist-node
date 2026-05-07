@@ -188,17 +188,15 @@ method putBlocks*(
 
   var deliveries: seq[BlockDelivery]
   for (blk, index, proof) in items:
-    if not proof.isNil:
-      deliveries.add(
-        BlockDelivery(
-          address: BlockAddress.init(treeCid, index), blk: blk, proof: proof.some
-        )
-      )
+    let proofOpt = if proof.isNil: ArchivistProof.none else: proof.some
 
-  if deliveries.len > 0:
-    await self.engine.resolveBlocks(deliveries)
-  else:
-    await self.engine.resolveBlocks(items.mapIt(it[0]))
+    deliveries.add(
+      BlockDelivery(
+        address: BlockAddress.init(treeCid, index), blk: blk, proof: proofOpt
+      )
+    )
+
+  await self.engine.resolveBlocks(deliveries)
 
   return success()
 
