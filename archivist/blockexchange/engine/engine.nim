@@ -461,7 +461,7 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
             # might have been executed right after the timer finished, which
             # would complete the next future. Calling cancelAndWait on an already
             # completed future, has no effect, so we attempt to read even after
-            # cancelling, not doing so might lead to lost poped values from the
+            # cancelling, not doing so might lead to lost popped values from the
             # queue
             if not next.finished:
               await noCancel next.cancelAndWait()
