@@ -750,7 +750,7 @@ proc taskHandler*(
         blocksByCid[blk.cid] = blk
 
       for address in nonLeafAddresses:
-        if blk =? blocksByCid.getOrDefault(address.cid).option:
+        if blk =? blocksByCid.?[address.cid]:
           blockDeliveries.add(BlockDelivery(address: address, blk: blk))
 
     for treeCid, indices in leafIndicesByTree:
