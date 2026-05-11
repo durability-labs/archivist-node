@@ -763,7 +763,7 @@ proc taskHandler*(
         itemsByIndex[item[0]] = (item[1], item[2])
 
       for index in indices:
-        if entry =? itemsByIndex.?[index]:
+        if entry =? itemsByIndex .? [index]:
           let (blk, proof) = entry
           blockDeliveries.add(
             BlockDelivery(
