@@ -40,7 +40,6 @@ suite "Command line interface":
       "Please run the following to download them:"
     discard await testbed.node
     .provider()
-    .log("slots", "proverfactory")
     .noCircomR1cs()
     .availability(false)
     .waitForOutput(expectedOutput)
