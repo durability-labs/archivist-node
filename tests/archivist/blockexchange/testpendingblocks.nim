@@ -2,13 +2,19 @@ import std/sequtils
 import std/algorithm
 
 import pkg/chronos
+import pkg/libp2p
 import pkg/stew/byteutils
 
+import pkg/archivist/rng
 import pkg/archivist/blocktype as bt
 import pkg/archivist/blockexchange
 
 import ../helpers
 import ../../asynctest
+
+proc makePeerId(): PeerId =
+  let seckey = PrivateKey.random(Rng.instance()[]).tryGet()
+  PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
 
 suite "Pending Blocks":
   test "Should add want handle":
@@ -75,6 +81,108 @@ suite "Pending Blocks":
     for handle in handles:
       expect CancelledError:
         discard await handle
+
+  test "Should fire request timeout for current attempt":
+    let
+      pendingBlocks = PendingBlocksManager.new()
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peer = makePeerId()
+
+    var timedOut = false
+    pendingBlocks.onTimeout = proc(
+        timeoutAddress: BlockAddress, timeoutPeer: PeerId
+    ) {.gcsafe, raises: [].} =
+      check timeoutAddress == address
+      check timeoutPeer == peer
+      timedOut = true
+
+    discard pendingBlocks.getWantHandle(blk.cid)
+    check pendingBlocks.markRequested(address, peer, 1.millis).isSome
+    check eventually timedOut
+
+  test "Should cancel request timeout on clear":
+    let
+      pendingBlocks = PendingBlocksManager.new()
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peer = makePeerId()
+
+    var timedOut = false
+    pendingBlocks.onTimeout = proc(
+        timeoutAddress: BlockAddress, timeoutPeer: PeerId
+    ) {.gcsafe, raises: [].} =
+      timedOut = true
+
+    discard pendingBlocks.getWantHandle(blk.cid)
+    check pendingBlocks.markRequested(address, peer, 10.millis).isSome
+    pendingBlocks.clearRequest(address, peer.some)
+    await sleepAsync(20.millis)
+    check not timedOut
+
+  test "Should cancel request timeout on resolve":
+    let
+      pendingBlocks = PendingBlocksManager.new()
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peer = makePeerId()
+
+    var timedOut = false
+    pendingBlocks.onTimeout = proc(
+        timeoutAddress: BlockAddress, timeoutPeer: PeerId
+    ) {.gcsafe, raises: [].} =
+      timedOut = true
+
+    let handle = pendingBlocks.getWantHandle(blk.cid)
+    check pendingBlocks.markRequested(address, peer, 10.millis).isSome
+    pendingBlocks.resolve(@[BlockDelivery(blk: blk, address: blk.address)])
+    check (await handle).blk == blk
+    await sleepAsync(20.millis)
+    check not timedOut
+
+  test "Should cancel request timeout on final owner release":
+    let
+      pendingBlocks = PendingBlocksManager.new()
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peer = makePeerId()
+
+    var timedOut = false
+    pendingBlocks.onTimeout = proc(
+        timeoutAddress: BlockAddress, timeoutPeer: PeerId
+    ) {.gcsafe, raises: [].} =
+      timedOut = true
+
+    let handle = pendingBlocks.getWantHandle(blk.cid)
+    check pendingBlocks.markRequested(address, peer, 10.millis).isSome
+    await handle.cancelAndWait()
+    check eventually blk.cid notin pendingBlocks
+    await sleepAsync(20.millis)
+    check not timedOut
+
+  test "Should replace cleared request timeout with next attempt":
+    let
+      pendingBlocks = PendingBlocksManager.new()
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      firstPeer = makePeerId()
+      secondPeer = makePeerId()
+
+    var timeouts: seq[PeerId]
+    pendingBlocks.onTimeout = proc(
+        timeoutAddress: BlockAddress, timeoutPeer: PeerId
+    ) {.gcsafe, raises: [].} =
+      check timeoutAddress == address
+      timeouts.add(timeoutPeer)
+
+    discard pendingBlocks.getWantHandle(blk.cid)
+    check pendingBlocks.markRequested(address, firstPeer, 20.millis).isSome
+    pendingBlocks.clearRequest(address, firstPeer.some)
+    check pendingBlocks.markRequested(address, secondPeer, 1.millis).isSome
+    check eventually timeouts.len == 1
+    check timeouts[0] == secondPeer
+    await sleepAsync(25.millis)
+    check timeouts.len == 1
 
   test "Should get wants list":
     let

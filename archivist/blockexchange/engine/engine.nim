@@ -84,7 +84,6 @@ const
   DefaultWantBlockBatchSize = 128
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
-  DefaultPeerActivityTimeout = 1.minutes
   PresenceBatchSize = DefaultMaxWantListBatchSize
   CleanupBatchSize = 2048
   DefaultRequestQueueSize = 4096
@@ -349,39 +348,13 @@ proc retryBlockRequest(
   else:
     self.trackedFutures.track(self.delayedQueueBlockRequest(address, delay))
 
-proc watchBlockRequestTimeout(
-    self: BlockExcEngine,
-    address: BlockAddress,
-    peer: PeerId,
-    requestId: uint64,
-    timeout: Duration,
-) {.async: (raises: []).} =
-  try:
-    await sleepAsync(timeout)
-    if address notin self.pendingBlocks:
-      return
-
-    if self.pendingBlocks.getRequestPeer(address) != peer.some or
-        self.pendingBlocks.requestId(address) != requestId.some:
-      return
-
-    trace "Block request timed out", address, peer
-    archivist_block_exchange_peer_timeouts_total.inc()
-    self.network.dropPeer(peer)
-    self.evictPeer(peer)
-  except CancelledError as err:
-    trace "Watch block cancelled", address
-
 proc scheduleRequestBatch(
     self: BlockExcEngine, addresses: seq[BlockAddress]
 ) {.async: (raises: [CancelledError]).} =
   if addresses.len == 0:
     return
 
-  var
-    byPeer: Table[PeerId, seq[BlockAddress]]
-    requestIds: Table[BlockAddress, uint64]
-
+  var byPeer: Table[PeerId, seq[BlockAddress]]
   for address in addresses.deduplicate():
     if address notin self.pendingBlocks or self.pendingBlocks.isRequested(address):
       continue
@@ -409,10 +382,12 @@ proc scheduleRequestBatch(
       )
       continue
 
-    let peer = self.selectPeer(peers.with)
-    if requestId =? self.pendingBlocks.markRequested(address, peer.id):
+    let
+      peer = self.selectPeer(peers.with)
+      timeout = peer.activityTimeout
+
+    if self.pendingBlocks.markRequested(address, peer.id, timeout).isSome:
       peer.blockRequestScheduled(address)
-      requestIds[address] = requestId
       byPeer.mgetOrPut(peer.id, @[]).add(address)
 
   for peerId, batch in byPeer:
@@ -431,19 +406,6 @@ proc scheduleRequestBatch(
         peer.cleanPresence(address)
         self.retryBlockRequest(address, self.pendingBlocks.retryInterval)
       continue
-
-    let timeout =
-      if peer.activityTimeout == 0.seconds:
-        DefaultPeerActivityTimeout
-      else:
-        peer.activityTimeout
-
-    for address in batch:
-      let requestId = requestIds.getOrDefault(address)
-      if requestId != 0'u64:
-        self.trackedFutures.track(
-          self.watchBlockRequestTimeout(address, peerId, requestId, timeout)
-        )
 
 proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
   try:
@@ -758,6 +720,7 @@ proc blocksDeliveryHandler*(
   if not peerCtx.isNil:
     for address in acceptedAddresses:
       peerCtx.blockRequestAccepted(address)
+      self.pendingBlocks.clearRequest(address, peer.some)
 
   archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
 
@@ -840,9 +803,7 @@ proc setupPeer*(
   trace "Setting up peer", peer
 
   if peer notin self.peers:
-    self.peers.add(
-      BlockExcPeerCtx(id: peer, activityTimeout: DefaultPeerActivityTimeout)
-    )
+    self.peers.add(BlockExcPeerCtx.new(peer))
 
   let peerCtx = self.peers.get(peer)
   await self.refreshBlockKnowledge(peerCtx, skipDelta = true)
@@ -974,10 +935,19 @@ proc new*(
     else:
       self.evictPeer(peerId)
 
-  proc pendingCancelHandler(address: BlockAddress) {.gcsafe, raises: [].} =
+  proc pendingAbandonHandler(address: BlockAddress) {.gcsafe, raises: [].} =
     self.clearBlockRequestState(address)
 
-  pendingBlocks.onAbandon = pendingCancelHandler
+  proc pendingTimeoutHandler(
+      address: BlockAddress, peer: PeerId
+  ) {.gcsafe, raises: [].} =
+    trace "Block request timed out", address, peer
+    archivist_block_exchange_peer_timeouts_total.inc()
+    self.network.dropPeer(peer)
+    self.evictPeer(peer)
+
+  pendingBlocks.onAbandon = pendingAbandonHandler
+  pendingBlocks.onTimeout = pendingTimeoutHandler
 
   if not isNil(network.switch):
     network.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Joined)

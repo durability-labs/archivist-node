@@ -50,45 +50,45 @@ const
 type
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
   PendingBlocksAbandonHandler* = proc(address: BlockAddress) {.gcsafe, raises: [].}
+  PendingBlocksTimeoutHandler* =
+    proc(address: BlockAddress, peer: PeerId) {.gcsafe, raises: [].}
 
-  ## With the introduction of batching, the semantics of
-  ## the shared block handles changed. If two unrelated
-  ## batches endup sharing a subset of tha handles, and one
-  ## of them cancels it's subset, then what should happen to
-  ## the other handles in the batch? This is a valid condition
-  ## because of erasure coding - while blocks are downloaded,
-  ## erasure coding might be running trying to recover the
-  ## remaining blocks, whichever succeeds first will complete/cancel
-  ## outstanding requests. To avoid operations from interferring with
-  ## each other, we now addressed with two related mechanisms.
+  ## With the introduction of batching, the semantics of shared block handles
+  ## changed. If two unrelated batches share a subset of handles, and one batch
+  ## cancels its subset, what should happen to the other handles in the batch?
   ##
-  ## - A block handle now has "owners", the block is active as
-  ## long as owners > 0
-  ## - Owners are also `BlockHandle` types. This allows continuing
-  ## to rely on the already sound Future semantics, without
-  ## introducing a separate type, which will atleast partially
-  ## reproduce those semantics.
+  ## This is a valid condition because of erasure coding: while blocks are being
+  ## downloaded, erasure recovery might also be running and trying to recover the
+  ## remaining blocks. Whichever succeeds first will complete or cancel outstanding
+  ## requests. To prevent these operations from interfering with each other, we use
+  ## two related mechanisms:
   ##
-  ## Instead, the outer owner fasing `BlockHandle` mirrors the underlying
-  ## `BlockHandle`, which stays active for as long as `owners > 0` or the block
-  ## isn't resolved or failed.
+  ## - A block handle now has "owners"; the block remains active while
+  ##   `owners.len > 0`.
+  ## - Owners are also `BlockHandle` values. This lets callers keep relying on
+  ##   Future semantics without introducing a separate type that would partially
+  ##   duplicate those semantics.
   ##
-  ## When cancelling an owner/public `BlockHandle` proxy, the cancellation
-  ## doesn't propagate to the wrapped instance (this is similar to the join
-  ## operation in chronos), instead we unregister that handle from the `owners`
-  ## hashset. Once `owners.len == 0` the underlying future is "failed", which also
-  # propagates to the proxies. This is to prevent using it "after free/dispose".
+  ## The outer, owner-facing `BlockHandle` mirrors the underlying `BlockHandle`,
+  ## which stays active as long as `owners.len > 0` and the block has not been
+  ## resolved or failed.
   ##
-  ## The neat thing is that for the caller, the wrappers behave as expected - if
-  ## more than one code path endups awaiting the `BlockHandle`, cancelling,
-  ## completing or failing the handle will work as expected for the caller, but
-  ## won't affect the other handles that are awaited by any other caller.
+  ## When an owner/public `BlockHandle` proxy is cancelled, the cancellation does
+  ## not propagate to the wrapped instance (similar to Chronos' `join` operation).
+  ## Instead, we unregister that handle from the `owners` set. Once
+  ## `owners.len == 0`, the underlying future is failed, which also propagates to
+  ## the proxies. This prevents using it after it has been released or disposed.
+  ##
+  ## For callers, the wrappers behave as expected: if more than one code path
+  ## awaits the `BlockHandle`, cancelling, completing, or failing one wrapper works
+  ## as expected for that caller, but does not affect handles awaited by other
+  ## callers.
   ##
   BlockReq = object
     handle: BlockHandle
     owners: HashSet[BlockHandle]
     requested: ?PeerId
-    requestId: uint64
+    requestTimeout: Future[void]
     startTime: int64
     blockRetries: int
 
@@ -100,6 +100,7 @@ type
     handles: Table[BlockHandle, BlockAddress]
     lastInclusion*: Moment
     onAbandon*: PendingBlocksAbandonHandler
+    onTimeout*: PendingBlocksTimeoutHandler
     handleMonitors: TrackedFutures
 
 func hash*(handle: BlockHandle): Hash =
@@ -107,6 +108,11 @@ func hash*(handle: BlockHandle): Hash =
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
+
+proc clearRequestTimeout(req: var BlockReq) =
+  if not req.requestTimeout.isNil and not req.requestTimeout.finished:
+    req.requestTimeout.cancelSoon()
+  req.requestTimeout = nil
 
 proc releaseWantHandle*(
   self: PendingBlocksManager, wrapped: BlockHandle
@@ -176,6 +182,7 @@ proc resolve*(self: PendingBlocksManager, blocksDelivery: seq[BlockDelivery]) =
           stopTime = getMonoTime().ticks
           retrievalDurationUs = (stopTime - startTime) div 1000
 
+        blockReq[].clearRequestTimeout()
         blockReq.handle.complete(bd)
 
         archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
@@ -203,6 +210,7 @@ proc failWantHandle*(
     msg: string,
 ) =
   self.blocks.withValue(address, blockReq):
+    blockReq[].clearRequestTimeout()
     if not blockReq[].handle.finished:
       let err = (ref errType)(address: address, msg: msg)
       blockReq[].handle.fail(err)
@@ -217,6 +225,7 @@ proc releaseWantHandle*(
     self.blocks.withValue(blockAddress, req):
       req[].owners.excl(wrapped)
       if req[].owners.len == 0:
+        req[].clearRequestTimeout()
         if not req[].handle.finished:
           warn "Abandoning block", address = blockAddress
           req[].handle.fail(
@@ -237,10 +246,14 @@ proc cancelAll*(self: PendingBlocksManager): Future[void] {.async: (raises: []).
   ## Cancel all outstanding block handles and other futures
   ##
 
-  let cancellations = (
-    self.blocks.values.toSeq.mapIt(it.handle) &
-    self.blocks.values.toSeq.mapIt(it.owners.toSeq).concat
-  ).mapIt(it.cancelAndWait())
+  var handles: seq[BlockHandle]
+  for req in self.blocks.mvalues:
+    req.clearRequestTimeout()
+    handles.add(req.handle)
+    for owner in req.owners:
+      handles.add(owner)
+
+  let cancellations = handles.mapIt(it.cancelAndWait())
 
   self.handles.clear()
   self.blocks.clear()
@@ -292,28 +305,51 @@ func getHandleAddress*(self: PendingBlocksManager, handle: BlockHandle): ?BlockA
   return BlockAddress.none
 
 proc markRequested*(
-    self: PendingBlocksManager, address: BlockAddress, peer: PeerId
-): ?uint64 =
-  self.blocks.withValue(address, pending):
-    if pending[].requested.isSome:
-      return uint64.none
+    self: PendingBlocksManager,
+    address: BlockAddress,
+    peer: PeerId,
+    timeout: Duration = DefaultRetryInterval,
+): ?PeerId =
+  let requestedPeer = self.getRequestPeer(address)
+  if requestedPeer.isSome:
+    trace "Block already requested", address, requestedPeer
+    return requestedPeer
 
+  self.blocks.withValue(address, pending):
     pending[].requested = peer.some
-    pending[].requestId.inc
-    return pending[].requestId.some
+    proc monitorReqTimeout() {.async: (raising: []).} =
+      var timedout = false
+      defer:
+        if pending.isNil:
+          trace "Pending request doesn't exist anymore, it might have completed already",
+            address, peer
+          return
 
-  uint64.none
+        let requestedPeer = self.getRequestPeer(address)
+        if requestedPeer.isSome and requestedPeer != peer.some:
+          warn "Requested and timed out peers don't match, this shouldn't happen!",
+            oldPeer = peer, newPeer = requestedPeer, address
+          return
 
-func requestId*(self: PendingBlocksManager, address: BlockAddress): ?uint64 =
-  self.blocks.withValue(address, pending):
-    return pending[].requestId.some
-  uint64.none
+        if timedout and not self.onTimeout.isNil:
+          pending[].requested = PeerId.none
+          self.onTimeout(address, peer)
+
+      try:
+        await sleepAsync(timeout)
+        timedout = true
+      except CatchableError as exc:
+        trace "Exception in request timeout monitor", exc = exc.msg
+
+    pending[].requestTimeout = monitorReqTimeout()
+    return pending[].requested
 
 proc clearRequest*(
     self: PendingBlocksManager, address: BlockAddress, peer: ?PeerId = PeerId.none
 ) =
   self.blocks.withValue(address, pending):
     if peer.isNone or peer == pending[].requested:
+      pending[].clearRequestTimeout()
       pending[].requested = PeerId.none
 
 func contains*(self: PendingBlocksManager, cid: Cid): bool =

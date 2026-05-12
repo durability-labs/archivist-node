@@ -24,6 +24,7 @@ const
   MinRefreshInterval = 1.seconds
   MaxRefreshBackoff = 36
   DefaultMaxWantListBatchSize* = 1024
+  DefaultPeerActivityTimeout = 1.minutes
 
 type BlockExcPeerCtx* = ref object of RootObj
   id*: PeerId
@@ -129,3 +130,10 @@ proc activityTimer*(
       return
 
     await sleepAsync(self.activityTimeout - idleTime)
+
+proc new*(
+    T: type BlockExcPeerCtx,
+    peerId: PeerId,
+    activityTimeout = DefaultPeerActivityTimeout,
+): BlockExcPeerCtx =
+  BlockExcPeerCtx(id: peerId, activityTimeout: activityTimeout)
