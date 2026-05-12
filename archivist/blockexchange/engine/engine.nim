@@ -316,7 +316,7 @@ proc delayedQueueBlockRequest(
     await sleepAsync(delay)
     if address in self.pendingBlocks and not self.pendingBlocks.isRequested(address):
       self.queueBlockRequest(address)
-  except CatchableError as exc:
+  except CatchableError:
     trace "Delayed block request cancelled", address
 
 proc clearBlockRequestState(
