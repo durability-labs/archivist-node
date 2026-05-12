@@ -17,3 +17,4 @@ type
   RetriesExhaustedEngineError* = object of EngineError
   StorageFailedEngineError* = object of EngineError
   QueueFailedEngineError* = object of EngineError
+  RequestAbandonedEngineError* = object of EngineError

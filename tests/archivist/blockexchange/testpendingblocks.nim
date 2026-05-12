@@ -33,7 +33,7 @@ suite "Pending Blocks":
     let resolved = await handle
     check resolved.blk == blk
     check resolved.address == blk.address
-    check blk.cid notin pendingBlocks
+    check eventually blk.cid notin pendingBlocks
 
   test "Should cancel want handle":
     let
@@ -43,7 +43,25 @@ suite "Pending Blocks":
 
     check blk.cid in pendingBlocks
     await handle.cancelAndWait()
-    check blk.cid notin pendingBlocks
+    check eventually blk.cid notin pendingBlocks
+
+  test "Should isolate shared handle owners":
+    let
+      pendingBlocks = PendingBlocksManager.new()
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      handle1 = pendingBlocks.getWantHandle(blk.cid)
+      handle2 = pendingBlocks.getWantHandle(blk.cid)
+
+    check handle1 != handle2
+    check pendingBlocks.owners(blk.cid) == 2
+
+    await handle1.cancelAndWait()
+    await handle1.cancelAndWait()
+    check blk.cid in pendingBlocks
+    check eventually pendingBlocks.owners(blk.cid) == 1
+
+    pendingBlocks.resolve(@[BlockDelivery(blk: blk, address: blk.address)])
+    check (await handle2).blk == blk
 
   test "Should cancel all want handles":
     let
@@ -68,20 +86,6 @@ suite "Pending Blocks":
     check:
       blks.mapIt($it.cid).sorted(cmp[string]) ==
         toSeq(pendingBlocks.wantListBlockCids).mapIt($it).sorted(cmp[string])
-
-  test "Should get want handles list":
-    let
-      pendingBlocks = PendingBlocksManager.new()
-      blks = (0 .. 9).mapIt(bt.Block.new(("Hello " & $it).toBytes).tryGet)
-      handles = blks.mapIt(pendingBlocks.getWantHandle(it.cid))
-      wantHandles = toSeq(pendingBlocks.wantHandles)
-
-    check wantHandles.len == handles.len
-    pendingBlocks.resolve(blks.mapIt(BlockDelivery(blk: it, address: it.address)))
-
-    check:
-      (await allFinished(wantHandles)).mapIt($it.read.blk.cid).sorted(cmp[string]) ==
-        (await allFinished(handles)).mapIt($it.read.blk.cid).sorted(cmp[string])
 
   test "Should handle retry counters":
     let

@@ -505,8 +505,8 @@ proc requestDelivery*(
   success handle
 
 proc completeBlock*(self: BlockExcEngine, address: BlockAddress, blk: Block) =
-  if address in self.pendingBlocks.blocks:
-    self.pendingBlocks.completeWantHandle(address, blk)
+  if address in self.pendingBlocks:
+    self.pendingBlocks.resolve(address, blk)
   else:
     warn "Attempted to complete non-pending block", address
 
@@ -579,8 +579,10 @@ proc cancelBlocks(
 
     let (succeededFuts, failedFuts) = await allFinishedFailed[PeerId](futures)
     for fut in succeededFuts:
-      let peerId = fut.read
-      let ctx = self.peers.get(peerId)
+      let
+        peerId = fut.read
+        ctx = self.peers.get(peerId)
+
       if not ctx.isNil:
         ctx.cleanPresence(addrs)
         for address in scheduledCancellations[peerId]:
@@ -593,6 +595,22 @@ proc cancelBlocks(
     raise exc
   except CatchableError as exc:
     warn "Error sending block request cancellations", error = exc.msg
+
+proc releaseHandle*(
+    self: BlockExcEngine, handle: BlockHandle
+): Future[void] {.async: (raises: [CancelledError]).} =
+  let requested = self.pendingBlocks.getRequestPeer(handle)
+
+  if address =? self.pendingBlocks.getHandleAddress(handle):
+    if err =? self.pendingBlocks.releaseWantHandle(handle).errorOption:
+      warn "Unable to release handle", address
+      return
+
+    await self.cancelBlocks(@[address])
+    if peerId =? requested:
+      let ctx = self.peers.get(peerId)
+      if not ctx.isNil:
+        ctx.blockRequestCancelled(address)
 
 proc resolveBlocks*(
     self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
@@ -959,7 +977,7 @@ proc new*(
   proc pendingCancelHandler(address: BlockAddress) {.gcsafe, raises: [].} =
     self.clearBlockRequestState(address)
 
-  pendingBlocks.onCancel = pendingCancelHandler
+  pendingBlocks.onAbandon = pendingCancelHandler
 
   if not isNil(network.switch):
     network.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Joined)

@@ -34,25 +34,42 @@ type NetworkStore* = ref object of BlockStore
   engine*: BlockExcEngine # blockexc decision engine
   localStore*: BlockStore # local block store
 
+proc awaitDelivery(
+    engine: BlockExcEngine, handle: BlockHandle
+): Future[?!BlockDelivery] {.async: (raises: [CancelledError]).} =
+  try:
+    let completed = await one(handle)
+    return success(await completed)
+  except CancelledError as exc:
+    await noCancel engine.releaseHandle(handle)
+    raise exc
+  except CatchableError as exc:
+    return failure(exc)
+
 proc collectDeliveries(
-    requests: seq[BlockHandle]
+    engine: BlockExcEngine, requests: seq[BlockHandle]
 ): Future[seq[BlockDelivery]] {.async: (raises: [CancelledError]).} =
   var
     pending = requests
     deliveries: seq[BlockDelivery]
 
-  while pending.len > 0:
-    without completedFut =? catchAsync(await one(pending)), err:
-      error "Unable to get block from exchange engine", err = err.msg
-      break
+  try:
+    while pending.len > 0:
+      without completedFut =? catchAsync(await one(pending)), err:
+        error "Unable to get block from exchange engine", err = err.msg
+        break
 
-    pending.del(pending.find(completedFut))
+      pending.del(pending.find(completedFut))
 
-    without delivery =? catchAsync(await completedFut), err:
-      error "Unable to get block from exchange engine", err = err.msg
-      continue
+      without delivery =? catchAsync(await completedFut), err:
+        error "Unable to get block from exchange engine", err = err.msg
+        continue
 
-    deliveries.add(delivery)
+      deliveries.add(delivery)
+  except CancelledError as exc:
+    for handle in pending:
+      await noCancel engine.releaseHandle(handle)
+    raise exc
 
   return deliveries
 
@@ -83,7 +100,7 @@ method getBlocks*(
 
   var requests = ?self.engine.requestDeliveries(addresses)
   var allBlocks = localBlocks
-  for delivery in await collectDeliveries(requests):
+  for delivery in await collectDeliveries(self.engine, requests):
     allBlocks.add(delivery.blk)
 
   success(allBlocks)
@@ -100,10 +117,7 @@ method getBlock*(
       return failure err
 
     let handle = ?self.engine.requestDelivery(BlockAddress.init(cid))
-    without delivery =? catchAsync(await handle), err:
-      error "Unable to get block from exchange engine", cid, err = err.msg
-      return failure err
-
+    let delivery = ?await self.engine.awaitDelivery(handle)
     return success delivery.blk
 
   return success blk
@@ -120,10 +134,7 @@ method getBlock*(
       return failure err
 
     let handle = ?self.engine.requestDelivery(BlockAddress.init(treeCid, index))
-    without delivery =? catchAsync(await handle), err:
-      error "Unable to get block from exchange engine", treeCid, index, err = err.msg
-      return failure err
-
+    let delivery = ?await self.engine.awaitDelivery(handle)
     return success delivery.blk
 
   return success blk
@@ -158,7 +169,7 @@ method getBlocks*(
 
   var requests = ?self.engine.requestDeliveries(addresses)
   var allBlocks = localBlocks
-  for delivery in await collectDeliveries(requests):
+  for delivery in await collectDeliveries(self.engine, requests):
     allBlocks.add((delivery.address.index, delivery.blk))
 
   success allBlocks
@@ -273,10 +284,7 @@ method fetchManifest*(
   without manifest =? (await self.localStore.fetchManifest(cid)), err:
     if err of BlockNotFoundError:
       let handle = ?self.engine.requestDelivery(BlockAddress.init(cid))
-      without delivery =? catchAsync(await handle), err:
-        error "Unable to fetch manifest block!", err = err.msg
-        return failure(err)
-
+      let delivery = ?await self.engine.awaitDelivery(handle)
       return Manifest.decode(delivery.blk)
 
   return success manifest
@@ -335,7 +343,7 @@ method getBlocksAndProofs*(
 
   var requests = ?self.engine.requestDeliveries(addresses)
   var allBlocks = localBlocks
-  for delivery in await collectDeliveries(requests):
+  for delivery in await collectDeliveries(self.engine, requests):
     if not delivery.address.leaf:
       warn "Skipping non-leaf delivery for leaf request", address = delivery.address
       continue

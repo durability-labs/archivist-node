@@ -21,6 +21,7 @@ import ./utils/fileutils
 import ./utils/asynciter
 import ./utils/safeasynciter
 import ./utils/asyncbarrier
+import ./utils/futures
 
 export
   asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs, asyncbarrier
