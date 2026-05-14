@@ -304,6 +304,13 @@ func getHandleAddress*(self: PendingBlocksManager, handle: BlockHandle): ?BlockA
     return address.some
   return BlockAddress.none
 
+func getPendingHandle*(
+    self: PendingBlocksManager, address: BlockAddress
+): ?BlockHandle =
+  if req =? self.blocks .? [address]:
+    return req.handle.some
+  return BlockHandle.none
+
 proc markRequested*(
     self: PendingBlocksManager,
     address: BlockAddress,

@@ -100,6 +100,7 @@ type
     peers*: PeerCtxStore
     taskQueue*: AsyncHeapQueue[BlockExcPeerCtx]
     requestQueue*: AsyncQueue[BlockAddress]
+    scheduledRetries: HashSet[BlockAddress]
     selectPeer*: PeerSelector
     concurrentTasks: int
     trackedFutures: TrackedFutures
@@ -306,7 +307,7 @@ proc randomPeer(peers: seq[BlockExcPeerCtx]): BlockExcPeerCtx =
 proc queueBlockRequest(
     self: BlockExcEngine, address: BlockAddress
 ) {.gcsafe, raises: [].} =
-  if address notin self.pendingBlocks:
+  if address notin self.pendingBlocks or address in self.requestQueue:
     return
 
   try:
@@ -315,15 +316,40 @@ proc queueBlockRequest(
     warn "Unable to queue block request", address, err = exc.msg
     self.pendingBlocks.failWantHandle(address, QueueFailedEngineError, exc.msg)
 
-proc delayedQueueBlockRequest(
+proc retryDelayed(
     self: BlockExcEngine, address: BlockAddress, delay: Duration
 ) {.async: (raises: []).} =
+  ## Queue a delayed request for an existing block handle, if no
+  ## handle exists, we ignore the request
+  ##
+
+  without handle =? self.pendingBlocks.getPendingHandle(address):
+    trace "No pending handle to queue delayed request", address
+    return
+
+  if address in self.scheduledRetries or address in self.requestQueue:
+    trace "Retry already scheduled or queued", address
+    return
+
+  self.scheduledRetries.incl(address)
+  let timer = sleepAsync(delay)
   try:
-    await sleepAsync(delay)
-    if address in self.pendingBlocks and not self.pendingBlocks.isRequested(address):
-      self.queueBlockRequest(address)
-  except CatchableError:
-    trace "Delayed block request cancelled", address
+    await handle or timer
+  except CatchableError as exc:
+    trace "Delayed block request monitor finished", address, exc = exc.msg
+  finally:
+    self.scheduledRetries.excl(address)
+    if not timer.finished:
+      await noCancel timer.cancelAndWait()
+
+  if handle.finished:
+    trace "Handle already finished, skipping retry", address
+    return
+
+  if timer.completed and address in self.pendingBlocks and
+      not self.pendingBlocks.isRequested(address) and address notin self.requestQueue:
+    trace "Queuing a retry", address
+    self.queueBlockRequest(address)
 
 proc clearBlockRequestState(
     self: BlockExcEngine, address: BlockAddress
@@ -353,7 +379,7 @@ proc retryBlockRequest(
       address, RetriesExhaustedEngineError, "Retries exhausted for block"
     )
   else:
-    self.trackedFutures.track(self.delayedQueueBlockRequest(address, delay))
+    self.trackedFutures.track(self.retryDelayed(address, delay))
 
 proc scheduleRequestBatch(
     self: BlockExcEngine, addresses: seq[BlockAddress]

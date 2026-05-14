@@ -1,5 +1,7 @@
 import std/sequtils
 import std/algorithm
+import std/importutils
+import std/sets
 
 import pkg/chronos
 import pkg/libp2p/routing_record
@@ -11,6 +13,7 @@ import pkg/taskpools
 
 import pkg/archivist/rng
 import pkg/archivist/blockexchange
+import pkg/archivist/blockexchange/engine/engine {.all.}
 import pkg/archivist/stores
 import pkg/archivist/chunker
 import pkg/archivist/discovery
@@ -18,9 +21,12 @@ import pkg/archivist/blocktype
 import pkg/archivist/manifest
 import pkg/archivist/merkletree
 import pkg/archivist/utils/asyncheapqueue
+import pkg/archivist/utils/trackedfutures
 
 import ../../../asynctest
 import ../../helpers
+
+privateAccess(BlockExcEngine)
 
 const NopSendWantCancellationsProc = proc(
     id: PeerId, addresses: seq[BlockAddress]
@@ -614,6 +620,64 @@ asyncchecksuite "Block Download":
     check engine.pendingBlocks.getRequestPeer(address) == peerId.some
     check engine.pendingBlocks.retries(address) == retriesBefore
 
+  test "Should stop delayed retry monitor when completing block":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      trackedBefore = engine.trackedFutures.len
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      discard
+
+    engine.pendingBlocks.retryInterval = 10.seconds
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    let pending = engine.requestDelivery(address).tryGet()
+    check eventually engine.trackedFutures.len == trackedBefore + 1
+
+    await engine.completeBlock(address, blocks[0])
+
+    check eventually engine.trackedFutures.len == trackedBefore
+    check (await pending).blk == blocks[0]
+
+  test "Should avoid duplicate queued and scheduled retries":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      trackedBefore = engine.trackedFutures.len
+
+    engine.pendingBlocks.retryInterval = 10.seconds
+
+    discard engine.requestDelivery(address).tryGet()
+    check address in engine.requestQueue
+
+    await engine.retryBlockRequest(address, engine.pendingBlocks.retryInterval)
+    check engine.trackedFutures.len == trackedBefore
+    check address notin engine.scheduledRetries
+
+    discard await engine.requestQueue.get()
+
+    await engine.retryBlockRequest(address, engine.pendingBlocks.retryInterval)
+    check address in engine.scheduledRetries
+    check engine.trackedFutures.len == trackedBefore + 1
+
+    await engine.retryBlockRequest(address, engine.pendingBlocks.retryInterval)
+    check engine.trackedFutures.len == trackedBefore + 1
+
+    await engine.completeBlock(address, blocks[0])
+    check eventually address notin engine.scheduledRetries
+    check eventually engine.trackedFutures.len == trackedBefore
+
   test "Should retry block request":
     var
       address = BlockAddress.init(blocks[0].cid)
@@ -724,7 +788,7 @@ asyncchecksuite "Block Download":
     expect CancelledError:
       discard await pending
 
-    check eventually address notin peerCtx.blocksRequested
+    check address notin peerCtx.blocksRequested
 
   test "Should clear peer request state when completing requested blocks":
     let
