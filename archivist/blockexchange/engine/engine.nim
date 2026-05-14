@@ -423,18 +423,20 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
       try:
         while batch.len < self.wantBlockBatchSize:
           let next = self.requestQueue.get()
-          await next or timer
+          try:
+            await next or timer
 
-          if next.finished:
-            let address = await next
-            trace "Got block from request queue", address
-            batch.add(address)
-          else:
-            await noCancel next.cancelAndWait()
+            if next.finished:
+              let address = await next # allow exceptions to propagate
+              trace "Got block from request queue", address
+              batch.add(address)
 
-          if timer.finished:
-            trace "Batch timeslice expired first", batchLen = batch.len
-            break
+            if timer.finished:
+              trace "Batch timeslice expired first", batchLen = batch.len
+              break
+          finally:
+            if not next.finished:
+              await noCancel next.cancelAndWait()
       finally:
         if not timer.finished:
           await noCancel timer.cancelAndWait()
