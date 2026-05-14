@@ -92,7 +92,7 @@ suite "Pending Blocks":
     var timedOut = false
     pendingBlocks.onTimeout = proc(
         timeoutAddress: BlockAddress, timeoutPeer: PeerId
-    ) {.gcsafe, raises: [].} =
+    ) {.gcsafe, async: (raises: []).} =
       check timeoutAddress == address
       check timeoutPeer == peer
       timedOut = true
@@ -111,13 +111,13 @@ suite "Pending Blocks":
     var timedOut = false
     pendingBlocks.onTimeout = proc(
         timeoutAddress: BlockAddress, timeoutPeer: PeerId
-    ) {.gcsafe, raises: [].} =
+    ) {.gcsafe, async: (raises: []).} =
       timedOut = true
 
     discard pendingBlocks.getWantHandle(blk.cid)
     check pendingBlocks.markRequested(address, peer, 10.millis).isSome
-    pendingBlocks.clearRequest(address, peer.some)
-    await sleepAsync(20.millis)
+    await pendingBlocks.clearRequest(address, peer)
+    await sleepAsync(50.millis)
     check not timedOut
 
   test "Should cancel request timeout on resolve":
@@ -130,7 +130,7 @@ suite "Pending Blocks":
     var timedOut = false
     pendingBlocks.onTimeout = proc(
         timeoutAddress: BlockAddress, timeoutPeer: PeerId
-    ) {.gcsafe, raises: [].} =
+    ) {.gcsafe, async: (raises: []).} =
       timedOut = true
 
     let handle = pendingBlocks.getWantHandle(blk.cid)
@@ -150,7 +150,7 @@ suite "Pending Blocks":
     var timedOut = false
     pendingBlocks.onTimeout = proc(
         timeoutAddress: BlockAddress, timeoutPeer: PeerId
-    ) {.gcsafe, raises: [].} =
+    ) {.gcsafe, async: (raises: []).} =
       timedOut = true
 
     let handle = pendingBlocks.getWantHandle(blk.cid)
@@ -171,13 +171,13 @@ suite "Pending Blocks":
     var timeouts: seq[PeerId]
     pendingBlocks.onTimeout = proc(
         timeoutAddress: BlockAddress, timeoutPeer: PeerId
-    ) {.gcsafe, raises: [].} =
+    ) {.gcsafe, async: (raises: []).} =
       check timeoutAddress == address
       timeouts.add(timeoutPeer)
 
     discard pendingBlocks.getWantHandle(blk.cid)
     check pendingBlocks.markRequested(address, firstPeer, 20.millis).isSome
-    pendingBlocks.clearRequest(address, firstPeer.some)
+    await pendingBlocks.clearRequest(address, firstPeer)
     check pendingBlocks.markRequested(address, secondPeer, 1.millis).isSome
     check eventually timeouts.len == 1
     check timeouts[0] == secondPeer

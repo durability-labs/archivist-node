@@ -572,7 +572,7 @@ asyncchecksuite "Block Download":
     check wantBlockBatches[0].mapIt($it).sorted(cmp[string]) ==
       addresses.mapIt($it).sorted(cmp[string])
 
-  test "Should ignore stale timeout for newer same-peer request":
+  test "Should keep same peer request after clearing previous request":
     let
       address = BlockAddress.init(blocks[0].cid)
       sent = newFuture[void]()
@@ -602,7 +602,7 @@ asyncchecksuite "Block Download":
     await sent.wait(100.millis)
 
     let retriesBefore = engine.pendingBlocks.retries(address)
-    engine.pendingBlocks.clearRequest(address, peerId.some)
+    await engine.pendingBlocks.clearRequest(address, peerId)
     peerCtx.blockRequestCancelled(address)
     let nextRequestId = engine.pendingBlocks.markRequested(address, peerId)
     check nextRequestId.isSome
@@ -688,6 +688,43 @@ asyncchecksuite "Block Download":
     await pending.cancelAndWait()
     expect CancelledError:
       discard await pending
+
+  test "Should clear peer request state when delivery handle is cancelled":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      done = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        check addresses == @[address]
+        done.complete()
+
+    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retryInterval = 1.seconds
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+    peerCtx.setPresence(Presence(address: address, have: true))
+
+    let pending = engine.requestDelivery(address).tryGet()
+    await done.wait(100.millis)
+    check address in peerCtx.blocksRequested
+
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
+
+    check eventually address notin peerCtx.blocksRequested
 
 asyncchecksuite "Task Handler":
   var
