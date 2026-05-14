@@ -132,10 +132,15 @@ method getCid*(
 
   raiseAssert("getCid by treecid not implemented!")
 
+method completeBlocks*(
+    self: BlockStore, treeCid: Cid, blocks: seq[(Natural, Block)]
+): Future[void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  discard
+
 method completeBlock*(
     self: BlockStore, treeCid: Cid, index: Natural, blk: Block
-) {.base, gcsafe.} =
-  discard
+): Future[void] {.base, async: (raises: [CancelledError]), gcsafe.} =
+  await self.completeBlocks(treeCid, @[(index, blk)])
 
 ###########################################################
 # Put methods

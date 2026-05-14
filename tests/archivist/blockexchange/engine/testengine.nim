@@ -485,7 +485,7 @@ asyncchecksuite "Block Download":
     let handles = (engine.requestDeliveries(@[address])).tryGet()
     check handles.len == 1
 
-    engine.completeBlock(address, blocks[0])
+    await engine.completeBlock(address, blocks[0])
     let delivery = await handles[0]
     check delivery.address == address
     check delivery.blk == blocks[0]
@@ -506,14 +506,14 @@ asyncchecksuite "Block Download":
 
     check handles.len == 2
 
-    engine.completeBlock(address1, blocks[0])
+    await engine.completeBlock(address1, blocks[0])
     let delivery = await handles[0]
 
     check delivery.address == address1
     check delivery.blk == blocks[0]
     check not handles[1].finished
 
-    engine.completeBlock(address2, blocks[1])
+    await engine.completeBlock(address2, blocks[1])
     let delivery2 = await handles[1]
     check delivery2.address == address2
     check delivery2.blk == blocks[1]
@@ -527,7 +527,7 @@ asyncchecksuite "Block Download":
     engine.pendingBlocks.failWantHandle(
       address1, QueueFailedEngineError, "Block request queue failed"
     )
-    engine.completeBlock(address2, blocks[1])
+    await engine.completeBlock(address2, blocks[1])
 
     expect QueueFailedEngineError:
       discard await handles[0]
@@ -655,7 +655,7 @@ asyncchecksuite "Block Download":
 
     await steps.wait()
 
-    engine.completeBlock(address, blocks[0])
+    await engine.completeBlock(address, blocks[0])
     check (await pending).blk == blocks[0]
 
   test "Should cancel block request":
@@ -725,6 +725,91 @@ asyncchecksuite "Block Download":
       discard await pending
 
     check eventually address notin peerCtx.blocksRequested
+
+  test "Should clear peer request state when completing requested blocks":
+    let
+      addresses = blocks[0 .. 1].mapIt(BlockAddress.init(it.cid))
+      done = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        done.complete()
+
+    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retryInterval = 1.seconds
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    for address in addresses:
+      peerCtx.setPresence(Presence(address: address, have: true))
+
+    let pending = engine.requestDeliveries(addresses).tryGet()
+    await done.wait(100.millis)
+    for address in addresses:
+      check address in peerCtx.blocksRequested
+
+    await engine.completeBlocks(
+      @[
+        BlockDelivery(address: addresses[0], blk: blocks[0]),
+        BlockDelivery(address: addresses[1], blk: blocks[1]),
+      ]
+    )
+
+    for handle in pending:
+      discard await handle
+    for address in addresses:
+      check address notin peerCtx.blocksRequested
+
+  test "Should clear peer request state when completion cancellation send fails":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      done = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        done.complete()
+
+    proc sendWantCancellations(
+        id: PeerId, addresses: seq[BlockAddress]
+    ) {.async: (raises: [CancelledError]).} =
+      raise newException(CancelledError, "cancelled cancellation send")
+
+    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retryInterval = 1.seconds
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: sendWantCancellations
+      )
+    )
+    peerCtx.setPresence(Presence(address: address, have: true))
+
+    let pending = engine.requestDelivery(address).tryGet()
+    await done.wait(100.millis)
+    check address in peerCtx.blocksRequested
+
+    await engine.completeBlock(address, blocks[0])
+
+    check address notin peerCtx.blocksRequested
+    check (await pending).blk == blocks[0]
 
 asyncchecksuite "Task Handler":
   var

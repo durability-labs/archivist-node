@@ -119,6 +119,9 @@ proc scheduleTask(self: BlockExcEngine, task: BlockExcPeerCtx) {.gcsafe, raises:
 
 proc blockexcTaskRunner(self: BlockExcEngine) {.async: (raises: []).}
 proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).}
+proc resolveBlocks*(
+  self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
+) {.async: (raises: [CancelledError]).}
 
 proc start*(self: BlockExcEngine) {.async: (raises: []).} =
   trace "Blockexc starting with concurrent tasks", tasks = self.concurrentTasks
@@ -470,11 +473,15 @@ proc requestDelivery*(
   self.queueBlockRequest(address)
   success handle
 
-proc completeBlock*(self: BlockExcEngine, address: BlockAddress, blk: Block) =
-  if address in self.pendingBlocks:
-    self.pendingBlocks.resolve(address, blk)
-  else:
-    warn "Attempted to complete non-pending block", address
+proc completeBlocks*(
+    self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
+) {.async: (raises: [CancelledError]).} =
+  await self.resolveBlocks(blocksDelivery)
+
+proc completeBlock*(
+    self: BlockExcEngine, address: BlockAddress, blk: Block
+) {.async: (raises: [CancelledError]).} =
+  await self.completeBlocks(@[BlockDelivery(address: address, blk: blk)])
 
 proc blockPresenceHandler*(
     self: BlockExcEngine, peer: PeerId, blocks: seq[BlockPresence]
@@ -535,6 +542,9 @@ proc cancelBlocks(
       let intersection = peerCtx.blocksRequested.intersection(blocksDelivered)
       if intersection.len > 0:
         scheduledCancellations[peerCtx.id] = intersection
+        peerCtx.cleanPresence(addrs)
+        for address in intersection:
+          peerCtx.blockRequestCancelled(address)
 
     if scheduledCancellations.len == 0:
       return
@@ -543,17 +553,7 @@ proc cancelBlocks(
     for peerId, addresses in scheduledCancellations:
       futures.add(dispatchCancellations(peerId, addresses))
 
-    let (succeededFuts, failedFuts) = await allFinishedFailed[PeerId](futures)
-    for fut in succeededFuts:
-      let
-        peerId = fut.read
-        ctx = self.peers.get(peerId)
-
-      if not ctx.isNil:
-        ctx.cleanPresence(addrs)
-        for address in scheduledCancellations[peerId]:
-          ctx.blockRequestCancelled(address)
-
+    let (_, failedFuts) = await allFinishedFailed[PeerId](futures)
     if failedFuts.len > 0:
       warn "Failed to send block request cancellations to peers", peers = failedFuts.len
   except CancelledError as exc:

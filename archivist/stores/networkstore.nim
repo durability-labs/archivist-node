@@ -174,8 +174,19 @@ method getBlocks*(
 
   success allBlocks
 
-method completeBlock*(self: NetworkStore, treeCid: Cid, index: Natural, blk: Block) =
-  self.engine.completeBlock(BlockAddress.init(treeCid, index), blk)
+method completeBlocks*(
+    self: NetworkStore, treeCid: Cid, blocks: seq[(Natural, Block)]
+): Future[void] {.async: (raises: [CancelledError]).} =
+  var deliveries: seq[BlockDelivery]
+  for (index, blk) in blocks:
+    deliveries.add(BlockDelivery(address: BlockAddress.init(treeCid, index), blk: blk))
+
+  await self.engine.completeBlocks(deliveries)
+
+method completeBlock*(
+    self: NetworkStore, treeCid: Cid, index: Natural, blk: Block
+): Future[void] {.async: (raises: [CancelledError]).} =
+  await self.completeBlocks(treeCid, @[(index, blk)])
 
 method putBlock*(
     self: NetworkStore, blk: Block, ttl = Duration.none

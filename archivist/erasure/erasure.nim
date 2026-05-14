@@ -636,7 +636,7 @@ proc decodeInternal(
           return failure(error)
 
         trace "Recovered block", cid = blk.cid, index = i
-        self.networkStore.completeBlock(encodedTreeCid, idx, blk)
+        await self.networkStore.completeBlock(encodedTreeCid, idx, blk)
 
         cids[idx] = blk.cid
         blocks.add((blk, idx.Natural, nil))
