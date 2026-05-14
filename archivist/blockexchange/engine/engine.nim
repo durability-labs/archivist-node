@@ -423,24 +423,14 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
       try:
         while batch.len < self.wantBlockBatchSize:
           let next = self.requestQueue.get()
-          try:
-            await next or timer
-          finally:
-            # this prevents a potential race condition, where a putNoWait
-            # might have been executed right after the timer finished, which
-            # would complete the next future. Calling cancelAndWait on an already
-            # completed future, has no effect, so we attempt to read even after
-            # cancelling, not doing so might lead to lost popped values from the
-            # queue
-            if not next.finished:
-              await noCancel next.cancelAndWait()
+          await next or timer
 
-          if next.completed:
-            let address = next.value
+          if next.finished:
+            let address = await next
             trace "Got block from request queue", address
             batch.add(address)
-          elif next.failed:
-            warn "Request queue get failed", err = next.error.msg
+          else:
+            await noCancel next.cancelAndWait()
 
           if timer.finished:
             trace "Batch timeslice expired first", batchLen = batch.len
