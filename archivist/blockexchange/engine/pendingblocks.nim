@@ -45,7 +45,7 @@ declareGauge(
 
 const
   DefaultBlockRetries* = 3000
-  DefaultRetryInterval* = 500.millis
+  DefaultRequestTimeout* = 500.millis
 
 type
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
@@ -95,7 +95,6 @@ type
 
   PendingBlocksManager* = ref object of RootObj
     blockRetries*: int = DefaultBlockRetries
-    retryInterval*: Duration = DefaultRetryInterval
     blocks: Table[BlockAddress, BlockReq] # pending Block requests
     # the map between pending request and owned handles
     handles: Table[BlockHandle, BlockAddress]
@@ -315,7 +314,7 @@ proc markRequested*(
     self: PendingBlocksManager,
     address: BlockAddress,
     peer: PeerId,
-    timeout: Duration = DefaultRetryInterval,
+    timeout: Duration = DefaultRequestTimeout,
 ): ?PeerId =
   let requestedPeer = self.getRequestPeer(address)
   if requestedPeer.isSome:
@@ -408,10 +407,6 @@ func len*(self: PendingBlocksManager): int =
   self.blocks.len
 
 func new*(
-    T: type PendingBlocksManager,
-    retries = DefaultBlockRetries,
-    interval = DefaultRetryInterval,
+    T: type PendingBlocksManager, retries = DefaultBlockRetries
 ): PendingBlocksManager =
-  PendingBlocksManager(
-    blockRetries: retries, retryInterval: interval, handleMonitors: TrackedFutures.new()
-  )
+  PendingBlocksManager(blockRetries: retries, handleMonitors: TrackedFutures.new())

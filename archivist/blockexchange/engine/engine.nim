@@ -100,7 +100,6 @@ type
     peers*: PeerCtxStore
     taskQueue*: AsyncHeapQueue[BlockExcPeerCtx]
     requestQueue*: AsyncQueue[BlockAddress]
-    scheduledRetries: HashSet[BlockAddress]
     selectPeer*: PeerSelector
     concurrentTasks: int
     trackedFutures: TrackedFutures
@@ -264,9 +263,16 @@ proc refreshBlockKnowledge(self: BlockExcEngine) {.async: (raises: [CancelledErr
 
       lastIdle = Moment.now()
 
-proc queueBlockRequest(
+proc scheduleBlockSend(
   self: BlockExcEngine, address: BlockAddress
 ) {.gcsafe, raises: [].}
+
+proc failBlockRequest(
+  self: BlockExcEngine,
+  address: BlockAddress,
+  errType: typedesc[EngineError],
+  msg: string,
+) {.async: (raises: []).}
 
 proc searchForNewPeers(self: BlockExcEngine, cid: Cid) =
   if self.lastDiscRequest + DiscoveryRateLimit < Moment.now():
@@ -292,22 +298,23 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
   self.peers.remove(peer)
   for address in pendingAddresses:
     if address in self.pendingBlocks:
-      self.pendingBlocks.decRetries(address)
-      if self.pendingBlocks.retriesExhausted(address):
-        archivist_block_exchange_requests_failed_total.inc()
-        self.pendingBlocks.failWantHandle(
-          address, RetriesExhaustedEngineError, "Block request retries exhausted"
-        )
-      else:
-        self.queueBlockRequest(address)
+      self.scheduleBlockSend(address)
 
 proc randomPeer(peers: seq[BlockExcPeerCtx]): BlockExcPeerCtx =
   Rng.instance.sample(peers)
 
-proc queueBlockRequest(
+proc scheduleBlockSend(
     self: BlockExcEngine, address: BlockAddress
 ) {.gcsafe, raises: [].} =
-  if address notin self.pendingBlocks or address in self.requestQueue:
+  if address notin self.pendingBlocks or self.pendingBlocks.isRequested(address) or
+      address in self.requestQueue:
+    return
+
+  if self.pendingBlocks.retriesExhausted(address):
+    archivist_block_exchange_requests_failed_total.inc()
+    self.pendingBlocks.failWantHandle(
+      address, RetriesExhaustedEngineError, "Block request retries exhausted"
+    )
     return
 
   try:
@@ -315,41 +322,6 @@ proc queueBlockRequest(
   except AsyncQueueFullError as exc:
     warn "Unable to queue block request", address, err = exc.msg
     self.pendingBlocks.failWantHandle(address, QueueFailedEngineError, exc.msg)
-
-proc retryDelayed(
-    self: BlockExcEngine, address: BlockAddress, delay: Duration
-) {.async: (raises: []).} =
-  ## Queue a delayed request for an existing block handle, if no
-  ## handle exists, we ignore the request
-  ##
-
-  without handle =? self.pendingBlocks.getPendingHandle(address):
-    trace "No pending handle to queue delayed request", address
-    return
-
-  if address in self.scheduledRetries or address in self.requestQueue:
-    trace "Retry already scheduled or queued", address
-    return
-
-  self.scheduledRetries.incl(address)
-  let timer = sleepAsync(delay)
-  try:
-    await handle or timer
-  except CatchableError as exc:
-    trace "Delayed block request monitor finished", address, exc = exc.msg
-  finally:
-    self.scheduledRetries.excl(address)
-    if not timer.finished:
-      await noCancel timer.cancelAndWait()
-
-  if handle.finished:
-    trace "Handle already finished, skipping retry", address
-    return
-
-  if timer.completed and address in self.pendingBlocks and
-      not self.pendingBlocks.isRequested(address) and address notin self.requestQueue:
-    trace "Queuing a retry", address
-    self.queueBlockRequest(address)
 
 proc clearBlockRequestState(
     self: BlockExcEngine, address: BlockAddress
@@ -369,19 +341,7 @@ proc failBlockRequest(
   await self.clearBlockRequestState(address)
   self.pendingBlocks.failWantHandle(address, errType, msg)
 
-proc retryBlockRequest(
-    self: BlockExcEngine, address: BlockAddress, delay: Duration
-) {.async: (raises: []).} =
-  self.pendingBlocks.decRetries(address)
-  if self.pendingBlocks.retriesExhausted(address):
-    archivist_block_exchange_requests_failed_total.inc()
-    await self.failBlockRequest(
-      address, RetriesExhaustedEngineError, "Retries exhausted for block"
-    )
-  else:
-    self.trackedFutures.track(self.retryDelayed(address, delay))
-
-proc scheduleRequestBatch(
+proc sendRequestBatch(
     self: BlockExcEngine, addresses: seq[BlockAddress]
 ) {.async: (raises: [CancelledError]).} =
   if addresses.len == 0:
@@ -393,6 +353,7 @@ proc scheduleRequestBatch(
       continue
 
     if self.pendingBlocks.retriesExhausted(address):
+      archivist_block_exchange_requests_failed_total.inc()
       await self.failBlockRequest(
         address, RetriesExhaustedEngineError, "Block request retries exhausted"
       )
@@ -404,15 +365,6 @@ proc scheduleRequestBatch(
         await self.refreshBlockKnowledge()
 
       self.searchForNewPeers(address.cidOrTreeCid)
-      let nextDiscovery =
-        if self.lastDiscRequest + DiscoveryRateLimit > Moment.now():
-          self.lastDiscRequest + DiscoveryRateLimit - Moment.now()
-        else:
-          0.milliseconds
-
-      await self.retryBlockRequest(
-        address, max(self.pendingBlocks.retryInterval, nextDiscovery)
-      )
       continue
 
     let
@@ -428,16 +380,34 @@ proc scheduleRequestBatch(
     if peer.isNil:
       for address in batch:
         await self.pendingBlocks.clearRequest(address, peerId)
-        await self.retryBlockRequest(address, self.pendingBlocks.retryInterval)
+        self.scheduleBlockSend(address)
       continue
 
-    if err =? catchAsync(await self.sendWantBlock(batch, peer)).errorOption:
+    var sendBatch: seq[BlockAddress]
+    for address in batch:
+      if address notin self.pendingBlocks or
+          self.pendingBlocks.getRequestPeer(address) != peerId.some:
+        continue
+
+      if self.pendingBlocks.retriesExhausted(address):
+        await self.failBlockRequest(
+          address, RetriesExhaustedEngineError, "Block request retries exhausted"
+        )
+        continue
+
+      self.pendingBlocks.decRetries(address)
+      sendBatch.add(address)
+
+    if sendBatch.len == 0:
+      continue
+
+    if err =? catchAsync(await self.sendWantBlock(sendBatch, peer)).errorOption:
       warn "Failed to send wantBlock batch", peer = peerId, err = err.msg
-      for address in batch:
+      for address in sendBatch:
         await self.pendingBlocks.clearRequest(address, peerId)
         peer.blockRequestCancelled(address)
         peer.cleanPresence(address)
-        await self.retryBlockRequest(address, self.pendingBlocks.retryInterval)
+        self.scheduleBlockSend(address)
       continue
 
 proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
@@ -468,7 +438,7 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
           await noCancel timer.cancelAndWait()
 
       trace "Sending batch", size = batch.len
-      await self.scheduleRequestBatch(batch)
+      await self.sendRequestBatch(batch)
   except CancelledError:
     warn "Request scheduling cancelled!"
 
@@ -479,7 +449,7 @@ proc requestDeliveries*(
 
   for address in addresses.deduplicate():
     let handle = self.pendingBlocks.getWantHandle(address)
-    self.queueBlockRequest(address)
+    self.scheduleBlockSend(address)
     handles.add(handle)
 
   success handles
@@ -488,7 +458,7 @@ proc requestDelivery*(
     self: BlockExcEngine, address: BlockAddress, priority = 0
 ): ?!BlockHandle =
   let handle = self.pendingBlocks.getWantHandle(address)
-  self.queueBlockRequest(address)
+  self.scheduleBlockSend(address)
   success handle
 
 proc completeBlocks*(
@@ -529,7 +499,7 @@ proc blockPresenceHandler*(
   for address in ourWantList:
     if address in peerHave and not self.pendingBlocks.retriesExhausted(address) and
         not self.pendingBlocks.isRequested(address):
-      self.queueBlockRequest(address)
+      self.scheduleBlockSend(address)
 
 proc scheduleTasks(
     self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
@@ -679,7 +649,7 @@ proc blocksDeliveryHandler*(
           peerCtx.blockRequestCancelled(bd.address)
           peerCtx.cleanPresence(bd.address)
         await self.pendingBlocks.clearRequest(bd.address, peer)
-        await self.retryBlockRequest(bd.address, self.pendingBlocks.retryInterval)
+        self.scheduleBlockSend(bd.address)
         continue
 
       if bd.address.leaf:
@@ -731,7 +701,7 @@ proc blocksDeliveryHandler*(
         peerCtx.blockRequestCancelled(bd.address)
         peerCtx.cleanPresence(bd.address)
       await self.pendingBlocks.clearRequest(bd.address, peer)
-      await self.retryBlockRequest(bd.address, self.pendingBlocks.retryInterval)
+      self.scheduleBlockSend(bd.address)
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
