@@ -645,7 +645,7 @@ asyncchecksuite "Block Download":
     await engine.completeBlock(address, blocks[0])
     check (await pending).blk == blocks[0]
 
-  test "Should not requeue when no peer has the block":
+  test "Should schedule retry when no peer has the block":
     let
       address = BlockAddress.init(blocks[0].cid)
       refreshed = newFuture[void]()
@@ -660,6 +660,7 @@ asyncchecksuite "Block Download":
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
       if wantType == WantHave:
+        check addresses == @[address]
         refreshed.complete()
 
     engine.network = BlockExcNetwork(
@@ -669,13 +670,17 @@ asyncchecksuite "Block Download":
     )
 
     let pending = engine.requestDelivery(address).tryGet()
+    let retriesBefore = engine.pendingBlocks.retries(address)
     discard await engine.requestQueue.get()
     await engine.sendRequestBatch(@[address])
 
     await refreshed.wait(100.millis)
     check address in engine.pendingBlocks
     check not engine.pendingBlocks.isRequested(address)
+    check engine.pendingBlocks.isScheduled(address)
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
     check address notin engine.requestQueue
+    check eventually address in engine.requestQueue
 
     await pending.cancelAndWait()
     expect CancelledError:
