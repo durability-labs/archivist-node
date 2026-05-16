@@ -90,6 +90,7 @@ type
     owners: HashSet[BlockHandle]
     requested: ?PeerId
     requestTimeout: Future[void]
+    scheduled: bool
     startTime: int64
     blockRetries: int
 
@@ -288,6 +289,30 @@ func isRequested*(self: PendingBlocksManager, address: BlockAddress): bool =
     return pending.requested.isSome
   false
 
+func isScheduled*(self: PendingBlocksManager, address: BlockAddress): bool =
+  if pending =? self.blocks .? [address]:
+    return pending.scheduled
+  false
+
+func markScheduled*(self: PendingBlocksManager, address: BlockAddress): bool =
+  if var pending =? self.blocks .? [address]:
+    if pending.requested.isSome or pending.scheduled:
+      return false
+
+    pending.scheduled = true
+    return true
+
+  false
+
+func clearScheduled*(self: PendingBlocksManager, address: BlockAddress) =
+  if var pending =? self.blocks .? [address]:
+    pending.scheduled = false
+
+func isFirstAttempt*(self: PendingBlocksManager, address: BlockAddress): bool =
+  if pending =? self.blocks .? [address]:
+    return pending.blockRetries == self.blockRetries
+  false
+
 func getRequestPeer*(self: PendingBlocksManager, address: BlockAddress): ?PeerId =
   if pending =? self.blocks .? [address]:
     return pending.requested
@@ -358,6 +383,8 @@ proc markRequested*(
 
     currentMonitor = timeoutMonitor()
     pending.requestTimeout = currentMonitor
+    pending.scheduled = false
+
     return pending.requested
 
 proc clearRequest*(
