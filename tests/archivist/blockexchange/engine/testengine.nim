@@ -648,7 +648,8 @@ asyncchecksuite "Block Download":
   test "Should schedule retry when no peer has the block":
     let
       address = BlockAddress.init(blocks[0].cid)
-      refreshed = newFuture[void]()
+      wantHaveSent = newAsyncEvent()
+      wantBlockSent = newAsyncEvent()
 
     proc sendWantList(
         id: PeerId,
@@ -659,9 +660,17 @@ asyncchecksuite "Block Download":
         full: bool = false,
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
-      if wantType == WantHave:
+      case wantType
+      of WantHave:
         check addresses == @[address]
-        refreshed.complete()
+        if not wantHaveSent.isSet:
+          wantHaveSent.fire()
+      of WantBlock:
+        check addresses == @[address]
+        check wantHaveSent.isSet
+        check address in peerCtx.peerHave
+        if not wantBlockSent.isSet:
+          wantBlockSent.fire()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -670,18 +679,17 @@ asyncchecksuite "Block Download":
     )
 
     let pending = engine.requestDelivery(address).tryGet()
-    let retriesBefore = engine.pendingBlocks.retries(address)
-    discard await engine.requestQueue.get()
-    await engine.sendRequestBatch(@[address])
 
-    await refreshed.wait(100.millis)
+    await wantHaveSent.wait().wait(100.millis)
+    await engine.blockPresenceHandler(
+      peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
+    )
+
+    await wantBlockSent.wait().wait(1.seconds)
     check address in engine.pendingBlocks
-    check not engine.pendingBlocks.isRequested(address)
-    check engine.pendingBlocks.isScheduled(address)
-    check engine.pendingBlocks.retries(address) == retriesBefore - 1
-    check address notin engine.requestQueue
-    check eventually address in engine.requestQueue
-
+    check engine.pendingBlocks.isRequested(address)
+    check not engine.pendingBlocks.isScheduled(address)
+    check address in peerCtx.blocksRequested
     await pending.cancelAndWait()
     expect CancelledError:
       discard await pending

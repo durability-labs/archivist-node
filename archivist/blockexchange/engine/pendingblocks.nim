@@ -45,7 +45,7 @@ declareGauge(
 
 const
   DefaultBlockRetries* = 3000
-  DefaultRequestTimeout* = 500.millis
+  DefaultRequestTimeout* = 30.seconds
 
 type
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
@@ -110,7 +110,7 @@ func hash*(handle: BlockHandle): Hash =
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
 
-proc releaseWantHandle*(
+proc releaseWantHandle(
   self: PendingBlocksManager, wrapped: BlockHandle
 ): Future[?!void] {.async: (raises: []), gcsafe.}
 
@@ -181,7 +181,7 @@ proc getWantHandle*(
 ): BlockHandle =
   self.getWantHandle(BlockAddress.init(cid), requested)
 
-proc releaseWantHandle*(
+proc releaseWantHandle(
     self: PendingBlocksManager, wrapped: BlockHandle
 ): Future[?!void] {.async: (raises: []), gcsafe.} =
   if address =? self.handles .? [wrapped]:

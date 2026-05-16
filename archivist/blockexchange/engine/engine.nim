@@ -78,9 +78,9 @@ declareCounter(
 )
 
 const
-  DefaultTaskQueueSize = 100
-  DefaultConcurrentTasks = 10
-  DefaultMaxBlocksPerMessage = 20
+  DefaultTaskQueueSize = 128
+  DefaultConcurrentTasks = 3
+  DefaultMaxBlocksPerMessage = 128
   DefaultWantBlockBatchSize = 128
   DefaultWantBlockBatchTimeout = 5.millis
   DefaultBlockSendRetryDelay = 500.millis
@@ -107,6 +107,7 @@ type
     blockexcRunning: bool
     maxBlocksPerMessage: int
     wantBlockBatchSize: int
+    blockRequestTimeout: Duration
     pendingBlocks*: PendingBlocksManager
     discovery*: DiscoveryEngine
     advertiser*: Advertiser
@@ -136,8 +137,7 @@ proc start*(self: BlockExcEngine) {.async: (raises: []).} =
   await self.advertiser.start()
 
   for i in 0 ..< self.concurrentTasks:
-    let fut = self.blockexcTaskRunner()
-    self.trackedFutures.track(fut)
+    self.trackedFutures.track(self.blockexcTaskRunner())
 
   self.trackedFutures.track(self.blockRequestScheduler())
 
@@ -147,8 +147,8 @@ proc stop*(self: BlockExcEngine) {.async: (raises: []).} =
     return
 
   self.blockexcRunning = false
-  await self.pendingBlocks.cancelAll()
   await self.trackedFutures.cancelTracked()
+  await self.pendingBlocks.cancelAll()
   await self.network.stop()
   await self.discovery.stop()
   await self.advertiser.stop()
@@ -409,9 +409,11 @@ proc sendRequestBatch(
         self.scheduleBlockSend(address)
 
     if address notin self.pendingBlocks or self.pendingBlocks.isRequested(address):
+      trace "Address is not pending or already requested", address
       continue
 
     if self.pendingBlocks.retriesExhausted(address):
+      trace "Retries exhausted, skipping block", address
       archivist_block_exchange_requests_failed_total.inc()
       await self.failBlockRequest(
         address, RetriesExhaustedEngineError, "Block request retries exhausted"
@@ -434,7 +436,8 @@ proc sendRequestBatch(
       shouldRetry = true
       continue
 
-    let requested = self.pendingBlocks.markRequested(address, peer.id)
+    let requested =
+      self.pendingBlocks.markRequested(address, peer.id, self.blockRequestTimeout)
     if requested != peer.id.some:
       trace "Block already requested from another peer", address, peer = requested.get
       continue
@@ -459,7 +462,7 @@ proc sendRequestBatch(
 
 proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
   try:
-    while true:
+    while self.blockexcRunning:
       var batch = @[await self.requestQueue.get()]
       let timer = sleepAsync(DefaultWantBlockBatchTimeout)
 
@@ -475,7 +478,6 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
               batch.add(address)
 
             if timer.finished:
-              trace "Batch timeslice expired first", batchLen = batch.len
               break
           finally:
             if not next.finished:
@@ -484,10 +486,11 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
         if not timer.finished:
           await noCancel timer.cancelAndWait()
 
-      trace "Sending batch", size = batch.len
       await self.sendRequestBatch(batch)
   except CancelledError:
     warn "Request scheduling cancelled!"
+
+  trace "Block request scheduling stopped"
 
 proc requestDeliveries*(
     self: BlockExcEngine, addresses: seq[BlockAddress], priority = 0
@@ -603,9 +606,7 @@ proc releaseHandle*(
   let requested = self.pendingBlocks.getRequestPeer(handle)
 
   if address =? self.pendingBlocks.getHandleAddress(handle):
-    if err =? (await self.pendingBlocks.releaseWantHandle(handle)).errorOption:
-      warn "Unable to release handle", address
-      return
+    await noCancel handle.cancelAndWait()
 
     await self.cancelBlocks(@[address])
     if peerId =? requested:
@@ -954,6 +955,7 @@ proc new*(
     maxBlocksPerMessage = DefaultMaxBlocksPerMessage,
     concurrentTasks = DefaultConcurrentTasks,
     selectPeer: PeerSelector = randomPeer,
+    blockRequestTimeout = DefaultRequestTimeout,
 ): BlockExcEngine =
   let self = BlockExcEngine(
     localStore: localStore,
@@ -964,6 +966,7 @@ proc new*(
     trackedFutures: TrackedFutures(),
     maxBlocksPerMessage: maxBlocksPerMessage,
     wantBlockBatchSize: DefaultWantBlockBatchSize,
+    blockRequestTimeout: blockRequestTimeout,
     taskQueue: newAsyncHeapQueue[BlockExcPeerCtx](DefaultTaskQueueSize),
     requestQueue: newAsyncQueue[BlockAddress](DefaultRequestQueueSize),
     discovery: discovery,
