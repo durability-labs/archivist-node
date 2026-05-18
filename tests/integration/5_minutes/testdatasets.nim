@@ -69,3 +69,11 @@ suite "Node datasets":
       fail()
     except HttpError as error:
       check "413" in error.msg
+
+  test "node can return status of a dataset":
+    let datasetSize = 7 * 512 * 1024 # 7 blocks of data
+    let dataset = await testbed.dataset.data(datasetSize).upload(node)
+    let status = await testbed.api(node).status(!dataset.cid)
+    check status["cid"].getStr() == !dataset.cid
+    check status["status"].getStr() == "Completed"
+    check status["blocks"].getStr() == "0b1111111"
