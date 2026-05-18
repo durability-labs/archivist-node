@@ -64,7 +64,9 @@ proc formatManifestBlocks(node: ArchivistNodeRef): Future[JsonNode] {.async.} =
 
   return %RestContentList.init(content)
 
-proc formatDatasetStatus(node: ArchivistNodeRef, repostore: RepoStore, cid: Cid): Future[?!JsonNode] {.async.} =
+proc formatDatasetStatus(
+    node: ArchivistNodeRef, repostore: RepoStore, cid: Cid
+): Future[?!JsonNode] {.async.} =
   without manifest =? (await node.fetchManifest(cid)), err:
     error "Failed to fetch manifest", err = err.msg
     return failure(err)

@@ -85,12 +85,11 @@ proc init*(_: type RestContentList, content: seq[RestContent]): RestContentList 
 proc init*(_: type RestContent, cid: Cid, manifest: Manifest): RestContent =
   RestContent(cid: cid, manifest: manifest)
 
-proc init*(_: type RestDatasetStatus, cid: Cid, overlay: OverlayMetadata): RestDatasetStatus =
+proc init*(
+    _: type RestDatasetStatus, cid: Cid, overlay: OverlayMetadata
+): RestDatasetStatus =
   RestDatasetStatus(
-    cid: cid,
-    status: overlay.status,
-    expiry: overlay.expiry,
-    blocks: $(overlay.blocks)
+    cid: cid, status: overlay.status, expiry: overlay.expiry, blocks: $(overlay.blocks)
   )
 
 proc init*(_: type RestNode, node: dn.Node): RestNode =
