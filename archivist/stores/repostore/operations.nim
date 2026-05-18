@@ -64,6 +64,35 @@ declareGauge(archivist_repostore_bytes_reserved, "archivist repostore bytes rese
 ## should never touch those.
 ##
 
+proc getQuotaUsage(
+    self: RepoStore
+): Future[?!QuotaUsage] {.async: (raises: [CancelledError]).} =
+  without record =? await self.metaDs.get(QuotaUsedKey, QuotaUsage), error:
+    if error of KVStoreKeyNotFound:
+      return success QuotaUsage.default
+    else:
+      return failure error
+  success record.val
+
+proc getTotalBlocks(
+    self: RepoStore
+): Future[?!Natural] {.async: (raises: [CancelledError]).} =
+  without record =? await self.metaDs.get(ArchivistTotalBlocksKey, Natural), error:
+    if error of KVStoreKeyNotFound:
+      return success 0.Natural
+    else:
+      return failure error
+  success record.val
+
+proc initializeCounters*(
+    self: RepoStore
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  let quotaUsage = ?await self.getQuotaUsage()
+  let totalBlocks = ?await self.getTotalBlocks()
+  self.quotaUsage = quotaUsage
+  self.totalBlocks = totalBlocks
+  success()
+
 proc updateCounters*(
     self: RepoStore, quotaDelta = 0, reservedDelta = 0, blocksDelta = 0
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
