@@ -1,11 +1,13 @@
 import pkg/questionable
 import pkg/stew/byteutils
+import pkg/stew/bitseqs
 import pkg/libp2p
 import pkg/archivistdht/discv5/node as dn
 import pkg/archivistdht/discv5/routing_table as rt
 import ../marketplace
 import ../utils/json
 import ../manifest
+import ../stores/repostore/types
 import ../units
 import ../clock
 
@@ -46,6 +48,12 @@ type
   RestContentList* = object
     content* {.serialize.}: seq[RestContent]
 
+  RestDatasetStatus* = object
+    cid* {.serialize.}: Cid
+    status* {.serialize.}: OverlayStatus
+    expiry* {.serialize.}: SecondsSince1970
+    blocks* {.serialize.}: string
+
   RestNode* = object
     nodeId* {.serialize.}: RestNodeId
     peerId* {.serialize.}: PeerId
@@ -76,6 +84,14 @@ proc init*(_: type RestContentList, content: seq[RestContent]): RestContentList 
 
 proc init*(_: type RestContent, cid: Cid, manifest: Manifest): RestContent =
   RestContent(cid: cid, manifest: manifest)
+
+proc init*(_: type RestDatasetStatus, cid: Cid, overlay: OverlayMetadata): RestDatasetStatus =
+  RestDatasetStatus(
+    cid: cid,
+    status: overlay.status,
+    expiry: overlay.expiry,
+    blocks: $(overlay.blocks)
+  )
 
 proc init*(_: type RestNode, node: dn.Node): RestNode =
   RestNode(
