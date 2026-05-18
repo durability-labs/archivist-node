@@ -593,6 +593,13 @@ paths:
       summary: "Gets status for local dataset."
       tags: [Data]
       operationId: getDatasetStatus
+      parameters:
+        - in: path
+          name: cid
+          required: true
+          schema:
+            $ref: "#/components/schemas/Cid"
+          description: Dataset for which to get status object
       responses:
         "200":
           description: Retrieved dataset status object
