@@ -33,6 +33,13 @@ suite "Node datasets":
     check totalBlocksAfter > totalBlocksBefore
     check quotaUsedAfter >= quotaUsedBefore + dataset.data.len
 
+  test "used and available space is preserved after a restart":
+    discard await testbed.dataset.upload(node)
+    let before = await testbed.api(node).getSpace()
+    await node.restart()
+    let after = await testbed.api(node).getSpace()
+    check before == after
+
   test "node returns list of local datasets":
     let dataset1 = await testbed.dataset.upload(node)
     let dataset2 = await testbed.dataset.upload(node)

@@ -633,6 +633,14 @@ proc start*(
     return
 
   trace "Starting repo"
+
+  if error =? (await self.initializeCounters()).errorOption:
+    trace "Initializing counters failed", error = error.msg
+    let message = "unable to start repo store: " & error.msg
+    raise newException(ArchivistError, message)
+  trace "Counters initialized",
+    quotaUsage = self.quotaUsage, totalBlocks = self.totalBlocks
+
   self.started = true
 
 proc stop*(self: RepoStore): Future[void] {.async: (raises: []).} =
