@@ -421,10 +421,10 @@ proc sendRequestBatch(
       continue
 
     let peers = self.peers.getPeersForBlock(address)
-    if peers.with.len == 0:
-      if peers.without.len > 0:
+    if peers.with.len == 0 and peers.without.len > 0:
         await self.refreshBlockKnowledge()
 
+    if peers.with.len == 0:
       self.searchForNewPeers(address.cidOrTreeCid)
       trace "No peer for block, discovery started and retry scheduled", address
       shouldRetry = true
