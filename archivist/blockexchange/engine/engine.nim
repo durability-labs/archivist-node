@@ -422,7 +422,7 @@ proc sendRequestBatch(
 
     let peers = self.peers.getPeersForBlock(address)
     if peers.with.len == 0 and peers.without.len > 0:
-        await self.refreshBlockKnowledge()
+      await self.refreshBlockKnowledge()
 
     if peers.with.len == 0:
       self.searchForNewPeers(address.cidOrTreeCid)
