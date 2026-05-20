@@ -555,6 +555,49 @@ asyncchecksuite "Block Download":
     check wantBlockBatches[0].mapIt($it).sorted(cmp[string]) ==
       addresses.mapIt($it).sorted(cmp[string])
 
+  test "Should keep request queued while timed-out batch is sending":
+    let
+      firstAddress = BlockAddress.init(blocks[0].cid)
+      secondAddress = BlockAddress.init(blocks[1].cid)
+      secondSent = newAsyncEvent()
+
+    var queuedSecond = false
+    var wantBlockBatches: seq[seq[BlockAddress]]
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        wantBlockBatches.add(addresses)
+
+        if firstAddress in addresses and not queuedSecond:
+          queuedSecond = true
+          let secondRequest = engine.requestDelivery(secondAddress)
+          check secondRequest.isOk
+
+        if secondAddress in addresses:
+          secondSent.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+    peerCtx.setPresence(Presence(address: firstAddress, have: true))
+    peerCtx.setPresence(Presence(address: secondAddress, have: true))
+
+    discard engine.requestDelivery(firstAddress).tryGet()
+
+    await secondSent.wait().wait(100.millis)
+
+    check wantBlockBatches == @[@[firstAddress], @[secondAddress]]
+
   test "Should keep same peer request after clearing previous request":
     let
       address = BlockAddress.init(blocks[0].cid)

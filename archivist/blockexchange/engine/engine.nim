@@ -471,17 +471,19 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
           let next = self.requestQueue.get()
           try:
             await next or timer
-
-            if next.finished:
-              let address = await next # allow exceptions to propagate
-              trace "Got block from request queue", address
-              batch.add(address)
-
-            if timer.finished:
-              break
           finally:
             if not next.finished:
               await noCancel next.cancelAndWait()
+
+          if not next.completed:
+            break
+
+          let address = await next
+          trace "Got block from request queue", address
+          batch.add(address)
+
+          if timer.finished:
+            break
       finally:
         if not timer.finished:
           await noCancel timer.cancelAndWait()
