@@ -22,10 +22,7 @@ proc removeFuture(self: TrackedFutures, future: TrackedFuture) =
     self.futures.del(future.id)
 
 proc track*(self: TrackedFutures, fut: TrackedFuture) =
-  if self.cancelling:
-    return
-
-  if fut.finished:
+  if self.cancelling or fut.finished:
     return
 
   self.futures[fut.id] = fut

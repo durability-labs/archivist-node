@@ -24,6 +24,7 @@ const
   MinRefreshInterval = 1.seconds
   MaxRefreshBackoff = 36
   DefaultMaxWantListBatchSize* = 1024
+  DefaultPeerActivityTimeout = 1.minutes
 
 type BlockExcPeerCtx* = ref object of RootObj
   id*: PeerId
@@ -35,7 +36,6 @@ type BlockExcPeerCtx* = ref object of RootObj
   refreshBackoff*: int = 1
   blocksSent*: HashSet[BlockAddress]
   blocksRequested*: HashSet[BlockAddress]
-  lastExchange*: Moment # last time peer has exchanged with us
   activityTimeout*: Duration
   lastSentWants*: HashSet[BlockAddress]
 
@@ -105,9 +105,6 @@ func cleanPresence*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.cleanPresence(@[address])
 
 proc blockRequestScheduled*(self: BlockExcPeerCtx, address: BlockAddress) =
-  if self.blocksRequested.len == 0:
-    self.lastExchange = Moment.now()
-
   self.blocksRequested.incl(address)
 
 proc blockRequestCancelled*(self: BlockExcPeerCtx, address: BlockAddress) =
@@ -118,14 +115,10 @@ proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
 
 proc blockRequestAccepted*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.excl(address)
-  self.lastExchange = Moment.now()
 
-proc activityTimer*(
-    self: BlockExcPeerCtx
-): Future[void] {.async: (raises: [CancelledError]).} =
-  while true:
-    let idleTime = Moment.now() - self.lastExchange
-    if idleTime > self.activityTimeout:
-      return
-
-    await sleepAsync(self.activityTimeout - idleTime)
+proc new*(
+    T: type BlockExcPeerCtx,
+    peerId: PeerId,
+    activityTimeout = DefaultPeerActivityTimeout,
+): BlockExcPeerCtx =
+  BlockExcPeerCtx(id: peerId, activityTimeout: activityTimeout)

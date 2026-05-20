@@ -91,7 +91,6 @@ suite "Test Node - Slot Repair":
       )
 
     (await localStore.putBlock(manifestBlock)).tryGet()
-
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
     builder = Poseidon2Builder.new(store, localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
@@ -176,7 +175,6 @@ suite "Test Node - Slot Repair":
       )
 
     (await localStore.putBlock(manifestBlock)).tryGet()
-
     protected = (await erasure.encode(manifest, ecK, ecM)).tryGet()
     builder = Poseidon2Builder.new(store, localStore, protected).tryGet()
     verifiable = (await builder.buildManifest()).tryGet()
