@@ -103,8 +103,9 @@ type
     concurrentTasks: int
     trackedFutures: TrackedFutures
     blockexcRunning: bool
-    maxBatchBlocks: int
-    discoveryDeadline*: Duration
+    maxBlocksPerMessage: int
+    wantBlockBatchSize: int
+    wantBlockBatchTimeout: Duration
     blockRequestTimeout: Duration
     pendingBlocks*: PendingBlocksManager
     discovery*: DiscoveryEngine
@@ -516,7 +517,7 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
         req[].batch.add(address)
         peerBatch = req[].batch
       do:
-        let timer = sleepAsync(DefaultWantBlockBatchTimeout)
+        let timer = sleepAsync(self.wantBlockBatchTimeout)
         byPeer[peer.id] = BatchReq(batch: @[address], timer: timer)
         timers[timer] = peer.id
         continue
@@ -984,6 +985,8 @@ proc new*(
     maxBatchBlocks = DefaultMaxBatchBlocks,
     concurrentTasks = DefaultConcurrentTasks,
     selectPeer: PeerSelector = randomPeer,
+    wantBlockBatchSize = DefaultWantBlockBatchSize,
+    wantBlockBatchTimeout = DefaultWantBlockBatchTimeout,
     blockRequestTimeout = DefaultRequestTimeout,
 ): BlockExcEngine =
   let self = BlockExcEngine(
@@ -993,7 +996,9 @@ proc new*(
     network: network,
     concurrentTasks: concurrentTasks,
     trackedFutures: TrackedFutures(),
-    maxBatchBlocks: maxBatchBlocks,
+    maxBlocksPerMessage: maxBlocksPerMessage,
+    wantBlockBatchSize: wantBlockBatchSize,
+    wantBlockBatchTimeout: wantBlockBatchTimeout,
     blockRequestTimeout: blockRequestTimeout,
     taskQueue: newAsyncHeapQueue[BlockExcPeerCtx](DefaultTaskQueueSize),
     discovery: discovery,
