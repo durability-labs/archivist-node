@@ -204,6 +204,21 @@ proc minWakeHint(current: var Option[Duration], candidate: Option[Duration]) =
     else:
       current = wake.some
 
+proc scheduleBlockSend(
+  self: BlockExcEngine,
+  address: BlockAddress,
+  immediate = false,
+  delay = DefaultBlockSendRetryDelay,
+  forceDelay = false,
+) {.gcsafe, raises: [].}
+
+proc failBlockRequest(
+  self: BlockExcEngine,
+  address: BlockAddress,
+  errType: typedesc[EngineError],
+  msg: string,
+) {.async: (raises: []).}
+
 proc searchForNewPeers(self: BlockExcEngine, cid: Cid) =
   if self.lastDiscRequest + DiscoveryRateLimit < Moment.now():
     archivist_block_exchange_discovery_requests.inc()
@@ -406,15 +421,9 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
       let address = await next
       trace "Got block from request queue", address
 
-      var shouldRetry = false
-      defer:
-        if shouldRetry:
-          self.pendingBlocks.clearScheduled(address)
-          self.scheduleBlockSend(address)
-
       if address notin self.pendingBlocks or self.pendingBlocks.isRequested(address):
         trace "Address is not pending or already requested", address
-        shouldRetry = true
+        self.pendingBlocks.clearScheduled(address)
         continue
 
       if self.pendingBlocks.retriesExhausted(address):
@@ -431,14 +440,16 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
 
       if peers.with.len == 0:
         self.searchForNewPeers(address.cidOrTreeCid)
+        self.pendingBlocks.clearScheduled(address)
+        self.scheduleBlockSend(address, forceDelay = true)
         trace "No peer for block, discovery started and retry scheduled", address
-        shouldRetry = true
         continue
 
       let peer = self.selectPeer(peers.with)
       if peer.isNil:
         trace "No peer context, skipping", address
-        shouldRetry = true
+        self.pendingBlocks.clearScheduled(address)
+        self.scheduleBlockSend(address, forceDelay = true)
         continue
 
       var peerBatch: seq[BlockAddress]
