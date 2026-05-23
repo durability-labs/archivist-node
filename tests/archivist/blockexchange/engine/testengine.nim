@@ -25,8 +25,6 @@ import pkg/archivist/utils/asyncheapqueue
 import ../../../asynctest
 import ../../helpers
 
-privateAccess(PendingBlocksManager)
-
 const NopSendWantListProc = proc(
     id: PeerId,
     addresses: seq[BlockAddress],
@@ -618,11 +616,11 @@ asyncchecksuite "Block Download":
 
     check wantBlockBatches == @[@[firstAddress], @[secondAddress]]
 
-  test "Send all blocks to all peers":
+  test "Should batch by peer before splitting want block requests":
     let
       peer2Key = PrivateKey.random(rng[]).tryGet()
       peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
-      peer2Ctx = BlockExcPeerCtx.new(peer2Id)
+      peer2Ctx = BlockExcPeerCtx(id: peer2Id)
       requestCount = DefaultWantBlockBatchSize * 4
       addresses =
         toSeq(0 ..< requestCount).mapIt(BlockAddress.init(blocks[0].cid, Natural(it)))
@@ -630,7 +628,9 @@ asyncchecksuite "Block Download":
 
     var
       sentAddresses = initHashSet[BlockAddress]()
-      wantBlockBatches: Table[PeerId, seq[BlockAddress]]
+      expectedPeer1 = initHashSet[BlockAddress]()
+      expectedPeer2 = initHashSet[BlockAddress]()
+      wantBlockBatches: seq[tuple[peer: PeerId, addresses: seq[BlockAddress]]]
 
     proc sendWantList(
         id: PeerId,
@@ -642,9 +642,9 @@ asyncchecksuite "Block Download":
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
-        wantBlockBatches.mgetOrPut(id, @[]).add(requestedAddresses)
-        sentAddresses.incl(requestedAddresses.toHashSet)
-
+        wantBlockBatches.add((peer: id, addresses: requestedAddresses))
+        for address in requestedAddresses:
+          sentAddresses.incl(address)
         if sentAddresses.len == requestCount and not done.isSet:
           done.fire()
 
@@ -657,18 +657,42 @@ asyncchecksuite "Block Download":
 
     for i, address in addresses:
       if i mod 2 == 0:
+        expectedPeer1.incl(address)
         peerCtx.setPresence(Presence(address: address, have: true))
       else:
+        expectedPeer2.incl(address)
         peer2Ctx.setPresence(Presence(address: address, have: true))
 
     let pendingHandles = engine.requestDeliveries(addresses).tryGet()
     check pendingHandles.len == requestCount
     await done.wait().wait(1.seconds)
 
+    let
+      peer1Batches = wantBlockBatches.filterIt(it.peer == peerId)
+      peer2Batches = wantBlockBatches.filterIt(it.peer == peer2Id)
+
+    var
+      peer1Sent = initHashSet[BlockAddress]()
+      peer2Sent = initHashSet[BlockAddress]()
+
+    for batch in peer1Batches:
+      for address in batch.addresses:
+        peer1Sent.incl(address)
+
+    for batch in peer2Batches:
+      for address in batch.addresses:
+        peer2Sent.incl(address)
+
     check:
+      pendingHandles.len == requestCount
       sentAddresses == addresses.toHashSet
-      wantBlockBatches[peerCtx.id].len == requestCount div 2
-      wantBlockBatches[peer2Ctx.id].len == requestCount div 2
+      peer1Batches.len == 2
+      peer2Batches.len == 2
+      peer1Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
+      peer2Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
+      peer1Sent == expectedPeer1
+      peer2Sent == expectedPeer2
+      sentAddresses.len == requestCount
 
   test "Should dispatch timed-out batch for correct peer":
     let
@@ -769,6 +793,7 @@ asyncchecksuite "Block Download":
       if wantType == WantBlock:
         check addresses == @[address]
         check engine.pendingBlocks.isRequested(address)
+        check not engine.pendingBlocks.isScheduled(address)
         sent.complete()
 
     engine.network = BlockExcNetwork(
@@ -779,6 +804,18 @@ asyncchecksuite "Block Download":
     peerCtx.setPresence(Presence(address: address, have: true))
 
     let pending = engine.requestDelivery(address).tryGet()
+    let retriesBefore = engine.pendingBlocks.retries(address)
+    check address in engine.requestQueue
+    check engine.requestQueue.len == 1
+
+    engine.scheduleBlockSend(address)
+    check address in engine.requestQueue
+    check engine.requestQueue.len == 1
+    check engine.pendingBlocks.retries(address) == retriesBefore
+
+    discard await engine.requestQueue.get()
+    await engine.sendRequestBatch(peerId, @[address])
+    await sent.wait(100.millis)
 
     # Wait for the WantBlock send (event-driven, not timeout-based)
     await sent.wait(1.seconds)
@@ -830,13 +867,12 @@ asyncchecksuite "Block Download":
     )
 
     let pending = engine.requestDelivery(address).tryGet()
+    let retriesBefore = engine.pendingBlocks.retries(address)
 
-    # Wait for WantHave (event-driven)
-    await wantHaveSent.wait().wait(1.seconds)
-    # Only WantHave sent so far - markRequested not called yet
-    check engine.pendingBlocks.retries(address) == DefaultBlockRetries
-    check address in engine.pendingBlocks
-
+    await wantHaveSent.wait().wait(100.millis)
+    check engine.pendingBlocks.retries(address) == retriesBefore
+    # No-spin guarantee: address was not immediately requeued after no-peer path
+    check address notin engine.requestQueue
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
@@ -846,6 +882,8 @@ asyncchecksuite "Block Download":
     await wantBlockSent.wait().wait(1.seconds)
     check address in engine.pendingBlocks
     check engine.pendingBlocks.isRequested(address)
+    check not engine.pendingBlocks.isScheduled(address)
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
     check address in peerCtx.blocksRequested
     check engine.pendingBlocks.retries(address) == DefaultBlockRetries - 1
     await pending.cancelAndWait()
