@@ -23,6 +23,17 @@ import pkg/archivist/utils/asyncheapqueue
 import ../../../asynctest
 import ../../helpers
 
+const NopSendWantListProc = proc(
+    id: PeerId,
+    addresses: seq[BlockAddress],
+    priority: int32 = 0,
+    cancel: bool = false,
+    wantType: WantType = WantType.WantHave,
+    full: bool = false,
+    sendDontHave: bool = false,
+) {.async: (raises: [CancelledError]).} =
+  discard
+
 const NopSendWantCancellationsProc = proc(
     id: PeerId, addresses: seq[BlockAddress]
 ) {.async: (raises: [CancelledError]).} =
@@ -426,7 +437,12 @@ asyncchecksuite "Block Download":
       SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
       SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
     )
-    network = BlockExcNetwork()
+    network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: NopSendWantListProc,
+        sendWantCancellations: NopSendWantCancellationsProc,
+      )
+    )
 
     discovery = DiscoveryEngine.new(
       localStore,
@@ -598,6 +614,130 @@ asyncchecksuite "Block Download":
 
     check wantBlockBatches == @[@[firstAddress], @[secondAddress]]
 
+  test "Should batch by peer before splitting want block requests":
+    let
+      peer2Key = PrivateKey.random(rng[]).tryGet()
+      peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
+      peer2Ctx = BlockExcPeerCtx(id: peer2Id)
+      requestCount = DefaultWantBlockBatchSize * 4
+      addresses =
+        toSeq(0 ..< requestCount).mapIt(BlockAddress.init(blocks[0].cid, Natural(it)))
+      done = newAsyncEvent()
+
+    var
+      sentAddresses = initHashSet[BlockAddress]()
+      expectedPeer1 = initHashSet[BlockAddress]()
+      expectedPeer2 = initHashSet[BlockAddress]()
+      wantBlockBatches: seq[tuple[peer: PeerId, addresses: seq[BlockAddress]]]
+
+    proc sendWantList(
+        id: PeerId,
+        requestedAddresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        wantBlockBatches.add((peer: id, addresses: requestedAddresses))
+        for address in requestedAddresses:
+          sentAddresses.incl(address)
+        if sentAddresses.len == requestCount and not done.isSet:
+          done.fire()
+
+    engine.peers.add(peer2Ctx)
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    for i, address in addresses:
+      if i mod 2 == 0:
+        expectedPeer1.incl(address)
+        peerCtx.setPresence(Presence(address: address, have: true))
+      else:
+        expectedPeer2.incl(address)
+        peer2Ctx.setPresence(Presence(address: address, have: true))
+
+    let pendingHandles = engine.requestDeliveries(addresses).tryGet()
+    check pendingHandles.len == requestCount
+    await done.wait().wait(1.seconds)
+
+    let
+      peer1Batches = wantBlockBatches.filterIt(it.peer == peerId)
+      peer2Batches = wantBlockBatches.filterIt(it.peer == peer2Id)
+
+    var
+      peer1Sent = initHashSet[BlockAddress]()
+      peer2Sent = initHashSet[BlockAddress]()
+
+    for batch in peer1Batches:
+      for address in batch.addresses:
+        peer1Sent.incl(address)
+
+    for batch in peer2Batches:
+      for address in batch.addresses:
+        peer2Sent.incl(address)
+
+    check:
+      pendingHandles.len == requestCount
+      sentAddresses == addresses.toHashSet
+      peer1Batches.len == 2
+      peer2Batches.len == 2
+      peer1Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
+      peer2Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
+      peer1Sent == expectedPeer1
+      peer2Sent == expectedPeer2
+      sentAddresses.len == requestCount
+
+  test "Should dispatch timed-out batch for correct peer":
+    let
+      firstAddress = BlockAddress.init(blocks[0].cid)
+      secondAddress = BlockAddress.init(blocks[2].cid)
+      done = newAsyncEvent()
+
+    var dispatchedBatches: seq[tuple[peer: PeerId, addresses: seq[BlockAddress]]]
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        dispatchedBatches.add((peer: id, addresses: addresses))
+        if not done.isSet:
+          done.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+    peerCtx.setPresence(Presence(address: firstAddress, have: true))
+    peerCtx.setPresence(Presence(address: secondAddress, have: true))
+
+    check:
+      engine.requestDelivery(firstAddress).isOk
+      engine.requestDelivery(secondAddress).isOk
+
+    await done.wait().wait(100.millis)
+
+    check:
+      dispatchedBatches.len == 1
+      dispatchedBatches[0].peer == peerId
+      dispatchedBatches[0].addresses.len == 2
+      firstAddress in dispatchedBatches[0].addresses
+      secondAddress in dispatchedBatches[0].addresses
+
+    await engine.completeBlock(firstAddress, blocks[0])
+    await engine.completeBlock(secondAddress, blocks[2])
+
   test "Should keep same peer request after clearing previous request":
     let
       address = BlockAddress.init(blocks[0].cid)
@@ -655,6 +795,8 @@ asyncchecksuite "Block Download":
     ) {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         check addresses == @[address]
+        check engine.pendingBlocks.isRequested(address)
+        check not engine.pendingBlocks.isScheduled(address)
         sent.complete()
 
     engine.network = BlockExcNetwork(
@@ -675,7 +817,7 @@ asyncchecksuite "Block Download":
     check engine.pendingBlocks.retries(address) == retriesBefore
 
     discard await engine.requestQueue.get()
-    await engine.sendRequestBatch(@[address])
+    await engine.sendRequestBatch(peerId, @[address])
     await sent.wait(100.millis)
 
     check engine.pendingBlocks.isRequested(address)
@@ -722,8 +864,12 @@ asyncchecksuite "Block Download":
     )
 
     let pending = engine.requestDelivery(address).tryGet()
+    let retriesBefore = engine.pendingBlocks.retries(address)
 
     await wantHaveSent.wait().wait(100.millis)
+    check engine.pendingBlocks.retries(address) == retriesBefore
+    # No-spin guarantee: address was not immediately requeued after no-peer path
+    check address notin engine.requestQueue
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
@@ -732,6 +878,7 @@ asyncchecksuite "Block Download":
     check address in engine.pendingBlocks
     check engine.pendingBlocks.isRequested(address)
     check not engine.pendingBlocks.isScheduled(address)
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
     check address in peerCtx.blocksRequested
     await pending.cancelAndWait()
     expect CancelledError:
