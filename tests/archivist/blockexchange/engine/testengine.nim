@@ -666,7 +666,7 @@ asyncchecksuite "Block Download":
     let
       peer2Key = PrivateKey.random(rng[]).tryGet()
       peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
-      peer2Ctx = BlockExcPeerCtx.new(peer2Id)
+      peer2Ctx = BlockExcPeerCtx(id: peer2Id)
       requestCount = DefaultWantBlockBatchSize * 4
       addresses =
         toSeq(0 ..< requestCount).mapIt(BlockAddress.init(blocks[0].cid, Natural(it)))
@@ -847,6 +847,18 @@ asyncchecksuite "Block Download":
     peerCtx.setPresence(Presence(address: address, have: true))
 
     let pending = engine.requestDelivery(address).tryGet()
+    let retriesBefore = engine.pendingBlocks.retries(address)
+    check address in engine.requestQueue
+    check engine.requestQueue.len == 1
+
+    engine.scheduleBlockSend(address)
+    check address in engine.requestQueue
+    check engine.requestQueue.len == 1
+    check engine.pendingBlocks.retries(address) == retriesBefore
+
+    discard await engine.requestQueue.get()
+    await engine.sendRequestBatch(peerId, @[address])
+    await sent.wait(100.millis)
 
     # Wait for the WantBlock send (event-driven, not timeout-based)
     await sent.wait(1.seconds)
@@ -892,13 +904,12 @@ asyncchecksuite "Block Download":
     )
 
     let pending = engine.requestDelivery(address).tryGet()
+    let retriesBefore = engine.pendingBlocks.retries(address)
 
-    # Wait for WantHave (event-driven)
-    await wantHaveSent.wait().wait(1.seconds)
-    # Only WantHave sent so far - markRequested not called yet
-    check engine.pendingBlocks.retries(address) == DefaultBlockRetries
-    check address in engine.pendingBlocks
-
+    await wantHaveSent.wait().wait(100.millis)
+    check engine.pendingBlocks.retries(address) == retriesBefore
+    # No-spin guarantee: address was not immediately requeued after no-peer path
+    check address notin engine.requestQueue
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
@@ -908,6 +919,8 @@ asyncchecksuite "Block Download":
     await wantBlockSent.wait().wait(1.seconds)
     check address in engine.pendingBlocks
     check engine.pendingBlocks.isRequested(address)
+    check not engine.pendingBlocks.isScheduled(address)
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
     check address in peerCtx.blocksRequested
     check engine.pendingBlocks.retries(address) == DefaultBlockRetries - 1
     await pending.cancelAndWait()
