@@ -331,6 +331,7 @@ proc sendRequestBatch(
   if peer.isNil:
     trace "Unable to find peer to send batch to", peerId
     for address in addresses:
+      self.pendingBlocks.clearScheduled(address)
       self.scheduleBlockSend(address)
     return
 
@@ -396,7 +397,7 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
   try:
     while self.blockexcRunning:
       var finished: FutureBase
-      let next = self.requestQueue.get()
+      let next = self.pendingBlocks.dequeue()
       try:
         finished = await FutureBase(next).race(timers.keys.toSeq.mapIt(FutureBase(it)))
       finally:
