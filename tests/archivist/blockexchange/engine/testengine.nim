@@ -908,12 +908,13 @@ asyncchecksuite "Block Download":
 
     await wantHaveSent.wait().wait(100.millis)
     check engine.pendingBlocks.retries(address) == retriesBefore
-    # No-spin guarantee: address was not immediately requeued after no-peer path
+    check engine.pendingBlocks.isDiscoveryWaiting(address)
     check not engine.pendingBlocks.isQueued(address)
+    check not engine.pendingBlocks.isScheduled(address)
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
-    check address in engine.pendingBlocks
+    check not engine.pendingBlocks.isDiscoveryWaiting(address)
 
     # Wait for WantBlock (event-driven)
     await wantBlockSent.wait().wait(1.seconds)
