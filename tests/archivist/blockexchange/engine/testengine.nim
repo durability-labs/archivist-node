@@ -476,7 +476,7 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
 
-    check address in engine.pendingBlocks
+    check not engine.pendingBlocks.isQueued(address)
     expect RetriesExhaustedEngineError:
       discard await pending
 
@@ -805,15 +805,15 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
     let retriesBefore = engine.pendingBlocks.retries(address)
-    check address in engine.requestQueue
-    check engine.requestQueue.len == 1
+    check engine.pendingBlocks.isQueued(address)
+    check engine.pendingBlocks.readyQueue.len == 1
 
     engine.scheduleBlockSend(address)
-    check address in engine.requestQueue
-    check engine.requestQueue.len == 1
+    check engine.pendingBlocks.isQueued(address)
+    check engine.pendingBlocks.readyQueue.len == 1
     check engine.pendingBlocks.retries(address) == retriesBefore
 
-    discard await engine.requestQueue.get()
+    discard await engine.pendingBlocks.dequeue()
     await engine.sendRequestBatch(peerId, @[address])
     await sent.wait(100.millis)
 
@@ -824,11 +824,9 @@ asyncchecksuite "Block Download":
     let actualRetries = engine.pendingBlocks.retries(address)
     check actualRetries == DefaultBlockRetries - 1
 
-    # retryAddresses requeues the block but does not decrement retries itself
-    await engine.pendingBlocks.retryAddresses(@[address], DefaultBlockSendRetryDelay)
-    check address in engine.pendingBlocks
-    # Retries unchanged - retryAddresses does not call markRequested
-    check engine.pendingBlocks.retries(address) == DefaultBlockRetries - 1
+    engine.scheduleBlockSend(address)
+    check not engine.pendingBlocks.isQueued(address)
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
     await engine.completeBlock(address, blocks[0])
     check (await pending).blk == blocks[0]
@@ -872,7 +870,7 @@ asyncchecksuite "Block Download":
     await wantHaveSent.wait().wait(100.millis)
     check engine.pendingBlocks.retries(address) == retriesBefore
     # No-spin guarantee: address was not immediately requeued after no-peer path
-    check address notin engine.requestQueue
+    check not engine.pendingBlocks.isQueued(address)
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
