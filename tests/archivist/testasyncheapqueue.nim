@@ -219,3 +219,52 @@ asyncchecksuite "Asynchronous Tests":
     let del = heap[3]
     heap.delete(del)
     check heap.find(del) < 0
+
+  test "Test replace":
+    var heap = newAsyncHeapQueue[int]()
+    let data = [3, 7, 5, 1, 9]
+    for item in data:
+      check heap.pushNoWait(item).isOk
+
+    let smallest = heap[0]
+    let replaced = heap.replace(8).tryGet()
+    check replaced == smallest
+    # After removing 1 and inserting 8, the smallest should be 3
+    check heap[0] == 3
+
+  test "Test replace on empty returns err":
+    var heap = newAsyncHeapQueue[int]()
+    check heap.replace(1).isErr
+    check heap.replace(1).error == AsyncHQErrors.Empty
+
+  test "Test pushPopNoWait returns smallest":
+    var heap = newAsyncHeapQueue[int]()
+    let data = [3, 7, 5, 1, 9]
+    for item in data:
+      check heap.pushNoWait(item).isOk
+
+    # push 0 which is smaller than any item, should be returned directly
+    let result = heap.pushPopNoWait(0).tryGet()
+    check result == 0
+    # heap should be unchanged (0 never entered it)
+    check heap.len == 5
+    check heap[0] == 1
+
+  test "Test pushPopNoWait pushes larger item":
+    var heap = newAsyncHeapQueue[int]()
+    let data = [3, 7, 5, 1, 9]
+    for item in data:
+      check heap.pushNoWait(item).isOk
+
+    let smallest = heap[0]
+    # push 4 which is larger than smallest, should pop smallest and keep 4
+    let result = heap.pushPopNoWait(4).tryGet()
+    check result == smallest
+    # heap should contain 4 instead of smallest
+    check heap.len == 5
+    check 4 in heap
+
+  test "Test pushPopNoWait on empty returns err":
+    var heap = newAsyncHeapQueue[int]()
+    check heap.pushPopNoWait(1).isErr
+    check heap.pushPopNoWait(1).error == AsyncHQErrors.Empty

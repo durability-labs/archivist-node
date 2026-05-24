@@ -26,8 +26,8 @@ type
     ## will block when the queue reaches ``maxsize``, until an item is
     ## removed by "await get()".
     queueType: QueueType
-    getters: seq[Future[void]]
-    putters: seq[Future[void]]
+    getters: seq[Future[void].Raising([CancelledError])]
+    putters: seq[Future[void].Raising([CancelledError])]
     queue: seq[T]
     maxsize: int
 
@@ -42,14 +42,14 @@ proc newAsyncHeapQueue*[T](
   ##
 
   AsyncHeapQueue[T](
-    getters: newSeq[Future[void]](),
-    putters: newSeq[Future[void]](),
+    getters: newSeq[Future[void].Raising([CancelledError])](),
+    putters: newSeq[Future[void].Raising([CancelledError])](),
     queue: newSeqOfCap[T](maxsize),
     maxsize: maxsize,
     queueType: queueType,
   )
 
-proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
+proc wakeupNext(waiters: var seq[Future[void].Raising([CancelledError])]) {.inline.} =
   var i = 0
   while i < len(waiters):
     var waiter = waiters[i]
@@ -124,6 +124,11 @@ proc empty*[T](heap: AsyncHeapQueue[T]): bool {.inline.} =
   ## Return ``true`` if the queue is empty, ``false`` otherwise.
   (len(heap.queue) == 0)
 
+proc pushImpl[T](heap: AsyncHeapQueue[T], item: T) =
+  heap.queue.add(item)
+  siftdown(heap, 0, len(heap) - 1)
+  heap.getters.wakeupNext()
+
 proc pushNoWait*[T](heap: AsyncHeapQueue[T], item: T): Result[void, AsyncHQErrors] =
   ## Push `item` onto heap, maintaining the heap invariant.
   ##
@@ -131,28 +136,38 @@ proc pushNoWait*[T](heap: AsyncHeapQueue[T], item: T): Result[void, AsyncHQError
   if heap.full():
     return err(AsyncHQErrors.Full)
 
-  heap.queue.add(item)
-  siftdown(heap, 0, len(heap) - 1)
-  heap.getters.wakeupNext()
-
+  heap.pushImpl(item)
   return ok()
 
-proc push*[T](heap: AsyncHeapQueue[T], item: T) {.async, gcsafe.} =
+proc push*[T](
+    heap: AsyncHeapQueue[T], item: T
+) {.async: (raises: [CancelledError]), gcsafe.} =
   ## Push item into the queue, awaiting for an available slot
   ## when it's full
   ##
 
   while heap.full():
-    var putter = newFuture[void]("AsyncHeapQueue.push")
+    var putter = Future[void].Raising([CancelledError]).init("AsyncHeapQueue.push")
     heap.putters.add(putter)
     try:
       await putter
-    except CatchableError as exc:
+    except CancelledError as exc:
       if not (heap.full()) and not (putter.cancelled()):
         heap.putters.wakeupNext()
       raise exc
 
-  heap.pushNoWait(item).tryGet()
+  heap.pushImpl(item)
+
+proc popImpl[T](heap: AsyncHeapQueue[T]): T =
+  let lastelt = heap.queue.pop()
+  if heap.len > 0:
+    result = heap[0]
+    heap.queue[0] = lastelt
+    siftup(heap, 0)
+  else:
+    result = lastelt
+
+  heap.putters.wakeupNext()
 
 proc popNoWait*[T](heap: AsyncHeapQueue[T]): Result[T, AsyncHQErrors] =
   ## Pop and return the smallest item from `heap`,
@@ -162,30 +177,24 @@ proc popNoWait*[T](heap: AsyncHeapQueue[T]): Result[T, AsyncHQErrors] =
   if heap.empty():
     return err(AsyncHQErrors.Empty)
 
-  let lastelt = heap.queue.pop()
-  if heap.len > 0:
-    result = ok(heap[0])
-    heap.queue[0] = lastelt
-    siftup(heap, 0)
-  else:
-    result = ok(lastelt)
+  ok(heap.popImpl())
 
-  heap.putters.wakeupNext()
-
-proc pop*[T](heap: AsyncHeapQueue[T]): Future[T] {.async.} =
+proc pop*[T](
+    heap: AsyncHeapQueue[T]
+): Future[T] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Remove and return an ``item`` from the beginning of the queue ``heap``.
   ## If the queue is empty, wait until an item is available.
   while heap.empty():
-    var getter = newFuture[void]("AsyncHeapQueue.pop")
+    var getter = Future[void].Raising([CancelledError]).init("AsyncHeapQueue.pop")
     heap.getters.add(getter)
     try:
       await getter
-    except CatchableError as exc:
+    except CancelledError as exc:
       if not (heap.empty()) and not (getter.cancelled()):
         heap.getters.wakeupNext()
       raise exc
 
-  return heap.popNoWait().tryGet()
+  heap.popImpl()
 
 proc del*[T](heap: AsyncHeapQueue[T], index: Natural) =
   ## Removes the element at `index` from `heap`,
@@ -195,10 +204,20 @@ proc del*[T](heap: AsyncHeapQueue[T], index: Natural) =
   if heap.empty():
     return
 
-  swap(heap.queue[^1], heap.queue[index])
-  let newLen = heap.len - 1
-  heap.queue.setLen(newLen)
-  if index < newLen:
+  let lastIdx = heap.len - 1
+  if index == lastIdx:
+    heap.queue.setLen(lastIdx)
+    heap.putters.wakeupNext()
+    return
+
+  let moved = heap.queue[lastIdx]
+  heap.queue.setLen(lastIdx)
+
+  let old = heap.queue[index]
+  heap.queue[index] = moved
+  if heapCmp(moved, old, heap.queueType == QueueType.Max):
+    heap.siftdown(0, index)
+  else:
     heap.siftup(index)
 
   heap.putters.wakeupNext()
@@ -218,12 +237,12 @@ proc update*[T](heap: AsyncHeapQueue[T], item: T): bool =
 
   let index = heap.find(item)
   if index > -1:
-    # replace item with new one in case it's a copy
+    let old = heap.queue[index]
     heap.queue[index] = item
-    # re-establish heap order
-    # TODO: don't start at 0 to avoid reshuffling
-    # entire heap
-    heap.siftup(0)
+    if heapCmp(item, old, heap.queueType == QueueType.Max):
+      siftdown(heap, 0, index)
+    else:
+      siftup(heap, index)
     return true
 
 proc pushOrUpdateNoWait*[T](
@@ -237,7 +256,9 @@ proc pushOrUpdateNoWait*[T](
 
   return heap.pushNoWait(item)
 
-proc pushOrUpdate*[T](heap: AsyncHeapQueue[T], item: T) {.async.} =
+proc pushOrUpdate*[T](
+    heap: AsyncHeapQueue[T], item: T
+) {.async: (raises: [CancelledError]), gcsafe.} =
   ## Update an item if it exists or push a new one
   ## awaiting until a slot becomes available
   ##
@@ -258,9 +279,9 @@ proc replace*[T](heap: AsyncHeapQueue[T], item: T): Result[T, AsyncHQErrors] =
   ##
 
   if heap.empty():
-    error(AsyncHQErrors.Empty)
+    return err(AsyncHQErrors.Empty)
 
-  result = heap[0]
+  result = ok(heap[0])
   heap.queue[0] = item
   siftup(heap, 0)
 
@@ -269,12 +290,14 @@ proc pushPopNoWait*[T](heap: AsyncHeapQueue[T], item: T): Result[T, AsyncHQError
   ##
 
   if heap.empty():
-    err(AsyncHQErrors.Empty)
+    return err(AsyncHQErrors.Empty)
 
-  if heap.len > 0 and heapCmp(heap[0], item, heap.queueType == QueueType.Max):
-    swap(item, heap[0])
+  var newItem = item
+  if heap.len > 0 and heapCmp(heap[0], newItem, heap.queueType == QueueType.Max):
+    swap(newItem, heap.queue[0])
     siftup(heap, 0)
-  return item
+
+  ok(newItem)
 
 proc clear*[T](heap: AsyncHeapQueue[T]) {.inline.} =
   ## Clears all elements of queue ``heap``.
