@@ -272,6 +272,12 @@ proc dropOverlay*(
 
   trace "Dropping overlay and cleaning up blocks"
 
+  if err =? (await self.getOverlay(treeCid)).errorOption:
+    if err of KVStoreKeyNotFound:
+      trace "Overlay already deleted", treeCid
+      return success()
+    return failure(err)
+
   if err =? (await self.putOverlay(treeCid, status = Deleting.some)).errorOption:
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)

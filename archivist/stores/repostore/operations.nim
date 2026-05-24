@@ -588,14 +588,35 @@ proc delLeafBlockMetadata*(
 
   trace "Deleting leaf and block metadata"
 
+  # Mark overlay as Deleting BEFORE draining the barrier.
+  # This prevents new writers from entering the barrier after drain completes
+  # but before the atomic metadata update.
   let
     ovKey = ?overlayKey(treeCid)
+    preDeleteOverlay = ?await self.metaDs.get(ovKey, OverlayMetadata)
+
+  var preDeleteMeta = preDeleteOverlay.val
+  preDeleteMeta.status = Deleting
+  ?await self.metaDs.tryPut(preDeleteOverlay.fromRecord(preDeleteMeta), maxRetries = 3)
+  # Update cache so concurrent readers see Deleting immediately
+  self.overlayCache[ovKey] = preDeleteMeta
+
+  await self.deletingLock.drain(treeCid)
+
+  # Re-fetch overlay after drain to get latest state
+  let
     existingOverlayMeta = ?await self.metaDs.get(ovKey, OverlayMetadata)
     uniqueIdxs = index.deduplicate()
 
   var overlayMeta = existingOverlayMeta.val
   if not uniqueIdxs.anyIt(it < overlayMeta.blocks.len and overlayMeta.blocks[it]):
     trace "No bits set in BitSeq for indices to delete, fast-path return"
+    # Restore previous status since nothing is actually being deleted
+    overlayMeta.status = preDeleteOverlay.val.status
+    ?await self.metaDs.tryPut(
+      existingOverlayMeta.fromRecord(overlayMeta), maxRetries = 3
+    )
+    self.overlayCache[ovKey] = overlayMeta
     return success()
 
   let
@@ -773,6 +794,71 @@ proc getLeafMetadata*(
 
   success(leafMd.val)
 
+proc putTreeNodes*(
+    self: RepoStore, treeCid: Cid, nodes: seq[(Natural, Cid)]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  var
+    treeRecords: seq[RawKVRecord]
+    incomingByKey: Table[Key, Cid]
+
+  for (flatIdx, cid) in nodes:
+    let key = ?treeNodeKey(treeCid, flatIdx)
+
+    if key in incomingByKey:
+      if incomingByKey.getOrDefault(key) != cid:
+        return failure(newException(TreeNodeConflictError, "Tree node already exists"))
+      continue
+
+    treeRecords.add(
+      KVRecord[TreeNodeMetadata].init(key, TreeNodeMetadata(cid: cid)).toRaw
+    )
+    incomingByKey[key] = cid
+
+  if treeRecords.len == 0:
+    return success()
+
+  self.deletingLock.enter(treeCid)
+  defer:
+    self.deletingLock.leave(treeCid)
+
+  let overlayRec = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
+  if overlayRejectsWrites(overlayRec.val.status):
+    return failure(newException(OverlayDeletingError, "Overlay is not writable"))
+
+  let overlayKey = overlayRec.key
+  var records = @[overlayRec.toRaw]
+  records.add(treeRecords)
+
+  proc resolveTreeNodeConflicts(
+      records: seq[RawKVRecord], conflicts: seq[Key]
+  ): Future[?!seq[RawKVRecord]] {.async: (raises: [CancelledError]), gcsafe.} =
+    var refreshedByKey: Table[Key, RawKVRecord]
+    for record in ?await self.metaDs.get(conflicts):
+      if record.key == overlayKey:
+        let overlay = ?toRecord[OverlayMetadata](record)
+        if overlayRejectsWrites(overlay.val.status):
+          return failure(newException(OverlayDeletingError, "Overlay is not writable"))
+      elif TreeNodeKey.ancestor(record.key):
+        let
+          existing = ?toRecord[TreeNodeMetadata](record)
+          incomingCid = ?catch(incomingByKey[record.key])
+        if existing.val.cid != incomingCid:
+          return
+            failure(newException(TreeNodeConflictError, "Tree node already exists"))
+
+      refreshedByKey[record.key] = record
+
+    var resolved: seq[RawKVRecord]
+    for record in records:
+      if record.key in conflicts:
+        resolved.add(?catch(refreshedByKey[record.key]))
+      else:
+        resolved.add(record)
+
+    success(resolved)
+
+  ?await self.metaDs.tryPutAtomic(records, maxRetries = 3, resolveTreeNodeConflicts)
+  success()
 
 proc putTreeNode*(
     self: RepoStore, treeCid: Cid, flatIdx: Natural, cid: Cid
@@ -855,6 +941,8 @@ proc getTree*(
   for key in leafKeys:
     if key notin leavesByKey:
       return failure(newException(BlockNotFoundError, "Key not found: " & $key))
+    if (?catch(leavesByKey[key])).deleted:
+      return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
     leaves.add(?treeNodeDigest((?catch(leavesByKey[key])).blkCid, mcodec))
 
   let tree = ?ArchivistTree.init(mcodec, leaves)
@@ -951,6 +1039,8 @@ proc getTreeProof*(
     if targetLeafKey notin leavesByKey:
       return
         failure(newException(BlockNotFoundError, "Key not found: " & $targetLeafKey))
+    if (?catch(leavesByKey[targetLeafKey])).deleted:
+      return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
     rootCid = (?catch(leavesByKey[targetLeafKey])).blkCid
     rootHash = ?treeNodeDigest(rootCid, mcodec)
   else:
@@ -975,6 +1065,8 @@ proc getTreeProof*(
         let key = ?blockLeafKey(treeCid, sibling.Natural)
         if key notin leavesByKey:
           return failure(newException(BlockNotFoundError, "Key not found: " & $key))
+        if (?catch(leavesByKey[key])).deleted:
+          return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
         path.add(?treeNodeDigest((?catch(leavesByKey[key])).blkCid, mcodec))
       else:
         let key =
@@ -990,6 +1082,8 @@ proc getTreeProof*(
 
   if targetLeafKey notin leavesByKey:
     return failure(newException(BlockNotFoundError, "Key not found: " & $targetLeafKey))
+  if (?catch(leavesByKey[targetLeafKey])).deleted:
+    return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
 
   let
     proof = ?ArchivistProof.init(mcodec, index.int, nleaves.int, path)

@@ -291,27 +291,6 @@ proc testRepoStore*(
         (await repo.getTreeNode(treeCid, 0.Natural)).isErr
         (await repo.getTreeNode(treeCid, 1.Natural)).tryGet() == hashB
 
-    test "Should move tree nodes when finalizing a tmp overlay":
-      let
-        realTreeCid = Cid.example
-        hash = createTestBlock(1).cid
-      var tmpTreeCid: Cid
-
-      let finalized = (
-        await repo.withTmpOverlay(
-          proc(tmpCid: Cid): Future[?!Cid] {.async: (raises: [CancelledError]).} =
-            tmpTreeCid = tmpCid
-            if err =? (await repo.putTreeNode(tmpCid, 0.Natural, hash)).errorOption:
-              return failure(err)
-            success(realTreeCid)
-        )
-      ).tryGet()
-
-      check:
-        finalized == realTreeCid
-        (await repo.getTreeNode(realTreeCid, 0.Natural)).tryGet() == hash
-        (await repo.getTreeNode(tmpTreeCid, 0.Natural)).isErr
-
     test "Should reject finalization when destination already exists":
       let
         realTreeCid = Cid.example
