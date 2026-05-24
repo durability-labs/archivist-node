@@ -219,6 +219,18 @@ proc testLifecycle*(
       check gotProof.unsafeGet().index == proof.index
       check gotProof.unsafeGet().nleaves == proof.nleaves
 
+    test "dropOverlay rejects overlay already finalizing":
+      let treeCid = Cid.example
+
+      (await repo.putOverlay(treeCid, status = Finalizing.some)).tryGet()
+
+      let res = await repo.dropOverlay(treeCid)
+      check res.isErr
+      check res.error() of OverlayDeletingError
+
+      let meta = (await repo.getOverlay(treeCid)).tryGet()
+      check meta.status == Finalizing
+
     test "finalizeOverlay rejects existing destination leaf":
       let
         blk = createTestBlock(127)

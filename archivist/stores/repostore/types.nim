@@ -78,6 +78,7 @@ type
     Repairing ## Repair in progress
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
+    Finalizing ## Promotion in progress; new writes are rejected
 
   CleanupMode* {.serialize.} = enum
     ## Mode for cleaning up after storage request

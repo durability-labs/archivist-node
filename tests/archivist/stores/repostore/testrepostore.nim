@@ -263,6 +263,18 @@ proc testRepoStore*(
 
       check (await repo.getTreeNode(treeCid, 0.Natural)).isErr
 
+    test "Should reject tree node writes while overlay is finalizing":
+      let
+        treeCid = Cid.example
+        hash = createTestBlock(1).cid
+
+      (await repo.putOverlay(treeCid, status = Finalizing.some)).tryGet()
+
+      expect OverlayDeletingError:
+        (await repo.putTreeNode(treeCid, 0.Natural, hash)).tryGet()
+
+      check (await repo.getTreeNode(treeCid, 0.Natural)).isErr
+
     test "Should delete tree nodes by tree cid":
       let
         treeCid = Cid.example

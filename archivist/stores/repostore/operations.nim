@@ -95,7 +95,7 @@ proc initializeCounters*(
   success()
 
 func overlayRejectsWrites(status: OverlayStatus): bool =
-  status == Deleting
+  status == Deleting or status == Finalizing
 
 proc updateCounters*(
     self: RepoStore, quotaDelta = 0, reservedDelta = 0, blocksDelta = 0
@@ -306,6 +306,78 @@ type BlockLeafTuple =
     index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ?ArchivistProof, data: seq[byte]
   ]
 
+func addTreeNodeRecord(
+    treeCid: Cid,
+    flatIdx: Natural,
+    cid: Cid,
+    records: var seq[RawKVRecord],
+    incomingByKey: var Table[Key, Cid],
+): ?!void =
+  let key = ?treeNodeKey(treeCid, flatIdx)
+  if key in incomingByKey:
+    if ?catch(incomingByKey[key]) != cid:
+      return failure(newException(TreeNodeConflictError, "Tree node already exists"))
+    return success()
+
+  records.add(KVRecord[TreeNodeMetadata].init(key, TreeNodeMetadata(cid: cid)).toRaw)
+  incomingByKey[key] = cid
+  success()
+
+func addProofTreeNodes(
+    treeCid, blkCid: Cid,
+    proof: ArchivistProof,
+    records: var seq[RawKVRecord],
+    incomingByKey: var Table[Key, Cid],
+): ?!void =
+  if proof.isNil:
+    return success()
+
+  let mhash = ?proof.mcodec.mhash()
+  var
+    hash = ?treeNodeDigest(blkCid, proof.mcodec)
+    index = proof.index
+    width = proof.nleaves
+    bottomFlag = ByteTreeKey.KeyBottomLayer
+
+  for level, siblingHash in proof.path:
+    if siblingHash.len != mhash.size:
+      return failure(
+        newException(TreeNodeValidationError, "Tree node hash length is invalid")
+      )
+
+    let sibling = index xor 1
+    if level >= 1 and sibling < width:
+      ?addTreeNodeRecord(
+        treeCid,
+        (?flatIndex(proof.nleaves, level, sibling)).Natural,
+        ?treeNodeCidFromHash(siblingHash, proof.mcodec),
+        records,
+        incomingByKey,
+      )
+
+    let parentHash =
+      if (index mod 2) != 0:
+        ?compress(siblingHash, hash, bottomFlag, mhash)
+      elif index == width - 1:
+        ?compress(hash, siblingHash, ByteTreeKey(bottomFlag.ord + 2), mhash)
+      else:
+        ?compress(hash, siblingHash, bottomFlag, mhash)
+
+    ?addTreeNodeRecord(
+      treeCid,
+      (?flatIndex(proof.nleaves, level + 1, index shr 1)).Natural,
+      ?treeNodeCidFromHash(parentHash, proof.mcodec),
+      records,
+      incomingByKey,
+    )
+
+    hash = parentHash
+    index = index shr 1
+    width = (width + 1) shr 1
+    bottomFlag = ByteTreeKey.KeyNone
+
+  success()
+
 proc putLeafBlockMetaImpl(
     self: RepoStore, treeCid: Cid, blocks: seq[BlockLeafTuple]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
@@ -348,6 +420,8 @@ proc putLeafBlockMetaImpl(
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
+    treeRecords: seq[RawKVRecord]
+    treeNodesByKey: Table[Key, Cid]
     blocksBits = BitSeq.init(blocks.mapIt(it[0]).max() + 1)
 
   for (index, blkCid, cellCid, proof, data) in blocks:
@@ -373,8 +447,15 @@ proc putLeafBlockMetaImpl(
     # already exists, we skip the refCount.inc, thus we make
     # a mapping of block rec -> leaf rec to be able to filter
     # out inserts from updates
+    if not proof.isNil and proof.index != index.int:
+      return failure(
+        newException(TreeNodeValidationError, "Proof index does not match leaf index")
+      )
+
     blocksBits.setBit(index)
     leafsMap[leafKey] = leafRec.toRaw
+    if cellCid.isNone and not blkCid.isEmpty:
+      ?addProofTreeNodes(treeCid, blkCid, proof, treeRecords, treeNodesByKey)
 
     # Skip block metadata for empty blkCid (pad blocks)
     if not blkCid.isEmpty:
@@ -455,6 +536,14 @@ proc putLeafBlockMetaImpl(
               cid = blockMeta.val.cid, refCount = blockMeta.val.refCount
 
           record = blockMeta.toRaw
+      elif TreeNodeKey.ancestor(record.key):
+        let
+          existing = ?toRecord[TreeNodeMetadata](record)
+          incomingCid = ?catch(treeNodesByKey[record.key])
+        if existing.val.cid != incomingCid:
+          return
+            failure(newException(TreeNodeConflictError, "Tree node already exists"))
+
       # update records
       records[record.key] = record
 
@@ -463,7 +552,7 @@ proc putLeafBlockMetaImpl(
 
   let updates =
     @[existingOverlayRec.fromRecord(overlayMeta).toRaw] &
-    blkToLeafMap.values.toSeq.mapIt(it[0]) & leafsMap.values.toSeq
+    blkToLeafMap.values.toSeq.mapIt(it[0]) & leafsMap.values.toSeq & treeRecords
 
   trace "Put or update leaf and block metadata", treeCid, recordsCount = updates.len
   if err =? (
@@ -1153,6 +1242,13 @@ proc storeManifestBlock*(
     ?await self.metaDs.get(toSeq(overlayUpdates.keys), OverlayMetadata)
   ).mapIt((it.key.id, it)).toTable
 
+  # Reject overlays that are being deleted or finalized.
+  for rec in overlayRecsById.values:
+    if overlayRejectsWrites(rec.val.status):
+      return failure(
+        newException(OverlayDeletingError, "Overlay is not writable")
+      )
+
   # Track which overlays require a new manifest attachment for refCount updates.
   var newOverlayAttachmentIds = initHashSet[string]()
 
@@ -1214,6 +1310,8 @@ proc storeManifestBlock*(
       for raw in refreshedById.values:
         if ArchivistOverlaysKey.ancestor(raw.key):
           var record = ?toRecord[OverlayMetadata](raw)
+          if overlayRejectsWrites(record.val.status):
+            return failure(newException(OverlayDeletingError, "Overlay is not writable"))
           let wasNewAttachment = raw.key.id in newOverlayAttachmentIds
           if not record.val.manifestCid.isSome:
             if not wasNewAttachment:

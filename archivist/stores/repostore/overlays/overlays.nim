@@ -272,11 +272,15 @@ proc dropOverlay*(
 
   trace "Dropping overlay and cleaning up blocks"
 
+<<<<<<< HEAD
   if err =? (await self.getOverlay(treeCid)).errorOption:
     if err of KVStoreKeyNotFound:
       trace "Overlay already deleted", treeCid
       return success()
     return failure(err)
+
+  if (await self.getOverlay(treeCid)).tryGet().status == Finalizing:
+    return failure(newException(OverlayDeletingError, "Overlay is finalizing"))
 
   if err =? (await self.putOverlay(treeCid, status = Deleting.some)).errorOption:
     error "Unable to mark overlay as deleting", exc = err.msg
@@ -324,8 +328,12 @@ proc finalizeOverlay*(
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Promote a temp overlay to a real overlay.
   ##
-  ## Atomically moves leaf records and overlay metadata from tmpCid to
-  ## realTreeCid. Block metadata is unchanged (keyed by blkCid, not treeCid).
+  ## Atomically moves leaf records, tree records, and overlay metadata from
+  ## tmpCid to realTreeCid. The tmp overlay is marked Finalizing before
+  ## the move to reject concurrent writers. After the move, the overlay
+  ## at realTreeCid carries the final status (set via a separate CAS).
+  ##
+  ## Block metadata is unchanged (keyed by blkCid, not treeCid).
   ##
 
   logScope:
@@ -341,24 +349,45 @@ proc finalizeOverlay*(
   defer:
     self.overlayCache.del(tmpOverlayKey)
 
+  # Read original status, mark Finalizing (rejects new writers), drain in-flight writers.
+  let tmpRecord = ?await self.metaDs.get(tmpOverlayKey, OverlayMetadata)
+  let tmpOrigStatus = tmpRecord.val.status
+  ?await self.putOverlay(tmpCid, status = Finalizing.some)
+  await self.deletingLock.drain(tmpCid)
+
   let expiryTime =
     if expiry == ZeroSeconds:
       self.clock.now() + self.overlayTtl
     else:
       expiry
 
+  # Atomically move leaf records, tree records, and overlay metadata.
+  # The overlay carries Finalizing status during the move.
   if err =? (
     await self.metaDs.moveKeysAtomic(
       @[
         (?(BlockLeafKey / $tmpCid), ?(BlockLeafKey / $realTreeCid)),
+        (?(TreeNodeKey / $tmpCid), ?(TreeNodeKey / $realTreeCid)),
         (tmpOverlayKey, overlayKey),
       ]
     )
   ).errorOption:
+    if restoreErr =? (
+      await noCancel self.putOverlay(tmpCid, status = tmpOrigStatus.some)
+    ).errorOption:
+      error "Unable to restore tmp overlay after finalization failure",
+        exc = restoreErr.msg
+      return failure(restoreErr)
     error "Unable to move overlay metadata atomically", exc = err.msg
     return failure(err)
 
-  if err =? (await self.putOverlay(realTreeCid, status = status, expiry = expiryTime)).errorOption:
+  # Set final status at realTreeCid. The overlay arrived as Finalizing,
+  # so no writers can race. If this CAS fails, data is safe and the real
+  # overlay is visible as Finalizing for retry or repair.
+  let finalStatus = status |? tmpOrigStatus
+  if err =? (
+    await self.putOverlay(realTreeCid, status = finalStatus.some, expiry = expiryTime)
+  ).errorOption:
     error "Unable to set final overlay status after finalization", exc = err.msg
     return failure(err)
 
