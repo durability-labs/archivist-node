@@ -219,7 +219,7 @@ proc testLifecycle*(
       check gotProof.unsafeGet().index == proof.index
       check gotProof.unsafeGet().nleaves == proof.nleaves
 
-    test "finalizeOverlay succeeds when destination leaf exists (content-addressed idempotency)":
+    test "finalizeOverlay rejects existing destination leaf":
       let
         blk = createTestBlock(127)
         (_, tree) = makeManifestAndTree(@[blk]).tryGet()
@@ -234,17 +234,18 @@ proc testLifecycle*(
       # Put same data in tmp overlay
       (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
-      # Finalize should succeed (idempotent operation)
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
-      check res.isOk
+      check res.isErr
+      check res.error() of KVConflictError
 
-      # Tmp overlay should be gone (dropped cleanly)
-      let tmpMetaRes = await repo.getOverlay(tmpCid)
-      check tmpMetaRes.isErr
+      let tmpMeta = (await repo.getOverlay(tmpCid)).tryGet()
+      check tmpMeta.status == Storing
 
-      # Destination should still have the data
       let realLeaf = (await repo.getLeafMetadata(realTreeCid, 0.Natural)).tryGet()
-      check realLeaf.blkCid == blk.cid
+      let tmpLeaf = (await repo.getLeafMetadata(tmpCid, 0.Natural)).tryGet()
+      check:
+        realLeaf.blkCid == blk.cid
+        tmpLeaf.blkCid == blk.cid
 
     test "finalizeOverlay handles conflict with different data at same index":
       let
@@ -270,19 +271,18 @@ proc testLifecycle*(
       # Put different data in tmp overlay
       (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
-      # Finalize should succeed (KVConflictError is caught and handled)
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
-      check res.isOk
+      check res.isErr
+      check res.error() of KVConflictError
 
-      # Tmp overlay should be gone (dropped on conflict)
-      let tmpMetaRes = await repo.getOverlay(tmpCid)
-      check tmpMetaRes.isErr
+      let tmpMeta = (await repo.getOverlay(tmpCid)).tryGet()
+      check tmpMeta.status == Storing
 
       # Destination should be unchanged (original data preserved)
       let realLeaf = (await repo.getLeafMetadata(realTreeCid, 0.Natural)).tryGet()
       check realLeaf.blkCid == existingBlk.cid
 
-    test "finalizeOverlay succeeds when destination metadata exists":
+    test "finalizeOverlay rejects destination metadata exists":
       let
         blk = createTestBlock(129)
         (_, tree) = makeManifestAndTree(@[blk]).tryGet()
@@ -296,7 +296,11 @@ proc testLifecycle*(
       (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
 
-      check res.isOk
+      check res.isErr
+      check res.error() of KVConflictError
+
+      let tmpMeta = (await repo.getOverlay(tmpCid)).tryGet()
+      check tmpMeta.status == Storing
 
     test "BitSeq preserved through finalizeOverlay (temp to real)":
       let
@@ -574,6 +578,27 @@ proc testLifecycle*(
 
       let realMeta = (await repo.getOverlay(realTreeCid)).tryGet()
       check realMeta.status == Completed
+
+    test "Should drop tmp overlay when finalization destination exists":
+      let realTreeCid = Cid.example
+      var capturedTmpCid: Cid
+
+      (await repo.putOverlay(realTreeCid, status = Completed.some)).tryGet()
+
+      let res = await repo.withTmpOverlay(
+        body = proc(
+            tmpCid: Cid
+        ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+          capturedTmpCid = tmpCid
+          success(realTreeCid)
+      )
+
+      check res.isErr
+      check res.error() of KVConflictError
+
+      let tmpMetaRes = await repo.getOverlay(capturedTmpCid)
+      check tmpMetaRes.isErr
+      check tmpMetaRes.error() of KVStoreKeyNotFound
 
     test "Should finalize tmp overlay and move leaves to real tree":
       let

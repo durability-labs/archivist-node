@@ -32,6 +32,9 @@ const
 type
   QuotaNotEnoughError* = object of ArchivistError
   OverlayDeletingError* = object of ArchivistError
+  TreeNodeConflictError* = object of ArchivistError
+  TreeNodeNotFoundError* = object of ArchivistError
+  TreeNodeValidationError* = object of ArchivistError
 
   RepoStore* = ref object of BlockStore
     postFixLen*: int
@@ -63,6 +66,9 @@ type
       cellCid*: Cid
     else:
       discard
+
+  TreeNodeMetadata* {.serialize.} = object
+    cid*: Cid
 
   OverlayStatus* {.serialize.} = enum
     Pending ## Initial state, not yet active

@@ -21,6 +21,7 @@ const
     ArchivistMetaNamespace & "/blocks"
   ArchivistBlockLeafNamespace* = # Cid and Proof
     ArchivistMetaNamespace & "/leafs"
+  ArchivistTreeNodeNamespace* = "tree"
   ArchivistDhtNamespace* = "dht" # Dht namespace
   ArchivistDhtProvidersNamespace* = # Dht providers namespace
     ArchivistDhtNamespace & "/providers"

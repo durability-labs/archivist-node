@@ -63,6 +63,339 @@ proc testRepoStore*(
         await after()
 
     # -------------------------------------------------------
+    # Tree node metadata tests
+    # -------------------------------------------------------
+
+    template ensureOverlay(treeCid: Cid) =
+      (await repo.putOverlay(treeCid, status = Completed.some)).tryGet()
+
+    proc testLeaves(values: varargs[byte]): seq[seq[byte]] =
+      var leaves: seq[seq[byte]]
+      for value in values:
+        leaves.add(newSeqWith(32, value))
+      leaves
+
+    template storeTreeLeaves(treeCid: Cid, tree: ArchivistTree) =
+      var items: seq[(Natural, Cid, ArchivistProof)]
+      for i in 0 ..< tree.leavesCount:
+        items.add(
+          (i.Natural, tree.getLeafCid(i.Natural).tryGet(), tree.getProof(i).tryGet())
+        )
+      (await repo.putCidsAndProofs(treeCid, items)).tryGet()
+
+    test "Should persist and load Archivist tree nodes":
+      let
+        leaves = testLeaves(1'u8, 2'u8, 3'u8, 4'u8)
+        tree = ArchivistTree.init(Sha256HashCodec, leaves).tryGet()
+        treeCid = tree.rootCid.tryGet()
+
+      ensureOverlay(treeCid)
+      storeTreeLeaves(treeCid, tree)
+      (await repo.putTree(tree)).tryGet()
+
+      let loaded = (await repo.getTree(treeCid, tree.leavesCount.Natural)).tryGet()
+
+      check:
+        loaded.root.tryGet() == tree.root.tryGet()
+        loaded.leaves == tree.leaves
+
+    test "Should generate proof from persisted tree nodes":
+      let
+        leaves = testLeaves(1'u8, 2'u8, 3'u8, 4'u8, 5'u8)
+        tree = ArchivistTree.init(Sha256HashCodec, leaves).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        index = 3.Natural
+
+      ensureOverlay(treeCid)
+      storeTreeLeaves(treeCid, tree)
+      (await repo.putTree(treeCid, tree)).tryGet()
+
+      let
+        persistedProof =
+          (await repo.getTreeProof(treeCid, index, tree.leavesCount.Natural)).tryGet()
+        memoryProof = tree.getProof(index.int).tryGet()
+
+      check:
+        persistedProof.path == memoryProof.path
+        persistedProof.verify(tree.leaves[index], tree.root.tryGet()).tryGet()
+
+      for i in 0 ..< tree.leavesCount:
+        let proof = (
+          await repo.getTreeProof(treeCid, i.Natural, tree.leavesCount.Natural)
+        ).tryGet()
+        check proof.verify(tree.leaves[i], tree.root.tryGet()).tryGet()
+
+    test "Should reject persisted tree reads with mismatched root cid":
+      let
+        leaves = testLeaves(1'u8, 2'u8, 3'u8)
+        tree = ArchivistTree.init(Sha256HashCodec, leaves).tryGet()
+        overlayCid = Cid.example
+
+      ensureOverlay(overlayCid)
+      storeTreeLeaves(overlayCid, tree)
+      (await repo.putTree(overlayCid, tree)).tryGet()
+
+      check:
+        (await repo.getTree(overlayCid, tree.leavesCount.Natural)).isErr
+        (await repo.getTreeProof(overlayCid, 0.Natural, tree.leavesCount.Natural)).isErr
+
+    test "Should reject inconsistent persisted tree nodes":
+      let
+        leaves = testLeaves(1'u8, 2'u8, 3'u8)
+        tree = ArchivistTree.init(Sha256HashCodec, leaves).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        badNode = createTestBlock(15).cid
+        siblingInternalIdx = flatIndex(tree.leavesCount, 1, 1).tryGet().Natural
+
+      ensureOverlay(treeCid)
+      storeTreeLeaves(treeCid, tree)
+      (await repo.putTree(tree)).tryGet()
+      (await repo.delTreeNodes(treeCid, @[siblingInternalIdx])).tryGet()
+      (await repo.putTreeNode(treeCid, siblingInternalIdx, badNode)).tryGet()
+
+      check:
+        (await repo.getTree(treeCid, tree.leavesCount.Natural)).isErr
+        (await repo.getTreeProof(treeCid, 0.Natural, tree.leavesCount.Natural)).isErr
+
+    test "Should generate proof for a single-leaf persisted tree":
+      let
+        leaves = testLeaves(7'u8)
+        tree = ArchivistTree.init(Sha256HashCodec, leaves).tryGet()
+        treeCid = tree.rootCid.tryGet()
+
+      ensureOverlay(treeCid)
+      storeTreeLeaves(treeCid, tree)
+      (await repo.putTree(tree)).tryGet()
+
+      let proof = (await repo.getTreeProof(treeCid, 0.Natural, 1.Natural)).tryGet()
+      check proof.verify(tree.leaves[0], tree.root.tryGet()).tryGet()
+
+    test "Should put and get tree nodes":
+      let
+        treeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+        nodes = @[(0.Natural, hashA), (2.Natural, hashB)]
+
+      ensureOverlay(treeCid)
+      (await repo.putTreeNodes(treeCid, nodes)).tryGet()
+
+      check:
+        (await repo.getTreeNode(treeCid, 0.Natural)).tryGet() == hashA
+        (await repo.getTreeNode(treeCid, 2.Natural)).tryGet() == hashB
+        (await repo.getTreeNodes(treeCid, @[0.Natural, 2.Natural])).tryGet() == nodes
+
+    test "Should treat identical tree node writes as idempotent":
+      let
+        treeCid = Cid.example
+        hash = createTestBlock(1).cid
+
+      ensureOverlay(treeCid)
+      (await repo.putTreeNode(treeCid, 0.Natural, hash)).tryGet()
+      (await repo.putTreeNode(treeCid, 0.Natural, hash)).tryGet()
+
+      check (await repo.getTreeNode(treeCid, 0.Natural)).tryGet() == hash
+
+    test "Should keep duplicate tree node batch writes idempotent":
+      let
+        treeCid = Cid.example
+        hash = createTestBlock(1).cid
+
+      ensureOverlay(treeCid)
+      (await repo.putTreeNodes(treeCid, @[(0.Natural, hash), (0.Natural, hash)])).tryGet()
+
+      check:
+        (await repo.getTreeNode(treeCid, 0.Natural)).tryGet() == hash
+        (await repo.getTreeNodes(treeCid, @[0.Natural])).tryGet() == @[
+          (0.Natural, hash)
+        ]
+
+    test "Should reject duplicate tree node batch writes with conflicting hash":
+      let
+        treeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+
+      ensureOverlay(treeCid)
+      expect TreeNodeConflictError:
+        (await repo.putTreeNodes(treeCid, @[(0.Natural, hashA), (0.Natural, hashB)])).tryGet()
+
+      check (await repo.getTreeNode(treeCid, 0.Natural)).isErr
+
+    test "Should reject conflicting tree node writes":
+      let
+        treeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+
+      ensureOverlay(treeCid)
+      (await repo.putTreeNode(treeCid, 0.Natural, hashA)).tryGet()
+
+      expect TreeNodeConflictError:
+        (await repo.putTreeNode(treeCid, 0.Natural, hashB)).tryGet()
+
+    test "Should keep batch tree node writes atomic on conflict":
+      let
+        treeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+        hashC = createTestBlock(3).cid
+
+      ensureOverlay(treeCid)
+      (await repo.putTreeNode(treeCid, 1.Natural, hashB)).tryGet()
+
+      expect TreeNodeConflictError:
+        (await repo.putTreeNodes(treeCid, @[(0.Natural, hashA), (1.Natural, hashC)])).tryGet()
+
+      check:
+        (await repo.getTreeNode(treeCid, 0.Natural)).isErr
+        (await repo.getTreeNode(treeCid, 1.Natural)).tryGet() == hashB
+
+    test "Should reject tree node writes while overlay is deleting":
+      let
+        treeCid = Cid.example
+        hash = createTestBlock(1).cid
+
+      (await repo.putOverlay(treeCid, status = Deleting.some)).tryGet()
+
+      expect OverlayDeletingError:
+        (await repo.putTreeNode(treeCid, 0.Natural, hash)).tryGet()
+
+      check (await repo.getTreeNode(treeCid, 0.Natural)).isErr
+
+    test "Should delete tree nodes by tree cid":
+      let
+        treeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+
+      ensureOverlay(treeCid)
+      (await repo.putTreeNodes(treeCid, @[(0.Natural, hashA), (1.Natural, hashB)])).tryGet()
+      (await repo.delTreeNodes(treeCid)).tryGet()
+
+      check:
+        (await repo.getTreeNode(treeCid, 0.Natural)).isErr
+        (await repo.getTreeNode(treeCid, 1.Natural)).isErr
+
+    test "Should delete tree nodes by duplicate indices once":
+      let
+        treeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+
+      ensureOverlay(treeCid)
+      (await repo.putTreeNodes(treeCid, @[(0.Natural, hashA), (1.Natural, hashB)])).tryGet()
+      (await repo.delTreeNodes(treeCid, @[0.Natural, 0.Natural])).tryGet()
+
+      check:
+        (await repo.getTreeNode(treeCid, 0.Natural)).isErr
+        (await repo.getTreeNode(treeCid, 1.Natural)).tryGet() == hashB
+
+    test "Should move tree nodes when finalizing a tmp overlay":
+      let
+        realTreeCid = Cid.example
+        hash = createTestBlock(1).cid
+      var tmpTreeCid: Cid
+
+      let finalized = (
+        await repo.withTmpOverlay(
+          proc(tmpCid: Cid): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+            tmpTreeCid = tmpCid
+            if err =? (await repo.putTreeNode(tmpCid, 0.Natural, hash)).errorOption:
+              return failure(err)
+            success(realTreeCid)
+        )
+      ).tryGet()
+
+      check:
+        finalized == realTreeCid
+        (await repo.getTreeNode(realTreeCid, 0.Natural)).tryGet() == hash
+        (await repo.getTreeNode(tmpTreeCid, 0.Natural)).isErr
+
+    test "Should reject finalization when destination already exists":
+      let
+        realTreeCid = Cid.example
+        hash = createTestBlock(1).cid
+        tmpTreeCid = (await repo.createTmpOverlay()).tryGet()
+
+      (await repo.putOverlay(realTreeCid, status = Completed.some)).tryGet()
+      (await repo.putTreeNode(tmpTreeCid, 0.Natural, hash)).tryGet()
+      (await repo.putTreeNode(realTreeCid, 0.Natural, hash)).tryGet()
+
+      expect KVConflictError:
+        (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+
+      check:
+        (await repo.getTreeNode(realTreeCid, 0.Natural)).tryGet() == hash
+        (await repo.getTreeNode(tmpTreeCid, 0.Natural)).tryGet() == hash
+
+    test "Should preserve tmp tree nodes on conflicting finalization destination":
+      let
+        realTreeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+        tmpTreeCid = (await repo.createTmpOverlay()).tryGet()
+
+      (await repo.putOverlay(realTreeCid, status = Completed.some)).tryGet()
+      (await repo.putTreeNode(tmpTreeCid, 0.Natural, hashA)).tryGet()
+      (await repo.putTreeNode(realTreeCid, 0.Natural, hashB)).tryGet()
+
+      expect KVConflictError:
+        (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+
+      check:
+        (await repo.getTreeNode(tmpTreeCid, 0.Natural)).tryGet() == hashA
+        (await repo.getTreeNode(realTreeCid, 0.Natural)).tryGet() == hashB
+
+    test "Should preserve tmp tree nodes when destination has extra tree nodes":
+      let
+        realTreeCid = Cid.example
+        hashA = createTestBlock(1).cid
+        hashB = createTestBlock(2).cid
+        tmpTreeCid = (await repo.createTmpOverlay()).tryGet()
+
+      (await repo.putOverlay(realTreeCid, status = Completed.some)).tryGet()
+      (await repo.putTreeNode(tmpTreeCid, 0.Natural, hashA)).tryGet()
+      (await repo.putTreeNode(realTreeCid, 0.Natural, hashA)).tryGet()
+      (await repo.putTreeNode(realTreeCid, 1.Natural, hashB)).tryGet()
+
+      expect KVConflictError:
+        (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+
+      check:
+        (await repo.getTreeNode(tmpTreeCid, 0.Natural)).tryGet() == hashA
+        (await repo.getTreeNode(realTreeCid, 1.Natural)).tryGet() == hashB
+
+    test "Should reject finalization when destination has only metadata":
+      let
+        blk = createTestBlock(16)
+        (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+        proof = tree.getProof(0).tryGet()
+        realTreeCid = Cid.example
+        tmpTreeCid = (await repo.createTmpOverlay()).tryGet()
+
+      (await repo.putOverlay(realTreeCid, status = Completed.some)).tryGet()
+      (await repo.putCidsAndProofs(tmpTreeCid, @[(0.Natural, blk.cid, proof)])).tryGet()
+
+      expect KVConflictError:
+        (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+
+      check:
+        (await repo.getLeafMetadata(tmpTreeCid, 0.Natural)).isOk
+        (await repo.getLeafMetadata(realTreeCid, 0.Natural)).isErr
+
+    test "Should drop tree nodes with the overlay":
+      let
+        treeCid = Cid.example
+        hash = createTestBlock(1).cid
+
+      (await repo.putOverlay(treeCid, status = Completed.some)).tryGet()
+      (await repo.putTreeNode(treeCid, 0.Natural, hash)).tryGet()
+      (await repo.dropOverlay(treeCid)).tryGet()
+
+      check (await repo.getTreeNode(treeCid, 0.Natural)).isErr
+
+    # -------------------------------------------------------
     # Quota / used-bytes tests
     # -------------------------------------------------------
 

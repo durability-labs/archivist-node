@@ -6,7 +6,7 @@ import std/options
 
 import pkg/chronos
 import pkg/kvstore
-import pkg/libp2p/cid
+import pkg/libp2p/[cid, multicodec, multihash]
 import pkg/metrics
 import pkg/stew/bitseqs
 import pkg/questionable
@@ -23,6 +23,7 @@ import ../../logutils
 import ../../merkletree
 import ../../manifest
 import ../../utils
+from ../../utils/digest import digestBytes
 
 logScope:
   topics = "archivist repostore"
@@ -92,6 +93,9 @@ proc initializeCounters*(
   self.quotaUsage = quotaUsage
   self.totalBlocks = totalBlocks
   success()
+
+func overlayRejectsWrites(status: OverlayStatus): bool =
+  status == Deleting
 
 proc updateCounters*(
     self: RepoStore, quotaDelta = 0, reservedDelta = 0, blocksDelta = 0
@@ -280,6 +284,23 @@ proc tryDeleteBlocks*(
 ): Future[?!seq[Cid]] {.async: (raises: [CancelledError], raw: true).} =
   self.tryDeleteBlocks(@[cid])
 
+func treeNodeCidFromHash(hash: seq[byte], mcodec: MultiCodec): ?!Cid =
+  let mhash = ?MultiHash.init(mcodec, hash).mapFailure
+  Cid.init(CIDv1, DatasetRootCodec, mhash).mapFailure
+
+func treeNodeDigest(cid: Cid, mcodec: MultiCodec): ?!seq[byte] =
+  let mhash = ?cid.mhash.mapFailure
+  if mhash.mcodec != mcodec:
+    return failure(newException(TreeNodeValidationError, "Tree node codec mismatch"))
+  success(mhash.digestBytes)
+
+func validateTreeRoot(treeCid: Cid, rootCid: Cid): ?!void =
+  if rootCid != treeCid:
+    return
+      failure(newException(TreeNodeValidationError, "Tree root does not match treeCid"))
+
+  success()
+
 type BlockLeafTuple =
   tuple[
     index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ?ArchivistProof, data: seq[byte]
@@ -309,6 +330,10 @@ proc putLeafBlockMetaImpl(
   # (overlay must exist before putBlocks is called)
   trace "Fetching existing overlay", treeCid = treeCid, blocksCount = blocks.len
 
+  self.deletingLock.enter(treeCid)
+  defer:
+    self.deletingLock.leave(treeCid)
+
   let
     existingOverlayRec = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
     treeCidStr = $treeCid
@@ -316,13 +341,9 @@ proc putLeafBlockMetaImpl(
   var overlayMeta = existingOverlayRec.val
   trace "Got existing overlay", treeCid, existingBitmapLen = overlayMeta.blocks.len
 
-  # abort if overlay is already being deleted
-  if overlayMeta.status == Deleting:
-    return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
-
-  self.deletingLock.enter(treeCid)
-  defer:
-    self.deletingLock.leave(treeCid)
+  # Abort if overlay is being deleted or promoted.
+  if overlayRejectsWrites(overlayMeta.status):
+    return failure(newException(OverlayDeletingError, "Overlay is not writable"))
 
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
@@ -382,9 +403,9 @@ proc putLeafBlockMetaImpl(
     for i, rec in refreshed:
       if ArchivistOverlaysKey.ancestor(rec.key):
         let overlayMetaRec = ?toRecord[OverlayMetadata](rec)
-        # Abort if overlay is being deleted
-        if overlayMetaRec.val.status == Deleting:
-          return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
+        # Abort if overlay is being deleted or promoted.
+        if overlayRejectsWrites(overlayMetaRec.val.status):
+          return failure(newException(OverlayDeletingError, "Overlay is not writable"))
 
         # Update overlay and mark for removal
         var updatedRec = overlayMetaRec
@@ -434,7 +455,6 @@ proc putLeafBlockMetaImpl(
               cid = blockMeta.val.cid, refCount = blockMeta.val.refCount
 
           record = blockMeta.toRaw
-
       # update records
       records[record.key] = record
 
@@ -455,31 +475,38 @@ proc putLeafBlockMetaImpl(
   # cache the final overlay
   self.overlayCache[?overlayKey(treeCid)] = overlayMeta
 
-  # Write block data to disk and update counters (inside semaphore)
-  var
-    diskRecords: seq[RawKVRecord]
-    diskKeySizes: seq[(Key, int)]
-    seen: HashSet[Cid]
+  proc persistBlockData(): Future[?!void] {.async: (raises: [CancelledError]).} =
+    ## Metadata is already committed. Finish disk persistence before allowing
+    ## finalization or deletion to drain this writer.
+    ##
+    var
+      diskRecords: seq[RawKVRecord]
+      diskKeySizes: seq[(Key, int)]
+      seen: HashSet[Cid]
 
-  for (index, blkCid, cellCid, proof, data) in blocks:
-    if data.len > 0 and not blkCid.isEmpty and blkCid notin seen:
-      seen.incl(blkCid)
-      let key = ?makePrefixKey(self.postFixLen, blkCid)
-      diskKeySizes.add((key, data.len))
-      diskRecords.add(RawKVRecord.init(key, data))
+    for (index, blkCid, cellCid, proof, data) in blocks:
+      if data.len > 0 and not blkCid.isEmpty and blkCid notin seen:
+        seen.incl(blkCid)
+        let key = ?makePrefixKey(self.postFixLen, blkCid)
+        diskKeySizes.add((key, data.len))
+        diskRecords.add(RawKVRecord.init(key, data))
 
-  if diskRecords.len > 0:
-    trace "Writing blocks to disk", count = diskRecords.len
-    let skipped = (?await self.repoDs.put(move(diskRecords))).toHashSet
+    if diskRecords.len > 0:
+      trace "Writing blocks to disk", count = diskRecords.len
+      let skipped = (?await self.repoDs.put(move(diskRecords))).toHashSet
 
-    var newBlocks, newBytes = 0
-    for (key, size) in diskKeySizes:
-      if key notin skipped:
-        newBytes += size
-        newBlocks += 1
+      var newBlocks, newBytes = 0
+      for (key, size) in diskKeySizes:
+        if key notin skipped:
+          newBytes += size
+          newBlocks += 1
 
-    if newBlocks > 0:
-      ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+      if newBlocks > 0:
+        ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+
+    success()
+
+  ?await noCancel persistBlockData()
 
   success()
 
@@ -561,35 +588,14 @@ proc delLeafBlockMetadata*(
 
   trace "Deleting leaf and block metadata"
 
-  # Mark overlay as Deleting BEFORE draining the barrier.
-  # This prevents new writers from entering the barrier after drain completes
-  # but before the atomic metadata update.
   let
     ovKey = ?overlayKey(treeCid)
-    preDeleteOverlay = ?await self.metaDs.get(ovKey, OverlayMetadata)
-
-  var preDeleteMeta = preDeleteOverlay.val
-  preDeleteMeta.status = Deleting
-  ?await self.metaDs.tryPut(preDeleteOverlay.fromRecord(preDeleteMeta), maxRetries = 3)
-  # Update cache so concurrent readers see Deleting immediately
-  self.overlayCache[ovKey] = preDeleteMeta
-
-  await self.deletingLock.drain(treeCid)
-
-  # Re-fetch overlay after drain to get latest state
-  let
     existingOverlayMeta = ?await self.metaDs.get(ovKey, OverlayMetadata)
     uniqueIdxs = index.deduplicate()
 
   var overlayMeta = existingOverlayMeta.val
   if not uniqueIdxs.anyIt(it < overlayMeta.blocks.len and overlayMeta.blocks[it]):
     trace "No bits set in BitSeq for indices to delete, fast-path return"
-    # Restore previous status since nothing is actually being deleted
-    overlayMeta.status = preDeleteOverlay.val.status
-    ?await self.metaDs.tryPut(
-      existingOverlayMeta.fromRecord(overlayMeta), maxRetries = 3
-    )
-    self.overlayCache[ovKey] = overlayMeta
     return success()
 
   let
@@ -766,6 +772,253 @@ proc getLeafMetadata*(
       return failure(err)
 
   success(leafMd.val)
+
+
+proc putTreeNode*(
+    self: RepoStore, treeCid: Cid, flatIdx: Natural, cid: Cid
+): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
+  self.putTreeNodes(treeCid, @[(flatIdx, cid)])
+
+proc getTreeNode*(
+    self: RepoStore, treeCid: Cid, flatIdx: Natural
+): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+  let key = ?treeNodeKey(treeCid, flatIdx)
+
+  without node =? await self.metaDs.get(key, TreeNodeMetadata), err:
+    if err of KVStoreKeyNotFound:
+      return failure(newException(TreeNodeNotFoundError, err.msg))
+    return failure(err)
+
+  success(node.val.cid)
+
+proc getTreeNodes*(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!seq[(Natural, Cid)]] {.async: (raises: [CancelledError]).} =
+  var keys: seq[Key]
+  for flatIdx in indices:
+    keys.add(?treeNodeKey(treeCid, flatIdx))
+
+  let records = ?await self.metaDs.get(keys, TreeNodeMetadata)
+
+  var nodesByKey: Table[Key, Cid]
+  for record in records:
+    nodesByKey[record.key] = record.val.cid
+
+  var nodes: seq[(Natural, Cid)]
+  for flatIdx in indices:
+    let key = ?treeNodeKey(treeCid, flatIdx)
+    if key notin nodesByKey:
+      return failure(newException(TreeNodeNotFoundError, "Key not found: " & $key))
+    nodes.add((flatIdx, ?catch(nodesByKey[key])))
+
+  success(nodes)
+
+proc putTree*(
+    self: RepoStore, treeCid: Cid, tree: ArchivistTree
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  var nodes: seq[(Natural, Cid)]
+  for level in 1 ..< tree.levels:
+    for index, hash in tree.layers[level]:
+      nodes.add(
+        (
+          (?flatIndex(tree.leavesCount, level, index)).Natural,
+          ?treeNodeCidFromHash(hash, tree.mcodec),
+        )
+      )
+
+  ?await self.putTreeNodes(treeCid, nodes)
+  success()
+
+proc putTree*(
+    self: RepoStore, tree: ArchivistTree
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ?await self.putTree(?tree.rootCid, tree)
+  success()
+
+proc getTree*(
+    self: RepoStore,
+    treeCid: Cid,
+    nleaves: Natural,
+    mcodec: MultiCodec = Sha256HashCodec,
+): Future[?!ArchivistTree] {.async: (raises: [CancelledError]).} =
+  var leafKeys: seq[Key]
+  for index in 0 ..< nleaves.int:
+    leafKeys.add(?blockLeafKey(treeCid, index.Natural))
+
+  let leafRecords = ?await self.metaDs.get(leafKeys, LeafMetadata)
+
+  var leavesByKey: Table[Key, LeafMetadata]
+  for record in leafRecords:
+    leavesByKey[record.key] = record.val
+
+  var leaves: seq[ByteHash]
+  for key in leafKeys:
+    if key notin leavesByKey:
+      return failure(newException(BlockNotFoundError, "Key not found: " & $key))
+    leaves.add(?treeNodeDigest((?catch(leavesByKey[key])).blkCid, mcodec))
+
+  let tree = ?ArchivistTree.init(mcodec, leaves)
+  ?validateTreeRoot(treeCid, ?tree.rootCid)
+
+  var treeKeys: seq[Key]
+  var expectedByKey: Table[Key, Cid]
+  for level in 1 ..< tree.levels:
+    for index, hash in tree.layers[level]:
+      let
+        flatIdx = (?flatIndex(tree.leavesCount, level, index)).Natural
+        key = ?treeNodeKey(treeCid, flatIdx)
+        computedCid = ?treeNodeCidFromHash(hash, tree.mcodec)
+      treeKeys.add(key)
+      expectedByKey[key] = computedCid
+
+  let treeRecords = ?await self.metaDs.get(treeKeys, TreeNodeMetadata)
+
+  var storedByKey: Table[Key, Cid]
+  for record in treeRecords:
+    storedByKey[record.key] = record.val.cid
+
+  for key, expectedCid in expectedByKey:
+    if key notin storedByKey or ?catch(storedByKey[key]) != expectedCid:
+      return failure(
+        newException(TreeNodeValidationError, "Persisted tree nodes are inconsistent")
+      )
+
+  success(tree)
+
+proc getTreeProof*(
+    self: RepoStore,
+    treeCid: Cid,
+    index, nleaves: Natural,
+    mcodec: MultiCodec = Sha256HashCodec,
+): Future[?!ArchivistProof] {.async: (raises: [CancelledError]).} =
+  if index.int >= nleaves.int:
+    return
+      failure(newException(TreeNodeValidationError, "Tree leaf index is out of bounds"))
+
+  let totalLevels = ?levels(nleaves.int)
+
+  var
+    leafKeys: seq[Key]
+    treeKeys: seq[Key]
+    targetLeafKey = ?blockLeafKey(treeCid, index)
+
+  leafKeys.add(targetLeafKey)
+
+  if totalLevels > 1:
+    treeKeys.add(
+      ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, totalLevels - 1, 0)).Natural)
+    )
+
+  var
+    k = index.int
+    width = nleaves.int
+
+  for level in 0 ..< totalLevels - 1:
+    let sibling = k xor 1
+    if sibling < width:
+      if level == 0:
+        let key = ?blockLeafKey(treeCid, sibling.Natural)
+        if key notin leafKeys:
+          leafKeys.add(key)
+      else:
+        let key =
+          ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, level, sibling)).Natural)
+        if key notin treeKeys:
+          treeKeys.add(key)
+
+    k = k shr 1
+    width = (width + 1) shr 1
+
+  let
+    leafRecords = ?await self.metaDs.get(leafKeys, LeafMetadata)
+    treeRecords = ?await self.metaDs.get(treeKeys, TreeNodeMetadata)
+
+  var
+    leavesByKey: Table[Key, LeafMetadata]
+    nodesByKey: Table[Key, Cid]
+
+  for record in leafRecords:
+    leavesByKey[record.key] = record.val
+
+  for record in treeRecords:
+    nodesByKey[record.key] = record.val.cid
+
+  var
+    rootCid: Cid
+    rootHash: seq[byte]
+
+  if totalLevels == 1:
+    if targetLeafKey notin leavesByKey:
+      return
+        failure(newException(BlockNotFoundError, "Key not found: " & $targetLeafKey))
+    rootCid = (?catch(leavesByKey[targetLeafKey])).blkCid
+    rootHash = ?treeNodeDigest(rootCid, mcodec)
+  else:
+    let rootKey =
+      ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, totalLevels - 1, 0)).Natural)
+    if rootKey notin nodesByKey:
+      return failure(newException(TreeNodeNotFoundError, "Key not found: " & $rootKey))
+    rootCid = ?catch(nodesByKey[rootKey])
+    rootHash = ?treeNodeDigest(rootCid, mcodec)
+
+  ?validateTreeRoot(treeCid, rootCid)
+
+  var path: seq[ByteHash]
+  k = index.int
+  width = nleaves.int
+
+  let zeroHash = newSeq[byte]((?mcodec.mhash()).size)
+  for level in 0 ..< totalLevels - 1:
+    let sibling = k xor 1
+    if sibling < width:
+      if level == 0:
+        let key = ?blockLeafKey(treeCid, sibling.Natural)
+        if key notin leavesByKey:
+          return failure(newException(BlockNotFoundError, "Key not found: " & $key))
+        path.add(?treeNodeDigest((?catch(leavesByKey[key])).blkCid, mcodec))
+      else:
+        let key =
+          ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, level, sibling)).Natural)
+        if key notin nodesByKey:
+          return failure(newException(TreeNodeNotFoundError, "Key not found: " & $key))
+        path.add(?treeNodeDigest(?catch(nodesByKey[key]), mcodec))
+    else:
+      path.add(zeroHash)
+
+    k = k shr 1
+    width = (width + 1) shr 1
+
+  if targetLeafKey notin leavesByKey:
+    return failure(newException(BlockNotFoundError, "Key not found: " & $targetLeafKey))
+
+  let
+    proof = ?ArchivistProof.init(mcodec, index.int, nleaves.int, path)
+    leafHash = ?treeNodeDigest((?catch(leavesByKey[targetLeafKey])).blkCid, mcodec)
+  if not ?proof.verify(leafHash, rootHash):
+    return failure(
+      newException(TreeNodeValidationError, "Persisted tree proof is inconsistent")
+    )
+
+  success(proof)
+
+proc delTreeNodes*(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural]
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  var keys: seq[Key]
+  for flatIdx in indices.deduplicate():
+    keys.add(?treeNodeKey(treeCid, flatIdx))
+
+  let records = ?await self.metaDs.get(keys, TreeNodeMetadata)
+  if records.len > 0:
+    ?await self.metaDs.tryDeleteAtomic(records.toKeyRecord)
+
+  success()
+
+proc delTreeNodes*(
+    self: RepoStore, treeCid: Cid
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ?await self.metaDs.dropPrefix(?(TreeNodeKey / $treeCid))
+  success()
 
 proc storeManifestBlock*(
     self: RepoStore, rootCids: seq[Cid], manifest: Manifest, expiry = ZeroSeconds

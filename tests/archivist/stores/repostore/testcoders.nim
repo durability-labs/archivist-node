@@ -143,3 +143,12 @@ suite "Test repostore coders":
     check:
       defaultProof.encode().len > 0
       LeafMetadata.decode(encoded).isErr
+  test "TreeNodeMetadata encode/decode":
+    let
+      val = TreeNodeMetadata(cid: Cid.example)
+      decoded = TreeNodeMetadata.decode(encode(val)).tryGet()
+
+    check decoded == val
+
+  test "TreeNodeMetadata rejects invalid cid bytes":
+    check TreeNodeMetadata.decode(@[1'u8, 2'u8, 3'u8]).isErr

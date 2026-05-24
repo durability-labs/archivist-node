@@ -123,10 +123,10 @@ proc testConcurrent*(
           else:
             proof3
 
-        (await repo.putBlocks(treeCid, @[(blk, 0.Natural, prf.some)])).tryGet()
+(await repo.putBlocks(treeCid, @[(blk, i.Natural, prf.some)])).tryGet()
 
         let meta = (await repo.getOverlay(treeCid)).tryGet()
-        check meta.blocks[0] == true
+        check meta.blocks[i] == true
 
         let inconsistencies = (await repo.verifyBlockBitState(treeCid)).tryGet()
         check inconsistencies.len == 0

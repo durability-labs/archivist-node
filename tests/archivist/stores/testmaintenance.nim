@@ -166,16 +166,15 @@ suite "BlockMaintainer":
     repo.deletingLock.enter(treeCid)
 
     maintainer.start()
-    # Timer callback calls dropOverlay, which enters delLeafBlockMetadata
-    # and blocks on acquire (waiting for the put to finish).
-    # But since this overlay has no blocks, the loop breaks before
-    # reaching delLeafBlockMetadata, so it completes and deletes the overlay.
-    await mockTimer.invokeCallback()
-
-    # Overlay is gone - dropOverlay found no blocks and cleaned up metadata
-    check (await repo.getOverlay(treeCid)).isErr
-
+    # Timer callback calls dropOverlay, which waits for the in-flight writer
+    # before deleting prefixes and metadata.
+    let callbackFut = mockTimer.invokeCallback()
+    await sleepAsync(10.millis)
     repo.deletingLock.leave(treeCid)
+    await callbackFut
+
+    # Overlay is gone after the simulated writer finishes.
+    check (await repo.getOverlay(treeCid)).isErr
 
   test "Should drop expired Pending overlay":
     let treeCid = Cid.example

@@ -276,6 +276,8 @@ proc dropOverlay*(
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)
 
+  await self.deletingLock.drain(treeCid)
+
   while true:
     without overlay =? (await self.getOverlay(treeCid)), err:
       if err of KVStoreKeyNotFound:
@@ -296,6 +298,8 @@ proc dropOverlay*(
     ?await self.delLeafBlockMetadata(treeCid, indices)
     trace "Deleted leaf metadata and updated refcounts", count = indices.len
 
+  ?await self.delTreeNodes(treeCid)
+
   # Detach manifest and try to delete if refcount reaches 0
   ?await self.dropManifest(treeCid)
 
@@ -314,11 +318,8 @@ proc finalizeOverlay*(
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Promote a temp overlay to a real overlay.
   ##
-  ## Atomically moves all leaf records and overlay metadata from
-  ## tmpCid to realTreeCid in a single transaction, then updates
-  ## the overlay metadata (expiry/status) as a separate CAS operation.
-  ##
-  ## Block metadata is unchanged (keyed by blkCid, not treeCid).
+  ## Atomically moves leaf records and overlay metadata from tmpCid to
+  ## realTreeCid. Block metadata is unchanged (keyed by blkCid, not treeCid).
   ##
 
   logScope:
@@ -334,7 +335,12 @@ proc finalizeOverlay*(
   defer:
     self.overlayCache.del(tmpOverlayKey)
 
-  # Atomically move both leaf records and overlay metadata
+  let expiryTime =
+    if expiry == ZeroSeconds:
+      self.clock.now() + self.overlayTtl
+    else:
+      expiry
+
   if err =? (
     await self.metaDs.moveKeysAtomic(
       @[
@@ -343,28 +349,11 @@ proc finalizeOverlay*(
       ]
     )
   ).errorOption:
-    if err of KVConflictError:
-      # Destination already has the data (content-addressed guarantee).
-      # Nothing was moved - tmp is still intact. Drop it cleanly.
-      trace "Overlay already exists at realTreeCid, dropping tmp"
-      if dropErr =? (await noCancel self.dropOverlay(tmpCid)).errorOption:
-        error "Unable to drop tmp overlay after finalize conflict", exc = dropErr.msg
-      return success()
     error "Unable to move overlay metadata atomically", exc = err.msg
     return failure(err)
 
-  # Update overlay metadata (expiry/status) at the new location.
-  # This is a separate CAS operation - if it fails, data is safe
-  # (everything is already at realTreeCid) and retry will find it.
-  let expiryTime =
-    if expiry == ZeroSeconds:
-      self.clock.now() + self.overlayTtl
-    else:
-      expiry
-
-  if err =?
-      (await self.putOverlay(realTreeCid, status = status, expiry = expiryTime)).errorOption:
-    error "Unable to update overlay metadata after finalization", exc = err.msg
+  if err =? (await self.putOverlay(realTreeCid, status = status, expiry = expiryTime)).errorOption:
+    error "Unable to set final overlay status after finalization", exc = err.msg
     return failure(err)
 
   trace "Temp overlay finalized successfully"
@@ -434,7 +423,6 @@ proc withTmpOverlay*(
     error "Body failed to return real tree CID", error = err.msg
     return failure(err)
 
-  completed = true
   trace "Body completed successfully, finalizing overlay", realCid, tmpCid
   if finalErr =? (
     await self.finalizeOverlay(tmpCid, realCid, status = OverlayStatus.Completed.some)
@@ -442,4 +430,5 @@ proc withTmpOverlay*(
     error "Unable to finalize tmp overlay", exc = finalErr.msg
     return failure(finalErr)
 
+  completed = true
   bodyRes
