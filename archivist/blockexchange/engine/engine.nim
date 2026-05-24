@@ -88,7 +88,6 @@ const
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
   CleanupBatchSize = 2048
-  DefaultRequestQueueSize = DefaultWantBlockBatchSize
 
 type
   TaskHandler* = proc(task: BlockExcPeerCtx): Future[void] {.gcsafe.}
@@ -101,7 +100,6 @@ type
     network*: BlockExcNetwork
     peers*: PeerCtxStore
     taskQueue*: AsyncHeapQueue[BlockExcPeerCtx]
-    requestQueue*: AsyncQueue[BlockAddress]
     selectPeer*: PeerSelector
     concurrentTasks: int
     trackedFutures: TrackedFutures
@@ -340,9 +338,6 @@ proc scheduleBlockSendTask(
     )
     return
 
-  if not self.pendingBlocks.markScheduled(address):
-    return
-
   if forceDelay or (not immediate and not self.pendingBlocks.isFirstAttempt(address)):
     let timer = sleepAsync(delay)
     try:
@@ -357,17 +352,14 @@ proc scheduleBlockSendTask(
       trace "Handle finished before queueing block", address
       return
 
-  let putFut = self.requestQueue.put(address)
+  let enqueueFut = self.pendingBlocks.enqueue(address, 0)
   try:
-    await handle or putFut
+    await handle or enqueueFut
   except CatchableError as exc:
     trace "Exception queuing block for send", address, exc = exc.msg
   finally:
-    if handle.finished and not putFut.finished:
-      await noCancel putFut.cancelAndWait()
-
-  if handle.finished or not putFut.completed:
-    self.pendingBlocks.clearScheduled(address)
+    if handle.finished and not enqueueFut.finished:
+      await noCancel enqueueFut.cancelAndWait()
 
 proc scheduleBlockSend(
     self: BlockExcEngine,
@@ -409,6 +401,7 @@ proc sendRequestBatch(
   if peer.isNil:
     trace "Unable to find peer to send batch to", peerId
     for address in addresses:
+      self.pendingBlocks.clearScheduled(address)
       self.scheduleBlockSend(address)
     return
 
@@ -474,7 +467,7 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
   try:
     while self.blockexcRunning:
       var finished: FutureBase
-      let next = self.requestQueue.get()
+      let next = self.pendingBlocks.dequeue()
       try:
         finished = await FutureBase(next).race(timers.keys.toSeq.mapIt(FutureBase(it)))
       finally:
@@ -1038,7 +1031,6 @@ proc new*(
     wantBlockBatchTimeout: wantBlockBatchTimeout,
     blockRequestTimeout: blockRequestTimeout,
     taskQueue: newAsyncHeapQueue[BlockExcPeerCtx](DefaultTaskQueueSize),
-    requestQueue: newAsyncQueue[BlockAddress](DefaultRequestQueueSize),
     discovery: discovery,
     advertiser: advertiser,
     selectPeer: selectPeer,

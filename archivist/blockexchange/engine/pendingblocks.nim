@@ -7,6 +7,38 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+## With the introduction of batching, the semantics of shared block handles
+## changed. If two unrelated batches share a subset of handles, and one batch
+## cancels its subset, what should happen to the other handles in the batch?
+##
+## This is a valid condition because of erasure coding: while blocks are being
+## downloaded, erasure recovery might also be running and trying to recover the
+## remaining blocks. Whichever succeeds first will complete or cancel outstanding
+## requests. To prevent these operations from interfering with each other, we use
+## two related mechanisms:
+##
+## - A block handle now has "owners"; the block remains active while
+##   `owners.len > 0`.
+## - Owners are also `BlockHandle` values. This lets callers keep relying on
+##   Future semantics without introducing a separate type that would partially
+##   duplicate those semantics.
+##
+## The outer, owner-facing `BlockHandle` mirrors the underlying `BlockHandle`,
+## which stays active as long as `owners.len > 0` and the block has not been
+## resolved or failed.
+##
+## When an owner/public `BlockHandle` proxy is cancelled, the cancellation does
+## not propagate to the wrapped instance (similar to Chronos' `join` operation).
+## Instead, we unregister that handle from the `owners` set. Once
+## `owners.len == 0`, the underlying future is failed, which also propagates to
+## the proxies. This prevents using it after it has been released or disposed.
+##
+## For callers, the wrappers behave as expected: if more than one code path
+## awaits the `BlockHandle`, cancelling, completing, or failing one wrapper works
+## as expected for that caller, but does not affect handles awaited by other
+## callers.
+##
+
 {.push raises: [].}
 
 import std/tables
@@ -26,6 +58,7 @@ import ../../blocktype
 import ../../logutils
 import ../../utils/futures
 import ../../utils/trackedfutures
+import ../../utils/asyncheapqueue
 
 import ./errors
 
@@ -54,38 +87,17 @@ type
   PendingBlocksTimeoutHandler* =
     proc(address: BlockAddress, peer: PeerId) {.gcsafe, async: (raises: []).}
 
-  ## With the introduction of batching, the semantics of shared block handles
-  ## changed. If two unrelated batches share a subset of handles, and one batch
-  ## cancels its subset, what should happen to the other handles in the batch?
-  ##
-  ## This is a valid condition because of erasure coding: while blocks are being
-  ## downloaded, erasure recovery might also be running and trying to recover the
-  ## remaining blocks. Whichever succeeds first will complete or cancel outstanding
-  ## requests. To prevent these operations from interfering with each other, we use
-  ## two related mechanisms:
-  ##
-  ## - A block handle now has "owners"; the block remains active while
-  ##   `owners.len > 0`.
-  ## - Owners are also `BlockHandle` values. This lets callers keep relying on
-  ##   Future semantics without introducing a separate type that would partially
-  ##   duplicate those semantics.
-  ##
-  ## The outer, owner-facing `BlockHandle` mirrors the underlying `BlockHandle`,
-  ## which stays active as long as `owners.len > 0` and the block has not been
-  ## resolved or failed.
-  ##
-  ## When an owner/public `BlockHandle` proxy is cancelled, the cancellation does
-  ## not propagate to the wrapped instance (similar to Chronos' `join` operation).
-  ## Instead, we unregister that handle from the `owners` set. Once
-  ## `owners.len == 0`, the underlying future is failed, which also propagates to
-  ## the proxies. This prevents using it after it has been released or disposed.
-  ##
-  ## For callers, the wrappers behave as expected: if more than one code path
-  ## awaits the `BlockHandle`, cancelling, completing, or failing one wrapper works
-  ## as expected for that caller, but does not affect handles awaited by other
-  ## callers.
-  ##
-  BlockReq = ref object
+  SchedulableReq* = ref object of RootObj
+    address*: BlockAddress
+    priority*: int
+    insertedAt: Moment
+    eligibleAt: Moment
+    queued: bool
+    attempts: int
+    discoveryWaiting: bool
+    discoveryDeadline: Moment
+
+  BlockReq* = ref object of SchedulableReq
     handle: BlockHandle
     owners: HashSet[BlockHandle]
     requested: ?PeerId
@@ -103,9 +115,17 @@ type
     onAbandon*: PendingBlocksAbandonHandler
     onTimeout*: PendingBlocksTimeoutHandler
     handleMonitors: TrackedFutures
+    readyQueue*: AsyncHeapQueue[SchedulableReq]
+    delayedTimer: Future[void]
+    earliestDelay: Moment
 
 func hash*(handle: BlockHandle): Hash =
   cast[pointer](handle).hash
+
+proc `<`*(a, b: SchedulableReq): bool =
+  if a.priority != b.priority:
+    return a.priority < b.priority
+  a.insertedAt < b.insertedAt
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
@@ -147,10 +167,12 @@ proc getWantHandle*(
   if address notin self.blocks:
     let handle = BlockHandle.init("pendingBlocks.sharedHandle")
     self.blocks[address] = BlockReq(
+      address: address,
       handle: handle,
       requested: requested,
       blockRetries: self.blockRetries,
       startTime: getMonoTime().ticks,
+      insertedAt: Moment.now(),
     )
     self.lastInclusion = Moment.now()
     self.updatePendingBlockGauge()
@@ -294,16 +316,6 @@ func isScheduled*(self: PendingBlocksManager, address: BlockAddress): bool =
     return pending.scheduled
   false
 
-func markScheduled*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if var pending =? self.blocks .? [address]:
-    if pending.requested.isSome or pending.scheduled:
-      return false
-
-    pending.scheduled = true
-    return true
-
-  false
-
 func clearScheduled*(self: PendingBlocksManager, address: BlockAddress) =
   if var pending =? self.blocks .? [address]:
     pending.scheduled = false
@@ -433,7 +445,78 @@ proc wantListLen*(self: PendingBlocksManager): int =
 func len*(self: PendingBlocksManager): int =
   self.blocks.len
 
+proc enqueue*(
+    self: PendingBlocksManager, address: BlockAddress, priority: int
+): Future[void] {.async: (raises: [CancelledError]).} =
+  without req =? self.blocks .? [address]:
+    return
+
+  if req.handle.finished or req.requested.isSome or req.queued or req.scheduled or
+      req.discoveryWaiting or req.eligibleAt > Moment.now():
+    return
+
+  req.priority = priority
+  req.scheduled = true
+  req.queued = true
+  req.insertedAt = Moment.now()
+  await self.readyQueue.push(req)
+
+proc dequeue*(
+    self: PendingBlocksManager
+): Future[BlockAddress] {.async: (raises: [CancelledError]).} =
+  while true:
+    let req = await self.readyQueue.pop()
+    req.queued = false
+
+    if current =? self.blocks .? [req.address]:
+      if current == BlockReq(req):
+        return req.address
+
+func isQueued*(self: PendingBlocksManager, address: BlockAddress): bool =
+  if req =? self.blocks .? [address]:
+    return req.queued
+  false
+
+proc isEligible*(self: PendingBlocksManager, address: BlockAddress): bool =
+  if req =? self.blocks .? [address]:
+    return req.eligibleAt <= Moment.now()
+  false
+
+proc setEligibleAt*(
+    self: PendingBlocksManager, address: BlockAddress, deadline: Moment
+) =
+  if req =? self.blocks .? [address]:
+    req.eligibleAt = deadline
+    req.scheduled = false
+
+proc markDispatched*(self: PendingBlocksManager, address: BlockAddress) =
+  if req =? self.blocks .? [address]:
+    req.scheduled = false
+
+proc enterDiscoveryWait*(
+    self: PendingBlocksManager, address: BlockAddress, deadline: Moment
+) =
+  if req =? self.blocks .? [address]:
+    req.discoveryWaiting = true
+    req.discoveryDeadline = deadline
+    req.scheduled = false
+
+proc wakeOnPresence*(self: PendingBlocksManager, address: BlockAddress) =
+  if req =? self.blocks .? [address]:
+    req.discoveryWaiting = false
+    if not req.queued and not req.requested.isSome and req.eligibleAt <= Moment.now():
+      req.queued = true
+      req.scheduled = true
+      if err =? self.readyQueue.pushNoWait(req).errorOption:
+        req.queued = false
+        req.scheduled = false
+        trace "Ready queue full, cannot wake", address, err = $err
+
 func new*(
     T: type PendingBlocksManager, retries = DefaultBlockRetries
 ): PendingBlocksManager =
-  PendingBlocksManager(blockRetries: retries, handleMonitors: TrackedFutures.new())
+  PendingBlocksManager(
+    blockRetries: retries,
+    handleMonitors: TrackedFutures.new(),
+    readyQueue: newAsyncHeapQueue[SchedulableReq](),
+  )
