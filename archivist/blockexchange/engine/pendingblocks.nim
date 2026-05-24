@@ -482,11 +482,16 @@ proc isEligible*(self: PendingBlocksManager, address: BlockAddress): bool =
     return req.eligibleAt <= Moment.now()
   false
 
+func isDiscoveryWaiting*(self: PendingBlocksManager, address: BlockAddress): bool =
+  if req =? self.blocks .? [address]:
+    return req.discoveryWaiting
+  false
+
 proc setEligibleAt*(
-    self: PendingBlocksManager, address: BlockAddress, deadline: Moment
+    self: PendingBlocksManager, address: BlockAddress, deadline: Duration
 ) =
   if req =? self.blocks .? [address]:
-    req.eligibleAt = deadline
+    req.eligibleAt = Moment.now() + deadline
     req.scheduled = false
 
 proc markDispatched*(self: PendingBlocksManager, address: BlockAddress) =
@@ -494,11 +499,11 @@ proc markDispatched*(self: PendingBlocksManager, address: BlockAddress) =
     req.scheduled = false
 
 proc enterDiscoveryWait*(
-    self: PendingBlocksManager, address: BlockAddress, deadline: Moment
+    self: PendingBlocksManager, address: BlockAddress, deadline: Duration
 ) =
   if req =? self.blocks .? [address]:
     req.discoveryWaiting = true
-    req.discoveryDeadline = deadline
+    req.discoveryDeadline = Moment.now() + deadline
     req.scheduled = false
 
 proc wakeOnPresence*(self: PendingBlocksManager, address: BlockAddress) =

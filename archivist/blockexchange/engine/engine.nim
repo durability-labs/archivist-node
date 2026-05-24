@@ -107,6 +107,7 @@ type
     maxBlocksPerMessage: int
     wantBlockBatchSize: int
     wantBlockBatchTimeout: Duration
+    discoveryDeadline*: Duration
     blockRequestTimeout: Duration
     pendingBlocks*: PendingBlocksManager
     discovery*: DiscoveryEngine
@@ -278,7 +279,6 @@ proc scheduleBlockSend(
   address: BlockAddress,
   immediate = false,
   delay = DefaultBlockSendRetryDelay,
-  forceDelay = false,
 ) {.gcsafe, raises: [].}
 
 proc failBlockRequest(
@@ -322,7 +322,6 @@ proc scheduleBlockSendTask(
     address: BlockAddress,
     immediate: bool,
     delay = DefaultBlockSendRetryDelay,
-    forceDelay = false,
 ) {.async: (raises: []).} =
   without handle =? self.pendingBlocks.getPendingHandle(address):
     self.pendingBlocks.clearScheduled(address)
@@ -338,7 +337,7 @@ proc scheduleBlockSendTask(
     )
     return
 
-  if forceDelay or (not immediate and not self.pendingBlocks.isFirstAttempt(address)):
+  if not immediate and not self.pendingBlocks.isFirstAttempt(address):
     let timer = sleepAsync(delay)
     try:
       await handle or timer
@@ -366,11 +365,8 @@ proc scheduleBlockSend(
     address: BlockAddress,
     immediate = false,
     delay = DefaultBlockSendRetryDelay,
-    forceDelay = false,
 ) {.gcsafe, raises: [].} =
-  self.trackedFutures.track(
-    self.scheduleBlockSendTask(address, immediate, delay, forceDelay)
-  )
+  self.trackedFutures.track(self.scheduleBlockSendTask(address, immediate, delay))
 
 proc clearBlockRequestState(
     self: BlockExcEngine, address: BlockAddress
@@ -512,16 +508,14 @@ proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
 
       if peers.with.len == 0:
         self.searchForNewPeers(address.cidOrTreeCid)
-        self.pendingBlocks.clearScheduled(address)
-        self.scheduleBlockSend(address, forceDelay = true)
-        trace "No peer for block, discovery started and retry scheduled", address
+        self.pendingBlocks.enterDiscoveryWait(address, self.discoveryDeadline)
+        trace "No peer for block, entering discovery wait", address
         continue
 
       let peer = self.selectPeer(peers.with)
       if peer.isNil:
-        trace "No peer context, skipping", address
-        self.pendingBlocks.clearScheduled(address)
-        self.scheduleBlockSend(address, forceDelay = true)
+        trace "No peer context, entering discovery wait", address
+        self.pendingBlocks.enterDiscoveryWait(address, self.discoveryDeadline)
         continue
 
       var peerBatch: seq[BlockAddress]
@@ -609,7 +603,7 @@ proc blockPresenceHandler*(
   for address in ourWantList:
     if address in peerHave and not self.pendingBlocks.retriesExhausted(address) and
         not self.pendingBlocks.isRequested(address):
-      self.scheduleBlockSend(address, immediate = true)
+      self.pendingBlocks.wakeOnPresence(address)
 
 proc scheduleTasks(
     self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
