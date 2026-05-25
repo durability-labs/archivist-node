@@ -149,9 +149,11 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
     discard (await nodeCmps1.localStore.storeManifest(senderManifest)).tryGet()
 
     # should succeed retrieving block from remote
-    check await nodeCmps1.networkStore
-    .getBlock(senderManifest.treeCid, 0.Natural)
-    .withTimeout(100.millis)
+    let blkFut = nodeCmps1.networkStore.getBlock(senderManifest.treeCid, 0.Natural)
+    check eventually (
+      await nodeCmps1.localStore.hasBlock(senderManifest.treeCid, 0.Natural)
+    ).tryGet()
+    check (await blkFut).tryGet() == blk
 
 asyncchecksuite "NetworkStore - multiple nodes":
   var
@@ -253,5 +255,5 @@ asyncchecksuite "NetworkStore - multiple nodes":
 
     await allFuturesThrowing(allFinished(pendingBlocks1), allFinished(pendingBlocks2))
 
-    check pendingBlocks1.mapIt(it.read) == blocks[0 .. 3]
-    check pendingBlocks2.mapIt(it.read) == blocks[12 .. 15]
+    check pendingBlocks1.mapIt(it.read.blk) == blocks[0 .. 3]
+    check pendingBlocks2.mapIt(it.read.blk) == blocks[12 .. 15]

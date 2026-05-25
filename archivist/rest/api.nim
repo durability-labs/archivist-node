@@ -64,6 +64,19 @@ proc formatManifestBlocks(node: ArchivistNodeRef): Future[JsonNode] {.async.} =
 
   return %RestContentList.init(content)
 
+proc formatDatasetStatus(
+    node: ArchivistNodeRef, repostore: RepoStore, cid: Cid
+): Future[?!JsonNode] {.async.} =
+  without manifest =? (await node.fetchManifest(cid)), err:
+    error "Failed to fetch manifest", err = err.msg
+    return failure(err)
+
+  without overlay =? (await repostore.getOverlay(manifest.treeCid)), err:
+    error "Failed to fetch overlay", err = err.msg
+    return failure(err)
+
+  return success(%RestDatasetStatus.init(cid, overlay))
+
 proc isPending(resp: HttpResponseRef): bool =
   ## Checks that an HttpResponseRef object is still pending; i.e.,
   ## that no body has yet been sent. This helps us guard against calling
@@ -260,6 +273,18 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
 
   router.api(MethodGet, "/api/archivist/v1/data") do() -> RestApiResponse:
     let json = await formatManifestBlocks(node)
+    return RestApiResponse.response($json, contentType = "application/json")
+
+  router.api(MethodGet, "/api/archivist/v1/data/{cid}/status") do(
+    cid: Cid, resp: HttpResponseRef
+  ) -> RestApiResponse:
+    if cid.isErr:
+      return RestApiResponse.error(Http400, $cid.error())
+
+    without json =? (await formatDatasetStatus(node, repostore, cid.get())), err:
+      error "Failed create RestDatasetStatus object", err = err.msg
+      return RestApiResponse.error(Http404, err.msg)
+
     return RestApiResponse.response($json, contentType = "application/json")
 
   router.api(MethodOptions, "/api/archivist/v1/data/{cid}") do(

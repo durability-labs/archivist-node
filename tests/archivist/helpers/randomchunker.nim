@@ -1,5 +1,3 @@
-import std/sequtils
-
 import pkg/chronos
 
 import pkg/archivist/chunker
@@ -27,20 +25,19 @@ proc new*(
   proc reader(
       data: ChunkBuffer, len: int
   ): Future[?!int] {.async: (raises: [CancelledError]), gcsafe.} =
-    var alpha = toSeq(byte('A') .. byte('z'))
-
     if consumed >= size:
       return success 0
 
-    var read = 0
-    while read < len and (pad or read < size - consumed):
-      rng.shuffle(alpha)
-      for a in alpha:
-        if read >= len or (not pad and read >= size - consumed):
-          break
+    let read =
+      if pad:
+        len
+      else:
+        min(len, size - consumed)
 
-        data[read] = a
-        read.inc
+    var bytes = newSeq[byte](read)
+    rng[].generate(bytes)
+    if read > 0:
+      copyMem(data, addr bytes[0], read)
 
     consumed += read
     success read

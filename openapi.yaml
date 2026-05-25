@@ -396,6 +396,34 @@ components:
         manifest:
           $ref: "#/components/schemas/ManifestItem"
 
+    DatasetStatus:
+      type: object
+      required:
+        - cid
+        - status
+        - expiry
+        - blocks
+      properties:
+        cid:
+          $ref: "#/components/schemas/Cid"
+        status:
+          type: string
+          enum:
+            - Pending
+            - Failure
+            - Storing
+            - Downloading
+            - Repairing
+            - Completed
+            - Deleting
+        expiry:
+          $ref: "#/components/schemas/Expiry"
+        blocks:
+          type: string
+          nullable: false
+          description: "Bitmap representation of dataset blocks present locally. Starts with '0b'."
+          example: 0b000000000000111111111111000000000000
+
     ManifestItem:
       type: object
       required:
@@ -560,6 +588,32 @@ paths:
         "500":
           description: Well it was bad-bad and the upload did not work out
 
+  "/data/{cid}/status":
+    get:
+      summary: "Gets status for local dataset."
+      tags: [Data]
+      operationId: getDatasetStatus
+      parameters:
+        - in: path
+          name: cid
+          required: true
+          schema:
+            $ref: "#/components/schemas/Cid"
+          description: Dataset for which to get status object
+      responses:
+        "200":
+          description: Retrieved dataset status object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetStatus"
+        "400":
+          description: Invalid CID is specified
+        "404":
+          description: Dataset specified by the CID is not found
+        "500":
+          description: Well it was bad-bad
+   
   "/data/{cid}":
     get:
       summary: "Download a file from the local node in a streaming manner. If the file is not available locally, a 404 is returned."

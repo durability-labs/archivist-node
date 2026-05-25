@@ -1,5 +1,6 @@
 import std/sequtils
 import std/algorithm
+import std/sets
 
 import pkg/chronos
 import pkg/libp2p/routing_record
@@ -11,6 +12,7 @@ import pkg/taskpools
 
 import pkg/archivist/rng
 import pkg/archivist/blockexchange
+import pkg/archivist/blockexchange/engine/engine {.all.}
 import pkg/archivist/stores
 import pkg/archivist/chunker
 import pkg/archivist/discovery
@@ -18,7 +20,6 @@ import pkg/archivist/blocktype
 import pkg/archivist/manifest
 import pkg/archivist/merkletree
 import pkg/archivist/utils/asyncheapqueue
-
 import ../../../asynctest
 import ../../helpers
 
@@ -285,7 +286,7 @@ asyncchecksuite "NetworkStore engine handlers":
 
     await engine.blocksDeliveryHandler(peerId, blocksDelivery, allowSpurious = true)
     let resolved = await allFinished(pending)
-    check resolved.mapIt(it.read) == blocks
+    check resolved.mapIt(it.read.blk) == blocks
 
     # Verify blocks are persisted with tree-aware hasBlock
     for i in indices:
@@ -313,9 +314,6 @@ asyncchecksuite "NetworkStore engine handlers":
       await fut.cancelAndWait()
 
   test "Should handle block presence":
-    var handles:
-      Table[Cid, Future[Block].Raising([CancelledError, RetriesExhaustedError])]
-
     proc sendWantList(
         id: PeerId,
         addresses: seq[BlockAddress],
@@ -335,7 +333,8 @@ asyncchecksuite "NetworkStore engine handlers":
       BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
 
     # only Cids in peer want lists are requested
-    handles = blocks.mapIt((it.cid, engine.pendingBlocks.getWantHandle(it.cid))).toTable
+    for blk in blocks:
+      discard engine.pendingBlocks.getWantHandle(blk.cid)
 
     await engine.blockPresenceHandler(
       peerId,
@@ -429,10 +428,16 @@ asyncchecksuite "Block Download":
     )
     network = BlockExcNetwork()
 
-    discovery =
-      DiscoveryEngine.new(localStore, peerStore, network, blockDiscovery, pendingBlocks)
+    discovery = DiscoveryEngine.new(
+      localStore,
+      peerStore,
+      network,
+      blockDiscovery,
+      pendingBlocks,
+      concurrentDiscReqs = 0,
+    )
 
-    advertiser = Advertiser.new(localStore, blockDiscovery)
+    advertiser = Advertiser.new(localStore, blockDiscovery, concurrentAdvReqs = 0)
 
     engine = BlockExcEngine.new(
       localStore, network, discovery, advertiser, peerStore, pendingBlocks
@@ -440,14 +445,86 @@ asyncchecksuite "Block Download":
 
     peerCtx = BlockExcPeerCtx(id: peerId)
     engine.peers.add(peerCtx)
+    await engine.start()
 
   teardown:
+    await engine.stop()
     tp.shutdown()
 
-  test "Should exhaust retries":
-    var
-      retries = 2
-      address = BlockAddress.init(blocks[0].cid)
+  test "Should fail exhausted requests before queueing":
+    let address = BlockAddress.init(blocks[0].cid)
+
+    engine.pendingBlocks.blockRetries = 0
+
+    let pending = engine.requestDelivery(address).tryGet()
+
+    check address notin engine.requestQueue
+    expect RetriesExhaustedEngineError:
+      discard await pending
+
+  test "Should request delivery handles":
+    let address = BlockAddress.init(blocks[0].cid)
+
+    let handles = (engine.requestDeliveries(@[address])).tryGet()
+    check handles.len == 1
+
+    await engine.completeBlock(address, blocks[0])
+    let delivery = await handles[0]
+    check delivery.address == address
+    check delivery.blk == blocks[0]
+
+  test "Should deduplicate delivery requests":
+    let address = BlockAddress.init(blocks[0].cid)
+
+    let handles = (engine.requestDeliveries(@[address, address])).tryGet()
+
+    check handles.len == 1
+    check engine.pendingBlocks.wantListLen == 1
+
+  test "Should resolve delivery handles independently":
+    let
+      address1 = BlockAddress.init(blocks[0].cid)
+      address2 = BlockAddress.init(blocks[1].cid)
+      handles = (engine.requestDeliveries(@[address1, address2])).tryGet()
+
+    check handles.len == 2
+
+    await engine.completeBlock(address1, blocks[0])
+    let delivery = await handles[0]
+
+    check delivery.address == address1
+    check delivery.blk == blocks[0]
+    check not handles[1].finished
+
+    await engine.completeBlock(address2, blocks[1])
+    let delivery2 = await handles[1]
+    check delivery2.address == address2
+    check delivery2.blk == blocks[1]
+
+  test "Should isolate delivery handle failures":
+    let
+      address1 = BlockAddress.init(blocks[0].cid)
+      address2 = BlockAddress.init(blocks[1].cid)
+      handles = (engine.requestDeliveries(@[address1, address2])).tryGet()
+
+    engine.pendingBlocks.failWantHandle(
+      address1, QueueFailedEngineError, "Block request queue failed"
+    )
+    await engine.completeBlock(address2, blocks[1])
+
+    expect QueueFailedEngineError:
+      discard await handles[0]
+
+    let delivery = await handles[1]
+    check delivery.address == address2
+    check delivery.blk == blocks[1]
+
+  test "Should batch want block requests to one peer":
+    let
+      addresses = blocks[0 .. 2].mapIt(BlockAddress.init(it.cid))
+      done = newFuture[void]()
+
+    var wantBlockBatches: seq[seq[BlockAddress]]
 
     proc sendWantList(
         id: PeerId,
@@ -458,20 +535,207 @@ asyncchecksuite "Block Download":
         full: bool = false,
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
-      check wantType == WantHave
-      check not engine.pendingBlocks.isRequested(address)
-      check engine.pendingBlocks.retries(address) == retries
-      retries -= 1
+      if wantType == WantBlock:
+        wantBlockBatches.add(addresses)
+        done.complete()
 
-    engine.pendingBlocks.blockRetries = 2
-    engine.pendingBlocks.retryInterval = 10.millis
-    engine.network =
-      BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
 
-    let pending = engine.requestBlock(address)
+    for address in addresses:
+      peerCtx.setPresence(Presence(address: address, have: true))
 
-    expect RetriesExhaustedError:
-      discard (await pending).tryGet()
+    discard (engine.requestDeliveries(addresses)).tryGet()
+    await done.wait(100.millis)
+
+    check wantBlockBatches.len == 1
+    check wantBlockBatches[0].mapIt($it).sorted(cmp[string]) ==
+      addresses.mapIt($it).sorted(cmp[string])
+
+  test "Should keep request queued while timed-out batch is sending":
+    let
+      firstAddress = BlockAddress.init(blocks[0].cid)
+      secondAddress = BlockAddress.init(blocks[1].cid)
+      secondSent = newAsyncEvent()
+
+    var queuedSecond = false
+    var wantBlockBatches: seq[seq[BlockAddress]]
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        wantBlockBatches.add(addresses)
+
+        if firstAddress in addresses and not queuedSecond:
+          queuedSecond = true
+          let secondRequest = engine.requestDelivery(secondAddress)
+          check secondRequest.isOk
+
+        if secondAddress in addresses:
+          secondSent.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+    peerCtx.setPresence(Presence(address: firstAddress, have: true))
+    peerCtx.setPresence(Presence(address: secondAddress, have: true))
+
+    discard engine.requestDelivery(firstAddress).tryGet()
+
+    await secondSent.wait().wait(100.millis)
+
+    check wantBlockBatches == @[@[firstAddress], @[secondAddress]]
+
+  test "Should keep same peer request after clearing previous request":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      sent = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        sent.complete()
+
+    peerCtx.activityTimeout = 20.millis
+    peerCtx.setPresence(Presence(address: address, have: true))
+    engine.pendingBlocks.blockRetries = 3
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    discard (engine.requestDeliveries(@[address])).tryGet()
+    await sent.wait(100.millis)
+
+    let retriesBefore = engine.pendingBlocks.retries(address)
+    await engine.pendingBlocks.clearRequest(address, peerId)
+    peerCtx.blockRequestCancelled(address)
+    let nextRequestId = engine.pendingBlocks.markRequested(address, peerId)
+    check nextRequestId.isSome
+    peerCtx.blockRequestScheduled(address)
+
+    await sleepAsync(50.millis)
+
+    check engine.pendingBlocks.isRequested(address)
+    check engine.pendingBlocks.getRequestPeer(address) == peerId.some
+    check engine.pendingBlocks.retries(address) == retriesBefore
+
+  test "Should gate queued sends and decrement on send":
+    let address = BlockAddress.init(blocks[0].cid)
+    let sent = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        check addresses == @[address]
+        sent.complete()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+    peerCtx.setPresence(Presence(address: address, have: true))
+
+    let pending = engine.requestDelivery(address).tryGet()
+    let retriesBefore = engine.pendingBlocks.retries(address)
+    check address in engine.requestQueue
+    check engine.requestQueue.len == 1
+
+    engine.scheduleBlockSend(address)
+    check address in engine.requestQueue
+    check engine.requestQueue.len == 1
+    check engine.pendingBlocks.retries(address) == retriesBefore
+
+    discard await engine.requestQueue.get()
+    await engine.sendRequestBatch(@[address])
+    await sent.wait(100.millis)
+
+    check engine.pendingBlocks.isRequested(address)
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
+
+    engine.scheduleBlockSend(address)
+    check address notin engine.requestQueue
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
+
+    await engine.completeBlock(address, blocks[0])
+    check (await pending).blk == blocks[0]
+
+  test "Should schedule retry when no peer has the block":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      wantHaveSent = newAsyncEvent()
+      wantBlockSent = newAsyncEvent()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      case wantType
+      of WantHave:
+        check addresses == @[address]
+        if not wantHaveSent.isSet:
+          wantHaveSent.fire()
+      of WantBlock:
+        check addresses == @[address]
+        check wantHaveSent.isSet
+        check address in peerCtx.peerHave
+        if not wantBlockSent.isSet:
+          wantBlockSent.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    let pending = engine.requestDelivery(address).tryGet()
+
+    await wantHaveSent.wait().wait(100.millis)
+    await engine.blockPresenceHandler(
+      peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
+    )
+
+    await wantBlockSent.wait().wait(1.seconds)
+    check address in engine.pendingBlocks
+    check engine.pendingBlocks.isRequested(address)
+    check not engine.pendingBlocks.isScheduled(address)
+    check address in peerCtx.blocksRequested
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
 
   test "Should retry block request":
     var
@@ -498,14 +762,13 @@ asyncchecksuite "Block Download":
         steps.fire()
 
     engine.pendingBlocks.blockRetries = 10
-    engine.pendingBlocks.retryInterval = 10.millis
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
       )
     )
 
-    let pending = engine.requestBlock(address)
+    let pending = engine.requestDelivery(address).tryGet()
     await steps.wait()
 
     await engine.blockPresenceHandler(
@@ -514,8 +777,8 @@ asyncchecksuite "Block Download":
 
     await steps.wait()
 
-    engine.completeBlock(address, blocks[0])
-    check (await pending).tryGet() == blocks[0]
+    await engine.completeBlock(address, blocks[0])
+    check (await pending).blk == blocks[0]
 
   test "Should cancel block request":
     var
@@ -534,19 +797,137 @@ asyncchecksuite "Block Download":
       done.complete()
 
     engine.pendingBlocks.blockRetries = 10
-    engine.pendingBlocks.retryInterval = 1.seconds
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
       )
     )
 
-    let pending = engine.requestBlock(address)
+    let pending = engine.requestDelivery(address).tryGet()
     await done.wait(100.millis)
 
-    pending.cancel()
+    await pending.cancelAndWait()
     expect CancelledError:
-      discard (await pending).tryGet()
+      discard await pending
+
+  test "Should clear peer request state when delivery handle is cancelled":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      done = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        check addresses == @[address]
+        done.complete()
+
+    engine.pendingBlocks.blockRetries = 10
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+    peerCtx.setPresence(Presence(address: address, have: true))
+
+    let pending = engine.requestDelivery(address).tryGet()
+    await done.wait(100.millis)
+    check address in peerCtx.blocksRequested
+
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
+
+    check address notin peerCtx.blocksRequested
+
+  test "Should clear peer request state when completing requested blocks":
+    let
+      addresses = blocks[0 .. 1].mapIt(BlockAddress.init(it.cid))
+      done = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        done.complete()
+
+    engine.pendingBlocks.blockRetries = 10
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    for address in addresses:
+      peerCtx.setPresence(Presence(address: address, have: true))
+
+    let pending = engine.requestDeliveries(addresses).tryGet()
+    await done.wait(100.millis)
+    for address in addresses:
+      check address in peerCtx.blocksRequested
+
+    await engine.completeBlocks(
+      @[
+        BlockDelivery(address: addresses[0], blk: blocks[0]),
+        BlockDelivery(address: addresses[1], blk: blocks[1]),
+      ]
+    )
+
+    for handle in pending:
+      discard await handle
+    for address in addresses:
+      check address notin peerCtx.blocksRequested
+
+  test "Should clear peer request state when completion cancellation send fails":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      done = newFuture[void]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantBlock:
+        done.complete()
+
+    proc sendWantCancellations(
+        id: PeerId, addresses: seq[BlockAddress]
+    ) {.async: (raises: [CancelledError]).} =
+      raise newException(CancelledError, "cancelled cancellation send")
+
+    engine.pendingBlocks.blockRetries = 10
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: sendWantCancellations
+      )
+    )
+    peerCtx.setPresence(Presence(address: address, have: true))
+
+    let pending = engine.requestDelivery(address).tryGet()
+    await done.wait(100.millis)
+    check address in peerCtx.blocksRequested
+
+    await engine.completeBlock(address, blocks[0])
+
+    check address notin peerCtx.blocksRequested
+    check (await pending).blk == blocks[0]
 
 asyncchecksuite "Task Handler":
   var

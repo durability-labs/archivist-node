@@ -33,6 +33,13 @@ suite "Node datasets":
     check totalBlocksAfter > totalBlocksBefore
     check quotaUsedAfter >= quotaUsedBefore + dataset.data.len
 
+  test "used and available space is preserved after a restart":
+    discard await testbed.dataset.upload(node)
+    let before = await testbed.api(node).getSpace()
+    await node.restart()
+    let after = await testbed.api(node).getSpace()
+    check before == after
+
   test "node returns list of local datasets":
     let dataset1 = await testbed.dataset.upload(node)
     let dataset2 = await testbed.dataset.upload(node)
@@ -69,3 +76,11 @@ suite "Node datasets":
       fail()
     except HttpError as error:
       check "413" in error.msg
+
+  test "node can return status of a dataset":
+    let datasetSize = 7 * 512 * 1024 # 7 blocks of data
+    let dataset = await testbed.dataset.data(datasetSize).upload(node)
+    let status = await testbed.api(node).status(!dataset.cid)
+    check status["cid"].getStr() == !dataset.cid
+    check status["status"].getStr() == "Completed"
+    check status["blocks"].getStr() == "0b1111111"

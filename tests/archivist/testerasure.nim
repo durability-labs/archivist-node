@@ -103,7 +103,7 @@ suite "Erasure encode/decode":
 
     var decoded: Manifest
 
-    expect ResultFailure:
+    expect InsufficientBlocksError:
       decoded = (await erasure.decode(encoded)).tryGet()
 
     for d in dropped:
@@ -171,7 +171,7 @@ suite "Erasure encode/decode":
 
     var decoded: Manifest
 
-    expect ResultFailure:
+    expect InsufficientBlocksError:
       decoded = (await erasure.decode(encoded)).tryGet()
 
   test "Should tolerate losing M (a.k.a row) contiguous data blocks":

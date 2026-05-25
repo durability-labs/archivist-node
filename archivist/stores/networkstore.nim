@@ -34,6 +34,45 @@ type NetworkStore* = ref object of BlockStore
   engine*: BlockExcEngine # blockexc decision engine
   localStore*: BlockStore # local block store
 
+proc awaitDelivery(
+    engine: BlockExcEngine, handle: BlockHandle
+): Future[?!BlockDelivery] {.async: (raises: [CancelledError]).} =
+  try:
+    let completed = await one(handle)
+    return success(await completed)
+  except CancelledError as exc:
+    await noCancel engine.releaseHandle(handle)
+    raise exc
+  except CatchableError as exc:
+    return failure(exc)
+
+proc collectDeliveries(
+    engine: BlockExcEngine, requests: seq[BlockHandle]
+): Future[seq[BlockDelivery]] {.async: (raises: [CancelledError]).} =
+  var
+    pending = requests
+    deliveries: seq[BlockDelivery]
+
+  try:
+    while pending.len > 0:
+      without completedFut =? catchAsync(await one(pending)), err:
+        error "Unable to get block from exchange engine", err = err.msg
+        break
+
+      pending.del(pending.find(completedFut))
+
+      without delivery =? catchAsync(await completedFut), err:
+        error "Unable to get block from exchange engine", err = err.msg
+        continue
+
+      deliveries.add(delivery)
+  except CancelledError as exc:
+    for handle in pending:
+      await noCancel engine.releaseHandle(handle)
+    raise exc
+
+  return deliveries
+
 method getBlocks*(
     self: NetworkStore, cids: seq[Cid]
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
@@ -45,35 +84,24 @@ method getBlocks*(
   ##
 
   let
-    uniqueCids = cids.toHashSet.toSeq
+    uniqueCids = cids.deduplicate()
     localBlocks = ?await self.localStore.getBlocks(uniqueCids)
-
   if localBlocks.len == uniqueCids.len:
     return success(localBlocks)
 
-  # Find CIDs not returned locally
-  let localCids = localBlocks.mapIt(it.cid).toHashSet
-  var
-    toRequestCids = (uniqueCids.toHashSet - localCids).toSeq
-    requests: seq[Future[?!Block]]
+  var localCids: HashSet[Cid]
+  for blk in localBlocks:
+    localCids.incl(blk.cid)
 
-  for cid in toRequestCids:
-    requests.add(self.engine.requestBlock(BlockAddress.init(cid)))
+  var addresses: seq[BlockAddress]
+  for cid in uniqueCids:
+    if cid notin localCids:
+      addresses.add(BlockAddress.init(cid))
 
+  var requests = ?self.engine.requestDeliveries(addresses)
   var allBlocks = localBlocks
-  while requests.len > 0:
-    without completedFut =? catchAsync(await one(requests)), err:
-      error "Unable to get block from exchange engine", err = err.msg
-      break
-
-    let idx = requests.find(completedFut)
-    requests.del(idx)
-
-    without blk =? catchAsync(await completedFut).flatten, err:
-      error "Unable to get block from exchange engine", err = err.msg
-      continue
-
-    allBlocks.add(blk)
+  for delivery in await collectDeliveries(self.engine, requests):
+    allBlocks.add(delivery.blk)
 
   success(allBlocks)
 
@@ -88,11 +116,9 @@ method getBlock*(
       error "Error getting block from local store", cid, err = err.msg
       return failure err
 
-    without newBlock =? (await self.engine.requestBlock(BlockAddress.init(cid))), err:
-      error "Unable to get block from exchange engine", cid, err = err.msg
-      return failure err
-
-    return success newBlock
+    let handle = ?self.engine.requestDelivery(BlockAddress.init(cid))
+    let delivery = ?await self.engine.awaitDelivery(handle)
+    return success delivery.blk
 
   return success blk
 
@@ -107,12 +133,9 @@ method getBlock*(
       error "Error getting block from local store", treeCid, index, err = err.msg
       return failure err
 
-    without newBlock =?
-      (await self.engine.requestBlock(BlockAddress.init(treeCid, index))), err:
-      error "Unable to get block from exchange engine", treeCid, index, err = err.msg
-      return failure err
-
-    return success newBlock
+    let handle = ?self.engine.requestDelivery(BlockAddress.init(treeCid, index))
+    let delivery = ?await self.engine.awaitDelivery(handle)
+    return success delivery.blk
 
   return success blk
 
@@ -127,45 +150,43 @@ method getBlocks*(
   ##
 
   let
-    indices = indices.toHashSet.toSeq
-    localBlocks = ?await self.localStore.getBlocks(treeCid, indices)
+    uniqueIndices = indices.deduplicate()
+    localBlocks = ?await self.localStore.getBlocks(treeCid, uniqueIndices)
 
   trace "Got local blocks", count = localBlocks.len
 
-  # If all indices returned, we're done
-  if localBlocks.len == indices.len:
+  if localBlocks.len == uniqueIndices.len:
     return success(localBlocks)
 
-  # check get the diff of the still to retrieve indices from the network
-  var
-    toRequestIdxs = (indices.toHashSet - localBlocks.mapIt(it[0]).toHashSet).toSeq
-    requests: seq[Future[?!Block]]
+  var localIndices: HashSet[Natural]
+  for item in localBlocks:
+    localIndices.incl(item[0])
 
-  for idx in toRequestIdxs:
-    requests.add(self.engine.requestBlock(BlockAddress.init(treeCid, idx)))
+  var addresses: seq[BlockAddress]
+  for index in uniqueIndices:
+    if index notin localIndices:
+      addresses.add(BlockAddress.init(treeCid, index))
 
+  var requests = ?self.engine.requestDeliveries(addresses)
   var allBlocks = localBlocks
-  while requests.len > 0:
-    without completedFut =? catchAsync(await one(requests)), err:
-      error "Unable to get block from exchange engine", treeCid, err = err.msg
-      break
-
-    let
-      idx = requests.find(completedFut)
-      originalIdx = toRequestIdxs[idx]
-    requests.del(idx)
-    toRequestIdxs.del(idx)
-
-    without blk =? catchAsync(await completedFut).flatten, err:
-      error "Unable to get block from exchange engine", treeCid, err = err.msg
-      continue
-
-    allBlocks.add((originalIdx, blk))
+  for delivery in await collectDeliveries(self.engine, requests):
+    allBlocks.add((delivery.address.index, delivery.blk))
 
   success allBlocks
 
-method completeBlock*(self: NetworkStore, treeCid: Cid, index: Natural, blk: Block) =
-  self.engine.completeBlock(BlockAddress.init(treeCid, index), blk)
+method completeBlocks*(
+    self: NetworkStore, treeCid: Cid, blocks: seq[(Natural, Block)]
+): Future[void] {.async: (raises: [CancelledError]).} =
+  var deliveries: seq[BlockDelivery]
+  for (index, blk) in blocks:
+    deliveries.add(BlockDelivery(address: BlockAddress.init(treeCid, index), blk: blk))
+
+  await self.engine.completeBlocks(deliveries)
+
+method completeBlock*(
+    self: NetworkStore, treeCid: Cid, index: Natural, blk: Block
+): Future[void] {.async: (raises: [CancelledError]).} =
+  await self.completeBlocks(treeCid, @[(index, blk)])
 
 method putBlock*(
     self: NetworkStore, blk: Block, ttl = Duration.none
@@ -186,13 +207,43 @@ method putBlocks*(
   ##
 
   ?await self.localStore.putBlocks(treeCid, items)
-  await self.engine.resolveBlocks(items.mapIt(it[0]))
+
+  var deliveries: seq[BlockDelivery]
+  for (blk, index, proof) in items:
+    let proofOpt = if proof.isNil: ArchivistProof.none else: proof.some
+
+    deliveries.add(
+      BlockDelivery(
+        address: BlockAddress.init(treeCid, index), blk: blk, proof: proofOpt
+      )
+    )
+
+  await self.engine.resolveBlocks(deliveries)
+
   return success()
 
 method putCidsAndProofs*(
     self: NetworkStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
-): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
-  self.localStore.putCidsAndProofs(treeCid, items)
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ?await self.localStore.putCidsAndProofs(treeCid, items)
+
+  let storedItems =
+    ?await self.localStore.getBlocksAndProofs(treeCid, items.mapIt(it[0]))
+  var deliveries: seq[BlockDelivery]
+  for item in storedItems:
+    if item[2].isNil:
+      continue
+
+    deliveries.add(
+      BlockDelivery(
+        address: BlockAddress.init(treeCid, item[0]), blk: item[1], proof: item[2].some
+      )
+    )
+
+  if deliveries.len > 0:
+    await self.engine.resolveBlocks(deliveries)
+
+  success()
 
 method listBlocks*(
     self: NetworkStore, blockType = BlockType.Manifest
@@ -243,11 +294,9 @@ method fetchManifest*(
 
   without manifest =? (await self.localStore.fetchManifest(cid)), err:
     if err of BlockNotFoundError:
-      without manifestBlk =? (await self.engine.requestBlock(cid)), err:
-        error "Unable to fetch manifest block!", err = err.msg
-        return failure(err)
-
-      return Manifest.decode(manifestBlk)
+      let handle = ?self.engine.requestDelivery(BlockAddress.init(cid))
+      let delivery = ?await self.engine.awaitDelivery(handle)
+      return Manifest.decode(delivery.blk)
 
   return success manifest
 
@@ -281,62 +330,40 @@ method getBlocksAndProofs*(
   ## Get multiple blocks and proofs.
   ##
   ## Fetches all locally available blocks in one batch call.
-  ## For any missing blocks, falls back to individual network requests
-  ## (concurrent, one per missing index). After the engine persists a
-  ## network-fetched block, we retrieve the proof from the local store.
-  ##
-  ## TODO: The engine should return both block and proof directly via a
-  ## future signaling mechanism, with the caller handling persistence.
-  ## Currently the engine persists internally, so we must re-query the
-  ## store for the proof after each network fetch.
+  ## For missing blocks, requests proof-bearing deliveries from BlockExchange
+  ## and uses the validated delivery proof directly.
   ##
 
   let
-    indices = indices.toHashSet.toSeq
-    localBlocks = ?await self.localStore.getBlocksAndProofs(treeCid, indices)
+    uniqueIndices = indices.deduplicate()
+    localBlocks = ?await self.localStore.getBlocksAndProofs(treeCid, uniqueIndices)
 
   trace "Got local blocks and proofs", count = localBlocks.len
 
-  # If all indices returned, we're done
-  if localBlocks.len == indices.len:
+  if localBlocks.len == uniqueIndices.len:
     return success(localBlocks)
 
-  # Check the diff of the still to retrieve indices from the network
-  var
-    toRequestIdxs = (indices.toHashSet - localBlocks.mapIt(it[0]).toHashSet).toSeq
-    requests: seq[Future[?!Block]]
+  var localIndices: HashSet[Natural]
+  for item in localBlocks:
+    localIndices.incl(item[0])
 
-  for idx in toRequestIdxs:
-    requests.add(self.engine.requestBlock(BlockAddress.init(treeCid, idx)))
+  var addresses: seq[BlockAddress]
+  for index in uniqueIndices:
+    if index notin localIndices:
+      addresses.add(BlockAddress.init(treeCid, index))
 
+  var requests = ?self.engine.requestDeliveries(addresses)
   var allBlocks = localBlocks
-  while requests.len > 0:
-    without completedFut =? catchAsync(await one(requests)), err:
-      error "Unable to get block from exchange engine", treeCid, err = err.msg
-      break
-
-    let
-      idx = requests.find(completedFut)
-      originalIdx = toRequestIdxs[idx]
-
-    requests.del(idx)
-    toRequestIdxs.del(idx)
-
-    without blk =? catchAsync(await completedFut).flatten, err:
-      error "Unable to get block from exchange engine", treeCid, err = err.msg
+  for delivery in await collectDeliveries(self.engine, requests):
+    if not delivery.address.leaf:
+      warn "Skipping non-leaf delivery for leaf request", address = delivery.address
       continue
 
-    # TODO: The engine should return (Block, ?Proof), but we haven't yet refactored that,
-    # however, it does persist it on disk, so we can fetch from the local store.
-    # Once the engine is properly refactored for batch requests and returning the correct
-    # combination of (Block, Proof), we'll need to change this.
-    let blockProof = ?await self.localStore.getBlocksAndProofs(treeCid, @[originalIdx])
-    if blockProof.len == 0:
-      warn "Skipping block and proof, couldn't resolve",
-        treeCid, index = originalIdx, cid = blk.cid
+    without proof =? delivery.proof:
+      warn "Skipping leaf delivery without proof", address = delivery.address
       continue
 
-    allBlocks.add(blockProof[0])
+    allBlocks.add((delivery.address.index, delivery.blk, proof))
 
   success allBlocks
 

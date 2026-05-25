@@ -10,15 +10,6 @@ suite "NAT Traversal":
   let externalConfig = NatConfig.externalIp(parseIpAddress("8.8.8.8"))
   let noNatConfig = NatConfig.noNat()
 
-  var nat: NatTraversal
-
-  setup:
-    nat = NatTraversal.new(externalConfig, 20.minutes, TaskPool.new(2))
-    await nat.start()
-
-  teardown:
-    await nat.stop()
-
   test "discovery addresses derive UDP multiaddrs from direct IPs":
     let announceAddresses =
       @[
@@ -84,6 +75,11 @@ suite "NAT Traversal":
         MultiAddress.init("/ip4/8.8.8.8/tcp/5000").get(),
         MultiAddress.init("/ip4/8.8.8.8/udp/1234").get(),
       ]
+
+    var nat = NatTraversal.new(externalConfig, 20.minutes, TaskPool.new(2))
+    await nat.start()
+    defer:
+      await nat.stop()
 
     var mapped: seq[MultiAddress]
 

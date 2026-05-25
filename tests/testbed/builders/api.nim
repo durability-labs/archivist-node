@@ -146,3 +146,10 @@ proc delete*(builder: ApiBuilder, cid: string) {.async.} =
 
 proc setLogLevel*(builder: ApiBuilder, level: string) {.async.} =
   await Http.post(builder.url & "/debug/chronicles/loglevel?level=" & level).close()
+
+proc status*(builder: RawBuilder, cid: string): Future[HttpResponse] {.async.} =
+  var url = builder.url & "/data/" & cid & "/status"
+  await Http.get(url)
+
+proc status*(builder: ApiBuilder, cid: string): Future[JsonNode] {.async.} =
+  await builder.raw.status(cid).readJson()
