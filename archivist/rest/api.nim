@@ -75,7 +75,12 @@ proc formatDatasetStatus(
     error "Failed to fetch overlay", err = err.msg
     return failure(err)
 
-  return success(%RestDatasetStatus.init(cid, overlay))
+  let allIndices = toSeq(0.Natural ..< manifest.blocksCount.Natural)
+  without hasBlocks =? (await repostore.hasBlocks(manifest.treeCid, allIndices)), err:
+    error "Failed to run hasBlocks", err = err.msg
+    return failure(err)
+
+  return success(%RestDatasetStatus.init(cid, overlay, hasBlocks))
 
 proc isPending(resp: HttpResponseRef): bool =
   ## Checks that an HttpResponseRef object is still pending; i.e.,
