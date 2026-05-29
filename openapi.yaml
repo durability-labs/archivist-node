@@ -423,6 +423,10 @@ components:
           nullable: false
           description: "Bitmap representation of dataset blocks present locally. Starts with '0b'."
           example: 0b000000000000111111111111000000000000
+        hasBlocks:
+          type: array
+          items:
+            type: boolean
 
     ManifestItem:
       type: object
