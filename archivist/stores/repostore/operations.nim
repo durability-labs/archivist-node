@@ -364,11 +364,6 @@ proc putLeafBlockMetaImpl(
       do:
         blkToLeafMap[blkKey] = (blkRec.toRaw, [leafRec.toRaw].toHashSet)
 
-    if cellCid.isSome:
-      trace "putBlock with cellCid", index
-    else:
-      trace "putBlock without cellCid", index
-
   overlayMeta.blocks.combineSafe(blocksBits)
 
   proc putLeafAndBlockMetaAtomic(
