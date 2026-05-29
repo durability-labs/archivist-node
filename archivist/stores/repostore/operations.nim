@@ -352,7 +352,6 @@ proc putLeafBlockMetaImpl(
     # already exists, we skip the refCount.inc, thus we make
     # a mapping of block rec -> leaf rec to be able to filter
     # out inserts from updates
-    trace "putLeafBlockMetaImpl setBit", index
     blocksBits.setBit(index)
     leafsMap[leafKey] = leafRec.toRaw
 
@@ -655,7 +654,6 @@ proc delLeafBlockMetadata*(
   var blockBits = BitSeq.init(uniqueIdxs.max() + 1)
   blockBits.combineSafe(overlayMeta.blocks)
   for i in uniqueIdxs:
-    trace "delLeafBlockMetadata clear bit", i
     blockBits.clearBit(i)
 
   let deleteExpiry = self.clock.now()
@@ -696,7 +694,6 @@ proc delLeafBlockMetadata*(
         overlayMetaRec.val.blocks.combineSafe(overlayMeta.blocks)
         for i in uniqueIdxs:
           overlayMetaRec.val.blocks.clearBit(i)
-          trace "atomicUpdateDelMeta clear bit", i
 
         overlayMetaRec.val.status = Deleting
         overlayMetaRec.val.expiry = deleteExpiry
