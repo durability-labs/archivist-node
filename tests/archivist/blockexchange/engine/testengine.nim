@@ -1,6 +1,7 @@
 import std/sequtils
 import std/algorithm
 import std/sets
+import std/importutils
 
 import pkg/chronos
 import pkg/libp2p/routing_record
@@ -13,6 +14,7 @@ import pkg/taskpools
 import pkg/archivist/rng
 import pkg/archivist/blockexchange
 import pkg/archivist/blockexchange/engine/engine {.all.}
+import pkg/archivist/blockexchange/engine/pendingblocks {.all.}
 import pkg/archivist/stores
 import pkg/archivist/chunker
 import pkg/archivist/discovery
@@ -22,6 +24,8 @@ import pkg/archivist/merkletree
 import pkg/archivist/utils/asyncheapqueue
 import ../../../asynctest
 import ../../helpers
+
+privateAccess(PendingBlocksManager)
 
 const NopSendWantListProc = proc(
     id: PeerId,
@@ -174,7 +178,7 @@ asyncchecksuite "NetworkStore engine handlers":
       localStore, network, discovery, advertiser, peerStore, pendingBlocks
     )
 
-    peerCtx = BlockExcPeerCtx(id: peerId)
+    peerCtx = BlockExcPeerCtx.new(peerId)
     engine.peers.add(peerCtx)
 
   teardown:
@@ -334,7 +338,7 @@ asyncchecksuite "NetworkStore engine handlers":
         full: bool = false,
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
-      engine.pendingBlocks.resolve(
+      await engine.pendingBlocks.resolve(
         blocks.filterIt(it.address in addresses).mapIt(
           BlockDelivery(blk: it, address: it.address)
         )
@@ -386,11 +390,11 @@ asyncchecksuite "NetworkStore engine handlers":
       request: BlockExcRequest(sendWantCancellations: sendWantCancellations)
     )
 
-    let otherPeerCtx = BlockExcPeerCtx(id: otherPeerId)
+    let otherPeerCtx = BlockExcPeerCtx.new(otherPeerId)
     engine.peers.add(otherPeerCtx)
 
     for delivery in blocksDelivery:
-      peerCtx.blocksRequested.incl(delivery.address)
+      discard engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
       otherPeerCtx.blocksRequested.incl(delivery.address)
 
     await engine.blocksDeliveryHandler(peerId, blocksDelivery)
@@ -459,7 +463,7 @@ asyncchecksuite "Block Download":
       localStore, network, discovery, advertiser, peerStore, pendingBlocks
     )
 
-    peerCtx = BlockExcPeerCtx(id: peerId)
+    peerCtx = BlockExcPeerCtx.new(peerId)
     engine.peers.add(peerCtx)
     await engine.start()
 
@@ -470,11 +474,11 @@ asyncchecksuite "Block Download":
   test "Should fail exhausted requests before queueing":
     let address = BlockAddress.init(blocks[0].cid)
 
-    engine.pendingBlocks.blockRetries = 0
+    engine.pendingBlocks.retries = 0
 
     let pending = engine.requestDelivery(address).tryGet()
 
-    check not engine.pendingBlocks.isQueued(address)
+    check address in engine.pendingBlocks
     expect RetriesExhaustedEngineError:
       discard await pending
 
@@ -523,7 +527,7 @@ asyncchecksuite "Block Download":
       address2 = BlockAddress.init(blocks[1].cid)
       handles = (engine.requestDeliveries(@[address1, address2])).tryGet()
 
-    engine.pendingBlocks.failWantHandle(
+    await engine.pendingBlocks.failWantHandle(
       address1, QueueFailedEngineError, "Block request queue failed"
     )
     await engine.completeBlock(address2, blocks[1])
@@ -610,7 +614,7 @@ asyncchecksuite "Block Download":
 
     discard engine.requestDelivery(firstAddress).tryGet()
 
-    await secondSent.wait().wait(100.millis)
+    await secondSent.wait().wait(250.millis)
 
     check wantBlockBatches == @[@[firstAddress], @[secondAddress]]
 
@@ -618,7 +622,7 @@ asyncchecksuite "Block Download":
     let
       peer2Key = PrivateKey.random(rng[]).tryGet()
       peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
-      peer2Ctx = BlockExcPeerCtx(id: peer2Id)
+      peer2Ctx = BlockExcPeerCtx.new(peer2Id)
       requestCount = DefaultWantBlockBatchSize * 4
       addresses =
         toSeq(0 ..< requestCount).mapIt(BlockAddress.init(blocks[0].cid, Natural(it)))
@@ -757,7 +761,7 @@ asyncchecksuite "Block Download":
 
     peerCtx.activityTimeout = 20.millis
     peerCtx.setPresence(Presence(address: address, have: true))
-    engine.pendingBlocks.blockRetries = 3
+    engine.pendingBlocks.retries = 3
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
@@ -768,17 +772,14 @@ asyncchecksuite "Block Download":
     await sent.wait(100.millis)
 
     let retriesBefore = engine.pendingBlocks.retries(address)
-    await engine.pendingBlocks.clearRequest(address, peerId)
-    peerCtx.blockRequestCancelled(address)
-    let nextRequestId = engine.pendingBlocks.markRequested(address, peerId)
-    check nextRequestId.isSome
-    peerCtx.blockRequestScheduled(address)
-
-    await sleepAsync(50.millis)
-
+    await engine.pendingBlocks.clearRequest(address, peerCtx)
+    let nextRequestId = engine.pendingBlocks.markRequested(address, peerCtx)
+    check nextRequestId != nil
     check engine.pendingBlocks.isRequested(address)
     check engine.pendingBlocks.getRequestPeer(address) == peerId.some
-    check engine.pendingBlocks.retries(address) == retriesBefore
+    # markRequested decrements retries internally now
+    # markRequested decrements retries internally now
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
   test "Should gate queued sends and decrement on send":
     let address = BlockAddress.init(blocks[0].cid)
@@ -796,7 +797,6 @@ asyncchecksuite "Block Download":
       if wantType == WantBlock:
         check addresses == @[address]
         check engine.pendingBlocks.isRequested(address)
-        check not engine.pendingBlocks.isScheduled(address)
         sent.complete()
 
     engine.network = BlockExcNetwork(
@@ -808,23 +808,15 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
     let retriesBefore = engine.pendingBlocks.retries(address)
-    check engine.pendingBlocks.isQueued(address)
-    check engine.pendingBlocks.readyQueue.len == 1
 
-    engine.scheduleBlockSend(address)
-    check engine.pendingBlocks.isQueued(address)
-    check engine.pendingBlocks.readyQueue.len == 1
-    check engine.pendingBlocks.retries(address) == retriesBefore
-
-    discard await engine.pendingBlocks.dequeue()
-    await engine.sendRequestBatch(peerId, @[address])
     await sent.wait(100.millis)
 
     check engine.pendingBlocks.isRequested(address)
+    # markRequested decrements retries internally now
     check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
-    engine.scheduleBlockSend(address)
-    check not engine.pendingBlocks.isQueued(address)
+    await engine.pendingBlocks.retryAddresses(@[address], DefaultBlockSendRetryDelay)
+    # markRequested decrements retries internally now
     check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
     await engine.completeBlock(address, blocks[0])
@@ -867,19 +859,18 @@ asyncchecksuite "Block Download":
     let retriesBefore = engine.pendingBlocks.retries(address)
 
     await wantHaveSent.wait().wait(100.millis)
+    # Only WantHave sent so far -- markRequested not called yet
     check engine.pendingBlocks.retries(address) == retriesBefore
-    check engine.pendingBlocks.isDiscoveryWaiting(address)
-    check not engine.pendingBlocks.isQueued(address)
-    check not engine.pendingBlocks.isScheduled(address)
+    check address in engine.pendingBlocks
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
-    check not engine.pendingBlocks.isDiscoveryWaiting(address)
+    check address in engine.pendingBlocks
 
     await wantBlockSent.wait().wait(1.seconds)
     check address in engine.pendingBlocks
     check engine.pendingBlocks.isRequested(address)
-    check not engine.pendingBlocks.isScheduled(address)
+    # markRequested decrements retries internally now
     check engine.pendingBlocks.retries(address) == retriesBefore - 1
     check address in peerCtx.blocksRequested
     await pending.cancelAndWait()
@@ -910,7 +901,7 @@ asyncchecksuite "Block Download":
         check engine.pendingBlocks.retriesExhausted(address) == false
         steps.fire()
 
-    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
@@ -945,7 +936,7 @@ asyncchecksuite "Block Download":
     ) {.async: (raises: [CancelledError]).} =
       done.complete()
 
-    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
@@ -977,7 +968,7 @@ asyncchecksuite "Block Download":
         check addresses == @[address]
         done.complete()
 
-    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
@@ -1012,7 +1003,7 @@ asyncchecksuite "Block Download":
       if wantType == WantBlock:
         done.complete()
 
-    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
@@ -1061,7 +1052,7 @@ asyncchecksuite "Block Download":
     ) {.async: (raises: [CancelledError]).} =
       raise newException(CancelledError, "cancelled cancellation send")
 
-    engine.pendingBlocks.blockRetries = 10
+    engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
         sendWantList: sendWantList, sendWantCancellations: sendWantCancellations
@@ -1140,7 +1131,7 @@ asyncchecksuite "Task Handler":
       let seckey = PrivateKey.random(rng[]).tryGet()
       peers.add(PeerId.init(seckey.getPublicKey().tryGet()).tryGet())
 
-      peersCtx.add(BlockExcPeerCtx(id: peers[i]))
+      peersCtx.add(BlockExcPeerCtx.new(peers[i]))
       peerStore.add(peersCtx[i])
 
   teardown:

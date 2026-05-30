@@ -38,6 +38,7 @@ type BlockExcPeerCtx* = ref object of RootObj
   blocksRequested*: HashSet[BlockAddress]
   activityTimeout*: Duration
   lastSentWants*: HashSet[BlockAddress]
+  disconnected: Future[void] # completed when peer is removed from store
 
 proc isKnowledgeStale*(self: BlockExcPeerCtx): bool =
   let staleness =
@@ -107,7 +108,7 @@ func cleanPresence*(self: BlockExcPeerCtx, address: BlockAddress) =
 proc blockRequestScheduled*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.incl(address)
 
-proc blockRequestCancelled*(self: BlockExcPeerCtx, address: BlockAddress) =
+proc blockRequestCleared*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.excl(address)
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
@@ -116,9 +117,22 @@ proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
 proc blockRequestAccepted*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.excl(address)
 
+proc disconnect*(self: BlockExcPeerCtx) =
+  ## Complete the disconnected future, signaling lifecycle end
+  if not self.disconnected.finished:
+    self.disconnected.complete()
+
+proc onDisconnect*(
+    self: BlockExcPeerCtx
+): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Await this to be notified when the peer is removed from the store
+  self.disconnected.join()
+
 proc new*(
     T: type BlockExcPeerCtx,
     peerId: PeerId,
     activityTimeout = DefaultPeerActivityTimeout,
 ): BlockExcPeerCtx =
-  BlockExcPeerCtx(id: peerId, activityTimeout: activityTimeout)
+  BlockExcPeerCtx(
+    id: peerId, activityTimeout: activityTimeout, disconnected: newFuture[void]()
+  )

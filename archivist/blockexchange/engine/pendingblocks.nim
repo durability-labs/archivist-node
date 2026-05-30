@@ -2,48 +2,17 @@
 ## Copyright (c) 2021 Status Research & Development GmbH
 ## Licensed under either of
 ##  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE))
-##  * MIT license, ([LICENSE-MIT](LICENSE-MIT))
+##  * MIT license ([LICENSE-MIT](LICENSE-MIT))
 ## at your option.
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
-
-## With the introduction of batching, the semantics of shared block handles
-## changed. If two unrelated batches share a subset of handles, and one batch
-## cancels its subset, what should happen to the other handles in the batch?
-##
-## This is a valid condition because of erasure coding: while blocks are being
-## downloaded, erasure recovery might also be running and trying to recover the
-## remaining blocks. Whichever succeeds first will complete or cancel outstanding
-## requests. To prevent these operations from interfering with each other, we use
-## two related mechanisms:
-##
-## - A block handle now has "owners"; the block remains active while
-##   `owners.len > 0`.
-## - Owners are also `BlockHandle` values. This lets callers keep relying on
-##   Future semantics without introducing a separate type that would partially
-##   duplicate those semantics.
-##
-## The outer, owner-facing `BlockHandle` mirrors the underlying `BlockHandle`,
-## which stays active as long as `owners.len > 0` and the block has not been
-## resolved or failed.
-##
-## When an owner/public `BlockHandle` proxy is cancelled, the cancellation does
-## not propagate to the wrapped instance (similar to Chronos' `join` operation).
-## Instead, we unregister that handle from the `owners` set. Once
-## `owners.len == 0`, the underlying future is failed, which also propagates to
-## the proxies. This prevents using it after it has been released or disposed.
-##
-## For callers, the wrappers behave as expected: if more than one code path
-## awaits the `BlockHandle`, cancelling, completing, or failing one wrapper works
-## as expected for that caller, but does not affect handles awaited by other
-## callers.
-##
 
 {.push raises: [].}
 
 import std/tables
 import std/monotimes
 import std/hashes
+import std/heapqueue
 import std/sequtils
 import std/sets
 import std/strformat
@@ -52,13 +21,15 @@ import pkg/chronos
 import pkg/libp2p
 import pkg/questionable
 import pkg/metrics
+import pkg/results
 
 import ../protobuf/blockexc
+import ../peers/peerctxstore
+import ../peers/peercontext
 import ../../blocktype
 import ../../logutils
 import ../../utils/futures
 import ../../utils/trackedfutures
-import ../../utils/asyncheapqueue
 
 import ./errors
 
@@ -77,216 +48,94 @@ declareGauge(
 )
 
 const
+  DefaultMaxBatchBlocks* = 128
+  DefaultMaxBatchBlocksTimeout* = 50.millis
   DefaultBlockRetries* = 3000
   DefaultRequestTimeout* = 30.seconds
+  DefaultDiscoveryWaitTimeout = 5.seconds
+  DefaultBlockSendRetryDelay* = 500.millis
 
 type
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
-  PendingBlocksAbandonHandler* =
-    proc(address: BlockAddress) {.gcsafe, async: (raises: []).}
-  PendingBlocksTimeoutHandler* =
-    proc(address: BlockAddress, peer: PeerId) {.gcsafe, async: (raises: []).}
 
-  SchedulableReq* = ref object of RootObj
-    address*: BlockAddress
-    priority*: int
-    insertedAt: Moment
-    eligibleAt: Moment
-    queued: bool
-    attempts: int
-    discoveryWaiting: bool
-    discoveryDeadline: Moment
+  AbandonHandler* =
+    proc(address: BlockAddress) {.gcsafe, async: (raises: [CancelledError]).}
 
-  BlockReq* = ref object of SchedulableReq
+  TimeoutHandler* = proc(address: BlockAddress, peer: PeerId) {.
+    gcsafe, async: (raises: [CancelledError])
+  .}
+
+  BatchSendHandler* = proc(
+    peer: BlockExcPeerCtx, batch: seq[BlockAddress]
+  ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).}
+
+  PeerSelectorHandler* = proc(address: BlockAddress): Future[?!BlockExcPeerCtx] {.
+    gcsafe, async: (raises: [CancelledError])
+  .}
+
+  BlockReqState = enum
+    Pending
+    Dispatching
+    Scheduled
+    InFlight
+
+  BlockReq = ref object
     handle: BlockHandle
+    address: BlockAddress
     owners: HashSet[BlockHandle]
-    requested: ?PeerId
+    state: BlockReqState
+    requestedPeer: BlockExcPeerCtx # nil = unassigned
     requestTimeout: Future[void]
-    scheduled: bool
     startTime: int64
-    blockRetries: int
+    priority: int
+    retries: int
+    attempts: int
+    generation: int
+    addedAt: Moment
+
+  BlockItem* = object
+    address: BlockAddress
+    readyAt: Moment
+    addedAt: Moment
+    generation: int
+    priority: int
+
+  BatchReq = object
+    peer: BlockExcPeerCtx
+    deadline: Future[void]
+    pipe: AsyncQueue[BlockAddress]
 
   PendingBlocksManager* = ref object of RootObj
-    blockRetries*: int = DefaultBlockRetries
-    blocks: Table[BlockAddress, BlockReq] # pending Block requests
-    # the map between pending request and owned handles
+    blocks: Table[BlockAddress, BlockReq]
     handles: Table[BlockHandle, BlockAddress]
+    blockQueue: HeapQueue[BlockItem]
+    byPeer: Table[PeerId, BatchReq]
+    queueWakeEvent: AsyncEvent
     lastInclusion*: Moment
-    onAbandon*: PendingBlocksAbandonHandler
-    onTimeout*: PendingBlocksTimeoutHandler
-    handleMonitors: TrackedFutures
-    readyQueue*: AsyncHeapQueue[SchedulableReq]
-    delayedTimer: Future[void]
-    earliestDelay: Moment
+    batchSize: int
+    batchDeadline: Duration
+    discoveryTimeout: Duration
+    retries = DefaultBlockRetries
+    running: bool
+    trackedFutures: TrackedFutures
 
-func hash*(handle: BlockHandle): Hash =
+    onAbandon*: AbandonHandler
+    onTimeout*: TimeoutHandler
+    sendBatch*: BatchSendHandler
+    getPeerForBlock*: PeerSelectorHandler
+
+func hash(handle: BlockHandle): Hash =
   cast[pointer](handle).hash
 
-proc `<`*(a, b: SchedulableReq): bool =
+func `<`(a, b: BlockItem): bool =
+  if a.readyAt != b.readyAt:
+    return a.readyAt < b.readyAt
   if a.priority != b.priority:
     return a.priority < b.priority
-  a.insertedAt < b.insertedAt
+  a.addedAt < b.addedAt
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
-
-proc releaseWantHandle(
-  self: PendingBlocksManager, wrapped: BlockHandle
-): Future[?!void] {.async: (raises: []), gcsafe.}
-
-proc addOwner(
-    self: PendingBlocksManager, address: BlockAddress
-): BlockHandle {.gcsafe.} =
-  if var pending =? self.blocks .? [address]:
-    let wrapped = pending.handle.wrap()
-
-    pending.owners.incl(wrapped)
-    self.handles[wrapped] = address
-
-    proc wrappedMonitor(): Future[void] {.gcsafe, async: (raises: []).} =
-      try:
-        discard await wrapped # discard block delivery
-      except CatchableError as exc:
-        warn "Exception monitoring wrapper blockhande", address, exc = exc.msg
-
-      if err =? (await self.releaseWantHandle(wrapped)).errorOption:
-        warn "Unable to release handle", address, err = err.msg
-
-    self.handleMonitors.track(wrappedMonitor())
-
-    return wrapped
-
-  raiseAssert "Pending block missing while adding owner"
-
-proc getWantHandle*(
-    self: PendingBlocksManager, address: BlockAddress, requested: ?PeerId = PeerId.none
-): BlockHandle =
-  ## Add an event for a block
-  ##
-
-  if address notin self.blocks:
-    let handle = BlockHandle.init("pendingBlocks.sharedHandle")
-    self.blocks[address] = BlockReq(
-      address: address,
-      handle: handle,
-      requested: requested,
-      blockRetries: self.blockRetries,
-      startTime: getMonoTime().ticks,
-      insertedAt: Moment.now(),
-    )
-    self.lastInclusion = Moment.now()
-    self.updatePendingBlockGauge()
-
-    proc handleMonitor() {.async: (raises: []).} =
-      try:
-        discard await handle
-      except CatchableError as exc:
-        trace "Exception in handle monitor", exc = exc.msg
-
-      if var req =? self.blocks .? [address]:
-        var timeoutFut: Future[void]
-        if not req.requestTimeout.isNil:
-          timeoutFut = req.requestTimeout
-          req.requestTimeout = nil
-          await noCancel timeoutFut.cancelAndWait()
-          req.requested = PeerId.none
-
-      self.blocks.del(address)
-      self.updatePendingBlockGauge()
-
-    self.handleMonitors.track(handleMonitor())
-
-  return self.addOwner(address)
-
-proc getWantHandle*(
-    self: PendingBlocksManager, cid: Cid, requested = PeerId.none
-): BlockHandle =
-  self.getWantHandle(BlockAddress.init(cid), requested)
-
-proc releaseWantHandle(
-    self: PendingBlocksManager, wrapped: BlockHandle
-): Future[?!void] {.async: (raises: []), gcsafe.} =
-  if address =? self.handles .? [wrapped]:
-    self.handles.del(wrapped)
-    if var req =? self.blocks .? [address]:
-      req.owners.excl(wrapped)
-      if req.owners.len == 0:
-        if not req.handle.finished:
-          warn "Abandoning block", address
-          req.handle.fail(
-            newException(RequestAbandonedEngineError, fmt"Abandoning block {address}")
-          )
-
-          if not self.onAbandon.isNil:
-            trace "Handle abandoned, running on abandon hook", address
-            await noCancel self.onAbandon(address)
-
-      return success()
-
-  failure("Unable to find block handle")
-
-proc resolve*(self: PendingBlocksManager, blocksDelivery: seq[BlockDelivery]) =
-  ## Resolve pending blocks
-  ##
-
-  for bd in blocksDelivery:
-    if blockReq =? self.blocks .? [bd.address]:
-      if not blockReq.handle.finished:
-        trace "Resolving pending block", address = bd.address
-        let
-          startTime = blockReq.startTime
-          stopTime = getMonoTime().ticks
-          retrievalDurationUs = (stopTime - startTime) div 1000
-
-        blockReq.handle.complete(bd)
-
-        archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
-
-        if retrievalDurationUs > 500000:
-          warn "High block retrieval time", retrievalDurationUs, address = bd.address
-      else:
-        trace "Block handle already finished", address = bd.address
-
-proc resolve*(self: PendingBlocksManager, address: BlockAddress, blk: Block) =
-  self.resolve(@[BlockDelivery(blk: blk, address: address)])
-
-proc failOwners(
-    self: PendingBlocksManager, address: BlockAddress, err: ref EngineError
-) {.gcsafe.} =
-  if req =? self.blocks .? [address]:
-    for wrapped in req.owners:
-      if not wrapped.finished:
-        wrapped.fail(err)
-
-proc failWantHandle*(
-    self: PendingBlocksManager,
-    address: BlockAddress,
-    errType: typedesc[EngineError],
-    msg: string,
-) =
-  if blockReq =? self.blocks .? [address]:
-    if not blockReq.handle.finished:
-      let err = (ref errType)(address: address, msg: msg)
-      blockReq.handle.fail(err)
-      self.failOwners(address, err)
-
-proc cancelAll*(self: PendingBlocksManager): Future[void] {.async: (raises: []).} =
-  ## Cancel all outstanding block handles and other futures
-  ##
-
-  var handles: seq[BlockHandle]
-  for req in self.blocks.mvalues:
-    handles.add(req.handle)
-    for owner in req.owners:
-      handles.add(owner)
-
-  let cancellations = handles.mapIt(it.cancelAndWait())
-
-  self.handles.clear()
-  self.blocks.clear()
-  self.updatePendingBlockGauge()
-
-  await noCancel allFutures(cancellations & @[self.handleMonitors.cancelTracked])
 
 func owners*(self: PendingBlocksManager, address: BlockAddress): int =
   if pending =? self.blocks .? [address]: pending.owners.len else: 0
@@ -295,39 +144,45 @@ func owners*(self: PendingBlocksManager, cid: Cid): int =
   self.owners(BlockAddress.init(cid))
 
 func retries*(self: PendingBlocksManager, address: BlockAddress): int =
-  if pending =? self.blocks .? [address]: pending.blockRetries else: 0
+  if pending =? self.blocks .? [address]: pending.retries else: 0
 
 func decRetries*(self: PendingBlocksManager, address: BlockAddress) =
   if var pending =? self.blocks .? [address]:
-    pending.blockRetries -= 1
+    pending.retries -= 1
 
 func retriesExhausted*(self: PendingBlocksManager, address: BlockAddress): bool =
   if pending =? self.blocks .? [address]:
-    return pending.blockRetries <= 0
+    return pending.retries <= 0
   false
 
 func isRequested*(self: PendingBlocksManager, address: BlockAddress): bool =
   if pending =? self.blocks .? [address]:
-    return pending.requested.isSome
+    return pending.requestedPeer != nil
   false
-
-func isScheduled*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if pending =? self.blocks .? [address]:
-    return pending.scheduled
-  false
-
-func clearScheduled*(self: PendingBlocksManager, address: BlockAddress) =
-  if var pending =? self.blocks .? [address]:
-    pending.scheduled = false
 
 func isFirstAttempt*(self: PendingBlocksManager, address: BlockAddress): bool =
   if pending =? self.blocks .? [address]:
-    return pending.blockRetries == self.blockRetries
+    return pending.retries == self.retries
   false
 
-func getRequestPeer*(self: PendingBlocksManager, address: BlockAddress): ?PeerId =
+func getRequestPeerCtx*(
+    self: PendingBlocksManager, address: BlockAddress
+): BlockExcPeerCtx =
   if pending =? self.blocks .? [address]:
-    return pending.requested
+    return pending.requestedPeer
+  nil
+
+func getRequestPeerCtx*(
+    self: PendingBlocksManager, handle: BlockHandle
+): BlockExcPeerCtx =
+  if address =? self.handles .? [handle]:
+    return self.getRequestPeerCtx(address)
+  nil
+
+func getRequestPeer*(self: PendingBlocksManager, address: BlockAddress): ?PeerId =
+  let peer = self.getRequestPeerCtx(address)
+  if peer != nil:
+    return peer.id.some
   PeerId.none
 
 func getRequestPeer*(self: PendingBlocksManager, handle: BlockHandle): ?PeerId =
@@ -339,82 +194,6 @@ func getHandleAddress*(self: PendingBlocksManager, handle: BlockHandle): ?BlockA
   if address =? self.handles .? [handle]:
     return address.some
   return BlockAddress.none
-
-func getPendingHandle*(
-    self: PendingBlocksManager, address: BlockAddress
-): ?BlockHandle =
-  if req =? self.blocks .? [address]:
-    return req.handle.some
-  return BlockHandle.none
-
-proc markRequested*(
-    self: PendingBlocksManager,
-    address: BlockAddress,
-    peer: PeerId,
-    timeout: Duration = DefaultRequestTimeout,
-): ?PeerId =
-  let requestedPeer = self.getRequestPeer(address)
-  if requestedPeer.isSome:
-    trace "Block already requested", address, requestedPeer
-    return requestedPeer
-
-  if var pending =? self.blocks .? [address]:
-    pending.requested = peer.some
-
-    let handle = pending.handle
-    var currentMonitor: Future[void]
-    proc timeoutMonitor() {.async: (raises: []).} =
-      let timeoutFut = sleepAsync(timeout)
-      try:
-        await handle or timeoutFut
-        let requestedPeer = self.getRequestPeer(address)
-        if requestedPeer != peer.some:
-          warn "Requested and timed out peers don't match, request might have completed!",
-            oldPeer = peer, newPeer = requestedPeer, address
-          return
-      except CatchableError as exc:
-        trace "Exception in request timeout monitor", exc = exc.msg
-      finally:
-        await noCancel timeoutFut.cancelAndWait()
-
-      if handle.finished:
-        trace "Exiting timeout monitor, handle finished", address, peer
-        return
-
-      if var req =? self.blocks .? [address]:
-        if req.requestTimeout == currentMonitor:
-          req.requestTimeout = nil
-
-        if req.requested == peer.some:
-          req.requested = PeerId.none
-
-      if timeoutFut.completed:
-        if not self.onTimeout.isNil:
-          trace "Timeout elapsed, calling onTimeout callback", peer, address
-          await noCancel self.onTimeout(address, peer)
-
-    currentMonitor = timeoutMonitor()
-    pending.requestTimeout = currentMonitor
-    pending.scheduled = false
-
-    return pending.requested
-
-proc clearRequest*(
-    self: PendingBlocksManager, address: BlockAddress
-) {.async: (raises: []).} =
-  if var req =? self.blocks .? [address]:
-    if not req.requestTimeout.isNil:
-      let reqTimeoutFut = req.requestTimeout
-      req.requestTimeout = nil
-      trace "Cancelling block request", address
-      await noCancel reqTimeoutFut.cancelAndWait()
-
-proc clearRequest*(
-    self: PendingBlocksManager, address: BlockAddress, peer: PeerId
-) {.async: (raises: []).} =
-  if req =? self.blocks .? [address]:
-    if req.requested == peer.some:
-      await self.clearRequest(address)
 
 func contains*(self: PendingBlocksManager, cid: Cid): bool =
   BlockAddress.init(cid) in self.blocks
@@ -445,83 +224,491 @@ proc wantListLen*(self: PendingBlocksManager): int =
 func len*(self: PendingBlocksManager): int =
   self.blocks.len
 
-proc enqueue*(
-    self: PendingBlocksManager, address: BlockAddress, priority: int
-): Future[void] {.async: (raises: [CancelledError]).} =
-  without req =? self.blocks .? [address]:
+proc retryAddresses*(
+    self: PendingBlocksManager,
+    addresses: seq[BlockAddress],
+    delay: Duration = DefaultDiscoveryWaitTimeout,
+) {.async: (raises: []).}
+
+proc clearPeerAssignment(
+    self: PendingBlocksManager, address: BlockAddress
+) {.async: (raises: []).} =
+  if var req =? self.blocks .? [address]:
+    let
+      timeoutFut = req.requestTimeout
+      assignedPeer = req.requestedPeer
+
+    # Detach synchronously -- no other async task can observe stale state
+    req.requestTimeout = nil
+    req.requestedPeer = nil
+    if assignedPeer != nil:
+      assignedPeer.blockRequestCleared(address)
+
+    # Now safely cancel the timeout monitor
+    if timeoutFut != nil:
+      await noCancel timeoutFut.cancelAndWait()
+
+proc releaseWantHandle(
+    self: PendingBlocksManager, wrapped: BlockHandle
+): Future[?!void] {.async: (raises: []), gcsafe.} =
+  if address =? self.handles .? [wrapped]:
+    self.handles.del(wrapped)
+    if var req =? self.blocks .? [address]:
+      req.owners.excl(wrapped)
+      if req.owners.len == 0:
+        if not req.handle.finished:
+          warn "Abandoning block", address
+          await self.clearPeerAssignment(address)
+          req.handle.fail(
+            newException(RequestAbandonedEngineError, fmt"Abandoning block {address}")
+          )
+
+          if not self.onAbandon.isNil:
+            trace "Handle abandoned, running on abandon hook", address
+            await noCancel self.onAbandon(address)
+
+      self.queueWakeEvent.fire()
+      return success()
+
+  failure("Unable to find block handle")
+
+proc addOwner(
+    self: PendingBlocksManager, address: BlockAddress, priority = 0
+): BlockHandle {.gcsafe.} =
+  if var pending =? self.blocks .? [address]:
+    let wrapped = pending.handle.wrap()
+
+    pending.owners.incl(wrapped)
+    self.handles[wrapped] = address
+
+    proc wrappedMonitor(): Future[void] {.gcsafe, async: (raises: []).} =
+      try:
+        discard await wrapped
+      except CatchableError as exc:
+        warn "Exception monitoring wrapper blockhandle", address, exc = exc.msg
+
+      if err =? (await self.releaseWantHandle(wrapped)).errorOption:
+        warn "Unable to release handle", address, err = err.msg
+
+    if priority > pending.priority:
+      pending.priority = priority
+
+    self.trackedFutures.track(wrappedMonitor())
+    pending.generation.inc()
+    let now = Moment.now()
+    self.blockQueue.push(
+      BlockItem(
+        address: address,
+        readyAt: now,
+        addedAt: now,
+        generation: pending.generation,
+        priority: pending.priority,
+      )
+    )
+
+    self.queueWakeEvent.fire()
+    return wrapped
+
+  raiseAssert "Pending block missing while adding owner"
+
+proc getWantHandle*(
+    self: PendingBlocksManager, address: BlockAddress, priority = 0
+): BlockHandle =
+  if address notin self.blocks:
+    let handle = BlockHandle.init("pendingBlocks.sharedHandle")
+    let now = Moment.now()
+    self.blocks[address] = BlockReq(
+      address: address,
+      handle: handle,
+      retries: self.retries,
+      startTime: getMonoTime().ticks,
+      priority: priority,
+      addedAt: now,
+      state: Pending,
+    )
+    self.lastInclusion = now
+    self.updatePendingBlockGauge()
+
+    proc handleMonitor() {.async: (raises: []).} =
+      try:
+        discard await handle
+      except CatchableError as exc:
+        trace "Exception in handle monitor", exc = exc.msg
+
+      if var req =? self.blocks .? [address]:
+        await self.clearPeerAssignment(address)
+
+      self.blocks.del(address)
+      self.updatePendingBlockGauge()
+
+    self.trackedFutures.track(handleMonitor())
+
+  return self.addOwner(address, priority)
+
+proc getWantHandle*(self: PendingBlocksManager, cid: Cid): BlockHandle =
+  self.getWantHandle(BlockAddress.init(cid))
+
+proc resolve*(
+    self: PendingBlocksManager, blocksDelivery: seq[BlockDelivery]
+) {.async: (raises: [CancelledError]).} =
+  for bd in blocksDelivery:
+    if blockReq =? self.blocks .? [bd.address]:
+      if not blockReq.handle.finished:
+        trace "Resolving pending block", address = bd.address
+        let
+          startTime = blockReq.startTime
+          stopTime = getMonoTime().ticks
+          retrievalDurationUs = (stopTime - startTime) div 1000
+
+        await self.clearPeerAssignment(bd.address)
+        if not blockReq.handle.finished:
+          blockReq.handle.complete(bd)
+
+        archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
+
+        if retrievalDurationUs > 500000:
+          warn "High block retrieval time", retrievalDurationUs, address = bd.address
+      else:
+        trace "Block handle already finished", address = bd.address
+
+proc resolve*(
+    self: PendingBlocksManager, address: BlockAddress, blk: Block
+) {.async: (raises: [CancelledError]).} =
+  await self.resolve(@[BlockDelivery(blk: blk, address: address)])
+
+proc failOwners(
+    self: PendingBlocksManager, address: BlockAddress, err: ref EngineError
+) {.gcsafe.} =
+  if req =? self.blocks .? [address]:
+    for wrapped in req.owners:
+      if not wrapped.finished:
+        wrapped.fail(err)
+
+proc failWantHandle*(
+    self: PendingBlocksManager,
+    address: BlockAddress,
+    errType: typedesc[EngineError],
+    msg: string,
+) {.async: (raises: []).} =
+  if blockReq =? self.blocks .? [address]:
+    if not blockReq.handle.finished:
+      await self.clearPeerAssignment(address)
+      let err = (ref errType)(address: address, msg: msg)
+      blockReq.handle.fail(err)
+      self.failOwners(address, err)
+
+proc markRequested*(
+    self: PendingBlocksManager,
+    address: BlockAddress,
+    peer: BlockExcPeerCtx,
+    timeout: Duration = DefaultRequestTimeout,
+): BlockExcPeerCtx =
+  let prevPeer = self.getRequestPeerCtx(address)
+  if prevPeer != nil:
+    trace "Block already requested", address, requestedPeer = prevPeer.id
+    return prevPeer
+
+  if var pending =? self.blocks .? [address]:
+    pending.requestedPeer = peer
+    pending.state = InFlight
+    pending.retries -= 1
+    peer.blockRequestScheduled(address)
+
+    let handle = pending.handle
+    var currentMonitor: Future[void].Raising([])
+    proc timeoutMonitor() {.async: (raises: []).} =
+      let timeoutFut = sleepAsync(timeout)
+      try:
+        await handle or timeoutFut
+        let reqPeer = self.getRequestPeerCtx(address).option
+        if reqPeer != peer.option:
+          warn "Requested and timed out peers don't match",
+            oldPeer = peer.id, newPeer = reqPeer .? id, address
+          return
+      except CatchableError as exc:
+        trace "Exception in request timeout monitor", exc = exc.msg
+      finally:
+        await noCancel timeoutFut.cancelAndWait()
+
+      if handle.finished:
+        trace "Exiting timeout monitor, handle finished", address, peer = peer.id
+        return
+
+      if var req =? self.blocks .? [address]:
+        if req.requestTimeout == currentMonitor:
+          req.requestTimeout = nil
+
+      if timeoutFut.completed:
+        # Requeue the block for retry before notifying the engine.
+        # Only if we still own the assignment (no concurrent clear/resolve).
+        if var req =? self.blocks .? [address]:
+          if req.requestTimeout == currentMonitor and req.requestedPeer == peer:
+            req.requestedPeer.blockRequestCleared(address)
+            req.requestedPeer = nil
+            req.requestTimeout = nil
+            await self.retryAddresses(@[address], 0.millis)
+
+        if not self.onTimeout.isNil:
+          trace "Timeout elapsed, calling onTimeout callback", peer = peer.id, address
+          await noCancel self.onTimeout(address, peer.id)
+
+    currentMonitor = timeoutMonitor()
+    pending.requestTimeout = currentMonitor
+    self.trackedFutures.track(currentMonitor)
+
+    return pending.requestedPeer
+
+proc clearRequest*(
+    self: PendingBlocksManager, address: BlockAddress
+) {.async: (raises: []).} =
+  await self.clearPeerAssignment(address)
+
+proc clearRequest*(
+    self: PendingBlocksManager, address: BlockAddress, peer: BlockExcPeerCtx
+) {.async: (raises: []).} =
+  if req =? self.blocks .? [address]:
+    if req.requestedPeer == peer:
+      await self.clearPeerAssignment(address)
+
+proc retryAddresses*(
+    self: PendingBlocksManager,
+    addresses: seq[BlockAddress],
+    delay: Duration = DefaultDiscoveryWaitTimeout,
+) {.async: (raises: []).} =
+  for address in addresses:
+    without req =? self.blocks .? [address]:
+      continue
+
+    if req.state == Dispatching:
+      continue
+
+    await self.clearPeerAssignment(address)
+
+    req.state = Pending
+    req.generation.inc()
+    self.blockQueue.push(
+      BlockItem(
+        address: address,
+        readyAt: Moment.now() + delay,
+        addedAt: req.addedAt,
+        generation: req.generation,
+        priority: req.priority,
+      )
+    )
+
+  self.queueWakeEvent.fire()
+
+proc peerBatchWorker(
+    self: PendingBlocksManager, batchReq: sink BatchReq
+) {.async: (raises: []).} =
+  try:
+    while self.running:
+      var batch: seq[BlockAddress] = @[await batchReq.pipe.get()]
+
+      batchReq.deadline = sleepAsync(self.batchDeadline)
+      defer:
+        await noCancel batchReq.deadline.cancelAndWait()
+
+      while batch.len < self.batchSize:
+        let address =
+          try:
+            await batchReq.pipe.get().wait(batchReq.deadline)
+          except AsyncTimeoutError as exc:
+            trace "Deadline reached", peer = batchReq.peer.id
+            break
+
+        without req =? self.blocks .? [address]:
+          trace "Address is not pending", address
+          continue
+
+        if req.state in {Dispatching, InFlight}:
+          trace "Address already in pipeline, skipping", address, state = req.state
+          continue
+
+        if self.retriesExhausted(address):
+          trace "Retries exhausted, skipping block", address
+          await self.failWantHandle(
+            address, RetriesExhaustedEngineError, "Block request retries exhausted"
+          )
+          continue
+
+        batch.add(address)
+
+      trace "Dispatching batch to peer", peer = batchReq.peer.id, batch = batch.len
+
+      # Mark all as in-flight BEFORE calling engine
+      for address in batch:
+        discard self.markRequested(address, batchReq.peer)
+
+      if not self.sendBatch.isNil and batch.len > 0:
+        if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
+          warn "Batch send failed, requeuing", peer = batchReq.peer.id, err = err.msg
+          var toRetry: seq[BlockAddress]
+          for address in batch:
+            if req =? self.blocks .? [address]:
+              if req.requestedPeer == batchReq.peer:
+                toRetry.add(address)
+          if toRetry.len > 0:
+            await self.retryAddresses(toRetry)
+  except CatchableError as exc:
+    trace "Exception in peer batch worker", exc = exc.msg
+
+proc pushPeerBlock(
+    self: PendingBlocksManager, address: BlockAddress
+) {.async: (raises: []).} =
+  try:
+    without req =? self.blocks .? [address]:
+      trace "Address not in blocks", address
+      return
+
+    if req.state in {Scheduled, InFlight}:
+      trace "Address already in pipeline", address, state = req.state
+      return
+
+    if self.retriesExhausted(address):
+      trace "Retries exhausted, skipping block", address
+      await self.failWantHandle(
+        address, RetriesExhaustedEngineError, "Block request retries exhausted"
+      )
+      return
+
+    if self.getPeerForBlock.isNil:
+      trace "No peer selector configured", address
+      raiseAssert("No peer selector configured")
+      return
+
+    without peer =? await self.getPeerForBlock(address), err:
+      trace "Unable to get peer", address, err = err.msg
+      if err of NoPeerForBlockError:
+        req.state = Pending
+        await self.retryAddresses(@[address])
+      return
+
+    var batchReq: BatchReq
+    self.byPeer.withValue(peer.id, existing):
+      batchReq = existing[]
+    do:
+      batchReq = BatchReq(peer: peer, pipe: newAsyncQueue[BlockAddress](128))
+      self.byPeer[peer.id] = batchReq
+      self.trackedFutures.track(self.peerBatchWorker(batchReq))
+
+      # Register disconnect monitor on first use of this peer
+      proc disconnectMonitor() {.async: (raises: []).} =
+        try:
+          await peer.onDisconnect()
+        except CatchableError as exc:
+          warn "Exception in disconnect monitor", exc = exc.msg
+
+        # Requeue all blocks assigned to this peer
+        var addrs: seq[BlockAddress]
+        for addr, req in self.blocks:
+          if req.requestedPeer == peer:
+            addrs.add(addr)
+        if addrs.len > 0:
+          await self.retryAddresses(addrs)
+
+        # Clean up byPeer entry
+        self.byPeer.del(peer.id)
+
+      self.trackedFutures.track(disconnectMonitor())
+
+    await batchReq.pipe.put(address)
+    req.state = Scheduled
+  except CatchableError as exc:
+    trace "Exception pushing block to peer worker", address, exc = exc.msg
+
+proc blockRequestScheduler(self: PendingBlocksManager) {.async: (raises: []).} =
+  try:
+    while self.running:
+      if self.blockQueue.len == 0:
+        await self.queueWakeEvent.wait()
+        self.queueWakeEvent.clear()
+        continue
+
+      let
+        item = self.blockQueue[0]
+        now = Moment.now()
+
+      if item.readyAt > now:
+        let timer = sleepAsync(item.readyAt - now)
+        await timer or self.queueWakeEvent.wait()
+        await noCancel timer.cancelAndWait()
+        self.queueWakeEvent.clear()
+        continue
+
+      let
+        blockReq = self.blockQueue.pop()
+        address = blockReq.address
+
+      without req =? self.blocks .? [address], err:
+        trace "Request don't seem to exist", err = err.msg
+        continue
+
+      if blockReq.generation != req.generation:
+        trace "Block generation don't match, stale block", address
+        continue
+
+      req.state = Dispatching
+      self.trackedFutures.track(self.pushPeerBlock(address))
+      await sleepAsync(0.millis)
+  except CatchableError as exc:
+    trace "Exception in block request scheduler", err = exc.msg
+
+# --- Lifecycle ---
+
+proc start*(self: PendingBlocksManager) {.async: (raises: []).} =
+  if self.running:
+    trace "Block scheduler already running"
     return
 
-  if req.handle.finished or req.requested.isSome or req.queued or req.scheduled or
-      req.discoveryWaiting or req.eligibleAt > Moment.now():
-    return
+  self.running = true
+  self.trackedFutures.track(self.blockRequestScheduler())
 
-  req.priority = priority
-  req.scheduled = true
-  req.queued = true
-  req.insertedAt = Moment.now()
-  await self.readyQueue.push(req)
+proc stop*(self: PendingBlocksManager) {.async: (raises: []).} =
+  if not self.running:
+    trace "Block scheduler not running"
 
-proc dequeue*(
-    self: PendingBlocksManager
-): Future[BlockAddress] {.async: (raises: [CancelledError]).} =
-  while true:
-    let req = await self.readyQueue.pop()
-    req.queued = false
+  self.running = false
+  self.queueWakeEvent.fire()
 
-    if current =? self.blocks .? [req.address]:
-      if current == BlockReq(req):
-        return req.address
+  self.blockQueue.clear()
+  self.byPeer.clear()
 
-func isQueued*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if req =? self.blocks .? [address]:
-    return req.queued
-  false
+  var handles: seq[BlockHandle]
+  for req in self.blocks.values:
+    handles.add(req.handle)
+    for owner in req.owners:
+      handles.add(owner)
 
-proc isEligible*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if req =? self.blocks .? [address]:
-    return req.eligibleAt <= Moment.now()
-  false
+  let cancellations = handles.mapIt(it.cancelAndWait())
+  await noCancel allFutures(cancellations)
 
-func isDiscoveryWaiting*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if req =? self.blocks .? [address]:
-    return req.discoveryWaiting
-  false
+  self.handles.clear()
+  self.blocks.clear()
+  self.updatePendingBlockGauge()
 
-proc setEligibleAt*(
-    self: PendingBlocksManager, address: BlockAddress, deadline: Duration
-) =
-  if req =? self.blocks .? [address]:
-    req.eligibleAt = Moment.now() + deadline
-    req.scheduled = false
-
-proc markDispatched*(self: PendingBlocksManager, address: BlockAddress) =
-  if req =? self.blocks .? [address]:
-    req.scheduled = false
-
-proc enterDiscoveryWait*(
-    self: PendingBlocksManager, address: BlockAddress, deadline: Duration
-) =
-  if req =? self.blocks .? [address]:
-    req.discoveryWaiting = true
-    req.discoveryDeadline = Moment.now() + deadline
-    req.scheduled = false
-
-proc wakeOnPresence*(self: PendingBlocksManager, address: BlockAddress) =
-  if req =? self.blocks .? [address]:
-    req.discoveryWaiting = false
-    if not req.queued and not req.requested.isSome and req.eligibleAt <= Moment.now():
-      req.queued = true
-      req.scheduled = true
-      if err =? self.readyQueue.pushNoWait(req).errorOption:
-        req.queued = false
-        req.scheduled = false
-        trace "Ready queue full, cannot wake", address, err = $err
+  await noCancel self.trackedFutures.cancelTracked()
 
 func new*(
-    T: type PendingBlocksManager, retries = DefaultBlockRetries
+    T: type PendingBlocksManager,
+    retries = DefaultBlockRetries,
+    batchSize = DefaultMaxBatchBlocks,
+    batchDeadline = DefaultMaxBatchBlocksTimeout,
+    discoveryTimeout = DefaultDiscoveryWaitTimeout,
+    sendBatch: BatchSendHandler = nil,
+    onAbandon: AbandonHandler = nil,
+    onTimeout: TimeoutHandler = nil,
+    getPeerForBlock: PeerSelectorHandler = nil,
 ): PendingBlocksManager =
   PendingBlocksManager(
-    blockRetries: retries,
-    handleMonitors: TrackedFutures.new(),
-    readyQueue: newAsyncHeapQueue[SchedulableReq](),
+    retries: retries,
+    batchSize: batchSize,
+    batchDeadline: batchDeadline,
+    discoveryTimeout: discoveryTimeout,
+    trackedFutures: TrackedFutures.new(),
+    queueWakeEvent: newAsyncEvent(),
+    sendBatch: sendBatch,
+    getPeerForBlock: getPeerForBlock,
+    onAbandon: onAbandon,
+    onTimeout: onTimeout,
   )

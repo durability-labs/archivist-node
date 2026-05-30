@@ -26,7 +26,7 @@ proc example*(_: type PeerId): PeerId =
   PeerId.init(key.getPublicKey().get).get
 
 proc example*(_: type BlockExcPeerCtx): BlockExcPeerCtx =
-  BlockExcPeerCtx(id: PeerId.example)
+  BlockExcPeerCtx.new(PeerId.example)
 
 proc example*(_: type Cid): Cid =
   bt.Block.example.cid
