@@ -181,6 +181,7 @@ suite "PendingBlocks ownership model":
     pb.markRequested(address, peerCtx)
 
     check pb.isRequested(address)
+    # markRequested decrements retries internally now
     check pb.retries(address) == retriesBefore - 1
     check pb.getRequestPeer(address) == peerCtx.id.some
     check address in peerCtx.blocksRequested
@@ -227,9 +228,13 @@ suite "PendingBlocks ownership model":
     await startWithoutDispatch(pb)
     let handle = pb.getWantHandle(address)
 
+  test "resolve completes handle":
+    let pb = PendingBlocksManager.new()
+    let handle = pb.getWantHandle(address)
+    let peerCtx = makePeerCtx(makePeerId())
+    discard pb.markRequested(address, peerCtx, 60.seconds)
     await pb.resolve(address, blk)
     let delivery = await handle
-
     check delivery.blk == blk
     check delivery.address == address
     check eventually address notin pb
