@@ -82,7 +82,7 @@ declareCounter(
 const
   DefaultTaskQueueSize = 128
   DefaultConcurrentTasks = 3
-  DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
+  DefaultWantBlockBatchSize = 128
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
@@ -103,7 +103,7 @@ type
     concurrentTasks: int
     trackedFutures: TrackedFutures
     blockexcRunning: bool
-    maxBlocksPerMessage: int
+    maxBatchBlocks: int
     wantBlockBatchSize: int
     wantBlockBatchTimeout: Duration
     discoveryDeadline*: Duration
@@ -272,20 +272,6 @@ proc refreshBlockKnowledge(self: BlockExcEngine) {.async: (raises: [CancelledErr
 
       lastIdle = Moment.now()
 
-proc scheduleBlockSend(
-  self: BlockExcEngine,
-  address: BlockAddress,
-  immediate = false,
-  delay = DefaultBlockSendRetryDelay,
-) {.gcsafe, raises: [].}
-
-proc failBlockRequest(
-  self: BlockExcEngine,
-  address: BlockAddress,
-  errType: typedesc[EngineError],
-  msg: string,
-) {.async: (raises: []).}
-
 proc searchForNewPeers(self: BlockExcEngine, cid: Cid) =
   if self.lastDiscRequest + DiscoveryRateLimit < Moment.now():
     archivist_block_exchange_discovery_requests_total.inc()
@@ -300,234 +286,13 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
 proc randomPeer(peers: seq[BlockExcPeerCtx]): BlockExcPeerCtx =
   Rng.instance.sample(peers)
 
-proc scheduleBlockSendTask(
-    self: BlockExcEngine,
-    address: BlockAddress,
-    immediate: bool,
-    delay = DefaultBlockSendRetryDelay,
-) {.async: (raises: []).} =
-  without handle =? self.pendingBlocks.getPendingHandle(address):
-    self.pendingBlocks.clearScheduled(address)
-    return
-
-  if address notin self.pendingBlocks or self.pendingBlocks.isRequested(address):
-    return
-
-  if self.pendingBlocks.retriesExhausted(address):
-    archivist_block_exchange_requests_failed_total.inc()
-    self.pendingBlocks.failWantHandle(
-      address, RetriesExhaustedEngineError, "Block request retries exhausted"
-    )
-    return
-
-  if not immediate and not self.pendingBlocks.isFirstAttempt(address):
-    let timer = sleepAsync(delay)
-    try:
-      await handle or timer
-    except CatchableError as exc:
-      trace "Exception in scheduling block send task", address, exc = exc.msg
-    finally:
-      if not timer.finished:
-        await noCancel timer.cancelAndWait()
-
-    if handle.finished:
-      trace "Handle finished before queueing block", address
-      return
-
-  let enqueueFut = self.pendingBlocks.enqueue(address, 0)
-  try:
-    await handle or enqueueFut
-  except CatchableError as exc:
-    trace "Exception queuing block for send", address, exc = exc.msg
-  finally:
-    if handle.finished and not enqueueFut.finished:
-      await noCancel enqueueFut.cancelAndWait()
-
-proc scheduleBlockSend(
-    self: BlockExcEngine,
-    address: BlockAddress,
-    immediate = false,
-    delay = DefaultBlockSendRetryDelay,
-) {.gcsafe, raises: [].} =
-  self.trackedFutures.track(self.scheduleBlockSendTask(address, immediate, delay))
-
-proc clearBlockRequestState(
-    self: BlockExcEngine, address: BlockAddress
-) {.async: (raises: []).} =
-  if peerId =? self.pendingBlocks.getRequestPeer(address):
-    let ctx = self.peers.get(peerId)
-    if not ctx.isNil:
-      ctx.blockRequestCancelled(address)
-  await self.pendingBlocks.clearRequest(address)
-
 proc failBlockRequest(
     self: BlockExcEngine,
     address: BlockAddress,
     errType: typedesc[EngineError],
     msg: string,
 ) {.async: (raises: []).} =
-  await self.clearBlockRequestState(address)
-  self.pendingBlocks.failWantHandle(address, errType, msg)
-
-proc sendRequestBatch(
-    self: BlockExcEngine, peerId: PeerId, addresses: seq[BlockAddress]
-) {.async: (raises: [CancelledError]).} =
-  if addresses.len == 0:
-    trace "Cannot send empty batch", peerId
-    return
-
-  let peer = self.peers.get(peerId)
-  if peer.isNil:
-    trace "Unable to find peer to send batch to", peerId
-    for address in addresses:
-      self.pendingBlocks.clearScheduled(address)
-      self.scheduleBlockSend(address)
-    return
-
-  var batch: seq[BlockAddress]
-  for address in addresses:
-    if address notin self.pendingBlocks or self.pendingBlocks.isRequested(address):
-      continue
-
-    if self.pendingBlocks.retriesExhausted(address):
-      trace "Retries exhausted, skipping block", address
-      archivist_block_exchange_requests_failed_total.inc()
-      await self.failBlockRequest(
-        address, RetriesExhaustedEngineError, "Block request retries exhausted"
-      )
-      continue
-
-    let requested =
-      self.pendingBlocks.markRequested(address, peerId, self.blockRequestTimeout)
-
-    if requested != peerId.some:
-      trace "Block already requested from another peer", address, peer = requested.get
-      continue
-
-    self.pendingBlocks.decRetries(address)
-    peer.blockRequestScheduled(address)
-    self.pendingBlocks.clearScheduled(address)
-    batch.add(address)
-
-  if batch.len == 0:
-    trace "Batch is empty, skipping", peerId
-    return
-
-  if err =? catchAsync(await self.sendWantBlock(batch, peerId)).errorOption:
-    warn "Failed to send wantBlock batch", peer = peerId, err = err.msg
-    for address in batch:
-      await self.pendingBlocks.clearRequest(address, peerId)
-      peer.blockRequestCancelled(address)
-      peer.cleanPresence(address)
-      self.scheduleBlockSend(address)
-
-proc sendRequestBatchTask(
-    self: BlockExcEngine, peerId: PeerId, addresses: seq[BlockAddress]
-) {.async: (raises: []).} =
-  try:
-    await self.sendRequestBatch(peerId, addresses)
-  except CatchableError as exc:
-    trace "Exception sending batch", peerId
-
-type
-  BatchTimer = Future[void]
-  BatchReq = object
-    batch: seq[BlockAddress]
-    timer: BatchTimer
-
-func hash(timer: BatchTimer): Hash =
-  cast[pointer](timer).hash
-
-proc blockRequestScheduler(self: BlockExcEngine) {.async: (raises: []).} =
-  var
-    byPeer: Table[PeerId, BatchReq]
-    timers: Table[Future[void], PeerId]
-
-  try:
-    while self.blockexcRunning:
-      var finished: FutureBase
-      let next = self.pendingBlocks.dequeue()
-      try:
-        finished = await FutureBase(next).race(timers.keys.toSeq.mapIt(FutureBase(it)))
-      finally:
-        if not next.finished:
-          await noCancel next.cancelAndWait()
-
-      if not next.completed:
-        let batchTimer = BatchTimer(finished)
-        if peerId =? timers .? [batchTimer]:
-          timers.del(batchTimer)
-          if batchReq =? byPeer .? [peerId]:
-            byPeer.del(peerId)
-            if batchReq.batch.len > 0:
-              self.trackedFutures.track(
-                self.sendRequestBatchTask(peerId, batchReq.batch)
-              )
-              trace "Request batch task dispatched after timeout deadline",
-                peerId, batch = batchReq.batch.len
-          else:
-            warn "No peer found for timer", peerId
-        continue
-
-      let address = await next
-      trace "Got block from request queue", address
-
-      if address notin self.pendingBlocks or self.pendingBlocks.isRequested(address):
-        trace "Address is not pending or already requested", address
-        self.pendingBlocks.clearScheduled(address)
-        continue
-
-      if self.pendingBlocks.retriesExhausted(address):
-        trace "Retries exhausted, skipping block", address
-        archivist_block_exchange_requests_failed_total.inc()
-        await self.failBlockRequest(
-          address, RetriesExhaustedEngineError, "Block request retries exhausted"
-        )
-        continue
-
-      let peers = self.peers.getPeersForBlock(address)
-      if peers.with.len == 0 and peers.without.len > 0:
-        await self.refreshBlockKnowledge()
-
-      if peers.with.len == 0:
-        self.searchForNewPeers(address.cidOrTreeCid)
-        self.pendingBlocks.enterDiscoveryWait(address, self.discoveryDeadline)
-        trace "No peer for block, entering discovery wait", address
-        continue
-
-      let peer = self.selectPeer(peers.with)
-      if peer.isNil:
-        trace "No peer context, entering discovery wait", address
-        self.pendingBlocks.enterDiscoveryWait(address, self.discoveryDeadline)
-        continue
-
-      var peerBatch: seq[BlockAddress]
-      byPeer.withValue(peer.id, req):
-        req[].batch.add(address)
-        peerBatch = req[].batch
-      do:
-        let timer = sleepAsync(self.wantBlockBatchTimeout)
-        byPeer[peer.id] = BatchReq(batch: @[address], timer: timer)
-        timers[timer] = peer.id
-        continue
-
-      if peerBatch.len >= self.wantBlockBatchSize:
-        if batchReq =? byPeer .? [peer.id]:
-          let batchTimer = BatchTimer(batchReq.timer)
-          await noCancel batchTimer.cancelAndWait()
-          timers.del(batchTimer)
-          byPeer.del(peer.id)
-          self.trackedFutures.track(self.sendRequestBatchTask(peer.id, peerBatch))
-  except CancelledError:
-    byPeer.clear()
-    timers.clear()
-    warn "Request scheduling cancelled!"
-
-  for timer in timers.keys.toSeq:
-    if not timer.finished:
-      await noCancel timer.cancelAndWait()
-
-  trace "Block request scheduling stopped"
+  await self.pendingBlocks.failWantHandle(address, errType, msg)
 
 proc requestDeliveries*(
     self: BlockExcEngine, addresses: seq[BlockAddress], priority = 0
@@ -581,9 +346,11 @@ proc blockPresenceHandler*(
 
   var toRetry: seq[BlockAddress]
   for address in ourWantList:
-    if address in peerHave and not self.pendingBlocks.retriesExhausted(address) and
-        not self.pendingBlocks.isRequested(address):
-      self.pendingBlocks.wakeOnPresence(address)
+    if address in peerHave and not self.pendingBlocks.retriesExhausted(address):
+      toRetry.add(address)
+
+  if toRetry.len > 0:
+    await self.pendingBlocks.retryAddresses(toRetry, 0.seconds)
 
 proc scheduleTasks(
     self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
@@ -597,7 +364,7 @@ proc scheduleTasks(
 proc cancelBlocks(
     self: BlockExcEngine, addrs: seq[BlockAddress]
 ) {.async: (raises: [CancelledError]).} =
-  let toCancel = toHashSet(addrs)
+  let toCancell = toHashSet(addrs)
   var scheduledCancellations: Table[PeerId, HashSet[BlockAddress]]
 
   if self.peers.len == 0:
@@ -610,7 +377,7 @@ proc cancelBlocks(
     peerId
 
   for peerCtx in self.peers.peers.values:
-    let intersection = peerCtx.blocksRequested.intersection(toCancel)
+    let intersection = peerCtx.blocksRequested.intersection(toCancell)
     if intersection.len > 0:
       scheduledCancellations[peerCtx.id] = intersection
       peerCtx.cleanPresence(addrs)
@@ -713,7 +480,7 @@ proc blocksDeliveryHandler*(
         if not peerCtx.isNil:
           peerCtx.cleanPresence(bd.address)
         await self.pendingBlocks.retryAddresses(
-          @[bd.address], self.pendingBlocks.blockSendTimeout
+          @[bd.address], DefaultBlockSendRetryDelay
         )
         continue
 
@@ -764,9 +531,7 @@ proc blocksDeliveryHandler*(
       error "Unable to decode manifest block", err = err.msg
       if not peerCtx.isNil:
         peerCtx.cleanPresence(bd.address)
-      await self.pendingBlocks.retryAddresses(
-        @[bd.address], self.pendingBlocks.blockSendTimeout
-      )
+      await self.pendingBlocks.retryAddresses(@[bd.address], DefaultBlockSendRetryDelay)
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
@@ -983,7 +748,7 @@ proc new*(
     network: network,
     concurrentTasks: concurrentTasks,
     trackedFutures: TrackedFutures(),
-    maxBlocksPerMessage: maxBlocksPerMessage,
+    maxBatchBlocks: maxBatchBlocks,
     wantBlockBatchSize: wantBlockBatchSize,
     wantBlockBatchTimeout: wantBlockBatchTimeout,
     blockRequestTimeout: blockRequestTimeout,

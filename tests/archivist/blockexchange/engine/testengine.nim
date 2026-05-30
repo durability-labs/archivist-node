@@ -25,6 +25,8 @@ import pkg/archivist/utils/asyncheapqueue
 import ../../../asynctest
 import ../../helpers
 
+privateAccess(PendingBlocksManager)
+
 const NopSendWantListProc = proc(
     id: PeerId,
     addresses: seq[BlockAddress],
@@ -392,7 +394,7 @@ asyncchecksuite "NetworkStore engine handlers":
     engine.peers.add(otherPeerCtx)
 
     for delivery in blocksDelivery:
-      engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
+      discard engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
       otherPeerCtx.blocksRequested.incl(delivery.address)
 
     await engine.blocksDeliveryHandler(peerId, blocksDelivery)
@@ -476,7 +478,7 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
 
-    check not engine.pendingBlocks.isQueued(address)
+    check address in engine.pendingBlocks
     expect RetriesExhaustedEngineError:
       discard await pending
 
@@ -620,7 +622,7 @@ asyncchecksuite "Block Download":
     let
       peer2Key = PrivateKey.random(rng[]).tryGet()
       peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
-      peer2Ctx = BlockExcPeerCtx(id: peer2Id)
+      peer2Ctx = BlockExcPeerCtx.new(peer2Id)
       requestCount = DefaultWantBlockBatchSize * 4
       addresses =
         toSeq(0 ..< requestCount).mapIt(BlockAddress.init(blocks[0].cid, Natural(it)))
@@ -771,9 +773,11 @@ asyncchecksuite "Block Download":
 
     let retriesBefore = engine.pendingBlocks.retries(address)
     await engine.pendingBlocks.clearRequest(address, peerCtx)
-    engine.pendingBlocks.markRequested(address, peerCtx)
+    let nextRequestId = engine.pendingBlocks.markRequested(address, peerCtx)
+    check nextRequestId != nil
     check engine.pendingBlocks.isRequested(address)
     check engine.pendingBlocks.getRequestPeer(address) == peerId.some
+    # markRequested decrements retries internally now
     # markRequested decrements retries internally now
     check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
@@ -793,7 +797,6 @@ asyncchecksuite "Block Download":
       if wantType == WantBlock:
         check addresses == @[address]
         check engine.pendingBlocks.isRequested(address)
-        check not engine.pendingBlocks.isScheduled(address)
         sent.complete()
 
     engine.network = BlockExcNetwork(
@@ -805,27 +808,17 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
     let retriesBefore = engine.pendingBlocks.retries(address)
-    check engine.pendingBlocks.isQueued(address)
-    check engine.pendingBlocks.readyQueue.len == 1
 
-    engine.scheduleBlockSend(address)
-    check engine.pendingBlocks.isQueued(address)
-    check engine.pendingBlocks.readyQueue.len == 1
-    check engine.pendingBlocks.retries(address) == retriesBefore
-
-    discard await engine.pendingBlocks.dequeue()
-    await engine.sendRequestBatch(peerId, @[address])
     await sent.wait(100.millis)
 
     # Wait for the WantBlock send (event-driven, not timeout-based)
     await sent.wait(1.seconds)
     check engine.pendingBlocks.isRequested(address)
-    check address in peerCtx.blocksRequested
-    let actualRetries = engine.pendingBlocks.retries(address)
-    check actualRetries == DefaultBlockRetries - 1
+    # markRequested decrements retries internally now
+    check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
-    engine.scheduleBlockSend(address)
-    check not engine.pendingBlocks.isQueued(address)
+    await engine.pendingBlocks.retryAddresses(@[address], DefaultBlockSendRetryDelay)
+    # markRequested decrements retries internally now
     check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
     await engine.completeBlock(address, blocks[0])
@@ -868,20 +861,19 @@ asyncchecksuite "Block Download":
     let retriesBefore = engine.pendingBlocks.retries(address)
 
     await wantHaveSent.wait().wait(100.millis)
+    # Only WantHave sent so far -- markRequested not called yet
     check engine.pendingBlocks.retries(address) == retriesBefore
-    check engine.pendingBlocks.isDiscoveryWaiting(address)
-    check not engine.pendingBlocks.isQueued(address)
-    check not engine.pendingBlocks.isScheduled(address)
+    check address in engine.pendingBlocks
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
-    check not engine.pendingBlocks.isDiscoveryWaiting(address)
+    check address in engine.pendingBlocks
 
     # Wait for WantBlock (event-driven)
     await wantBlockSent.wait().wait(1.seconds)
     check address in engine.pendingBlocks
     check engine.pendingBlocks.isRequested(address)
-    check not engine.pendingBlocks.isScheduled(address)
+    # markRequested decrements retries internally now
     check engine.pendingBlocks.retries(address) == retriesBefore - 1
     check address in peerCtx.blocksRequested
     check engine.pendingBlocks.retries(address) == DefaultBlockRetries - 1
