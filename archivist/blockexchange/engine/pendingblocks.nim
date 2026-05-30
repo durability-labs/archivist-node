@@ -435,10 +435,6 @@ proc markRequested*(
         trace "Exiting timeout monitor, handle finished", address, peer = peer.id
         return
 
-      if var req =? self.blocks .? [address]:
-        if req.requestTimeout == currentMonitor:
-          req.requestTimeout = nil
-
       if timeoutFut.completed:
         # Requeue the block for retry before notifying the engine.
         # Only if we still own the assignment (no concurrent clear/resolve).
