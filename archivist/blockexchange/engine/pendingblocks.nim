@@ -225,9 +225,9 @@ func len*(self: PendingBlocksManager): int =
   self.blocks.len
 
 proc retryAddresses*(
-    self: PendingBlocksManager,
-    addresses: seq[BlockAddress],
-    delay: Duration = DefaultDiscoveryWaitTimeout,
+  self: PendingBlocksManager,
+  addresses: seq[BlockAddress],
+  delay: Duration = DefaultDiscoveryWaitTimeout,
 ) {.async: (raises: []).}
 
 proc clearPeerAssignment(
@@ -501,6 +501,12 @@ proc retryAddresses*(
 proc peerBatchWorker(
     self: PendingBlocksManager, batchReq: sink BatchReq
 ) {.async: (raises: []).} =
+  defer:
+    # make sure to drain the queue if we're exiting
+    # while the engine is still running
+    if self.running and not batchReq.pipe.empty():
+      await self.retryAddresses(batchReq.pipe.toSeq)
+
   try:
     while self.running:
       var batch: seq[BlockAddress] = @[await batchReq.pipe.get()]
@@ -536,20 +542,15 @@ proc peerBatchWorker(
 
       trace "Dispatching batch to peer", peer = batchReq.peer.id, batch = batch.len
 
-      # Mark all as in-flight BEFORE calling engine
       for address in batch:
         discard self.markRequested(address, batchReq.peer)
 
       if not self.sendBatch.isNil and batch.len > 0:
         if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
           warn "Batch send failed, requeuing", peer = batchReq.peer.id, err = err.msg
-          var toRetry: seq[BlockAddress]
-          for address in batch:
-            if req =? self.blocks .? [address]:
-              if req.requestedPeer == batchReq.peer:
-                toRetry.add(address)
-          if toRetry.len > 0:
-            await self.retryAddresses(toRetry)
+
+          if batchReq.peer.blocksRequested.len > 0:
+            await self.retryAddresses(batchReq.peer.blocksRequested.toSeq)
   except CatchableError as exc:
     trace "Exception in peer batch worker", exc = exc.msg
 
@@ -601,11 +602,8 @@ proc pushPeerBlock(
 
         # Requeue all blocks assigned to this peer
         var addrs: seq[BlockAddress]
-        for addr, req in self.blocks:
-          if req.requestedPeer == peer:
-            addrs.add(addr)
-        if addrs.len > 0:
-          await self.retryAddresses(addrs)
+        if peer.blocksRequested.len > 0:
+          await self.retryAddresses(peer.blocksRequested.toSeq)
 
         # Clean up byPeer entry
         self.byPeer.del(peer.id)
@@ -649,12 +647,16 @@ proc blockRequestScheduler(self: PendingBlocksManager) {.async: (raises: []).} =
         continue
 
       req.state = Dispatching
+      # We need to spawn a task, because pushPeerBlock
+      # might need to await for peers and we don't want
+      # to hold up the dispatch loop
       self.trackedFutures.track(self.pushPeerBlock(address))
+
+      # TODO: This needs to be changed sleep/idleAsync
+      # after some budget has been consumed
       await sleepAsync(0.millis)
   except CatchableError as exc:
     trace "Exception in block request scheduler", err = exc.msg
-
-# --- Lifecycle ---
 
 proc start*(self: PendingBlocksManager) {.async: (raises: []).} =
   if self.running:
