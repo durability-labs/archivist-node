@@ -504,9 +504,35 @@ proc peerBatchWorker(
     if self.running and not batchReq.pipe.empty():
       await self.retryAddresses(batchReq.pipe.toSeq)
 
+  proc validateBlock(
+      address: BlockAddress
+  ): Future[bool] {.async: (raises: [CancelledError]).} =
+    without req =? self.blocks .? [address]:
+      trace "Address is not pending", address
+      return false
+
+    if req.state in {Dispatching, InFlight}:
+      trace "Address already in pipeline, skipping", address, state = req.state
+      return false
+
+    if self.retriesExhausted(address):
+      trace "Retries exhausted, skipping block", address
+      await self.failWantHandle(
+        address, RetriesExhaustedEngineError, "Block request retries exhausted"
+      )
+      return false
+
   try:
     while self.running:
-      var batch: seq[BlockAddress] = @[await batchReq.pipe.get()]
+      var batch: seq[BlockAddress] = @[]
+
+      # Get first item (blocking wait)
+      let first = await batchReq.pipe.get()
+      if not await validateBlock(first):
+        trace "Block validation failed", address = first
+        continue
+
+      batch.add(first)
 
       batchReq.deadline = sleepAsync(self.batchDeadline)
       defer:
@@ -520,19 +546,8 @@ proc peerBatchWorker(
             trace "Deadline reached", peer = batchReq.peer.id
             break
 
-        without req =? self.blocks .? [address]:
-          trace "Address is not pending", address
-          continue
-
-        if req.state in {Dispatching, InFlight}:
-          trace "Address already in pipeline, skipping", address, state = req.state
-          continue
-
-        if self.retriesExhausted(address):
-          trace "Retries exhausted, skipping block", address
-          await self.failWantHandle(
-            address, RetriesExhaustedEngineError, "Block request retries exhausted"
-          )
+        if not await validateBlock(address):
+          trace "Block validation failed", address
           continue
 
         batch.add(address)
@@ -545,9 +560,7 @@ proc peerBatchWorker(
       if not self.sendBatch.isNil and batch.len > 0:
         if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
           warn "Batch send failed, requeuing", peer = batchReq.peer.id, err = err.msg
-
-          if batchReq.peer.blocksRequested.len > 0:
-            await self.retryAddresses(batchReq.peer.blocksRequested.toSeq)
+          await self.retryAddresses(batch)
   except CatchableError as exc:
     trace "Exception in peer batch worker", exc = exc.msg
 
@@ -611,6 +624,7 @@ proc pushPeerBlock(
 
     await batchReq.pipe.put(address)
     req.state = Scheduled
+    batchReq.peer.blockRequestScheduled(address)
   except CatchableError as exc:
     trace "Exception pushing block to peer worker", address, exc = exc.msg
 
