@@ -515,6 +515,24 @@ proc peerBatchWorker(
       if existing[] == batchReq:
         self.byPeer.del(batchReq.peer.id)
 
+  proc validateBlock(
+      address: BlockAddress
+  ): Future[bool] {.async: (raises: [CancelledError]).} =
+    without req =? self.blocks .? [address]:
+      trace "Address is not pending", address
+      return false
+
+    if req.state in {Dispatching, InFlight}:
+      trace "Address already in pipeline, skipping", address, state = req.state
+      return false
+
+    if self.retriesExhausted(address):
+      trace "Retries exhausted, skipping block", address
+      await self.failWantHandle(
+        address, RetriesExhaustedEngineError, "Block request retries exhausted"
+      )
+      return false
+
   try:
     while self.running and not batchReq.peer.isDisconnected:
       batch = @[]
