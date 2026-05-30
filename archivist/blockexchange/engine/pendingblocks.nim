@@ -104,6 +104,7 @@ type
     peer: BlockExcPeerCtx
     deadline: Future[void]
     pipe: AsyncQueue[BlockAddress]
+    workerFut: Future[void].Raising([])
 
   PendingBlocksManager* = ref object of RootObj
     blocks: Table[BlockAddress, BlockReq]
@@ -591,7 +592,8 @@ proc pushPeerBlock(
     do:
       batchReq = BatchReq(peer: peer, pipe: newAsyncQueue[BlockAddress](128))
       self.byPeer[peer.id] = batchReq
-      self.trackedFutures.track(self.peerBatchWorker(batchReq))
+      batchReq.workerFut = self.peerBatchWorker(batchReq)
+      self.trackedFutures.track(batchReq.workerFut)
 
       # Register disconnect monitor on first use of this peer
       proc disconnectMonitor() {.async: (raises: []).} =
@@ -600,6 +602,7 @@ proc pushPeerBlock(
         except CatchableError as exc:
           warn "Exception in disconnect monitor", exc = exc.msg
 
+        await noCancel batchReq.workerFut.cancelAndWait()
         # Requeue all blocks assigned to this peer
         var addrs: seq[BlockAddress]
         if peer.blocksRequested.len > 0:
