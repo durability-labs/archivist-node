@@ -181,7 +181,6 @@ suite "PendingBlocks ownership model":
     pb.markRequested(address, peerCtx)
 
     check pb.isRequested(address)
-    # markRequested decrements retries internally now
     check pb.retries(address) == retriesBefore - 1
     check pb.getRequestPeer(address) == peerCtx.id.some
     check address in peerCtx.blocksRequested
@@ -232,6 +231,7 @@ suite "PendingBlocks ownership model":
     check address in peerCtx.blocksRequested
 
     await pb.resolve(address, blk)
+    check address notin peerCtx.blocksRequested
     let delivery = await handle
     check delivery.blk == blk
     check delivery.address == address
