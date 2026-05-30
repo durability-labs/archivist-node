@@ -130,7 +130,6 @@ suite "Pending Blocks":
     await startWithoutDispatch(pendingBlocks)
     let handles = blks.mapIt(pendingBlocks.getWantHandle(it.cid))
 
-    pendingBlocks.running = true
     await pendingBlocks.stop()
 
   test "Should get wants list":
@@ -182,6 +181,7 @@ suite "PendingBlocks ownership model":
     pb.markRequested(address, peerCtx)
 
     check pb.isRequested(address)
+    # markRequested decrements retries internally now
     check pb.retries(address) == retriesBefore - 1
     check pb.getRequestPeer(address) == peerCtx.id.some
     check address in peerCtx.blocksRequested
@@ -233,7 +233,6 @@ suite "PendingBlocks ownership model":
 
     await pb.resolve(address, blk)
     let delivery = await handle
-
     check delivery.blk == blk
     check delivery.address == address
     check eventually address notin pb

@@ -7,38 +7,6 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
-## With the introduction of batching, the semantics of shared block handles
-## changed. If two unrelated batches share a subset of handles, and one batch
-## cancels its subset, what should happen to the other handles in the batch?
-##
-## This is a valid condition because of erasure coding: while blocks are being
-## downloaded, erasure recovery might also be running and trying to recover the
-## remaining blocks. Whichever succeeds first will complete or cancel outstanding
-## requests. To prevent these operations from interfering with each other, we use
-## two related mechanisms:
-##
-## - A block handle now has "owners"; the block remains active while
-##   `owners.len > 0`.
-## - Owners are also `BlockHandle` values. This lets callers keep relying on
-##   Future semantics without introducing a separate type that would partially
-##   duplicate those semantics.
-##
-## The outer, owner-facing `BlockHandle` mirrors the underlying `BlockHandle`,
-## which stays active as long as `owners.len > 0` and the block has not been
-## resolved or failed.
-##
-## When an owner/public `BlockHandle` proxy is cancelled, the cancellation does
-## not propagate to the wrapped instance (similar to Chronos' `join` operation).
-## Instead, we unregister that handle from the `owners` set. Once
-## `owners.len == 0`, the underlying future is failed, which also propagates to
-## the proxies. This prevents using it after it has been released or disposed.
-##
-## For callers, the wrappers behave as expected: if more than one code path
-## awaits the `BlockHandle`, cancelling, completing, or failing one wrapper works
-## as expected for that caller, but does not affect handles awaited by other
-## callers.
-##
-
 {.push raises: [].}
 
 import std/tables
@@ -62,7 +30,6 @@ import ../../blocktype
 import ../../logutils
 import ../../utils/futures
 import ../../utils/trackedfutures
-import ../../utils/asyncheapqueue
 
 import ./errors
 
@@ -92,15 +59,8 @@ type
 
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
 
-  SchedulableReq* = ref object of RootObj
-    address*: BlockAddress
-    priority*: int
-    insertedAt: Moment
-    eligibleAt: Moment
-    queued: bool
-    attempts: int
-    discoveryWaiting: bool
-    discoveryDeadline: Moment
+  AbandonHandler* =
+    proc(address: BlockAddress) {.gcsafe, async: (raises: [CancelledError]).}
 
   TimeoutHandler* = proc(address: BlockAddress, peer: PeerId) {.
     gcsafe, async: (raises: [CancelledError])
@@ -142,7 +102,7 @@ type
     dispatched: AsyncEvent
     wakeEvent: AsyncEvent
 
-  BatchReq = ref object
+  BatchReq = object
     peer: BlockExcPeerCtx
     deadline: Future[void]
     pipe: AsyncQueue[BlockReq]
@@ -192,164 +152,6 @@ proc recordRetryOutcome*(self: PendingBlocksManager, addresses: seq[BlockAddress
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
 
-proc releaseWantHandle(
-  self: PendingBlocksManager, wrapped: BlockHandle
-): Future[?!void] {.async: (raises: []), gcsafe.}
-
-proc addOwner(
-    self: PendingBlocksManager, address: BlockAddress
-): BlockHandle {.gcsafe.} =
-  if var pending =? self.blocks .? [address]:
-    let wrapped = pending.handle.wrap()
-
-    pending.owners.incl(wrapped)
-    self.handles[wrapped] = address
-
-    proc wrappedMonitor(): Future[void] {.gcsafe, async: (raises: []).} =
-      try:
-        discard await wrapped # discard block delivery
-      except CatchableError as exc:
-        warn "Exception monitoring wrapper blockhande", address, exc = exc.msg
-
-      if err =? (await self.releaseWantHandle(wrapped)).errorOption:
-        warn "Unable to release handle", address, err = err.msg
-
-    self.handleMonitors.track(wrappedMonitor())
-
-    return wrapped
-
-  raiseAssert "Pending block missing while adding owner"
-
-proc getWantHandle*(
-    self: PendingBlocksManager, address: BlockAddress, requested: ?PeerId = PeerId.none
-): BlockHandle =
-  ## Add an event for a block
-  ##
-
-  if address notin self.blocks:
-    let handle = BlockHandle.init("pendingBlocks.sharedHandle")
-    self.blocks[address] = BlockReq(
-      address: address,
-      handle: handle,
-      requested: requested,
-      blockRetries: self.blockRetries,
-      startTime: getMonoTime().ticks,
-      insertedAt: Moment.now(),
-    )
-    self.lastInclusion = Moment.now()
-    self.updatePendingBlockGauge()
-
-    proc handleMonitor() {.async: (raises: []).} =
-      try:
-        discard await handle
-      except CatchableError as exc:
-        trace "Exception in handle monitor", exc = exc.msg
-
-      if var req =? self.blocks .? [address]:
-        var timeoutFut: Future[void]
-        if not req.requestTimeout.isNil:
-          timeoutFut = req.requestTimeout
-          req.requestTimeout = nil
-          await noCancel timeoutFut.cancelAndWait()
-          req.requested = PeerId.none
-
-      self.blocks.del(address)
-      self.updatePendingBlockGauge()
-
-    self.handleMonitors.track(handleMonitor())
-
-  return self.addOwner(address)
-
-proc getWantHandle*(
-    self: PendingBlocksManager, cid: Cid, requested = PeerId.none
-): BlockHandle =
-  self.getWantHandle(BlockAddress.init(cid), requested)
-
-proc releaseWantHandle(
-    self: PendingBlocksManager, wrapped: BlockHandle
-): Future[?!void] {.async: (raises: []), gcsafe.} =
-  if address =? self.handles .? [wrapped]:
-    self.handles.del(wrapped)
-    if var req =? self.blocks .? [address]:
-      req.owners.excl(wrapped)
-      if req.owners.len == 0:
-        if not req.handle.finished:
-          warn "Abandoning block", address
-          req.handle.fail(
-            newException(RequestAbandonedEngineError, fmt"Abandoning block {address}")
-          )
-
-          if not self.onAbandon.isNil:
-            trace "Handle abandoned, running on abandon hook", address
-            await noCancel self.onAbandon(address)
-
-      return success()
-
-  failure("Unable to find block handle")
-
-proc resolve*(self: PendingBlocksManager, blocksDelivery: seq[BlockDelivery]) =
-  ## Resolve pending blocks
-  ##
-
-  for bd in blocksDelivery:
-    if blockReq =? self.blocks .? [bd.address]:
-      if not blockReq.handle.finished:
-        trace "Resolving pending block", address = bd.address
-        let
-          startTime = blockReq.startTime
-          stopTime = getMonoTime().ticks
-          retrievalDurationUs = (stopTime - startTime) div 1000
-
-        blockReq.handle.complete(bd)
-
-        archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
-
-        if retrievalDurationUs > 500000:
-          warn "High block retrieval time", retrievalDurationUs, address = bd.address
-      else:
-        trace "Block handle already finished", address = bd.address
-
-proc resolve*(self: PendingBlocksManager, address: BlockAddress, blk: Block) =
-  self.resolve(@[BlockDelivery(blk: blk, address: address)])
-
-proc failOwners(
-    self: PendingBlocksManager, address: BlockAddress, err: ref EngineError
-) {.gcsafe.} =
-  if req =? self.blocks .? [address]:
-    for wrapped in req.owners:
-      if not wrapped.finished:
-        wrapped.fail(err)
-
-proc failWantHandle*(
-    self: PendingBlocksManager,
-    address: BlockAddress,
-    errType: typedesc[EngineError],
-    msg: string,
-) =
-  if blockReq =? self.blocks .? [address]:
-    if not blockReq.handle.finished:
-      let err = (ref errType)(address: address, msg: msg)
-      blockReq.handle.fail(err)
-      self.failOwners(address, err)
-
-proc cancelAll*(self: PendingBlocksManager): Future[void] {.async: (raises: []).} =
-  ## Cancel all outstanding block handles and other futures
-  ##
-
-  var handles: seq[BlockHandle]
-  for req in self.blocks.mvalues:
-    handles.add(req.handle)
-    for owner in req.owners:
-      handles.add(owner)
-
-  let cancellations = handles.mapIt(it.cancelAndWait())
-
-  self.handles.clear()
-  self.blocks.clear()
-  self.updatePendingBlockGauge()
-
-  await noCancel allFutures(cancellations & @[self.handleMonitors.cancelTracked])
-
 func owners*(self: PendingBlocksManager, address: BlockAddress): int =
   if pending =? self.blocks .? [address]: pending.owners.len else: 0
 
@@ -360,7 +162,7 @@ func retries*(self: PendingBlocksManager, address: BlockAddress): int =
   if pending =? self.blocks .? [address]: pending.retries else: 0
 
 func decRetries*(self: PendingBlocksManager, address: BlockAddress) =
-  if pending =? self.blocks .? [address]:
+  if var pending =? self.blocks .? [address]:
     pending.retries -= 1
 
 func retriesExhausted*(self: PendingBlocksManager, address: BlockAddress): bool =
