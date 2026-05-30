@@ -251,7 +251,7 @@ suite "PendingBlocks ownership model":
     check address in pb
     check not pb.isRequested(address)
 
-  test "markRequested sets in-flight":
+  test "markRequested sets in-flight and decrements retries":
     let pb = PendingBlocksManager.new()
     discard pb.getWantHandle(address)
     let retriesBefore = pb.retries(address)
@@ -260,31 +260,158 @@ suite "PendingBlocks ownership model":
     discard pb.markRequested(address, peerCtx, 60.seconds)
 
     check pb.isRequested(address)
-    # markRequested decrements retries internally now
     check pb.retries(address) == retriesBefore - 1
 
-  test "clearRequest clears in-flight":
-    let pb = PendingBlocksManager.new()
+  test "clearRequest clears in-flight and removes from blocksRequested":
+    let
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+      pb = PendingBlocksManager.new()
+
     discard pb.getWantHandle(address)
-    let peerCtx = makePeerCtx(makePeerId())
     discard pb.markRequested(address, peerCtx, 60.seconds)
     check pb.isRequested(address)
+    check address in peerCtx.blocksRequested
 
     await pb.clearRequest(address, peerCtx)
     check not pb.isRequested(address)
+    check address notin peerCtx.blocksRequested
 
-  test "failWantHandle fails request":
-    let pb = PendingBlocksManager.new()
-    let handle = pb.getWantHandle(address)
+  test "failWantHandle fails request and removes from blocksRequested":
+    let
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+      pb = PendingBlocksManager.new()
+      handle = pb.getWantHandle(address)
+
+    discard pb.markRequested(address, peerCtx, 60.seconds)
+    check address in peerCtx.blocksRequested
+
     await pb.failWantHandle(address, StorageFailedEngineError, "test error")
     check handle.finished
+    check address notin peerCtx.blocksRequested
 
-  test "resolve completes handle":
-    let pb = PendingBlocksManager.new()
-    let handle = pb.getWantHandle(address)
-    let peerCtx = makePeerCtx(makePeerId())
+  test "resolve completes handle and removes from blocksRequested":
+    let
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+      pb = PendingBlocksManager.new()
+      handle = pb.getWantHandle(address)
+
     discard pb.markRequested(address, peerCtx, 60.seconds)
+    check address in peerCtx.blocksRequested
+
     await pb.resolve(address, blk)
+    check address notin peerCtx.blocksRequested
     let delivery = await handle
     check delivery.blk == blk
     check delivery.address == address
+
+  test "timeout requeues block and clears peer assignment":
+    var timedOut = false
+    let
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+      onTimeout = proc(
+          timeoutAddress: BlockAddress, timeoutPeer: PeerId
+      ) {.gcsafe, async: (raises: [CancelledError]).} =
+        check timeoutAddress == address
+        check timeoutPeer == peerId
+        timedOut = true
+      pb = PendingBlocksManager.new(onTimeout = onTimeout)
+
+    discard pb.getWantHandle(address)
+    discard pb.markRequested(address, peerCtx, 10.millis)
+    check pb.isRequested(address)
+    check address in peerCtx.blocksRequested
+
+    check eventually timedOut
+
+    check not pb.isRequested(address)
+    check address in pb
+    check peerCtx.blocksRequested.len == 0
+
+  test "retryAddresses removes from blocksRequested and requeues":
+    let
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+      pb = PendingBlocksManager.new()
+
+    discard pb.getWantHandle(address)
+    discard pb.markRequested(address, peerCtx, 60.seconds)
+    check address in peerCtx.blocksRequested
+
+    await pb.retryAddresses(@[address], 0.millis)
+    check address notin peerCtx.blocksRequested
+    check not pb.isRequested(address)
+    check address in pb
+
+  test "markRequested with same peer is idempotent":
+    let
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+      pb = PendingBlocksManager.new()
+
+    discard pb.getWantHandle(address)
+    let retriesBefore = pb.retries(address)
+
+    let result1 = pb.markRequested(address, peerCtx, 60.seconds)
+    check result1 == peerCtx
+    check pb.retries(address) == retriesBefore - 1
+
+    let result2 = pb.markRequested(address, peerCtx, 60.seconds)
+    check result2 == peerCtx
+    check pb.retries(address) == retriesBefore - 1
+
+  test "markRequested with different peer returns previous":
+    let
+      peerId1 = makePeerId()
+      peerCtx1 = makePeerCtx(peerId1)
+      peerId2 = makePeerId()
+      peerCtx2 = makePeerCtx(peerId2)
+      pb = PendingBlocksManager.new()
+
+    discard pb.getWantHandle(address)
+    let result1 = pb.markRequested(address, peerCtx1, 60.seconds)
+    check result1 == peerCtx1
+
+    let result2 = pb.markRequested(address, peerCtx2, 60.seconds)
+    check result2 == peerCtx1
+    check pb.getRequestPeerCtx(address) == peerCtx1
+
+  test "scheduler respects priority ordering":
+    let
+      pb = PendingBlocksManager.new(batchSize = 1, batchDeadline = 1.millis)
+      lowPriorityAddress = BlockAddress.init(bt.Block.new("low".toBytes).tryGet.cid)
+      highPriorityAddress = BlockAddress.init(bt.Block.new("high".toBytes).tryGet.cid)
+      bothSent = newFuture[void]()
+
+    var sentAddresses: seq[BlockAddress]
+
+    proc sendBatch(
+        peer: BlockExcPeerCtx, batch: seq[BlockAddress]
+    ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+      sentAddresses.add(batch[0])
+      if sentAddresses.len == 2 and not bothSent.finished:
+        bothSent.complete()
+      success()
+
+    let peerCtx = makePeerCtx(makePeerId())
+    pb.sendBatch = sendBatch
+    pb.getPeerForBlock = proc(
+        address: BlockAddress
+    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+      success peerCtx
+
+    discard pb.start()
+
+    # Add low priority first, then high priority (higher numeric = higher priority in max-heap)
+    discard pb.getWantHandle(lowPriorityAddress, priority = 1)
+    discard pb.getWantHandle(highPriorityAddress, priority = 10)
+
+    await bothSent.wait(1.seconds)
+    await pb.stop()
+
+    check sentAddresses.len == 2
+    check sentAddresses[0] == lowPriorityAddress # priority 1 pops first (min-heap)
+    check sentAddresses[1] == highPriorityAddress
