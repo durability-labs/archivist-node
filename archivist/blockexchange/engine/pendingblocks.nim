@@ -522,6 +522,8 @@ proc peerBatchWorker(
       )
       return false
 
+    return true
+
   try:
     while self.running:
       var batch: seq[BlockAddress] = @[]
