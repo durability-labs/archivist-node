@@ -486,6 +486,8 @@ proc peerBatchWorker(
       )
       return false
 
+    return true
+
   try:
     while self.running and not batchReq.peer.isDisconnected:
       batch = @[]
