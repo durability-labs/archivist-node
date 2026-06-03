@@ -54,6 +54,7 @@ const
   DefaultRequestTimeout* = 30.seconds
   DefaultDiscoveryWaitTimeout = 5.seconds
   DefaultBlockSendRetryDelay* = 500.millis
+  DefaultYieldInterval = 5.millis
 
 type
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
@@ -119,6 +120,7 @@ type
     retries = DefaultBlockRetries
     running: bool
     trackedFutures: TrackedFutures
+    yieldInterval: Duration
 
     onAbandon*: AbandonHandler
     onTimeout*: TimeoutHandler
@@ -632,6 +634,7 @@ proc pushPeerBlock(
 
 proc blockRequestScheduler(self: PendingBlocksManager) {.async: (raises: []).} =
   try:
+    var nextYield = Moment.now() + self.yieldInterval
     while self.running:
       if self.blockQueue.len == 0:
         await self.queueWakeEvent.wait()
@@ -669,7 +672,11 @@ proc blockRequestScheduler(self: PendingBlocksManager) {.async: (raises: []).} =
 
       # TODO: This needs to be changed sleep/idleAsync
       # after some budget has been consumed
-      await sleepAsync(0.millis)
+      if Moment.now() > nextYield:
+        nextYield = Moment.now() + self.yieldInterval
+        trace "Yielding in scheduler loop",
+          nextYield = nextYield, interval = self.yieldInterval
+        await sleepAsync(0.millis)
   except CatchableError as exc:
     trace "Exception in block request scheduler", err = exc.msg
 
@@ -712,6 +719,7 @@ func new*(
     batchSize = DefaultMaxBatchBlocks,
     batchDeadline = DefaultMaxBatchBlocksTimeout,
     discoveryTimeout = DefaultDiscoveryWaitTimeout,
+    yieldInterval = DefaultYieldInterval,
     sendBatch: BatchSendHandler = nil,
     onAbandon: AbandonHandler = nil,
     onTimeout: TimeoutHandler = nil,
@@ -724,6 +732,7 @@ func new*(
     discoveryTimeout: discoveryTimeout,
     trackedFutures: TrackedFutures.new(),
     queueWakeEvent: newAsyncEvent(),
+    yieldInterval: yieldInterval,
     sendBatch: sendBatch,
     getPeerForBlock: getPeerForBlock,
     onAbandon: onAbandon,
