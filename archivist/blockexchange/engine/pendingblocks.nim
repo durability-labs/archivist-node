@@ -231,7 +231,7 @@ func len*(self: PendingBlocksManager): int =
 proc retryAddresses*(
   self: PendingBlocksManager,
   addresses: seq[BlockAddress],
-  delay: Duration = DefaultDiscoveryWaitTimeout,
+  delay: Duration = DefaultBlockSendRetryDelay,
 ) {.async: (raises: []).}
 
 proc clearPeerAssignment(
@@ -242,10 +242,12 @@ proc clearPeerAssignment(
       timeoutFut = req.requestTimeout
       assignedPeer = req.requestedPeer
 
-    # Detach synchronously -- no other async task can observe stale state
+    # Detach synchronously - no other async task can observe stale state
     req.requestTimeout = nil
     req.requestedPeer = nil
+    req.state = Pending
     if assignedPeer != nil:
+      trace "Clearing peer assignment for block", address, peer = assignedPeer.id
       assignedPeer.blockRequestCleared(address)
 
     # Now safely cancel the timeout monitor
@@ -406,13 +408,12 @@ proc markRequested*(
     address: BlockAddress,
     peer: BlockExcPeerCtx,
     timeout: Duration = DefaultRequestTimeout,
-): BlockExcPeerCtx =
-  let prevPeer = self.getRequestPeerCtx(address)
-  if prevPeer != nil:
-    trace "Block already requested", address, requestedPeer = prevPeer.id
-    return prevPeer
-
+) =
   if var pending =? self.blocks .? [address]:
+    if pending.requestedPeer != nil and pending.state == InFlight:
+      trace "Block already requested", address, requestedPeer = pending.requestedPeer.id
+      return
+
     pending.requestedPeer = peer
     pending.state = InFlight
     pending.retries -= 1
@@ -456,8 +457,6 @@ proc markRequested*(
     pending.requestTimeout = currentMonitor
     self.trackedFutures.track(currentMonitor)
 
-    return pending.requestedPeer
-
 proc clearRequest*(
     self: PendingBlocksManager, address: BlockAddress
 ) {.async: (raises: []).} =
@@ -473,9 +472,11 @@ proc clearRequest*(
 proc retryAddresses*(
     self: PendingBlocksManager,
     addresses: seq[BlockAddress],
-    delay: Duration = DefaultDiscoveryWaitTimeout,
+    delay: Duration = DefaultBlockSendRetryDelay,
 ) {.async: (raises: []).} =
   for address in addresses:
+    trace "Retrying address", address
+
     without req =? self.blocks .? [address]:
       continue
 
@@ -499,13 +500,13 @@ proc retryAddresses*(
   self.queueWakeEvent.fire()
 
 proc peerBatchWorker(
-    self: PendingBlocksManager, batchReq: sink BatchReq
+    self: PendingBlocksManager, batchReq: BatchReq
 ) {.async: (raises: []).} =
   defer:
     # make sure to drain the queue if we're exiting
     # while the engine is still running
     if self.running and not batchReq.pipe.empty():
-      await self.retryAddresses(batchReq.pipe.toSeq)
+      await self.retryAddresses(batchReq.pipe.toSeq, self.discoveryTimeout)
 
   proc validateBlock(
       address: BlockAddress
@@ -533,6 +534,8 @@ proc peerBatchWorker(
 
       # Get first item (blocking wait)
       let first = await batchReq.pipe.get()
+      trace "Scheduling peer block", address = first, peer = batchReq.peer.id
+
       if not await validateBlock(first):
         trace "Block validation failed", address = first
         continue
@@ -560,12 +563,12 @@ proc peerBatchWorker(
       trace "Dispatching batch to peer", peer = batchReq.peer.id, batch = batch.len
 
       for address in batch:
-        discard self.markRequested(address, batchReq.peer)
+        self.markRequested(address, batchReq.peer)
 
       if not self.sendBatch.isNil and batch.len > 0:
         if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
           warn "Batch send failed, requeuing", peer = batchReq.peer.id, err = err.msg
-          await self.retryAddresses(batch)
+          await self.retryAddresses(batch, self.discoveryTimeout)
   except CatchableError as exc:
     trace "Exception in peer batch worker", exc = exc.msg
 
@@ -590,14 +593,13 @@ proc pushPeerBlock(
 
     if self.getPeerForBlock.isNil:
       trace "No peer selector configured", address
-      raiseAssert("No peer selector configured")
       return
 
     without peer =? await self.getPeerForBlock(address), err:
       trace "Unable to get peer", address, err = err.msg
       if err of NoPeerForBlockError:
         req.state = Pending
-        await self.retryAddresses(@[address])
+        await self.retryAddresses(@[address], self.discoveryTimeout)
       return
 
     var batchReq: BatchReq
