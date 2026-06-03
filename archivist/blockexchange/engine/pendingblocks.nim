@@ -132,7 +132,7 @@ func `<`(a, b: BlockItem): bool =
   if a.readyAt != b.readyAt:
     return a.readyAt < b.readyAt
   if a.priority != b.priority:
-    return a.priority < b.priority
+    return a.priority > b.priority # higher numeric = higher priority
   a.addedAt < b.addedAt
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
