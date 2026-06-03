@@ -480,7 +480,7 @@ proc blocksDeliveryHandler*(
         if not peerCtx.isNil:
           peerCtx.cleanPresence(bd.address)
         await self.pendingBlocks.retryAddresses(
-          @[bd.address], DefaultBlockSendRetryDelay
+          @[bd.address], self.pendingBlocks.blockSendTimeout
         )
         continue
 
@@ -531,7 +531,9 @@ proc blocksDeliveryHandler*(
       error "Unable to decode manifest block", err = err.msg
       if not peerCtx.isNil:
         peerCtx.cleanPresence(bd.address)
-      await self.pendingBlocks.retryAddresses(@[bd.address], DefaultBlockSendRetryDelay)
+      await self.pendingBlocks.retryAddresses(
+        @[bd.address], self.pendingBlocks.blockSendTimeout
+      )
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
