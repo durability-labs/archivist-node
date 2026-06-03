@@ -120,6 +120,7 @@ type
     retries = DefaultBlockRetries
     running: bool
     trackedFutures: TrackedFutures
+    yieldInterval: Duration
 
     onAbandon*: AbandonHandler
     onTimeout*: TimeoutHandler
