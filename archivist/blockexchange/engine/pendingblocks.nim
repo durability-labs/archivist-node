@@ -93,6 +93,7 @@ type
     attempts: int
     generation: int
     addedAt: Moment
+    readyAt: Moment
 
   BlockItem* = object
     address: BlockAddress
@@ -118,6 +119,7 @@ type
     batchSize: int
     batchDeadline: Duration
     discoveryTimeout: Duration
+    blockSendTimeout*: Duration
     retries = DefaultBlockRetries
     running: bool
     trackedFutures: TrackedFutures
@@ -305,7 +307,7 @@ proc addOwner(
     self.blockQueue.push(
       BlockItem(
         address: address,
-        readyAt: now,
+        readyAt: pending.readyAt,
         addedAt: now,
         generation: pending.generation,
         priority: pending.priority,
@@ -330,6 +332,7 @@ proc getWantHandle*(
       startTime: getMonoTime().ticks,
       priority: priority,
       addedAt: now,
+      readyAt: now,
       state: Pending,
     )
     self.lastInclusion = now
@@ -487,10 +490,11 @@ proc retryAddresses*(
 
     req.state = Pending
     req.generation.inc()
+    req.readyAt = Moment.now() + delay
     self.blockQueue.push(
       BlockItem(
         address: address,
-        readyAt: Moment.now() + delay,
+        readyAt: req.readyAt,
         addedAt: req.addedAt,
         generation: req.generation,
         priority: req.priority,
@@ -506,7 +510,7 @@ proc peerBatchWorker(
     # make sure to drain the queue if we're exiting
     # while the engine is still running
     if self.running and not batchReq.pipe.empty():
-      await self.retryAddresses(batchReq.pipe.toSeq, self.discoveryTimeout)
+      await self.retryAddresses(batchReq.pipe.toSeq, self.blockSendTimeout)
 
   proc validateBlock(
       address: BlockAddress
@@ -568,7 +572,7 @@ proc peerBatchWorker(
       if not self.sendBatch.isNil and batch.len > 0:
         if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
           warn "Batch send failed, requeuing", peer = batchReq.peer.id, err = err.msg
-          await self.retryAddresses(batch, self.discoveryTimeout)
+          await self.retryAddresses(batch, self.blockSendTimeout)
   except CatchableError as exc:
     trace "Exception in peer batch worker", exc = exc.msg
 
@@ -736,6 +740,7 @@ func new*(
     batchSize = DefaultMaxBatchBlocks,
     batchDeadline = DefaultMaxBatchBlocksTimeout,
     discoveryTimeout = DefaultDiscoveryWaitTimeout,
+    blockSendTimeout = DefaultBlockSendRetryDelay,
     yieldInterval = DefaultYieldInterval,
     sendBatch: BatchSendHandler = nil,
     onAbandon: AbandonHandler = nil,
@@ -747,6 +752,7 @@ func new*(
     batchSize: batchSize,
     batchDeadline: batchDeadline,
     discoveryTimeout: discoveryTimeout,
+    blockSendTimeout: blockSendTimeout,
     trackedFutures: TrackedFutures.new(),
     queueWakeEvent: newAsyncEvent(),
     yieldInterval: yieldInterval,
