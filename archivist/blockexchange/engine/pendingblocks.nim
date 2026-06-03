@@ -101,10 +101,12 @@ type
     generation: int
     priority: int
 
-  BatchReq = object
+  BatchReq = ref object
     peer: BlockExcPeerCtx
     deadline: Future[void]
     pipe: AsyncQueue[BlockAddress]
+    workerFut: Future[void].Raising([])
+    monitorFut: Future[void].Raising([])
 
   PendingBlocksManager* = ref object of RootObj
     blocks: Table[BlockAddress, BlockReq]
@@ -602,40 +604,41 @@ proc pushPeerBlock(
     self.byPeer.withValue(peer.id, existing):
       batchReq = existing[]
     do:
-      batchReq = BatchReq(peer: peer, pipe: newAsyncQueue[BlockAddress](128))
+      trace "Creating new peer request worker", peer = peer.id
+      batchReq = BatchReq(peer: peer, pipe: newAsyncQueue[BlockAddress](self.batchSize))
       self.byPeer[peer.id] = batchReq
-      let workerFut = self.peerBatchWorker(batchReq)
-      self.trackedFutures.track(workerFut)
+      batchReq.workerFut = self.peerBatchWorker(batchReq)
+      self.trackedFutures.track(batchReq.workerFut)
 
       # Register disconnect monitor on first use of this peer
       proc disconnectMonitor() {.async: (raises: []).} =
         try:
+          trace "Monitoring peer disconnect", peer = peer.id
           await peer.onDisconnect()
         except CatchableError as exc:
           warn "Exception in disconnect monitor", exc = exc.msg
 
         trace "Peer disconnected, performing cleanup", peer = peer.id
-        await noCancel workerFut.cancelAndWait()
+        await noCancel batchReq.workerFut.cancelAndWait()
         # Requeue all blocks assigned to this peer
 
         let
           blocks = peer.blocksRequested.toSeq
-          failed = (
-            await noCancel allFinishedFailed[void](
-              blocks.mapIt(self.clearPeerAssignment(it))
-            )
-          )[1]
+          (_, failed) = await noCancel allFinishedFailed[void](
+            blocks.mapIt(self.clearPeerAssignment(it))
+          )
 
         if failed.len > 0:
           trace "Not all blocks peer assignments were cleared", failed = failed.len
 
         if blocks.len > 0:
-          await self.retryAddresses(blocks)
+          await self.retryAddresses(blocks, self.discoveryTimeout)
 
         # Clean up byPeer entry
         self.byPeer.del(peer.id)
 
-      self.trackedFutures.track(disconnectMonitor())
+      batchReq.monitorFut = disconnectMonitor()
+      self.trackedFutures.track(batchReq.monitorFut)
 
     req.state = Scheduled
     req.requestedPeer = batchReq.peer
