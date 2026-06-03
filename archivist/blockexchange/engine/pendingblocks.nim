@@ -100,7 +100,7 @@ type
     dispatched: AsyncEvent
     wakeEvent: AsyncEvent
 
-  BatchReq = object
+  BatchReq = ref object
     peer: BlockExcPeerCtx
     deadline: Future[void]
     pipe: AsyncQueue[BlockReq]
