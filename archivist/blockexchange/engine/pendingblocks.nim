@@ -105,7 +105,6 @@ type
     peer: BlockExcPeerCtx
     deadline: Future[void]
     pipe: AsyncQueue[BlockAddress]
-    workerFut: Future[void].Raising([])
 
   PendingBlocksManager* = ref object of RootObj
     blocks: Table[BlockAddress, BlockReq]
@@ -261,7 +260,6 @@ proc releaseWantHandle(
       if req.owners.len == 0:
         if not req.handle.finished:
           warn "Abandoning block", address
-          await self.clearPeerAssignment(address)
           req.handle.fail(
             newException(RequestAbandonedEngineError, fmt"Abandoning block {address}")
           )
@@ -269,6 +267,7 @@ proc releaseWantHandle(
           if not self.onAbandon.isNil:
             trace "Handle abandoned, running on abandon hook", address
             await noCancel self.onAbandon(address)
+          await self.clearPeerAssignment(address)
 
       self.queueWakeEvent.fire()
       return success()
@@ -605,8 +604,8 @@ proc pushPeerBlock(
     do:
       batchReq = BatchReq(peer: peer, pipe: newAsyncQueue[BlockAddress](128))
       self.byPeer[peer.id] = batchReq
-      batchReq.workerFut = self.peerBatchWorker(batchReq)
-      self.trackedFutures.track(batchReq.workerFut)
+      let workerFut = self.peerBatchWorker(batchReq)
+      self.trackedFutures.track(workerFut)
 
       # Register disconnect monitor on first use of this peer
       proc disconnectMonitor() {.async: (raises: []).} =
@@ -615,20 +614,33 @@ proc pushPeerBlock(
         except CatchableError as exc:
           warn "Exception in disconnect monitor", exc = exc.msg
 
-        await noCancel batchReq.workerFut.cancelAndWait()
+        trace "Peer disconnected, performing cleanup", peer = peer.id
+        await noCancel workerFut.cancelAndWait()
         # Requeue all blocks assigned to this peer
-        var addrs: seq[BlockAddress]
-        if peer.blocksRequested.len > 0:
-          await self.retryAddresses(peer.blocksRequested.toSeq)
+
+        let
+          blocks = peer.blocksRequested.toSeq
+          failed = (
+            await noCancel allFinishedFailed[void](
+              blocks.mapIt(self.clearPeerAssignment(it))
+            )
+          )[1]
+
+        if failed.len > 0:
+          trace "Not all blocks peer assignments were cleared", failed = failed.len
+
+        if blocks.len > 0:
+          await self.retryAddresses(blocks)
 
         # Clean up byPeer entry
         self.byPeer.del(peer.id)
 
       self.trackedFutures.track(disconnectMonitor())
 
-    await batchReq.pipe.put(address)
     req.state = Scheduled
+    req.requestedPeer = batchReq.peer
     batchReq.peer.blockRequestScheduled(address)
+    await batchReq.pipe.put(address)
   except CatchableError as exc:
     trace "Exception pushing block to peer worker", address, exc = exc.msg
 
