@@ -48,13 +48,13 @@ declareGauge(
 )
 
 const
-  DefaultMaxBatchBlocks* = 128
-  DefaultMaxBatchBlocksTimeout* = 50.millis
+  DefaultMaxBatchBlocks* = 256
+  DefaultMaxBatchBlocksTimeout* = 1.millis
   DefaultBlockRetries* = 3000
-  DefaultRequestTimeout* = 30.seconds
+  DefaultRequestTimeout* = 10.seconds
   DefaultDiscoveryWaitTimeout = 5.seconds
   DefaultBlockSendRetryDelay* = 500.millis
-  DefaultYieldInterval = 5.millis
+  DefaultYieldInterval = 20.millis
 
 type
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
@@ -293,10 +293,10 @@ proc addOwner(
       try:
         discard await wrapped
       except CatchableError as exc:
-        warn "Exception monitoring wrapper blockhandle", address, exc = exc.msg
+        trace "Exception monitoring wrapper blockhandle", address, exc = exc.msg
 
       if err =? (await self.releaseWantHandle(wrapped)).errorOption:
-        warn "Unable to release handle", address, err = err.msg
+        trace "Unable to release handle", address, err = err.msg
 
     if priority > pending.priority:
       pending.priority = priority
@@ -376,7 +376,7 @@ proc resolve*(
         archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
 
         if retrievalDurationUs > 500000:
-          warn "High block retrieval time", retrievalDurationUs, address = bd.address
+          trace "High block retrieval time", retrievalDurationUs, address = bd.address
       else:
         trace "Block handle already finished", address = bd.address
 
@@ -430,7 +430,7 @@ proc markRequested*(
         await handle or timeoutFut
         let reqPeer = self.getRequestPeerCtx(address).option
         if reqPeer != peer.option:
-          warn "Requested and timed out peers don't match",
+          trace "Requested and timed out peers don't match",
             oldPeer = peer.id, newPeer = reqPeer .? id, address
           return
       except CatchableError as exc:
@@ -503,6 +503,26 @@ proc retryAddresses*(
 
   self.queueWakeEvent.fire()
 
+proc validateBlock(
+    self: PendingBlocksManager, address: BlockAddress
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  without req =? self.blocks .? [address]:
+    trace "Address is not pending", address
+    return false
+
+  if req.state in {Dispatching, InFlight}:
+    trace "Address already in pipeline, skipping", address, state = req.state
+    return false
+
+  if self.retriesExhausted(address):
+    trace "Retries exhausted, skipping block", address
+    await self.failWantHandle(
+      address, RetriesExhaustedEngineError, "Block request retries exhausted"
+    )
+    return false
+
+  return true
+
 proc peerBatchWorker(
     self: PendingBlocksManager, batchReq: BatchReq
 ) {.async: (raises: []).} =
@@ -512,26 +532,6 @@ proc peerBatchWorker(
     if self.running and not batchReq.pipe.empty():
       await self.retryAddresses(batchReq.pipe.toSeq, self.blockSendTimeout)
 
-  proc validateBlock(
-      address: BlockAddress
-  ): Future[bool] {.async: (raises: [CancelledError]).} =
-    without req =? self.blocks .? [address]:
-      trace "Address is not pending", address
-      return false
-
-    if req.state in {Dispatching, InFlight}:
-      trace "Address already in pipeline, skipping", address, state = req.state
-      return false
-
-    if self.retriesExhausted(address):
-      trace "Retries exhausted, skipping block", address
-      await self.failWantHandle(
-        address, RetriesExhaustedEngineError, "Block request retries exhausted"
-      )
-      return false
-
-    return true
-
   try:
     while self.running:
       var batch: seq[BlockAddress] = @[]
@@ -540,7 +540,7 @@ proc peerBatchWorker(
       let first = await batchReq.pipe.get()
       trace "Scheduling peer block", address = first, peer = batchReq.peer.id
 
-      if not await validateBlock(first):
+      if not await self.validateBlock(first):
         trace "Block validation failed", address = first
         continue
 
@@ -551,14 +551,27 @@ proc peerBatchWorker(
         await noCancel batchReq.deadline.cancelAndWait()
 
       while batch.len < self.batchSize:
-        let address =
-          try:
-            await batchReq.pipe.get().wait(batchReq.deadline)
-          except AsyncTimeoutError as exc:
-            trace "Deadline reached", peer = batchReq.peer.id
-            break
+        if batchReq.deadline.finished:
+          trace "Deadline expired", batch = batch.len
+          break
 
-        if not await validateBlock(address):
+        let next = batchReq.pipe.get()
+        try:
+          await next or batchReq.deadline
+        except CatchableError as exc:
+          trace "Exception awaiting queue item", exc = exc.msg
+          if batch.len > 0:
+            await self.retryAddresses(batch, self.blockSendTimeout)
+          raise exc
+        finally:
+          await noCancel next.cancelAndWait()
+
+        if not next.completed:
+          trace "Skipping incomplete queue item"
+          continue
+
+        let address = await next
+        if not await self.validateBlock(address):
           trace "Block validation failed", address
           continue
 
@@ -571,7 +584,7 @@ proc peerBatchWorker(
 
       if not self.sendBatch.isNil and batch.len > 0:
         if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
-          warn "Batch send failed, requeuing", peer = batchReq.peer.id, err = err.msg
+          warn "Batch send failed", peer = batchReq.peer.id, err = err.msg
           await self.retryAddresses(batch, self.blockSendTimeout)
   except CatchableError as exc:
     trace "Exception in peer batch worker", exc = exc.msg
@@ -622,7 +635,7 @@ proc pushPeerBlock(
           trace "Monitoring peer disconnect", peer = peer.id
           await peer.onDisconnect()
         except CatchableError as exc:
-          warn "Exception in disconnect monitor", exc = exc.msg
+          trace "Exception in disconnect monitor", exc = exc.msg
 
         trace "Peer disconnected, performing cleanup", peer = peer.id
         await noCancel batchReq.workerFut.cancelAndWait()
