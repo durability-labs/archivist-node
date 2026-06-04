@@ -504,6 +504,26 @@ proc validateBlock(
 
   return true
 
+proc validateBlock(
+    self: PendingBlocksManager, address: BlockAddress
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  without req =? self.blocks .? [address]:
+    trace "Address is not pending", address
+    return false
+
+  if req.state in {Dispatching, InFlight}:
+    trace "Address already in pipeline, skipping", address, state = req.state
+    return false
+
+  if self.retriesExhausted(address):
+    trace "Retries exhausted, skipping block", address
+    await self.failWantHandle(
+      address, RetriesExhaustedEngineError, "Block request retries exhausted"
+    )
+    return false
+
+  return true
+
 proc peerBatchWorker(
     self: PendingBlocksManager, batchReq: BatchReq
 ) {.async: (raises: []).} =
