@@ -394,7 +394,7 @@ asyncchecksuite "NetworkStore engine handlers":
     engine.peers.add(otherPeerCtx)
 
     for delivery in blocksDelivery:
-      discard engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
+      engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
       otherPeerCtx.blocksRequested.incl(delivery.address)
 
     await engine.blocksDeliveryHandler(peerId, blocksDelivery)
@@ -773,11 +773,9 @@ asyncchecksuite "Block Download":
 
     let retriesBefore = engine.pendingBlocks.retries(address)
     await engine.pendingBlocks.clearRequest(address, peerCtx)
-    let nextRequestId = engine.pendingBlocks.markRequested(address, peerCtx)
-    check nextRequestId != nil
+    engine.pendingBlocks.markRequested(address, peerCtx)
     check engine.pendingBlocks.isRequested(address)
     check engine.pendingBlocks.getRequestPeer(address) == peerId.some
-    # markRequested decrements retries internally now
     # markRequested decrements retries internally now
     check engine.pendingBlocks.retries(address) == retriesBefore - 1
 
@@ -807,17 +805,19 @@ asyncchecksuite "Block Download":
     peerCtx.setPresence(Presence(address: address, have: true))
 
     let pending = engine.requestDelivery(address).tryGet()
-    let retriesBefore = engine.pendingBlocks.retries(address)
 
-    await sent.wait(100.millis)
-
+    # Wait for the WantBlock send (event-driven, not timeout-based)
+    await sent.wait(1.seconds)
     check engine.pendingBlocks.isRequested(address)
-    # markRequested decrements retries internally now
-    check engine.pendingBlocks.retries(address) == retriesBefore - 1
+    check address in peerCtx.blocksRequested
+    let actualRetries = engine.pendingBlocks.retries(address)
+    check actualRetries == DefaultBlockRetries - 1
 
+    # retryAddresses requeues the block but does not decrement retries itself
     await engine.pendingBlocks.retryAddresses(@[address], DefaultBlockSendRetryDelay)
-    # markRequested decrements retries internally now
-    check engine.pendingBlocks.retries(address) == retriesBefore - 1
+    check address in engine.pendingBlocks
+    # Retries unchanged - retryAddresses does not call markRequested
+    check engine.pendingBlocks.retries(address) == DefaultBlockRetries - 1
 
     await engine.completeBlock(address, blocks[0])
     check (await pending).blk == blocks[0]
@@ -856,23 +856,24 @@ asyncchecksuite "Block Download":
     )
 
     let pending = engine.requestDelivery(address).tryGet()
-    let retriesBefore = engine.pendingBlocks.retries(address)
 
-    await wantHaveSent.wait().wait(100.millis)
-    # Only WantHave sent so far -- markRequested not called yet
-    check engine.pendingBlocks.retries(address) == retriesBefore
+    # Wait for WantHave (event-driven)
+    await wantHaveSent.wait().wait(1.seconds)
+    # Only WantHave sent so far - markRequested not called yet
+    check engine.pendingBlocks.retries(address) == DefaultBlockRetries
     check address in engine.pendingBlocks
+
     await engine.blockPresenceHandler(
       peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
     )
     check address in engine.pendingBlocks
 
+    # Wait for WantBlock (event-driven)
     await wantBlockSent.wait().wait(1.seconds)
     check address in engine.pendingBlocks
     check engine.pendingBlocks.isRequested(address)
-    # markRequested decrements retries internally now
-    check engine.pendingBlocks.retries(address) == retriesBefore - 1
     check address in peerCtx.blocksRequested
+    check engine.pendingBlocks.retries(address) == DefaultBlockRetries - 1
     await pending.cancelAndWait()
     expect CancelledError:
       discard await pending
