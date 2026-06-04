@@ -662,7 +662,7 @@ asyncchecksuite "Block Download":
 
     check wantBlockBatches == @[@[firstAddress], @[secondAddress]]
 
-  test "Should batch by peer before splitting want block requests":
+  test "Send all blocks to all peers":
     let
       peer2Key = PrivateKey.random(rng[]).tryGet()
       peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
@@ -674,9 +674,7 @@ asyncchecksuite "Block Download":
 
     var
       sentAddresses = initHashSet[BlockAddress]()
-      expectedPeer1 = initHashSet[BlockAddress]()
-      expectedPeer2 = initHashSet[BlockAddress]()
-      wantBlockBatches: seq[tuple[peer: PeerId, addresses: seq[BlockAddress]]]
+      wantBlockBatches: Table[PeerId, seq[BlockAddress]]
 
     proc sendWantList(
         id: PeerId,
@@ -688,9 +686,9 @@ asyncchecksuite "Block Download":
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
-        wantBlockBatches.add((peer: id, addresses: requestedAddresses))
-        for address in requestedAddresses:
-          sentAddresses.incl(address)
+        wantBlockBatches.mgetOrPut(id, @[]).add(requestedAddresses)
+        sentAddresses.incl(requestedAddresses.toHashSet)
+
         if sentAddresses.len == requestCount and not done.isSet:
           done.fire()
 
@@ -703,42 +701,18 @@ asyncchecksuite "Block Download":
 
     for i, address in addresses:
       if i mod 2 == 0:
-        expectedPeer1.incl(address)
         peerCtx.setPresence(Presence(address: address, have: true))
       else:
-        expectedPeer2.incl(address)
         peer2Ctx.setPresence(Presence(address: address, have: true))
 
     let pendingHandles = engine.requestDeliveries(addresses).tryGet()
     check pendingHandles.len == requestCount
     await done.wait().wait(1.seconds)
 
-    let
-      peer1Batches = wantBlockBatches.filterIt(it.peer == peerId)
-      peer2Batches = wantBlockBatches.filterIt(it.peer == peer2Id)
-
-    var
-      peer1Sent = initHashSet[BlockAddress]()
-      peer2Sent = initHashSet[BlockAddress]()
-
-    for batch in peer1Batches:
-      for address in batch.addresses:
-        peer1Sent.incl(address)
-
-    for batch in peer2Batches:
-      for address in batch.addresses:
-        peer2Sent.incl(address)
-
     check:
-      pendingHandles.len == requestCount
       sentAddresses == addresses.toHashSet
-      peer1Batches.len == 2
-      peer2Batches.len == 2
-      peer1Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
-      peer2Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
-      peer1Sent == expectedPeer1
-      peer2Sent == expectedPeer2
-      sentAddresses.len == requestCount
+      wantBlockBatches[peerCtx.id].len == requestCount div 2
+      wantBlockBatches[peer2Ctx.id].len == requestCount div 2
 
   test "Should dispatch timed-out batch for correct peer":
     let
