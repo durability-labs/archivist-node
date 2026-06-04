@@ -82,7 +82,7 @@ declareCounter(
 const
   DefaultTaskQueueSize = 128
   DefaultConcurrentTasks = 3
-  DefaultWantBlockBatchSize = 128
+  DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
@@ -104,8 +104,6 @@ type
     trackedFutures: TrackedFutures
     blockexcRunning: bool
     maxBatchBlocks: int
-    wantBlockBatchSize: int
-    wantBlockBatchTimeout: Duration
     discoveryDeadline*: Duration
     blockRequestTimeout: Duration
     pendingBlocks*: PendingBlocksManager
@@ -739,8 +737,6 @@ proc new*(
     maxBatchBlocks = DefaultMaxBatchBlocks,
     concurrentTasks = DefaultConcurrentTasks,
     selectPeer: PeerSelector = randomPeer,
-    wantBlockBatchSize = DefaultWantBlockBatchSize,
-    wantBlockBatchTimeout = DefaultWantBlockBatchTimeout,
     blockRequestTimeout = DefaultRequestTimeout,
 ): BlockExcEngine =
   let self = BlockExcEngine(
@@ -751,8 +747,6 @@ proc new*(
     concurrentTasks: concurrentTasks,
     trackedFutures: TrackedFutures(),
     maxBatchBlocks: maxBatchBlocks,
-    wantBlockBatchSize: wantBlockBatchSize,
-    wantBlockBatchTimeout: wantBlockBatchTimeout,
     blockRequestTimeout: blockRequestTimeout,
     taskQueue: newAsyncHeapQueue[BlockExcPeerCtx](DefaultTaskQueueSize),
     discovery: discovery,
