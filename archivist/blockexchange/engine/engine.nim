@@ -76,8 +76,6 @@ type
     trackedFutures: TrackedFutures
     blockexcRunning: bool
     maxBatchBlocks: int
-    wantBlockBatchSize: int
-    wantBlockBatchTimeout: Duration
     discoveryDeadline*: Duration
     blockRequestTimeout: Duration
     pendingBlocks*: PendingBlocksManager
@@ -777,8 +775,6 @@ proc new*(
     concurrentTasks: concurrentTasks,
     trackedFutures: TrackedFutures(),
     maxBatchBlocks: maxBatchBlocks,
-    wantBlockBatchSize: wantBlockBatchSize,
-    wantBlockBatchTimeout: wantBlockBatchTimeout,
     blockRequestTimeout: blockRequestTimeout,
     taskQueue: newAsyncHeapQueue[BlockExcPeerCtx](DefaultTaskQueueSize),
     discovery: discovery,
