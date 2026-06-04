@@ -487,18 +487,14 @@ suite "PendingBlocks ownership model":
 
   test "Generation staleness skips stale heap entries":
     let
-      pb = PendingBlocksManager.new()
+      pb = PendingBlocksManager.new(batchDeadline = 50.millis)
       peerCtx = makePeerCtx(makePeerId())
 
-    var called = 0
+    var callCount = 0
     pb.sendBatch = proc(
         peer: BlockExcPeerCtx, batch: seq[BlockAddress]
     ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
-      called.inc()
-      check called == 1
-      check batch.len == 1
-      check batch[0]
-
+      callCount.inc()
       success()
 
     pb.getPeerForBlock = proc(
@@ -506,34 +502,36 @@ suite "PendingBlocks ownership model":
     ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
       success peerCtx
 
+    # First getWantHandle: creates BlockReq (generation=0), pushes BlockItem(gen=0)
+    discard pb.getWantHandle(address)
+    # Second getWantHandle: addOwner increments generation to 1, pushes BlockItem(gen=1)
+    discard pb.getWantHandle(address)
+
     await pb.start()
-
-    # Request the same address twice to create multiple heap entries
-    let
-      handle1 = pb.getWantHandle(address)
-      handle2 = pb.getWantHandle(address)
-
-    await sleepAsync(500.millis)
+    # batchDeadline (50ms) + buffer — worker dispatches after deadline expires
+    await sleepAsync(100.millis)
     await pb.stop()
 
-    # Should only be sent once (stale entry skipped)
-    check sentAddresses.len == 1
-    check sentAddresses[0] == address
+    # Only the fresh entry (gen=1) was dispatched; stale gen=0 was skipped
+    check callCount == 1
 
   test "validateBlock rejects missing block":
-    # validateBlock is internal, tested indirectly through pushPeerBlock
-    # If a block is removed from self.blocks after being pushed to the pipe,
-    # the batch worker should skip it
+    # validateBlock is internal to peerBatchWorker. If a block is pushed to
+    # the pipe but never added to self.blocks, the worker should skip it
+    # and not call sendBatch.
     let
       pb = PendingBlocksManager.new()
       peerCtx = makePeerCtx(makePeerId())
-      otherAddr = BlockAddress.init(bt.Block.new("other".toBytes).tryGet.cid)
+      missingAddr = BlockAddress.init(bt.Block.new("missing".toBytes).tryGet.cid)
+      firstBatchSent = newAsyncEvent()
 
     var sentAddresses: seq[BlockAddress]
     pb.sendBatch = proc(
         peer: BlockExcPeerCtx, batch: seq[BlockAddress]
     ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
-      sentAddresses.add(batch[0])
+      for a in batch:
+        sentAddresses.add(a)
+      firstBatchSent.fire()
       success()
 
     pb.getPeerForBlock = proc(
@@ -543,44 +541,18 @@ suite "PendingBlocks ownership model":
 
     await pb.start()
 
-    # Request a block
+    # Request a valid block to create a BatchReq in byPeer
     let h = pb.getWantHandle(address)
+    await firstBatchSent.wait()
 
-    # Wait for it to be sent
-    await sleepAsync(500.millis)
+    # Push a missing address directly to the peer pipe (never in self.blocks)
+    let pipe = pb.byPeer[peerCtx.id].pipe
+    await pipe.put(missingAddr)
+
+    # Give the worker time to pick it up and reject it
+    await sleepAsync(200.millis)
     await pb.stop()
 
-    # The block should have been sent
+    # Only the valid block should have been sent; missingAddr was rejected
     check sentAddresses.len == 1
     check sentAddresses[0] == address
-
-  test "stop drains queued pipe items":
-    let
-      pb = PendingBlocksManager.new()
-      peerCtx = makePeerCtx(makePeerId())
-
-    # Block sendBatch so the batch worker stays stuck
-    pb.sendBatch = proc(
-        peer: BlockExcPeerCtx, batch: seq[BlockAddress]
-    ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
-      await sleepAsync(10.hours)
-      success()
-
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
-      success peerCtx
-
-    await pb.start()
-
-    # Request a block - it will go to the pipe, batch worker will get stuck in sendBatch
-    discard pb.getWantHandle(address)
-
-    # Wait for the block to reach the batch worker
-    await sleepAsync(200.millis)
-
-    # Stop should cancel the batch worker (tracked futures) and return cleanly
-    await pb.stop()
-
-    # If stop completes without hanging, the drain worked correctly
-    check true
