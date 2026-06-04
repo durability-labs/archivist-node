@@ -19,6 +19,8 @@ import ../../asynctest
 
 privateAccess(PendingBlocksManager)
 privateAccess(BatchReq)
+privateAccess(BlockItem)
+privateAccess(BlockReq)
 
 proc makePeerId(): PeerId =
   let seckey = PrivateKey.random(Rng.instance()[]).tryGet()
@@ -556,3 +558,70 @@ suite "PendingBlocks ownership model":
     # Only the valid block should have been sent; missingAddr was rejected
     check sentAddresses.len == 1
     check sentAddresses[0] == address
+
+  test "Deadline expiry does not lose queued blocks":
+    let
+      pb = PendingBlocksManager.new(batchDeadline = 1.millis)
+      peerCtx = makePeerCtx(makePeerId())
+
+    var sent: seq[BlockAddress]
+    pb.sendBatch = proc(
+        peer: BlockExcPeerCtx, batch: seq[BlockAddress]
+    ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+      for a in batch:
+        sent.add(a)
+      success()
+
+    pb.getPeerForBlock = proc(
+        a: BlockAddress
+    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+      success peerCtx
+
+    await pb.start()
+
+    # Push first block — creates BatchReq, worker starts collecting
+    discard pb.getWantHandle(address)
+    # Give the worker time to start the batch and have the deadline fire
+    await sleepAsync(10.millis)
+
+    # Push second block — should be picked up by next batch iteration
+    let address2 = BlockAddress.init(blk.cid, Natural(1))
+    discard pb.getWantHandle(address2)
+    await sleepAsync(100.millis)
+    await pb.stop()
+
+    check sent.len == 2
+    check sent[0] == address
+    check sent[1] == address2
+
+  test "Batch requeued on collection exception":
+    var
+      pb = PendingBlocksManager.new(
+        batchSize = 2, batchDeadline = 5.minutes, blockSendTimeout = 5.minutes
+      )
+      peerCtx = makePeerCtx(makePeerId())
+
+    let batchReq = BatchReq(peer: peerCtx, pipe: newAsyncQueue[BlockAddress](2))
+    pb.byPeer[peerCtx.id] = batchReq
+
+    pb.running = true
+    discard pb.getWantHandle(address)
+    check pb.blockQueue.len == 1
+    batchReq.workerFut = pb.peerBatchWorker(batchReq)
+    discard pb.blockQueue.pop()
+    await batchReq.pipe.put(address)
+    check eventually(batchReq.pipe.empty())
+
+    # Cancel worker fut while it waits in `await next or batchReq.deadline`.
+    # The inner `except CatchableError` should requeue the partial batch.
+    await batchReq.workerFut.cancelAndWait()
+
+    check pb.blockQueue.len == 1
+    check pb.blockQueue[0].address == address
+    check pb.blockQueue[0].generation == 2
+
+    check address in pb.blocks
+    check pb.blocks[address].state == Pending
+    check pb.blocks[address].requestedPeer.isNil
+
+    await pb.stop()
