@@ -95,7 +95,7 @@ type
     addedAt: Moment
     readyAt: Moment
 
-  BlockItem* = object
+  BlockItem = object
     address: BlockAddress
     readyAt: Moment
     addedAt: Moment
