@@ -93,7 +93,10 @@ proc init*(
     hasBlocks: seq[(Natural, bool)],
 ): RestDatasetStatus =
   RestDatasetStatus(
-    cid: cid, status: overlay.status, expiry: overlay.expiry, hasBlocks: hasBlocks.mapIt(it[1])
+    cid: cid,
+    status: overlay.status,
+    expiry: overlay.expiry,
+    hasBlocks: hasBlocks.mapIt(it[1]),
   )
 
 proc init*(_: type RestNode, node: dn.Node): RestNode =
