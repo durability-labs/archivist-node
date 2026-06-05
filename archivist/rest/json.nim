@@ -53,7 +53,6 @@ type
     cid* {.serialize.}: Cid
     status* {.serialize.}: OverlayStatus
     expiry* {.serialize.}: SecondsSince1970
-    blocks* {.serialize.}: string
     hasBlocks* {.serialize.}: seq[bool]
 
   RestNode* = object
@@ -91,7 +90,7 @@ proc init*(
     _: type RestDatasetStatus, cid: Cid, overlay: OverlayMetadata, hasBlocks: seq[(Natural, bool)]
 ): RestDatasetStatus =
   RestDatasetStatus(
-    cid: cid, status: overlay.status, expiry: overlay.expiry, blocks: $(overlay.blocks), hasBlocks: hasBlocks.mapIt(it[1])
+    cid: cid, status: overlay.status, expiry: overlay.expiry, hasBlocks: hasBlocks.mapIt(it[1])
   )
 
 proc init*(_: type RestNode, node: dn.Node): RestNode =
