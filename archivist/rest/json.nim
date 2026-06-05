@@ -87,7 +87,10 @@ proc init*(_: type RestContent, cid: Cid, manifest: Manifest): RestContent =
   RestContent(cid: cid, manifest: manifest)
 
 proc init*(
-    _: type RestDatasetStatus, cid: Cid, overlay: OverlayMetadata, hasBlocks: seq[(Natural, bool)]
+    _: type RestDatasetStatus,
+    cid: Cid,
+    overlay: OverlayMetadata,
+    hasBlocks: seq[(Natural, bool)],
 ): RestDatasetStatus =
   RestDatasetStatus(
     cid: cid, status: overlay.status, expiry: overlay.expiry, hasBlocks: hasBlocks.mapIt(it[1])
