@@ -402,7 +402,7 @@ components:
         - cid
         - status
         - expiry
-        - blocks
+        - hasBlocks
       properties:
         cid:
           $ref: "#/components/schemas/Cid"
