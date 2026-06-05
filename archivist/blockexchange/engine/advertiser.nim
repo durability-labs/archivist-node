@@ -35,6 +35,9 @@ declareGauge(archivist_inflight_advertise, "inflight advertise requests")
 const
   DefaultConcurrentAdvertRequests = 10
   DefaultAdvertiseLoopSleep = 30.minutes
+  DefaultMinAdvertisePeers = 16
+  DefaultAdvertiseRetrySleep = 30.seconds
+  DefaultAdvertiseRetryWindow = 10.minutes
 
 type Advertiser* = ref object of RootObj
   localStore*: BlockStore # Local block store for this instance
@@ -49,6 +52,11 @@ type Advertiser* = ref object of RootObj
 
   advertiseLocalStoreLoopSleep: Duration # Advertise loop sleep
   inFlightAdvReqs*: Table[Cid, Future[void]] # Inflight advertise requests
+  pendingAdvRetries: Table[Cid, Future[void]] # Delayed sparse retry tasks
+  minAdvertisePeers: int # Desired routing-table size before advertising
+  advertiseRetrySleep: Duration # Delay before retrying sparse startup advertise
+  advertiseRetryWindow: Duration # Startup window for sparse advertise retries
+  startedAt: Moment # Time advertiser started
 
 proc addCidToQueue(b: Advertiser, cid: Cid) {.async: (raises: [CancelledError]).} =
   if cid notin b.advertiseQueue:
@@ -105,6 +113,36 @@ proc advertiseLocalStoreLoop(b: Advertiser) {.async: (raises: []).} =
 
   info "Exiting advertise task loop"
 
+proc hasElapsed(since: Moment, dur: Duration): bool =
+  (Moment.now() - since) >= dur
+
+proc shouldRetryAdvertise(b: Advertiser): bool =
+  b.minAdvertisePeers > 0 and b.discovery.nodesDiscovered() < b.minAdvertisePeers and
+    not hasElapsed(b.startedAt, b.advertiseRetryWindow)
+
+proc delayedAdvertiseRetry(b: Advertiser, cid: Cid) {.async: (raises: []).} =
+  try:
+    await sleepAsync(b.advertiseRetrySleep)
+
+    if b.advertiserRunning and b.shouldRetryAdvertise():
+      trace "Requeueing sparse startup advertisement",
+        cid, nodes = b.discovery.nodesDiscovered(), target = b.minAdvertisePeers
+      await b.addCidToQueue(cid)
+  except CancelledError:
+    trace "Cancelled sparse startup advertisement retry", cid
+  except CatchableError as exc:
+    warn "Sparse startup advertisement retry failed", cid, err = exc.msg
+  finally:
+    b.pendingAdvRetries.del(cid)
+
+proc scheduleAdvertiseRetry(b: Advertiser, cid: Cid) =
+  if cid in b.pendingAdvRetries:
+    return
+
+  let retry = b.delayedAdvertiseRetry(cid)
+  b.pendingAdvRetries[cid] = retry
+  b.trackedFutures.track(retry)
+
 proc processQueueLoop(b: Advertiser) {.async: (raises: []).} =
   try:
     while b.advertiserRunning:
@@ -117,11 +155,14 @@ proc processQueueLoop(b: Advertiser) {.async: (raises: []).} =
       b.inFlightAdvReqs[cid] = request
       archivist_inflight_advertise.set(b.inFlightAdvReqs.len.int64)
 
-      defer:
+      try:
+        await request
+      finally:
         b.inFlightAdvReqs.del(cid)
         archivist_inflight_advertise.set(b.inFlightAdvReqs.len.int64)
 
-      await request
+      if b.shouldRetryAdvertise():
+        b.scheduleAdvertiseRetry(cid)
   except CancelledError:
     warn "Cancelled advertise task runner"
 
@@ -147,6 +188,7 @@ proc start*(b: Advertiser) {.async: (raises: []).} =
   b.localStore.onBlockStored = onBlock.some
 
   b.advertiserRunning = true
+  b.startedAt = Moment.now()
   for i in 0 ..< b.concurrentAdvReqs:
     let fut = b.processQueueLoop()
     b.trackedFutures.track(fut)
@@ -176,6 +218,9 @@ proc new*(
     discovery: Discovery,
     concurrentAdvReqs = DefaultConcurrentAdvertRequests,
     advertiseLocalStoreLoopSleep = DefaultAdvertiseLoopSleep,
+    minAdvertisePeers = DefaultMinAdvertisePeers,
+    advertiseRetrySleep = DefaultAdvertiseRetrySleep,
+    advertiseRetryWindow = DefaultAdvertiseRetryWindow,
 ): Advertiser =
   ## Create a advertiser instance
   ##
@@ -186,5 +231,9 @@ proc new*(
     advertiseQueue: newAsyncQueue[Cid](concurrentAdvReqs),
     trackedFutures: TrackedFutures.new(),
     inFlightAdvReqs: initTable[Cid, Future[void]](),
+    pendingAdvRetries: initTable[Cid, Future[void]](),
     advertiseLocalStoreLoopSleep: advertiseLocalStoreLoopSleep,
+    minAdvertisePeers: minAdvertisePeers,
+    advertiseRetrySleep: advertiseRetrySleep,
+    advertiseRetryWindow: advertiseRetryWindow,
   )
