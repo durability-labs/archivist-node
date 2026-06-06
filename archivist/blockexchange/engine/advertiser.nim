@@ -124,8 +124,8 @@ proc delayedAdvertiseRetry(b: Advertiser, cid: Cid) {.async: (raises: []).} =
   try:
     await sleepAsync(b.advertiseRetrySleep)
 
-    if b.advertiserRunning and b.shouldRetryAdvertise():
-      trace "Requeueing sparse startup advertisement",
+    if b.advertiserRunning:
+      trace "Requeueing advertisement retry",
         cid, nodes = b.discovery.nodesDiscovered(), target = b.minAdvertisePeers
       await b.addCidToQueue(cid)
   except CancelledError:
