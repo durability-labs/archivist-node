@@ -9,6 +9,7 @@
 
 {.push raises: [].}
 
+import std/sequtils
 import pkg/chronos
 import pkg/libp2p/cid
 import pkg/libp2p/multicodec
@@ -124,7 +125,7 @@ proc delayedAdvertiseRetry(b: Advertiser, cid: Cid) {.async: (raises: []).} =
   try:
     await sleepAsync(b.advertiseRetrySleep)
 
-    if b.advertiserRunning:
+    if b.advertiserRunning and not hasElapsed(b.startedAt, b.advertiseRetryWindow):
       trace "Requeueing advertisement retry",
         cid, nodes = b.discovery.nodesDiscovered(), target = b.minAdvertisePeers
       await b.addCidToQueue(cid)
@@ -166,6 +167,8 @@ proc processQueueLoop(b: Advertiser) {.async: (raises: []).} =
   except CancelledError:
     warn "Cancelled advertise task runner"
 
+  await noCancel allFutures(toSeq(b.inFlightAdvReqs.values).mapIt(it.cancelAndWait()))
+
   info "Exiting advertise task runner"
 
 proc start*(b: Advertiser) {.async: (raises: []).} =
@@ -176,7 +179,10 @@ proc start*(b: Advertiser) {.async: (raises: []).} =
 
   # The advertiser is expected to be started only once.
   if b.advertiserRunning:
-    raiseAssert "Advertiser can only be started once - this should not happen"
+    warn "Advertiser can only be started once - this should not happen"
+    return
+
+  b.advertiserRunning = true
 
   proc onBlock(cid: Cid) {.async: (raises: []).} =
     try:
@@ -187,7 +193,6 @@ proc start*(b: Advertiser) {.async: (raises: []).} =
   doAssert(b.localStore.onBlockStored.isNone())
   b.localStore.onBlockStored = onBlock.some
 
-  b.advertiserRunning = true
   b.startedAt = Moment.now()
   for i in 0 ..< b.concurrentAdvReqs:
     let fut = b.processQueueLoop()
@@ -205,11 +210,12 @@ proc stop*(b: Advertiser) {.async: (raises: []).} =
     warn "Stopping advertiser without starting it"
     return
 
+  trace "Stopping advertise loop and tasks"
+  await b.trackedFutures.cancelTracked()
+
   b.advertiserRunning = false
   # Stop incoming tasks from callback and localStore loop
   b.localStore.onBlockStored = CidCallback.none
-  trace "Stopping advertise loop and tasks"
-  await b.trackedFutures.cancelTracked()
   trace "Advertiser loop and tasks stopped"
 
 proc new*(
