@@ -944,7 +944,7 @@ proc deleteSlot*(
     cid = $cid
     slot = slotIdx
 
-  trace "Deleting slot", slitIdx
+  trace "Deleting slot", slotIdx
 
   let manifest = ?await self.fetchManifest(cid)
 
