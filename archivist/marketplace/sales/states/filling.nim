@@ -1,6 +1,9 @@
+import pkg/questionable/results
+
 import ../../../logutils
 import ../../../utils/exceptions
 import ../../abstractmarketplace
+import ../../storageinterface
 import ../statemachine
 import ../salesagent
 import ./filled
@@ -29,6 +32,7 @@ method run*(
 ): Future[?State] {.async: (raises: []).} =
   let data = SalesAgent(machine).data
   let marketplace = SalesAgent(machine).context.marketplace
+  let storage = SalesAgent(machine).context.storage
 
   logScope:
     slot = data.slotInfo
@@ -45,6 +49,10 @@ method run*(
       )
     except SlotStateMismatchError:
       debug "Slot is already filled, ignoring slot"
+      if not storage.isNil:
+        if err =?
+            (await storage.deleteSlot(slot.request.content.cid, slot.slotIndex)).errorOption:
+          error "Failed to clean up unneeded slot data", error = err.msg
       return some State(SaleIgnored(reprocessSlot: false))
     except MarketplaceError as e:
       return some State(SaleErrored(error: e))
