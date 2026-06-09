@@ -153,7 +153,7 @@ func retries*(self: PendingBlocksManager, address: BlockAddress): int =
   if pending =? self.blocks .? [address]: pending.retries else: 0
 
 func decRetries*(self: PendingBlocksManager, address: BlockAddress) =
-  if var pending =? self.blocks .? [address]:
+  if pending =? self.blocks .? [address]:
     pending.retries -= 1
 
 func retriesExhausted*(self: PendingBlocksManager, address: BlockAddress): bool =
@@ -239,7 +239,7 @@ proc retryAddresses*(
 proc clearPeerAssignment(
     self: PendingBlocksManager, address: BlockAddress
 ) {.async: (raises: []).} =
-  if var req =? self.blocks .? [address]:
+  if req =? self.blocks .? [address]:
     let
       timeoutFut = req.requestTimeout
       assignedPeer = req.requestedPeer
@@ -261,7 +261,7 @@ proc releaseWantHandle(
 ): Future[?!void] {.async: (raises: []), gcsafe.} =
   if address =? self.handles .? [wrapped]:
     self.handles.del(wrapped)
-    if var req =? self.blocks .? [address]:
+    if req =? self.blocks .? [address]:
       req.owners.excl(wrapped)
       if req.owners.len == 0:
         if not req.handle.finished:
@@ -283,7 +283,7 @@ proc releaseWantHandle(
 proc addOwner(
     self: PendingBlocksManager, address: BlockAddress, priority = 0
 ): BlockHandle {.gcsafe.} =
-  if var pending =? self.blocks .? [address]:
+  if pending =? self.blocks .? [address]:
     let wrapped = pending.handle.wrap()
 
     pending.owners.incl(wrapped)
@@ -344,7 +344,7 @@ proc getWantHandle*(
       except CatchableError as exc:
         trace "Exception in handle monitor", exc = exc.msg
 
-      if var req =? self.blocks .? [address]:
+      if req =? self.blocks .? [address]:
         await self.clearPeerAssignment(address)
 
       self.blocks.del(address)
@@ -412,7 +412,7 @@ proc markRequested*(
     peer: BlockExcPeerCtx,
     timeout: Duration = DefaultRequestTimeout,
 ) =
-  if var pending =? self.blocks .? [address]:
+  if pending =? self.blocks .? [address]:
     if pending.requestedPeer != nil and pending.state == InFlight:
       trace "Block already requested", address, requestedPeer = pending.requestedPeer.id
       return
@@ -445,7 +445,7 @@ proc markRequested*(
       if timeoutFut.completed:
         # Requeue the block for retry before notifying the engine.
         # Only if we still own the assignment (no concurrent clear/resolve).
-        if var req =? self.blocks .? [address]:
+        if req =? self.blocks .? [address]:
           if req.requestTimeout == currentMonitor and req.requestedPeer == peer:
             req.requestedPeer.blockRequestCleared(address)
             req.requestedPeer = nil
