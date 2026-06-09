@@ -18,6 +18,8 @@ import pkg/libp2p
 import pkg/confutils
 import pkg/confutils/defs
 import pkg/stew/io2
+import pkg/questionable
+import pkg/questionable/results
 import pkg/kvstore
 import pkg/ethers except Rng
 
@@ -49,6 +51,7 @@ type
     repoStore: RepoStore
     maintenance: BlockMaintainer
     natTraversal: NatTraversal
+    discoveryStore: KVStore
     taskpool: Taskpool
 
   NodePrivateKey* = libp2p.PrivateKey # alias
@@ -112,20 +115,16 @@ proc start*(s: NodeServer) {.async.} =
 proc stop*(s: NodeServer) {.async.} =
   notice "Stopping node"
 
-  let res = await noCancel allFinishedFailed[void](
-    @[
-      s.restServer.stop(),
-      s.archivistNode.switch.stop(),
-      s.archivistNode.stop(),
-      s.repoStore.stop(),
-      s.maintenance.stop(),
-      s.natTraversal.stop(),
-    ]
-  )
+  await s.restServer.stop()
+  await s.archivistNode.stop()
+  await s.maintenance.stop()
+  await s.natTraversal.stop()
+  await s.repoStore.stop()
+  await s.archivistNode.switch.stop()
 
-  if res.failure.len > 0:
-    error "Failed to stop node", failures = res.failure.len
-    raiseAssert "Failed to stop node"
+  if not s.discoveryStore.isNil:
+    if err =? (await s.discoveryStore.close()).errorOption:
+      error "Failed to close discovery store", err = err.msg
 
   if not s.taskpool.isNil:
     s.taskpool.shutdown()
@@ -267,5 +266,6 @@ proc new*(
     repoStore: repoStore,
     maintenance: maintenance,
     natTraversal: natTraversal,
+    discoveryStore: discoveryStore,
     taskpool: tp,
   )

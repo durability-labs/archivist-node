@@ -13,6 +13,7 @@ import pkg/archivist/systemclock
 type TemporaryNode* = ref object
   repoDs: KVStore
   metaDs: KVStore
+  discoveryDs: KVStore
   tp: Taskpool
   localStore: RepoStore
   p2p: Switch
@@ -38,9 +39,9 @@ proc initializeNetwork(temporary: TemporaryNode) =
   temporary.exchangeNetwork = BlockExcnetwork.new(temporary.p2p)
   let privateKey = temporary.p2p.peerInfo.privateKey
   let address = MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()
-  let discoveryDs = SQLiteKVStore.new(SqliteMemory, temporary.tp).tryGet()
+  temporary.discoveryDs = SQLiteKVStore.new(SqliteMemory, temporary.tp).tryGet()
   temporary.discoveryNetwork =
-    Discovery.new(privateKey, announceAddrs = @[address], store = discoveryDs)
+    Discovery.new(privateKey, announceAddrs = @[address], store = temporary.discoveryDs)
 
 proc initializePendingBlocks(temporary: TemporaryNode) =
   temporary.pendingBlocks = PendingBlocksManager.new()
@@ -90,6 +91,7 @@ proc destroy*(temporary: TemporaryNode) {.async.} =
   await temporary.node.stop()
   (await temporary.repoDs.close()).tryGet()
   (await temporary.metaDs.close()).tryGet()
+  (await temporary.discoveryDs.close()).tryGet()
   temporary.tp.shutdown()
 
 func node*(temporary: TemporaryNode): ArchivistNodeRef =

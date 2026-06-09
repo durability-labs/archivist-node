@@ -44,7 +44,7 @@ asyncchecksuite "Advertiser":
     ) {.async: (raises: [CancelledError]), gcsafe.} =
       advertised.add(cid)
 
-    advertiser = Advertiser.new(localStore, blockDiscovery)
+    advertiser = Advertiser.new(localStore, blockDiscovery, minAdvertisePeers = 0)
 
     await advertiser.start()
 
@@ -99,7 +99,7 @@ asyncchecksuite "Advertiser":
     (await newStore.putBlock(manifestBlk)).tryGet()
 
     await advertiser.stop()
-    advertiser = Advertiser.new(newStore, blockDiscovery)
+    advertiser = Advertiser.new(newStore, blockDiscovery, minAdvertisePeers = 0)
     await advertiser.start()
 
     check eventually manifestBlk.cid in advertised

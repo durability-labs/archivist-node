@@ -76,7 +76,7 @@ suite "Block Advertising and Discovery":
       minPeersPerBlock = 1,
     )
 
-    advertiser = Advertiser.new(localStore, blockDiscovery)
+    advertiser = Advertiser.new(localStore, blockDiscovery, minAdvertisePeers = 0)
 
     engine = BlockExcEngine.new(
       localStore, network, discovery, advertiser, peerStore, pendingBlocks
@@ -222,7 +222,7 @@ suite "E2E - Multiple Nodes Discovery":
           minPeersPerBlock = 1,
         )
 
-        advertiser = Advertiser.new(localStore, blockDiscovery)
+        advertiser = Advertiser.new(localStore, blockDiscovery, minAdvertisePeers = 0)
 
         engine = BlockExcEngine.new(
           localStore, network, discovery, advertiser, peerStore, pendingBlocks

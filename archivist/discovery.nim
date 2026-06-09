@@ -35,6 +35,10 @@ export discv5
 logScope:
   topics = "archivist discovery"
 
+const
+  DefaultDhtRefreshCooldown* = 5.seconds
+  DefaultDhtMinPeers* = BUCKET_SIZE
+
 type Discovery* = ref object of RootObj
   protocol*: discv5.Protocol # dht protocol
   key: PrivateKey # private key
@@ -44,6 +48,10 @@ type Discovery* = ref object of RootObj
     # record to advertice node connection information, this carry any
     # address that the node can be connected on
   dhtRecord*: ?SignedPeerRecord # record to advertice DHT connection information
+  lastDhtRefreshAt: Moment # Cooldown timestamp for dht refresh
+  refreshRoutingTableFut: Future[void].Raising([]) # Tracked background refresh task
+
+proc ensureDhtPopulated*(d: Discovery) {.gcsafe.}
 
 proc toNodeId*(cid: Cid): NodeId =
   ## Cid to discovery id
@@ -65,6 +73,7 @@ proc findPeer*(
   ##
 
   try:
+    d.ensureDhtPopulated()
     let node = await d.protocol.resolve(toNodeId(peerId))
 
     return
@@ -87,6 +96,7 @@ method find*(
   ##
 
   try:
+    d.ensureDhtPopulated()
     without providers =? (await d.protocol.getProviders(cid.toNodeId())).mapFailure,
       error:
       warn "Error finding providers for block", cid, error = error.msg
@@ -102,6 +112,7 @@ method provide*(d: Discovery, cid: Cid) {.async: (raises: [CancelledError]), bas
   ## Provide a block Cid
   ##
   try:
+    d.ensureDhtPopulated()
     let nodes = await d.protocol.addProvider(cid.toNodeId(), d.providerRecord.get)
 
     if nodes.len <= 0:
@@ -112,6 +123,44 @@ method provide*(d: Discovery, cid: Cid) {.async: (raises: [CancelledError]), bas
   except CatchableError as exc:
     warn "Error providing block", cid, exc = exc.msg
 
+proc nodesDiscovered*(d: Discovery): int =
+  if d.protocol.isNil:
+    return 0
+
+  d.protocol.nodesDiscovered()
+
+proc refreshRoutingTable*(
+    d: Discovery
+): Future[int] {.async: (raises: [CancelledError]).} =
+  if d.protocol.isNil:
+    return 0
+
+  try:
+    discard await d.protocol.queryRandom()
+  except CatchableError as exc:
+    trace "Routing table refresh failed", exc = exc.msg
+
+  d.nodesDiscovered()
+
+proc refreshRoutingTableBackground(d: Discovery) {.async: (raises: []).} =
+  try:
+    discard await d.refreshRoutingTable()
+  except CatchableError as exc:
+    trace "Background routing table refresh failed", exc = exc.msg
+
+proc ensureDhtPopulated*(d: Discovery) {.gcsafe.} =
+  if not d.refreshRoutingTableFut.isNil and not d.refreshRoutingTableFut.finished:
+    return
+
+  if (Moment.now() - d.lastDhtRefreshAt) < DefaultDhtRefreshCooldown:
+    return
+
+  if d.nodesDiscovered() >= DefaultDhtMinPeers:
+    return
+
+  d.lastDhtRefreshAt = Moment.now()
+  d.refreshRoutingTableFut = refreshRoutingTableBackground(d)
+
 method find*(
     d: Discovery, host: ca.Address
 ): Future[seq[SignedPeerRecord]] {.async: (raises: [CancelledError]), base.} =
@@ -120,6 +169,7 @@ method find*(
 
   try:
     trace "Finding providers for host", host = $host
+    d.ensureDhtPopulated()
     without var providers =? (await d.protocol.getProviders(host.toNodeId())).mapFailure,
       error:
       trace "Error finding providers for host", host = $host, exc = error.msg
@@ -147,6 +197,7 @@ method provide*(
 
   try:
     trace "Providing host", host = $host
+    d.ensureDhtPopulated()
     let nodes = await d.protocol.addProvider(host.toNodeId(), d.providerRecord.get)
     if nodes.len > 0:
       trace "Provided to nodes", nodes = nodes.len
@@ -205,6 +256,11 @@ proc start*(d: Discovery) {.async: (raises: []).} =
     error "Error starting discovery", exc = exc.msg
 
 proc stop*(d: Discovery) {.async: (raises: []).} =
+  if not d.refreshRoutingTableFut.isNil:
+    try:
+      await noCancel d.refreshRoutingTableFut.cancelAndWait()
+    except CatchableError as exc:
+      trace "Error cancelling background DHT refresh", exc = exc.msg
   if not d.protocol.isNil and not d.protocol.transport.isNil:
     try:
       await noCancel d.protocol.closeWait()
