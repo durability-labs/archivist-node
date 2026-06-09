@@ -46,11 +46,18 @@ func peerIds*(self: PeerCtxStore): seq[PeerId] =
 func contains*(self: PeerCtxStore, peerId: PeerId): bool =
   peerId in self.peers
 
-func add*(self: PeerCtxStore, peer: BlockExcPeerCtx) =
+proc add*(self: PeerCtxStore, peer: BlockExcPeerCtx) =
+  let existing = self.peers.getOrDefault(peer.id, nil)
+  if not existing.isNil and existing != peer:
+    existing.disconnect() # disconnect stale context
   self.peers[peer.id] = peer
 
-func remove*(self: PeerCtxStore, peerId: PeerId) =
-  self.peers.del(peerId)
+proc remove*(self: PeerCtxStore, peerId: PeerId) =
+  if peerId in self.peers:
+    let peer = self.peers.getOrDefault(peerId, nil)
+    self.peers.del(peerId)
+    if not peer.isNil:
+      peer.disconnect()
 
 func get*(self: PeerCtxStore, peerId: PeerId): BlockExcPeerCtx =
   self.peers.getOrDefault(peerId, nil)
