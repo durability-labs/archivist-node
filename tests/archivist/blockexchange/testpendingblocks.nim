@@ -130,6 +130,7 @@ suite "Pending Blocks":
     await startWithoutDispatch(pendingBlocks)
     let handles = blks.mapIt(pendingBlocks.getWantHandle(it.cid))
 
+    pendingBlocks.running = true
     await pendingBlocks.stop()
 
   test "Should get wants list":
