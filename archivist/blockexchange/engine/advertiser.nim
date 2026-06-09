@@ -44,6 +44,7 @@ type Advertiser* = ref object of RootObj
   concurrentAdvReqs: int # Concurrent advertise requests
 
   advertiseLocalStoreLoop*: Future[void].Raising([]) # Advertise loop task handle
+  advertiseJobFut: Future[void]
   advertiseQueue*: AsyncQueue[Cid] # Advertise queue
   trackedFutures*: TrackedFutures # Advertise tasks futures
 
@@ -80,26 +81,36 @@ proc advertiseBlock(b: Advertiser, cid: Cid) {.async: (raises: [CancelledError])
   except CatchableError as e:
     error "failed to advertise block", cid, error = e.msgDetail
 
+proc sleepOrStopped(b: Advertiser) {.async: (raises: [CancelledError]).} =
+  let sleepFut = sleepAsync(b.advertiseLocalStoreLoopSleep)
+  try:
+    await sleepFut or b.advertiseJobFut
+  except CatchableError as exc:
+    trace "Exception waiting for advertiser sleep", exc = exc.msg
+  finally:
+    if not sleepFut.finished:
+      await noCancel sleepFut.cancelAndWait()
+
+proc advertiseLocalStoreBlocks(b: Advertiser) {.async: (raises: [CancelledError]).} =
+  without cidsIter =? await b.localStore.listBlocks(blockType = BlockType.Manifest), err:
+    trace "Error retrieving manifest iterator, advertising skipped!", err = err.msg
+    return
+
+  defer:
+    if err =? (await cidsIter.dispose()).errorOption:
+      warn "Error disposing manifest iterator", err = err.msg
+
+  trace "Advertiser begins iterating blocks..."
+  for c in cidsIter:
+    if cid =? await c:
+      await b.advertiseBlock(cid)
+  trace "Advertiser iterating blocks finished."
+
 proc advertiseLocalStoreLoop(b: Advertiser) {.async: (raises: []).} =
   try:
     while b.advertiserRunning:
-      without cidsIter =? await b.localStore.listBlocks(blockType = BlockType.Manifest),
-        err:
-        trace "Error retrieving manifest iterator, advertising skipped!", err = err.msg
-        await sleepAsync(b.advertiseLocalStoreLoopSleep)
-        continue
-
-      defer:
-        if err =? (await cidsIter.dispose()).errorOption:
-          warn "Error disposing manifest iterator", err = err.msg
-
-      trace "Advertiser begins iterating blocks..."
-      for c in cidsIter:
-        if cid =? await c:
-          await b.advertiseBlock(cid)
-      trace "Advertiser iterating blocks finished."
-
-      await sleepAsync(b.advertiseLocalStoreLoopSleep)
+      await b.advertiseLocalStoreBlocks()
+      await b.sleepOrStopped()
   except CancelledError:
     warn "Cancelled advertise local store loop"
 
@@ -147,6 +158,7 @@ proc start*(b: Advertiser) {.async: (raises: []).} =
   b.localStore.onBlockStored = onBlock.some
 
   b.advertiserRunning = true
+  b.advertiseJobFut = newFuture[void]("Advertiser.stop")
   for i in 0 ..< b.concurrentAdvReqs:
     let fut = b.processQueueLoop()
     b.trackedFutures.track(fut)
@@ -164,6 +176,8 @@ proc stop*(b: Advertiser) {.async: (raises: []).} =
     return
 
   b.advertiserRunning = false
+  if not b.advertiseJobFut.isNil and not b.advertiseJobFut.finished:
+    b.advertiseJobFut.complete()
   # Stop incoming tasks from callback and localStore loop
   b.localStore.onBlockStored = CidCallback.none
   trace "Stopping advertise loop and tasks"
