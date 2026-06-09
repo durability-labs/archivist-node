@@ -933,27 +933,29 @@ proc proveSlot*(
 proc deleteSlot*(
     self: ArchivistNodeRef, cid: Cid, slotIdx: uint64
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Handle slot failure - mark overlay as failed so maintenance will drop it
+  ## Handle slot failure - drop the slot overlay so proving stops for this slot.
+  ## The manifest tree overlay is deliberately NOT touched here - it is shared
+  ## by all slots under the same manifest. Dropping it would break local block
+  ## resolution for other active slots from the same request. The tree overlay
+  ## expires via maintenance when its TTL passes, or is cleaned up in bulk by
+  ## cleanupPurchaseOverlays when the entire purchase completes.
   ##
   logScope:
     cid = $cid
     slot = slotIdx
 
-  trace "Marking slot as failed"
+  trace "Deleting slot", slotIdx
 
   let manifest = ?await self.fetchManifest(cid)
+
   if not manifest.verifiable:
     warn "Attempting to fail a slot with a non-verifiable manifest", cid, slotIdx
 
   let slotCid = manifest.slotRoots[slotIdx]
 
-  # Delete slot overlay
+  # Delete slot overlay only - tree overlay is shared and left intact
   if err =? (await self.repoStore.dropOverlay(slotCid)).errorOption:
     warn "Error marking slot overlay failed", err = err.msg
-
-  # Delete mainfest overlay
-  if err =? (await self.repoStore.dropOverlay(manifest.treeCid)).errorOption:
-    warn "Error marking tree overlay failed", err = err.msg
 
   trace "Slot marked as failed"
 
