@@ -728,6 +728,7 @@ proc start*(self: PendingBlocksManager) {.async: (raises: []).} =
 proc stop*(self: PendingBlocksManager) {.async: (raises: []).} =
   if not self.running:
     trace "Block scheduler not running"
+    return
 
   self.running = false
   self.queueWakeEvent.fire()

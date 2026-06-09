@@ -91,6 +91,7 @@ suite "Pending Blocks":
       blks = (0 .. 9).mapIt(bt.Block.new(("Hello " & $it).toBytes).tryGet)
       handles = blks.mapIt(pendingBlocks.getWantHandle(it.cid))
 
+    pendingBlocks.running = true
     await pendingBlocks.stop()
 
     check pendingBlocks.len == 0
