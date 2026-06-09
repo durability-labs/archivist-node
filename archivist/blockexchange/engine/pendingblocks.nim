@@ -683,7 +683,10 @@ proc blockRequestScheduler(self: PendingBlocksManager) {.async: (raises: []).} =
         let timer = sleepAsync(item.readyAt - now)
         await timer or self.queueWakeEvent.wait()
         await noCancel timer.cancelAndWait()
-        self.queueWakeEvent.clear()
+        if not self.queueWakeEvent.isSet():
+          self.queueWakeEvent.clear()
+
+      if self.blockQueue.len == 0:
         continue
 
       let
