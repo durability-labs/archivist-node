@@ -151,7 +151,7 @@ func retries*(self: PendingBlocksManager, address: BlockAddress): int =
   if pending =? self.blocks .? [address]: pending.retries else: 0
 
 func decRetries*(self: PendingBlocksManager, address: BlockAddress) =
-  if var pending =? self.blocks .? [address]:
+  if pending =? self.blocks .? [address]:
     pending.retries -= 1
 
 func retriesExhausted*(self: PendingBlocksManager, address: BlockAddress): bool =
