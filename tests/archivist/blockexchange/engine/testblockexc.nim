@@ -2,6 +2,7 @@ import std/sequtils
 import std/algorithm
 
 import pkg/chronos
+import pkg/taskpools
 import pkg/stew/byteutils
 
 import pkg/archivist/stores
@@ -157,13 +158,15 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
 
 asyncchecksuite "NetworkStore - multiple nodes":
   var
+    cluster: NodesCluster
     nodes: seq[NodesComponents]
     blocks: seq[bt.Block]
     manifest0, manifest1, manifest2, manifest3: Manifest
 
   setup:
     blocks = (await makeRandomBlocks(datasetSize = 4096, blockSize = 256'nb)).tryGet
-    nodes = generateNodes(5)
+    cluster = generateNodes(5)
+    nodes = cluster.components
 
     # Store blocks as trees on each source node (4 blocks per node)
     manifest0 =
@@ -191,8 +194,12 @@ asyncchecksuite "NetworkStore - multiple nodes":
     await allFuturesThrowing(nodes.mapIt(it.switch.start()))
 
   teardown:
+    await allFuturesThrowing(nodes.mapIt(it.engine.stop()))
+    await allFuturesThrowing(nodes.mapIt(it.blockDiscovery.stop()))
     await allFuturesThrowing(nodes.mapIt(it.switch.stop()))
-
+    await allFuturesThrowing(nodes.mapIt(it.localStore.close()))
+    if not cluster.isNil and not cluster.taskpool.isNil:
+      cluster.taskpool.shutdown()
     nodes = @[]
 
   test "Should receive blocks for own want list":

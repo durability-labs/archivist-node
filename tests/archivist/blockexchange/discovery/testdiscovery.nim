@@ -76,7 +76,7 @@ suite "Block Advertising and Discovery":
       minPeersPerBlock = 1,
     )
 
-    advertiser = Advertiser.new(localStore, blockDiscovery)
+    advertiser = Advertiser.new(localStore, blockDiscovery, minAdvertisePeers = 0)
 
     engine = BlockExcEngine.new(
       localStore, network, discovery, advertiser, peerStore, pendingBlocks
@@ -156,7 +156,9 @@ suite "Block Advertising and Discovery":
         for blk in blocks:
           {blk.address: Presence(address: blk.address)}
 
-    engine.peers.add(BlockExcPeerCtx(id: peerId, blocks: haves))
+    var peerCtx = BlockExcPeerCtx.new(peerId)
+    peerCtx.blocks = haves
+    engine.peers.add(peerCtx)
 
     blockDiscovery.findBlockProvidersHandler = proc(
         d: MockDiscovery, cid: Cid
@@ -164,7 +166,7 @@ suite "Block Advertising and Discovery":
       check false
 
     await engine.start()
-    engine.pendingBlocks.resolve(
+    await engine.pendingBlocks.resolve(
       blocks.mapIt(BlockDelivery(blk: it, address: it.address))
     )
 
@@ -222,7 +224,7 @@ suite "E2E - Multiple Nodes Discovery":
           minPeersPerBlock = 1,
         )
 
-        advertiser = Advertiser.new(localStore, blockDiscovery)
+        advertiser = Advertiser.new(localStore, blockDiscovery, minAdvertisePeers = 0)
 
         engine = BlockExcEngine.new(
           localStore, network, discovery, advertiser, peerStore, pendingBlocks

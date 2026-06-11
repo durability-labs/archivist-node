@@ -18,3 +18,4 @@ type
   StorageFailedEngineError* = object of EngineError
   QueueFailedEngineError* = object of EngineError
   RequestAbandonedEngineError* = object of EngineError
+  NoPeerForBlockError* = object of EngineError

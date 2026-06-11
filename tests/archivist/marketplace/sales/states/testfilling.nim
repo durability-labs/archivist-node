@@ -12,6 +12,7 @@ import ../../../examples
 import ../../../helpers
 import ../../../helpers/mockmarketplace
 import ../../../helpers/mockclock
+import ../mockstorage
 
 suite "sales state 'filling'":
   let request = StorageRequest.example
@@ -20,12 +21,14 @@ suite "sales state 'filling'":
   var state: SaleFilling
   var marketplace: MockMarketplace
   var clock: MockClock
+  var storage: MockStorage
   var agent: SalesAgent
 
   setup:
     clock = MockClock.new()
     marketplace = MockMarketplace.new()
-    let context = SalesContext(marketplace: marketplace, clock: clock)
+    storage = MockStorage.new()
+    let context = SalesContext(marketplace: marketplace, clock: clock, storage: storage)
     var slotInfo = SlotInfo.init(slot.id)
     slotInfo.slot = slot
     agent = newSalesAgent(context, slotInfo)
@@ -39,7 +42,7 @@ suite "sales state 'filling'":
     let next = state.onFailed(request)
     check !next of SaleFailed
 
-  test "run switches to ignored when slot is not free":
+  test "run switches to ignored when slot is not free and cleans up slot data":
     let error = newException(
       SlotStateMismatchError, "Failed to fill slot because the slot is not free"
     )
@@ -50,8 +53,12 @@ suite "sales state 'filling'":
     let next = !(await state.run(agent))
     check next of SaleIgnored
     check SaleIgnored(next).reprocessSlot == false
+    check storage.slotFailedCalls.len > 0
+    let (delCid, delIdx) = storage.slotFailedCalls[0]
+    check delCid == request.content.cid
+    check delIdx == slotIndex
 
-  test "run switches to errored with other error ":
+  test "run switches to errored with other error and does not clean up slot data":
     let error = newException(MarketplaceError, "some error")
     marketplace.setErrorOnFillSlot(error)
     marketplace.requested.add(request)
@@ -62,3 +69,4 @@ suite "sales state 'filling'":
 
     let errored = SaleErrored(next)
     check errored.error == error
+    check storage.slotFailedCalls.len == 0

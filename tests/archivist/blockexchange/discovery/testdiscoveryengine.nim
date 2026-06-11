@@ -79,7 +79,7 @@ asyncchecksuite "Test Discovery Engine":
     blockDiscovery.findBlockProvidersHandler = proc(
         d: MockDiscovery, cid: Cid
     ): Future[seq[SignedPeerRecord]] {.async: (raises: [CancelledError]).} =
-      pendingBlocks.resolve(
+      await pendingBlocks.resolve(
         blocks.filterIt(it.cid == cid).mapIt(
           BlockDelivery(blk: it, address: it.address)
         )
@@ -142,7 +142,7 @@ asyncchecksuite "Test Discovery Engine":
       check cid in pendingCids
       pendingCids.keepItIf(it != cid)
       check peerStore.len < minPeers
-      var peerCtx = BlockExcPeerCtx(id: PeerId.example)
+      var peerCtx = BlockExcPeerCtx.new(PeerId.example)
 
       let address = BlockAddress(leaf: false, cid: cid)
 
