@@ -505,13 +505,13 @@ proc validateBlock(
   return true
 
 proc validateBlock(
-    self: PendingBlocksManager, address: BlockAddress
+    self: PendingBlocksManager, address: BlockAddress, state: BlockReqState
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   without req =? self.blocks .? [address]:
     trace "Address is not pending", address
     return false
 
-  if req.state in {Dispatching, InFlight}:
+  if req.state != state or not req.requestedPeer.isNil:
     trace "Address already in pipeline, skipping", address, state = req.state
     return false
 
