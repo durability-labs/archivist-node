@@ -26,6 +26,7 @@ import ../../../asynctest
 import ../../helpers
 
 privateAccess(PendingBlocksManager)
+privateAccess(BlockReq)
 
 const NopSendWantListProc = proc(
     id: PeerId,
@@ -394,6 +395,7 @@ asyncchecksuite "NetworkStore engine handlers":
     engine.peers.add(otherPeerCtx)
 
     for delivery in blocksDelivery:
+      engine.pendingBlocks.blocks[delivery.address].state = Scheduled
       engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
       otherPeerCtx.blocksRequested.incl(delivery.address)
 
@@ -747,6 +749,7 @@ asyncchecksuite "Block Download":
 
     let retriesBefore = engine.pendingBlocks.retries(address)
     await engine.pendingBlocks.clearRequest(address, peerCtx)
+    engine.pendingBlocks.blocks[address].state = Scheduled
     engine.pendingBlocks.markRequested(address, peerCtx)
     check engine.pendingBlocks.isRequested(address)
     check engine.pendingBlocks.getRequestPeer(address) == peerId.some
