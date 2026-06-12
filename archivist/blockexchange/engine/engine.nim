@@ -81,7 +81,7 @@ declareCounter(
 
 const
   DefaultTaskQueueSize = 128
-  DefaultConcurrentTasks = 3
+  DefaultConcurrentTasks = 10
   DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
@@ -278,7 +278,7 @@ proc searchForNewPeers(self: BlockExcEngine, cid: Cid) =
 
 proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: []).} =
   trace "Evicting disconnected/departed peer", peer
-  # Just remove from store -- disconnect monitor in PendingBlocksManager handles requeue
+  # Just remove from store - disconnect monitor in PendingBlocksManager handles requeue
   self.peers.remove(peer)
 
 proc randomPeer(peers: seq[BlockExcPeerCtx]): BlockExcPeerCtx =
@@ -467,16 +467,22 @@ proc blocksDeliveryHandler*(
       address = bd.address
 
     try:
-      if not allowSpurious and
-          (peerCtx == nil or not peerCtx.isBlockRequested(bd.address)):
-        warn "Dropping unrequested or duplicate block received from peer"
-        archivist_block_exchange_spurious_blocks_received.inc()
+      # if not allowSpurious and
+      #     (peerCtx == nil or not peerCtx.isBlockRequested(bd.address)):
+      #   warn "Dropping unrequested or duplicate block received from peer"
+      #   archivist_block_exchange_spurious_blocks_received.inc()
+      #   continue
+
+      if bd.address notin self.pendingBlocks:
+        trace "Block is not pending", address = bd.address
         continue
 
       if err =? self.validateBlockDelivery(bd).errorOption:
         warn "Block validation failed", msg = err.msg
         if not peerCtx.isNil:
           peerCtx.cleanPresence(bd.address)
+          await self.pendingBlocks.clearRequest(bd.address, peerCtx)
+
         await self.pendingBlocks.retryAddresses(
           @[bd.address], self.pendingBlocks.blockSendTimeout
         )
@@ -529,6 +535,8 @@ proc blocksDeliveryHandler*(
       error "Unable to decode manifest block", err = err.msg
       if not peerCtx.isNil:
         peerCtx.cleanPresence(bd.address)
+        await self.pendingBlocks.clearRequest(bd.address, peerCtx)
+
       await self.pendingBlocks.retryAddresses(
         @[bd.address], self.pendingBlocks.blockSendTimeout
       )
@@ -547,7 +555,6 @@ proc blocksDeliveryHandler*(
   if not peerCtx.isNil:
     for address in acceptedAddresses:
       peerCtx.cleanPresence(address)
-      await self.pendingBlocks.clearRequest(address, peerCtx)
 
   archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
 
@@ -773,7 +780,8 @@ proc new*(
   ) {.gcsafe, async: (raises: [CancelledError]).} =
     trace "Block request timed out", address, peer
     archivist_block_exchange_peer_timeouts_total.inc()
-    self.network.dropPeer(peer)
+    # Don't drop the peer — a single block timeout doesn't mean
+    # the peer is bad. pendingBlocks already retries the block.
 
   proc pendingPeerSelector(
       address: BlockAddress
