@@ -14,6 +14,7 @@ import ../../../helpers
 import ../../../helpers/mockmarketplace
 import ../../../helpers/mockclock
 import ../../../helpers/mockexponentialbackoff
+import ../mockstorage
 
 asyncchecksuite "sales state 'errored'":
   let request = StorageRequest.example
@@ -22,6 +23,7 @@ asyncchecksuite "sales state 'errored'":
   let clock = MockClock.new()
 
   var marketplace: MockMarketplace
+  var storage: MockStorage
   var state: SaleErrored
   var agent: SalesAgent
   var reprocessSlotWas = false
@@ -32,9 +34,12 @@ asyncchecksuite "sales state 'errored'":
       reprocessSlotWas = reprocessSlot
 
     marketplace = MockMarketplace.new()
+    storage = MockStorage.new()
     expBackoff = MockExponentialBackoff.new()
-    let context = SalesContext(marketplace: marketplace, clock: clock)
-    agent = newSalesAgent(context, SlotInfo.init(slot.id), errorBackoff = expBackoff)
+    let context = SalesContext(marketplace: marketplace, clock: clock, storage: storage)
+    var slotInfo = SlotInfo.init(slot.id)
+    slotInfo.slot = slot
+    agent = newSalesAgent(context, slotInfo, errorBackoff = expBackoff)
     agent.onCleanUp = onCleanUp
     state = SaleErrored(error: newException(ValueError, "oh no!"))
 
@@ -60,6 +65,13 @@ asyncchecksuite "sales state 'errored'":
     let nextState = await runState()
     check isNone nextState
     check eventually reprocessSlotWas == true
+
+  test "deletes slot data when slot is not active":
+    let me = await marketplace.getSigner()
+    marketplace.activeSlots[me] = @[]
+
+    discard await runState()
+    check storage.deleteSlotCalls == @[(request.content.cid, slotIndex)]
 
   test "transits to error state when slots call fails":
     let nextState = await runState()

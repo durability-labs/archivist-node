@@ -2,7 +2,6 @@ import pkg/chronos
 import ../../../logutils
 import ../../../utils/exceptions
 import ../../../marketplace/abstractmarketplace
-import ../../storageinterface
 import ../salesagent
 import ../statemachine
 import ./types
@@ -29,13 +28,6 @@ method run*(
   try:
     debug "Removing slot from mySlots", slot = data.slotInfo
     await marketplace.freeSlot(data.slotInfo.slotId)
-
-    if slot =? data.slotInfo.slot:
-      let cid = slot.request.content.cid
-      let slotIndex = slot.slotIndex
-      if err =? (await storage.deleteSlot(cid, slotIndex)).errorOption:
-        error "Failed to mark slot as failed", error = err.msg
-
     let error = newException(SaleFailedError, "Sale failed")
     return some State(SaleErrored(error: error))
   except CancelledError as e:

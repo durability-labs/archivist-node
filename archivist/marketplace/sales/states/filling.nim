@@ -47,13 +47,6 @@ method run*(
       await marketplace.fillSlot(
         slot.request.id, slot.slotIndex, state.proof, collateral
       )
-    except SlotStateMismatchError:
-      debug "Slot is already filled, ignoring slot"
-      if not storage.isNil:
-        if err =?
-            (await storage.deleteSlot(slot.request.content.cid, slot.slotIndex)).errorOption:
-          error "Failed to clean up unneeded slot data", error = err.msg
-      return some State(SaleIgnored(reprocessSlot: false))
     except MarketplaceError as e:
       return some State(SaleErrored(error: e))
 
