@@ -10,6 +10,7 @@ import ../manifest
 import ../stores/repostore/types
 import ../units
 import ../clock
+import std/sequtils
 
 export json
 
@@ -52,7 +53,7 @@ type
     cid* {.serialize.}: Cid
     status* {.serialize.}: OverlayStatus
     expiry* {.serialize.}: SecondsSince1970
-    blocks* {.serialize.}: string
+    hasBlocks* {.serialize.}: seq[bool]
 
   RestNode* = object
     nodeId* {.serialize.}: RestNodeId
@@ -86,10 +87,16 @@ proc init*(_: type RestContent, cid: Cid, manifest: Manifest): RestContent =
   RestContent(cid: cid, manifest: manifest)
 
 proc init*(
-    _: type RestDatasetStatus, cid: Cid, overlay: OverlayMetadata
+    _: type RestDatasetStatus,
+    cid: Cid,
+    overlay: OverlayMetadata,
+    hasBlocks: seq[(Natural, bool)],
 ): RestDatasetStatus =
   RestDatasetStatus(
-    cid: cid, status: overlay.status, expiry: overlay.expiry, blocks: $(overlay.blocks)
+    cid: cid,
+    status: overlay.status,
+    expiry: overlay.expiry,
+    hasBlocks: hasBlocks.mapIt(it[1]),
   )
 
 proc init*(_: type RestNode, node: dn.Node): RestNode =

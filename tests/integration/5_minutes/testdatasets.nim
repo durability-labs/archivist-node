@@ -83,4 +83,7 @@ suite "Node datasets":
     let status = await testbed.api(node).status(!dataset.cid)
     check status["cid"].getStr() == !dataset.cid
     check status["status"].getStr() == "Completed"
-    check status["blocks"].getStr() == "0b1111111"
+    let hasBlocks = status["hasBlocks"]
+    check hasBlocks.len == 7
+    for b in hasBlocks:
+      check b.getBool() == true
