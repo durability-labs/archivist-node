@@ -467,12 +467,6 @@ proc blocksDeliveryHandler*(
       address = bd.address
 
     try:
-      # if not allowSpurious and
-      #     (peerCtx == nil or not peerCtx.isBlockRequested(bd.address)):
-      #   warn "Dropping unrequested or duplicate block received from peer"
-      #   archivist_block_exchange_spurious_blocks_received.inc()
-      #   continue
-
       if bd.address notin self.pendingBlocks:
         trace "Block is not pending", address = bd.address
         continue

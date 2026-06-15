@@ -578,13 +578,15 @@ proc retryAddresses*(
     # Update and requeue (old entry skipped by generation check)
     req.generation.inc()
     req.readyAt = readyAt
-    self.blockQueue.push(BlockItem(
-      address: address,
-      readyAt: req.readyAt,
-      addedAt: req.addedAt,
-      generation: req.generation,
-      priority: req.priority,
-    ))
+    self.blockQueue.push(
+      BlockItem(
+        address: address,
+        readyAt: req.readyAt,
+        addedAt: req.addedAt,
+        generation: req.generation,
+        priority: req.priority,
+      )
+    )
 
   if beforeQueueLen != self.blockQueue.len:
     self.queueWakeEvent.fire()
@@ -705,7 +707,8 @@ proc pushPeerBlock(
         await self.retryAddresses(@[address], self.discoveryTimeout)
       return
 
-    if req.generation != generation or not (await self.validateBlock(address, Dispatching)):
+    if req.generation != generation or
+        not (await self.validateBlock(address, Dispatching)):
       trace "Address already in pipeline", address, state = req.state
       return
 
