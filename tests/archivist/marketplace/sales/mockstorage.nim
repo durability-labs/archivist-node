@@ -10,19 +10,19 @@ type MockStorage* = ref object of StorageInterface
   storeSlotResult: ?!void
   proveSlotResult: ?!Groth16Proof
   updateSlotExpiryResult: ?!void
-  slotFailedResult: ?!void
+  deleteSlotResult: ?!void
   proveSlotShouldHang*: bool
   storeSlotCalls: seq[(Cid, uint64, uint64, StorageTimestamp, bool)]
   proveSlotCalls: seq[(Cid, uint64, ProofChallenge)]
   updateSlotExpiryCalls: seq[(Cid, uint64, StorageTimestamp)]
-  slotFailedCalls: seq[(Cid, uint64)]
+  deleteSlotCalls: seq[(Cid, uint64)]
 
 proc new*(_: type MockStorage): MockStorage =
   MockStorage(
     storeSlotResult: success(),
     proveSlotResult: success(Groth16Proof.example),
     updateSlotExpiryResult: success(),
-    slotFailedResult: success(),
+    deleteSlotResult: success(),
   )
 
 func `available=`*(mock: MockStorage, value: uint64) =
@@ -37,8 +37,8 @@ func `proveSlotResult=`*(mock: MockStorage, value: ?!Groth16Proof) =
 func `updateSlotExpiryResult=`*(mock: MockStorage, value: ?!void) =
   mock.updateSlotExpiryResult = value
 
-func `slotFailedResult=`*(mock: MockStorage, value: ?!void) =
-  mock.slotFailedResult = value
+func `deleteSlotResult=`*(mock: MockStorage, value: ?!void) =
+  mock.deleteSlotResult = value
 
 func storeSlotCalls*(
     mock: MockStorage
@@ -51,8 +51,8 @@ func proveSlotCalls*(mock: MockStorage): seq[(Cid, uint64, ProofChallenge)] =
 func updateSlotExpiryCalls*(mock: MockStorage): seq[(Cid, uint64, StorageTimestamp)] =
   mock.updateSlotExpiryCalls
 
-func slotFailedCalls*(mock: MockStorage): seq[(Cid, uint64)] =
-  mock.slotFailedCalls
+func deleteSlotCalls*(mock: MockStorage): seq[(Cid, uint64)] =
+  mock.deleteSlotCalls
 
 method available*(mock: MockStorage): uint64 {.gcsafe, raises: [].} =
   mock.available
@@ -85,5 +85,5 @@ method updateSlotExpiry*(
 method deleteSlot*(
     mock: MockStorage, cid: Cid, slotIndex: uint64
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  mock.slotFailedCalls.add((cid, slotIndex))
-  mock.slotFailedResult
+  mock.deleteSlotCalls.add((cid, slotIndex))
+  mock.deleteSlotResult

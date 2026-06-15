@@ -78,10 +78,6 @@ method run*(
       return some State(SaleProving())
     else:
       let error = newException(HostMismatchError, "Slot filled by other host")
-      if not storage.isNil:
-        if slot =? data.slotInfo.slot:
-          if err =? (await storage.deleteSlot(slot.request.content.cid, slot.slotIndex)).errorOption:
-            error "Failed to clean up unneeded slot data", error = err.msg
       return some State(SaleErrored(error: error))
   except CancelledError as e:
     trace "SaleFilled.run was cancelled", error = e.msgDetail

@@ -956,6 +956,7 @@ proc deleteSlot*(
   # Delete slot overlay only - tree overlay is shared and left intact
   if err =? (await self.repoStore.dropOverlay(slotCid)).errorOption:
     warn "Error marking slot overlay failed", err = err.msg
+    return failure err
 
   trace "Slot marked as failed"
 

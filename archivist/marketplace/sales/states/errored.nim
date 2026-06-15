@@ -8,6 +8,7 @@ import ../salesagent
 import ../salesdata
 import ../../contracts/requests
 import ../../abstractmarketplace
+import ../../storageinterface
 import ../../../logutils
 import ../../../utils/exceptions
 import ../../../utils/exponentialbackoff
@@ -34,6 +35,7 @@ method run*(
   let agent = SalesAgent(machine)
   let data = agent.data
   let marketplace = agent.context.marketplace
+  let storage = agent.context.storage
 
   logScope:
     slot = data.slotInfo
@@ -46,8 +48,11 @@ method run*(
     if data.slotInfo.slotId in await marketplace.mySlots():
       debug "Errored slot is in MySlots. Restarting state machine..."
       return some State(SaleUnknown())
-    else:
-      trace "Errored slot is not in MySlots."
+
+    trace "Errored slot is not in MySlots."
+    if request =? data.slotInfo.request and slotIndex =? data.slotInfo.slotIndex:
+      if error =? (await storage.deleteSlot(request.content.cid, slotIndex)).errorOption:
+        error "Error deleting slot", error = error.msg
   except CancelledError as e:
     trace "SaleErrored.run was cancelled", error = e.msgDetail
   except CatchableError as e:

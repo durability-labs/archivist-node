@@ -62,12 +62,8 @@ suite "sales state 'filled'":
     check index == mockSlot.slotIndex
     check expiry == expectedExpiry
 
-  test "switches to error state when slot is filled by another host and cleans up slot data":
+  test "switches to error state when slot is filled by another host":
     mockSlot.host = Address.example
     marketplace.filled = @[mockSlot]
     let next = await state.run(agent)
     check !next of SaleErrored
-    check storage.slotFailedCalls.len > 0
-    let (delCid, delIdx) = storage.slotFailedCalls[0]
-    check delCid == request.content.cid
-    check delIdx == slotIndex
