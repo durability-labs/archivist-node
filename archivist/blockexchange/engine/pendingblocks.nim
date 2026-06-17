@@ -697,15 +697,16 @@ proc pushPeerBlock(
 
     without peer =? self.getPeerForBlock(address), err:
       trace "Unable to get peer", address, err = err.msg
-      if err of NoPeerForBlockError:
-        if err =? self.advanceReqState(req, Pending).errorOption:
-          trace "Unable to set req state", err = err.msg
-          return
-
-        await self.retryAddresses(@[address], self.discoveryTimeout)
-        self.trackedFutures.track(self.discoverPeersForBlock(address))
-      else:
+      if not (err of NoPeerForBlockError):
         await self.failWantHandle(address, PeerSelectorFailedEngineError, err.msg)
+        return
+
+      if err =? self.advanceReqState(req, Pending).errorOption:
+        trace "Unable to set req state", err = err.msg
+        return
+
+      await self.retryAddresses(@[address], self.discoveryTimeout)
+      self.trackedFutures.track(self.discoverPeersForBlock(address))
       return
 
     var batchReq: BatchReq
