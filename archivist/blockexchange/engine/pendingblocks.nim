@@ -695,22 +695,7 @@ proc pushPeerBlock(
       trace "Address already in pipeline", address, state = req.state
       return
 
-    if self.getPeerForBlock.isNil:
-      trace "No peer selector configured, failing block", address
-      await self.failWantHandle(
-        address, NoPeerSelectorEngineError, "No peer selector configured"
-      )
-      return
-
-    let generation = req.generation
-    let peerResult = self.getPeerForBlock(address)
-
-    if req.generation != generation or
-        not (await self.validateBlock(address, Dispatching)):
-      trace "Address already in pipeline", address, state = req.state
-      return
-
-    without peer =? peerResult, err:
+    without peer =? self.getPeerForBlock(address), err:
       trace "Unable to get peer", address, err = err.msg
       if err of NoPeerForBlockError:
         if err =? self.advanceReqState(req, Pending).errorOption:
@@ -718,23 +703,9 @@ proc pushPeerBlock(
           return
 
         await self.retryAddresses(@[address], self.discoveryTimeout)
-        if self.discoverPeersForBlock.isNil:
-          await self.failWantHandle(
-            address, NoPeerDiscovererEngineError, "No discoverer configured"
-          )
-          return
         self.trackedFutures.track(self.discoverPeersForBlock(address))
       else:
-        trace "Unexpected peer selector error, failing block",
-          address, errType = $err.name, err = err.msg
         await self.failWantHandle(address, PeerSelectorFailedEngineError, err.msg)
-      return
-
-    if peer.isNil:
-      trace "Selector returned success(nil), failing block", address
-      await self.failWantHandle(
-        address, PeerSelectorFailedEngineError, "Peer selector returned nil peer"
-      )
       return
 
     var batchReq: BatchReq
