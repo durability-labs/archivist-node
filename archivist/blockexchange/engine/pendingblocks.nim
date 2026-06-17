@@ -241,6 +241,9 @@ proc releaseWantHandle(
   req.owners.excl(wrapped)
   if req.owners.len == 0 and not req.handle.finished:
     warn "Abandoning block", address
+    archivist_block_exchange_requests_abandoned.inc()
+    archivist_block_exchange_handles_failed.inc()
+
     req.handle.fail(
       newException(RequestAbandonedEngineError, fmt"Abandoning block {address}")
     )
