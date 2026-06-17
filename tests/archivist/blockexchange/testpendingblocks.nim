@@ -520,13 +520,15 @@ suite "PendingBlocks ownership model":
     pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
-    # First getWantHandle: creates BlockReq (generation=0), pushes BlockItem(gen=0)
+    # getWantHandle pushes BlockItem(generation=0).
     discard pb.getWantHandle(address)
-    # Second getWantHandle: addOwner increments generation to 1, pushes BlockItem(gen=1)
-    discard pb.getWantHandle(address)
+    # retryAddresses bumps generation to 1 and pushes a fresh BlockItem.
+    # The original BlockItem(generation=0) is now stale - the scheduler
+    # must skip it because BlockReq.generation has moved on.
+    await pb.retryAddresses(@[address], 0.millis)
 
     await pb.start()
-    # batchDeadline (50ms) + buffer — worker dispatches after deadline expires
+    # batchDeadline (50ms) + buffer - worker dispatches after deadline expires
     await sleepAsync(100.millis)
     await pb.stop()
 

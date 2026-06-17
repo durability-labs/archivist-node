@@ -267,7 +267,7 @@ proc advanceReqState(
   of Pending:
     req.state = Pending
   else:
-    return failure(fmt"Unknow state {state}")
+    return failure(fmt"Unknown state {state}")
 
   if failed:
     trace "Invalid state transition", oldState = req.state, state
