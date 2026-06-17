@@ -49,21 +49,10 @@
       },
       "fieldConfig": {
         "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "short"
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2
+          }
         },
         "overrides": []
       },
@@ -94,19 +83,16 @@
       "pluginVersion": "12.1.1",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "code",
-          "expr": "archivist_inflight_discovery{instance=~\"$node\"}",
-          "legendFormat": "{{instance}}",
-          "range": true,
-          "refId": "A"
+          "expr": "archivist_inflight_discovery",
+          "legendFormat": "InFlight"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_discovery_requests_total[1m])",
+          "legendFormat": "Discovery Rate"
         }
       ],
-      "title": "Archivist Inflight Discovery",
-      "type": "stat"
+      "title": "Discovery Activity",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1559,10 +1545,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "irate(node_network_receive_bytes_total{}[5m])*8",
+          "expr": "sum by (instance) (irate(node_network_receive_bytes_total{}[5m])*8)",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "recv {{device}}",
+          "legendFormat": "recv {{instance}}",
           "range": true,
           "refId": "A",
           "step": 240
@@ -1573,10 +1559,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "irate(node_network_transmit_bytes_total{}[5m])*8",
+          "expr": "sum by (instance) (irate(node_network_transmit_bytes_total{}[5m])*8)",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "trans {{device}} ",
+          "legendFormat": "trans {{instance}}",
           "range": true,
           "refId": "B",
           "step": 240
@@ -8705,6 +8691,328 @@
       ],
       "title": "Pods",
       "type": "row"
+    },
+    {
+      "id": 131,
+      "title": "Block Request State (Current)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "archivist_block_exchange_blocks_state{pod=~\"$pod\"}",
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 132,
+      "title": "Block Request Outcomes (Cumulative)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(archivist_block_exchange_requests_succeeded_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Succeeded"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_requests_failed_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Failed"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_requests_retried_total{reason=~\"timeout|no_peer|presence|disconnect|send_error|validation\", pod=~\"$pod\"}[1m])",
+          "legendFormat": "Retried: {{reason}}"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_requests_abandoned_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Abandoned"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 133,
+      "title": "Retrieval Duration (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_retrieval_duration_seconds_bucket{pod=~\"$pod\"}[1m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_retrieval_duration_seconds_bucket{pod=~\"$pod\"}[1m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(archivist_block_exchange_retrieval_duration_seconds_bucket{pod=~\"$pod\"}[1m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 134,
+      "title": "NetworkStore Cache Hit/Miss",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(archivist_networkstore_blocks_local_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Local Cache Hit"
+        },
+        {
+          "expr": "rate(archivist_networkstore_blocks_network_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Network Fetch"
+        },
+        {
+          "expr": "rate(archivist_networkstore_blocks_missed_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Missed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 135,
+      "title": "Handle Lifecycle",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 2
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(archivist_block_exchange_handles_created_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Created"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_handles_resolved_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Resolved"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_handles_failed_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Failed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 136,
+      "title": "Block Exchange Messages",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 2
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(archivist_block_exchange_want_have_lists_sent_total{pod=~\"$pod\"}[1m])",
+          "legendFormat": "WantHave Sent"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_want_have_lists_received{pod=~\"$pod\"}[1m])",
+          "legendFormat": "WantHave Received"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_blocks_sent{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Blocks Sent"
+        },
+        {
+          "expr": "rate(archivist_block_exchange_blocks_received{pod=~\"$pod\"}[1m])",
+          "legendFormat": "Blocks Received"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 137,
+      "title": "Host Network Throughput (MB/s)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "description": "Physical NIC throughput per host (node_exporter). Use for host-level capacity monitoring.",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (instance) (irate(node_network_receive_bytes_total[1m])/1048576)",
+          "legendFormat": "RX {{instance}}"
+        },
+        {
+          "expr": "sum by (instance) (irate(node_network_transmit_bytes_total[1m])/1048576)",
+          "legendFormat": "TX {{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MBs",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 138,
+      "title": "Archivist Download Throughput (MB/s)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "description": "Application-level download throughput per archivist node. rate(bytes_received[1m])",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(archivist_block_exchange_bytes_received_total[1m])/1048576",
+          "legendFormat": "RX {{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MBs",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 140,
+      "title": "Archivist Upload Throughput (MB/s)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "description": "Application-level upload throughput per archivist node. rate(bytes_sent[1m])",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(archivist_block_exchange_bytes_sent_total[1m])/1048576",
+          "legendFormat": "TX {{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MBs",
+          "custom": {
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 139,
+      "title": "Block Retrieval Latency (histogram)",
+      "type": "heatmap",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(archivist_block_exchange_retrieval_duration_seconds_bucket[1m])) by (le)",
+          "format": "heatmap"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
     }
   ],
   "preload": false,
@@ -8790,21 +9098,14 @@
             "$__all"
           ]
         },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": "Prometheus",
         "definition": "label_values(process_resident_memory_bytes,instance)",
         "includeAll": true,
         "label": "Instance",
         "multi": true,
         "name": "pod",
         "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values(process_resident_memory_bytes,instance)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
+        "query": "label_values(archivist_block_exchange_blocks_state, pod)",
         "refresh": 2,
         "regex": "",
         "type": "query"
