@@ -15,6 +15,7 @@ import std/hashes
 import std/sequtils
 import std/sets
 import std/strformat
+import std/enumutils
 
 import pkg/chronos
 import pkg/libp2p
@@ -401,6 +402,7 @@ proc failWantHandle*(
     if not blockReq.handle.finished:
       let err = (ref errType)(address: address, msg: msg)
       blockReq.handle.fail(err)
+      archivist_block_exchange_handles_failed.inc()
       self.failOwners(address, err)
 
 proc markRequested*(
