@@ -391,11 +391,6 @@ proc cancelBlocks(
   if failedFuts.len > 0:
     warn "Failed to send block request cancellations to peers", peers = failedFuts.len
 
-proc releaseHandle*(
-    self: BlockExcEngine, handle: BlockHandle
-): Future[void] {.async: (raises: [CancelledError]).} =
-  await noCancel handle.cancelAndWait()
-
 proc resolveBlocks*(
     self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
 ) {.async: (raises: [CancelledError]).} =
@@ -777,29 +772,29 @@ proc new*(
     # Don't drop the peer — a single block timeout doesn't mean
     # the peer is bad. pendingBlocks already retries the block.
 
-  proc pendingPeerSelector(
-      address: BlockAddress
-  ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
-    var peers = self.peers.getPeersForBlock(address)
-    if peers.with.len == 0 and peers.without.len > 0:
-      await self.refreshBlockKnowledge()
-      peers = self.peers.getPeersForBlock(address)
-
+  proc pendingPeerSelector(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
+    let peers = self.peers.getPeersForBlock(address)
     if peers.with.len == 0:
-      self.searchForNewPeers(address.cidOrTreeCid)
       trace "No peer for block", address
       return
         failure(newException(NoPeerForBlockError, fmt"No peer for block {address}"))
 
     let peer = self.selectPeer(peers.with)
     if peer.isNil:
-      self.searchForNewPeers(address.cidOrTreeCid)
       trace "No peer context for block", address
       return failure(
         newException(NoPeerForBlockError, fmt"Unable to select suitable peer {address}")
       )
 
     success peer
+
+  proc pendingDiscoverer(address: BlockAddress) {.async: (raises: []), gcsafe.} =
+    try:
+      if self.peers.peersHave(address).len == 0:
+        await self.refreshBlockKnowledge()
+      self.searchForNewPeers(address.cidOrTreeCid)
+    except CancelledError:
+      trace "Peer discovery cancelled", address
 
   proc onBatchReadyHandler(
       peer: BlockExcPeerCtx, batch: seq[BlockAddress]
@@ -816,9 +811,8 @@ proc new*(
 
     success()
 
-  pendingBlocks.onAbandon = onAbandonHandler
-  pendingBlocks.onTimeout = onTimeoutHandler
   pendingBlocks.getPeerForBlock = pendingPeerSelector
+  pendingBlocks.discoverPeersForBlock = pendingDiscoverer
   pendingBlocks.sendBatch = onBatchReadyHandler
 
   if not isNil(network.switch):

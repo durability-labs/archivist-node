@@ -398,9 +398,7 @@ suite "PendingBlocks ownership model":
 
       success()
 
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success makePeerCtx(peerId)
 
     await pb.start()
@@ -437,15 +435,18 @@ suite "PendingBlocks ownership model":
       success()
 
     # Return peer on first call only, then fail to prevent re-dispatch loop
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       getPeerCallCount.inc()
       if getPeerCallCount == 1:
         success peerCtx
       else:
         # Use generic error so pushPeerBlock returns without retrying
         failure(newException(NoPeerForBlockError, "no more peers"))
+
+    pb.discoverPeersForBlock = proc(
+        address: BlockAddress
+    ) {.async: (raises: []), gcsafe.} =
+      discard
 
     await pb.start()
 
@@ -490,9 +491,7 @@ suite "PendingBlocks ownership model":
         batchSendEvent.fire()
         success()
 
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
     await pb.start()
@@ -518,9 +517,7 @@ suite "PendingBlocks ownership model":
       callCount.inc()
       success()
 
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
     # First getWantHandle: creates BlockReq (generation=0), pushes BlockItem(gen=0)
@@ -555,9 +552,7 @@ suite "PendingBlocks ownership model":
       firstBatchSent.fire()
       success()
 
-    pb.getPeerForBlock = proc(
-        a: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(a: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
     await pb.start()
@@ -591,9 +586,7 @@ suite "PendingBlocks ownership model":
         sent.add(a)
       success()
 
-    pb.getPeerForBlock = proc(
-        a: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(a: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
     await pb.start()
