@@ -26,6 +26,8 @@ import ../../../asynctest
 import ../../helpers
 
 privateAccess(PendingBlocksManager)
+privateAccess(BlockReq)
+privateAccess(BlockExcEngine)
 
 const NopSendWantListProc = proc(
     id: PeerId,
@@ -394,6 +396,7 @@ asyncchecksuite "NetworkStore engine handlers":
     engine.peers.add(otherPeerCtx)
 
     for delivery in blocksDelivery:
+      engine.pendingBlocks.blocks[delivery.address].state = Scheduled
       engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
       otherPeerCtx.blocksRequested.incl(delivery.address)
 
@@ -747,6 +750,7 @@ asyncchecksuite "Block Download":
 
     let retriesBefore = engine.pendingBlocks.retries(address)
     await engine.pendingBlocks.clearRequest(address, peerCtx)
+    engine.pendingBlocks.blocks[address].state = Scheduled
     engine.pendingBlocks.markRequested(address, peerCtx)
     check engine.pendingBlocks.isRequested(address)
     check engine.pendingBlocks.getRequestPeer(address) == peerId.some
@@ -1043,6 +1047,177 @@ asyncchecksuite "Block Download":
 
     check address notin peerCtx.blocksRequested
     check (await pending).blk == blocks[0]
+
+  test "Peers exist locally flows through to sendBatch":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      wantBlockSent = newAsyncEvent()
+
+    # Pre-populate peerHave so the selector finds the peer locally.
+    peerCtx.setPresence(Presence(address: address, have: true))
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantType.WantBlock:
+        check addresses == @[address]
+        if not wantBlockSent.isSet:
+          wantBlockSent.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    let pending = engine.requestDelivery(address).tryGet()
+
+    # Block flows through: selector finds peer locally -> pipe -> worker -> sendBatch.
+    # No requeue, no discoverer - the peer is known to have the block.
+    await wantBlockSent.wait().wait(1.seconds)
+    check address in engine.pendingBlocks
+    check engine.pendingBlocks.isRequested(address)
+    check address in peerCtx.blocksRequested
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
+
+  test "Peer knowledge refresh reschedules with discoveryTimeout":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      wantHaveSent = newAsyncEvent()
+      wantBlockSent = newAsyncEvent()
+
+    # peerCtx is in engine.peers (from setup) but peerHave is empty.
+    # The selector will return NoPeerForBlockError; the discoverer runs
+    # refreshBlockKnowledge, which sends WantHave to the peer. The test
+    # simulates the peer's response via blockPresenceHandler.
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      case wantType
+      of WantType.WantHave:
+        check addresses == @[address]
+        if not wantHaveSent.isSet:
+          wantHaveSent.fire()
+      of WantType.WantBlock:
+        check addresses == @[address]
+        check wantHaveSent.isSet
+        check address in peerCtx.peerHave
+        if not wantBlockSent.isSet:
+          wantBlockSent.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    let pending = engine.requestDelivery(address).tryGet()
+
+    # Wait for WantHave (sent by the engine's refresh via the discoverer).
+    await wantHaveSent.wait().wait(1.seconds)
+    # At this point: selector returned NoPeerForBlockError -> requeue with
+    # discoveryTimeout -> discoverer called -> refreshBlockKnowledge sent
+    # WantHave. The block is NOT waiting for a new blockPresenceHandler;
+    # it was requeued by pushPeerBlock itself.
+    check address in engine.pendingBlocks
+    check not engine.pendingBlocks.isRequested(address)
+
+    # Simulate the peer's response to the refresh's WantHave.
+    await engine.blockPresenceHandler(
+      peerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
+    )
+
+    # Now the block flows through: blockPresenceHandler updates peerHave
+    # and calls retryAddresses(0) -> selector returns peer -> sendBatch.
+    await wantBlockSent.wait().wait(1.seconds)
+    check address in engine.pendingBlocks
+    check engine.pendingBlocks.isRequested(address)
+    check address in peerCtx.blocksRequested
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
+
+  test "DHT discovery reschedules with discoveryTimeout":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      newPeerId =
+        PeerId.init(PrivateKey.random(rng[]).tryGet().getPublicKey().tryGet()).tryGet()
+      newPeerCtx = BlockExcPeerCtx.new(newPeerId)
+      wantBlockSent = newAsyncEvent()
+      initialLastDiscRequest = engine.lastDiscRequest
+
+    # No peer has the block. The selector returns NoPeerForBlockError;
+    # the discoverer runs refreshBlockKnowledge (no peers) then
+    # searchForNewPeers (DHT). The test simulates DHT finding a new peer
+    # by adding the peer and calling blockPresenceHandler.
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantType.WantBlock:
+        check addresses == @[address]
+        if not wantBlockSent.isSet:
+          wantBlockSent.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    # Remove the existing peerCtx so no peer is known to have the block.
+    # The discoverer's refreshBlockKnowledge will find nothing.
+    engine.peers.remove(peerCtx.id)
+
+    let pending = engine.requestDelivery(address).tryGet()
+
+    # Wait for searchForNewPeers to fire (lastDiscRequest advances).
+    # The discoverer runs: refreshBlockKnowledge finds nothing (no peers),
+    # then searchForNewPeers is called.
+    var discoveryRequestFired = false
+    for _ in 0 ..< 200:
+      if engine.lastDiscRequest > initialLastDiscRequest:
+        discoveryRequestFired = true
+        break
+      await sleepAsync(5.millis)
+    check discoveryRequestFired
+
+    # Simulate DHT discovery: a new peer connects and announces it has the block.
+    engine.peers.add(newPeerCtx)
+    await engine.blockPresenceHandler(
+      newPeerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
+    )
+
+    # Block flows through: blockPresenceHandler updates newPeerCtx.peerHave
+    # and calls retryAddresses(0) -> selector returns newPeerCtx -> sendBatch.
+    await wantBlockSent.wait().wait(1.seconds)
+    check address in engine.pendingBlocks
+    check engine.pendingBlocks.isRequested(address)
+    check address in newPeerCtx.blocksRequested
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
 
 asyncchecksuite "Task Handler":
   var

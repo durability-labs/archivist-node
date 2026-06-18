@@ -19,3 +19,4 @@ type
   QueueFailedEngineError* = object of EngineError
   RequestAbandonedEngineError* = object of EngineError
   NoPeerForBlockError* = object of EngineError
+  PeerSelectorFailedEngineError* = object of EngineError

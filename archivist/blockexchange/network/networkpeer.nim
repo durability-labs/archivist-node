@@ -21,8 +21,6 @@ import ../../utils/trackedfutures
 logScope:
   topics = "archivist blockexcnetworkpeer"
 
-const DefaultYieldInterval = 50.millis
-
 type
   ConnProvider* =
     proc(): Future[Connection] {.gcsafe, async: (raises: [CancelledError]).}
@@ -34,7 +32,6 @@ type
     handler*: RPCHandler
     sendConn: Connection
     getConn: ConnProvider
-    yieldInterval*: Duration = DefaultYieldInterval
     trackedFutures: TrackedFutures
 
 proc connected*(self: NetworkPeer): bool =
@@ -47,14 +44,7 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
 
   trace "Attaching read loop", peer = self.id, connId = conn.oid
   try:
-    var nextYield = Moment.now() + self.yieldInterval
     while not conn.atEof or not conn.closed:
-      if Moment.now() > nextYield:
-        nextYield = Moment.now() + self.yieldInterval
-        trace "Yielding in read loop",
-          peer = self.id, nextYield = nextYield, interval = self.yieldInterval
-        await sleepAsync(10.millis)
-
       let
         data = await conn.readLp(MaxMessageSize.int)
         msg = Message.protobufDecode(data).mapFailure().tryGet()

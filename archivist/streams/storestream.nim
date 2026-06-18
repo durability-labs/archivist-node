@@ -110,9 +110,6 @@ method readOnce*(
     if self.atEof or read >= nbytes:
       break
 
-    if idx notin blocksMap:
-      break
-
     without blk =? catch(blocksMap[idx]), err:
       trace "Block index not found in returned batch, some blocks failed to retrieve",
         err = err.msg

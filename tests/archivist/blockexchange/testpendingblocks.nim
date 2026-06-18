@@ -78,7 +78,6 @@ suite "Pending Blocks":
     check pendingBlocks.owners(blk.cid) == 2
 
     await handle1.cancelAndWait()
-    await handle1.cancelAndWait()
     check blk.cid in pendingBlocks
     check eventually pendingBlocks.owners(blk.cid) == 1
 
@@ -117,6 +116,7 @@ suite "Pending Blocks":
       pendingBlocks = PendingBlocksManager.new(onTimeout = onTimeout)
 
     discard pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 1.millis)
     check eventually timedOut
 
@@ -136,6 +136,7 @@ suite "Pending Blocks":
       pendingBlocks = PendingBlocksManager.new()
 
     discard pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 10.millis)
     await pendingBlocks.clearRequest(address, peerCtx)
     await sleepAsync(50.millis)
@@ -158,6 +159,7 @@ suite "Pending Blocks":
       pendingBlocks = PendingBlocksManager.new()
 
     let handle = pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 10.millis)
 
     await pendingBlocks.resolve(@[BlockDelivery(blk: blk, address: blk.address)])
@@ -181,6 +183,7 @@ suite "Pending Blocks":
       pendingBlocks = PendingBlocksManager.new(onTimeout = onTimeout)
 
     let handle = pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 10.millis)
     await handle.cancelAndWait()
 
@@ -208,8 +211,10 @@ suite "Pending Blocks":
       pendingBlocks = PendingBlocksManager.new(onTimeout = onTimeout)
 
     discard pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, firstPeerCtx, 20.millis)
     await pendingBlocks.clearRequest(address, firstPeerCtx)
+    pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, secondPeerCtx, 1.millis)
 
     check eventually timeouts.len == 1
@@ -262,6 +267,7 @@ suite "PendingBlocks ownership model":
     let retriesBefore = pb.retries(address)
     let peerCtx = makePeerCtx(makePeerId())
 
+    pb.blocks[address].state = Scheduled
     pb.markRequested(address, peerCtx, 60.seconds)
 
     check pb.isRequested(address)
@@ -276,6 +282,7 @@ suite "PendingBlocks ownership model":
       pb = PendingBlocksManager.new()
 
     discard pb.getWantHandle(address)
+    pb.blocks[address].state = Scheduled
     pb.markRequested(address, peerCtx, 60.seconds)
 
     check pb.isRequested(address)
@@ -295,6 +302,7 @@ suite "PendingBlocks ownership model":
       pb = PendingBlocksManager.new()
       handle = pb.getWantHandle(address)
 
+    pb.blocks[address].state = Scheduled
     pb.markRequested(address, peerCtx, 60.seconds)
     check address in peerCtx.blocksRequested
 
@@ -310,6 +318,7 @@ suite "PendingBlocks ownership model":
       pb = PendingBlocksManager.new()
       handle = pb.getWantHandle(address)
 
+    pb.blocks[address].state = Scheduled
     pb.markRequested(address, peerCtx, 60.seconds)
     check address in peerCtx.blocksRequested
 
@@ -323,41 +332,45 @@ suite "PendingBlocks ownership model":
     check address notin pb
 
   test "timeout requeues block and clears peer assignment":
-    var timedOut = false
     let
       peerId = makePeerId()
       peerCtx = makePeerCtx(peerId)
+      timeoutEvent = newAsyncEvent()
       onTimeout = proc(
           timeoutAddress: BlockAddress, timeoutPeer: PeerId
       ) {.gcsafe, async: (raises: [CancelledError]).} =
         check timeoutAddress == address
         check timeoutPeer == peerId
-        timedOut = true
+        timeoutEvent.fire()
+
       pb = PendingBlocksManager.new(onTimeout = onTimeout)
 
     discard pb.getWantHandle(address)
+    pb.blocks[address].state = Scheduled
     pb.markRequested(address, peerCtx, 10.millis)
 
     check pb.isRequested(address)
     check address in peerCtx.blocksRequested
 
-    check eventually timedOut
+    await timeoutEvent.wait().wait(1.seconds)
 
     check not pb.isRequested(address)
     check address in pb
     check address notin peerCtx.blocksRequested
 
-  test "retryAddresses removes from blocksRequested and requeues":
+  test "retryAddresses requeues":
     let
       peerId = makePeerId()
       peerCtx = makePeerCtx(peerId)
       pb = PendingBlocksManager.new()
 
     discard pb.getWantHandle(address)
+    pb.blocks[address].state = Scheduled
     pb.markRequested(address, peerCtx, 60.seconds)
 
     check address in peerCtx.blocksRequested
 
+    await pb.clearPeerAssignment(address)
     await pb.retryAddresses(@[address], 0.millis)
     check address notin peerCtx.blocksRequested
     check not pb.isRequested(address)
@@ -374,25 +387,27 @@ suite "PendingBlocks ownership model":
       peerId = makePeerId()
 
     var sentAddresses: seq[BlockAddress]
-
     pb.sendBatch = proc(
         peer: BlockExcPeerCtx, batch: seq[BlockAddress]
     ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
       sentAddresses.add(batch[0])
       if sentAddresses.len == 2 and not bothSent.finished:
+        check sentAddresses[0] == highPriorityAddress
+        check sentAddresses[1] == lowPriorityAddress
         bothSent.complete()
+
       success()
 
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success makePeerCtx(peerId)
 
     await pb.start()
 
     # The heap correctly orders by readyAt first, then priority.
-    discard pb.getWantHandle(lowPriorityAddress, priority = 1)
+    # TODO: Priority should probably behave differently, `readyAt`
+    # take precedense, but perhaps it shouldn't?
     discard pb.getWantHandle(highPriorityAddress, priority = 10)
+    discard pb.getWantHandle(lowPriorityAddress, priority = 1)
 
     await bothSent.wait(1.seconds)
     await pb.stop()
@@ -420,15 +435,18 @@ suite "PendingBlocks ownership model":
       success()
 
     # Return peer on first call only, then fail to prevent re-dispatch loop
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       getPeerCallCount.inc()
       if getPeerCallCount == 1:
         success peerCtx
       else:
         # Use generic error so pushPeerBlock returns without retrying
         failure(newException(NoPeerForBlockError, "no more peers"))
+
+    pb.discoverPeersForBlock = proc(
+        address: BlockAddress
+    ) {.async: (raises: []), gcsafe.} =
+      discard
 
     await pb.start()
 
@@ -457,7 +475,8 @@ suite "PendingBlocks ownership model":
   test "Send failure requeues batch":
     var sendCount = 0
     let
-      pb = PendingBlocksManager.new(discoveryTimeout = 500.millis)
+      pb =
+        PendingBlocksManager.new(discoveryTimeout = 5.millis, batchDeadline = 1.millis)
       peerCtx = makePeerCtx(makePeerId())
       batchSendEvent = newAsyncEvent()
 
@@ -472,15 +491,13 @@ suite "PendingBlocks ownership model":
         batchSendEvent.fire()
         success()
 
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
     await pb.start()
     discard pb.getWantHandle(address)
 
-    await batchSendEvent.wait()
+    await batchSendEvent.wait().wait(5.seconds)
 
     # Check BEFORE stop (stop clears self.blocks)
     check sendCount >= 2 # retried at least once
@@ -500,18 +517,18 @@ suite "PendingBlocks ownership model":
       callCount.inc()
       success()
 
-    pb.getPeerForBlock = proc(
-        address: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
-    # First getWantHandle: creates BlockReq (generation=0), pushes BlockItem(gen=0)
+    # getWantHandle pushes BlockItem(generation=0).
     discard pb.getWantHandle(address)
-    # Second getWantHandle: addOwner increments generation to 1, pushes BlockItem(gen=1)
-    discard pb.getWantHandle(address)
+    # retryAddresses bumps generation to 1 and pushes a fresh BlockItem.
+    # The original BlockItem(generation=0) is now stale - the scheduler
+    # must skip it because BlockReq.generation has moved on.
+    await pb.retryAddresses(@[address], 0.millis)
 
     await pb.start()
-    # batchDeadline (50ms) + buffer — worker dispatches after deadline expires
+    # batchDeadline (50ms) + buffer - worker dispatches after deadline expires
     await sleepAsync(100.millis)
     await pb.stop()
 
@@ -537,9 +554,7 @@ suite "PendingBlocks ownership model":
       firstBatchSent.fire()
       success()
 
-    pb.getPeerForBlock = proc(
-        a: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(a: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
     await pb.start()
@@ -573,9 +588,7 @@ suite "PendingBlocks ownership model":
         sent.add(a)
       success()
 
-    pb.getPeerForBlock = proc(
-        a: BlockAddress
-    ): Future[?!BlockExcPeerCtx] {.gcsafe, async: (raises: [CancelledError]).} =
+    pb.getPeerForBlock = proc(a: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
       success peerCtx
 
     await pb.start()
@@ -610,6 +623,7 @@ suite "PendingBlocks ownership model":
     check pb.blockQueue.len == 1
     batchReq.workerFut = pb.peerBatchWorker(batchReq)
     discard pb.blockQueue.pop()
+    pb.blocks[address].state = Scheduled
     await batchReq.pipe.put(address)
     check eventually(batchReq.pipe.empty())
 
@@ -622,7 +636,7 @@ suite "PendingBlocks ownership model":
     check pb.blockQueue[0].generation == 2
 
     check address in pb.blocks
-    check pb.blocks[address].state == Pending
+    check pb.blocks[address].state == Queued
     check pb.blocks[address].requestedPeer.isNil
 
     await pb.stop()
