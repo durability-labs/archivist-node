@@ -13,6 +13,7 @@ import std/sets
 
 import pkg/libp2p
 import pkg/chronos
+import pkg/metrics
 
 import ../protobuf/blockexc
 import ../protobuf/presence
@@ -20,11 +21,19 @@ import ../protobuf/presence
 import ../../blocktype
 import ../../logutils
 
+import ./peerscore
+
 const
   MinRefreshInterval = 1.seconds
   MaxRefreshBackoff = 36
   DefaultMaxWantListBatchSize* = 1024
   DefaultPeerActivityTimeout = 1.minutes
+
+declareCounter(
+  archivist_block_exchange_peer_circuit_breaker_trips_total,
+  "archivist blockexchange peer circuit breaker trips (labeled by peer)",
+  labels = ["peer_id"],
+)
 
 type BlockExcPeerCtx* = ref object of RootObj
   id*: PeerId
@@ -38,6 +47,7 @@ type BlockExcPeerCtx* = ref object of RootObj
   blocksRequested*: HashSet[BlockAddress]
   activityTimeout*: Duration
   lastSentWants*: HashSet[BlockAddress]
+  score*: PeerScore
   disconnected: Future[void] # completed when peer is removed from store
 
 proc isKnowledgeStale*(self: BlockExcPeerCtx): bool =
@@ -111,11 +121,29 @@ proc blockRequestScheduled*(self: BlockExcPeerCtx, address: BlockAddress) =
 proc blockRequestCleared*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.excl(address)
 
+proc recordDelivery*(
+    self: BlockExcPeerCtx, address: BlockAddress, bytes: int, latencyMs: float
+) =
+  self.score.recordDelivery(bytes, latencyMs)
+
+proc recordFailure*(self: BlockExcPeerCtx, isValidation: bool = false) =
+  let wasOpen = self.score.circuitOpen
+  self.score.recordFailure(isValidation)
+  if not wasOpen and self.score.circuitOpen:
+    archivist_block_exchange_peer_circuit_breaker_trips_total.inc(
+      labelValues = [$self.id]
+    )
+
+proc sendBatchFailure*(self: BlockExcPeerCtx) =
+  let wasOpen = self.score.circuitOpen
+  self.score.sendBatchFailure()
+  if not wasOpen and self.score.circuitOpen:
+    archivist_block_exchange_peer_circuit_breaker_trips_total.inc(
+      labelValues = [$self.id]
+    )
+
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksRequested
-
-proc blockRequestAccepted*(self: BlockExcPeerCtx, address: BlockAddress) =
-  self.blocksRequested.excl(address)
 
 proc disconnect*(self: BlockExcPeerCtx) =
   ## Complete the disconnected future, signaling lifecycle end
@@ -134,5 +162,8 @@ proc new*(
     activityTimeout = DefaultPeerActivityTimeout,
 ): BlockExcPeerCtx =
   BlockExcPeerCtx(
-    id: peerId, activityTimeout: activityTimeout, disconnected: newFuture[void]()
+    id: peerId,
+    activityTimeout: activityTimeout,
+    score: PeerScore(lastUpdated: Moment.now()),
+    disconnected: newFuture[void](),
   )

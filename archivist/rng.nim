@@ -38,6 +38,10 @@ proc rand*(rng: Rng, max: Natural): int =
     if x < randMax - (randMax mod (uint64(max) + 1'u64)): # against modulo bias
       return int(x mod (uint64(max) + 1'u64))
 
+proc sampleFloat*(rng: Rng): float =
+  ## Sample a float in [0.0, 1.0)
+  result = float(rng[].generate(uint64)) / float(0xFFFFFFFFFFFFFFFF'u64)
+
 proc sample*[T](rng: Rng, a: openArray[T]): T =
   result = a[rng.rand(a.high)]
 
