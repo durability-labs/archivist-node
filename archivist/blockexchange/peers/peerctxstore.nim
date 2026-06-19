@@ -50,7 +50,6 @@ func peerIds*(self: PeerCtxStore): seq[PeerId] =
 
 func contains*(self: PeerCtxStore, peerId: PeerId): bool =
   peerId in self.peers
-
 proc add*(self: PeerCtxStore, peer: BlockExcPeerCtx) =
   if existing =? self.peers .? [peer.id]:
     if existing != peer:
@@ -76,6 +75,8 @@ proc remove*(self: PeerCtxStore, peerId: PeerId) =
         self.peerScores[(peer.id, cid)] = score
 
       peer.disconnect()
+    self.peers.del(peerId)
+  # LRU retains the score for future re-add (capacity-driven eviction)
 
     self.peers.del(peerId)
 

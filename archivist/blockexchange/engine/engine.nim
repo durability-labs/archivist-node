@@ -231,6 +231,70 @@ proc topPeersByAggregate*(self: BlockExcEngine, topK: int): seq[BlockExcPeerCtx]
     return @[]
   ranked[0 ..< min(topK, ranked.len)]
 
+proc computeEffectiveScore(peer: BlockExcPeerCtx, now: Moment): float =
+  peer.score.computeScore(peer.blocksRequested.len)
+  return
+    applyDecay(peer.score.score, peer.score.lastUpdated, peer.blocksRequested.len, now)
+
+proc scoredPeer(
+    peers: seq[BlockExcPeerCtx], address: BlockAddress
+): BlockExcPeerCtx {.gcsafe, raises: [].} =
+  # Filter circuit-open peers.
+  var candidates: seq[BlockExcPeerCtx]
+  for peer in peers:
+    peer.score.maybeResetCircuit()
+    if not peer.score.circuitOpen:
+      candidates.add(peer)
+
+  if candidates.len == 0:
+    return nil
+
+  if candidates.len == 1:
+    return candidates[0]
+
+  # Find max effective score (raw score + inactivity decay).
+  let now = Moment.now()
+  var
+    best = candidates[0]
+    bestScore = computeEffectiveScore(best, now)
+
+  for peer in candidates[1 ..^ 1]:
+    let s = computeEffectiveScore(peer, now)
+    if s > bestScore:
+      best = peer
+      bestScore = s
+
+  # Epsilon-greedy exploration: occasionally pick a random candidate to
+  # avoid starving cold-start and to escape local optima.
+  if Rng.instance.sampleFloat() < DefaultExplorationEpsilon:
+    let
+      picked = Rng.instance.sample(candidates)
+      pickedScore = computeEffectiveScore(picked, now)
+
+    archivist_block_exchange_peer_selections_total.inc(labelValues = [$picked.id])
+    archivist_block_exchange_peer_score.set(pickedScore, labelValues = [$picked.id])
+    trace "Peer selected",
+      address,
+      peer = picked.id,
+      score = pickedScore,
+      inflight = picked.blocksRequested.len,
+      candidates = candidates.len,
+      exploration = true
+
+    return picked
+
+  archivist_block_exchange_peer_selections_total.inc(labelValues = [$best.id])
+  archivist_block_exchange_peer_score.set(bestScore, labelValues = [$best.id])
+  trace "Peer selected",
+    address,
+    peer = best.id,
+    score = bestScore,
+    inflight = best.blocksRequested.len,
+    candidates = candidates.len,
+    exploration = false
+
+  return best
+
 proc failBlockRequest(
     self: BlockExcEngine,
     address: BlockAddress,
