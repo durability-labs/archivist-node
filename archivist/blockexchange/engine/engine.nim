@@ -624,7 +624,7 @@ proc blocksDeliveryHandler*(
 
   archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
 
-  await self.resolveBlocks(validatedBlocksDelivery, peerCtx.some)
+  await self.resolveBlocks(validatedBlocksDelivery, peerCtx.option)
 
 proc wantListHandler*(
     self: BlockExcEngine, peer: PeerId, wantList: WantList
