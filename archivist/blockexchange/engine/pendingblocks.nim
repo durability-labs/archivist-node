@@ -358,7 +358,6 @@ proc addOwner(
       pending.priority = priority
 
     if not self.blockInPipeline(pending) and pending.requestedPeer.isNil:
-      pending.priority = priority
       pending.generation.inc()
       if err =? self.advanceReqState(pending, Queued).errorOption:
         trace "Unable to advance request state", err = err.msg
