@@ -40,7 +40,7 @@ proc rand*(rng: Rng, max: Natural): int =
 
 proc sampleFloat*(rng: Rng): float =
   ## Sample a float in [0.0, 1.0)
-  result = float(rng[].generate(uint64)) / float(0xFFFFFFFFFFFFFFFF'u64)
+  float(rng[].generate(uint64) shr 11) / float(1'u64 shl 53)
 
 proc sample*[T](rng: Rng, a: openArray[T]): T =
   result = a[rng.rand(a.high)]
