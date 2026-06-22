@@ -97,7 +97,7 @@ proc applyDecay*(
   max(rawScore * decayFactor, ColdStartScore)
 
 proc checkCircuitBreaker*(self: var PeerScore) =
-  if self.consecutiveFailures >= MaxConsecutiveFailures:
+  if self.consecutiveFailures >= MaxConsecutiveFailures and not self.circuitOpen:
     self.circuitOpen = true
     self.circuitOpenUntil = Moment.now() + CircuitCooldown
 
