@@ -169,9 +169,7 @@ suite "Pending Blocks":
     pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 5.seconds)
     check peerCtx.score.totalDeliveries == 0
-    await pendingBlocks.resolve(
-      @[BlockDelivery(blk: blk, address: address)],
-    )
+    await pendingBlocks.resolve(@[BlockDelivery(blk: blk, address: address)])
     check peerCtx.score.totalDeliveries == 0
     check peerCtx.score.consecutiveFailures == 0
 
