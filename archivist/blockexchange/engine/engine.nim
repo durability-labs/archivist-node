@@ -247,53 +247,18 @@ proc scoredPeer(
       candidates.add(peer)
 
   if candidates.len == 0:
-    return nil
+    return @[]
+  let ranked = rankPeersByScore(candidates, cid)
+  if ranked.len == 0:
+    return @[]
+  ranked[0 ..< min(topK, ranked.len)]
 
-  if candidates.len == 1:
-    return candidates[0]
-
-  # Find max effective score (raw score + inactivity decay).
-  let now = Moment.now()
-  var
-    best = candidates[0]
-    bestScore = computeEffectiveScore(best, now)
-
-  for peer in candidates[1 ..^ 1]:
-    let s = computeEffectiveScore(peer, now)
-    if s > bestScore:
-      best = peer
-      bestScore = s
-
-  # Epsilon-greedy exploration: occasionally pick a random candidate to
-  # avoid starving cold-start and to escape local optima.
-  if Rng.instance.sampleFloat() < DefaultExplorationEpsilon:
-    let
-      picked = Rng.instance.sample(candidates)
-      pickedScore = computeEffectiveScore(picked, now)
-
-    archivist_block_exchange_peer_selections.inc(labelValues = [$picked.id])
-    archivist_block_exchange_peer_score.set(pickedScore, labelValues = [$picked.id])
-    trace "Peer selected",
-      address,
-      peer = picked.id,
-      score = pickedScore,
-      inflight = picked.blocksRequested.len,
-      candidates = candidates.len,
-      exploration = true
-
-    return picked
-
-  archivist_block_exchange_peer_selections.inc(labelValues = [$best.id])
-  archivist_block_exchange_peer_score.set(bestScore, labelValues = [$best.id])
-  trace "Peer selected",
-    address,
-    peer = best.id,
-    score = bestScore,
-    inflight = best.blocksRequested.len,
-    candidates = candidates.len,
-    exploration = false
-
-  return best
+proc topPeersByAggregate*(self: BlockExcEngine, topK: int): seq[BlockExcPeerCtx] =
+  let allPeers = toSeq(self.peers.peers.values)
+  let ranked = rankPeersByAggregate(allPeers)
+  if ranked.len == 0:
+    return @[]
+  ranked[0 ..< min(topK, ranked.len)]
 
 proc failBlockRequest(
     self: BlockExcEngine,

@@ -50,6 +50,7 @@ func peerIds*(self: PeerCtxStore): seq[PeerId] =
 
 func contains*(self: PeerCtxStore, peerId: PeerId): bool =
   peerId in self.peers
+
 proc add*(self: PeerCtxStore, peer: BlockExcPeerCtx) =
   if existing =? self.peers .? [peer.id]:
     if existing != peer:

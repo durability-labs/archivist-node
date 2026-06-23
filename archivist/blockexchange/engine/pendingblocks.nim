@@ -423,6 +423,7 @@ proc failWantHandle*(
       let err = (ref errType)(address: address, msg: msg)
       blockReq.handle.fail(err)
       archivist_block_exchange_handles_failed.inc()
+      archivist_block_exchange_requests_failed.inc()
       let now = getMonoTime().ticks
       let durationUs = (now - blockReq.startTime) div 1000
       archivist_block_exchange_request_outcome_duration_seconds.observe(

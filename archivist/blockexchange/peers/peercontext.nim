@@ -191,6 +191,12 @@ proc setPresence*(self: BlockExcPeerCtx, presence: Presence) =
 
   self.blocks[presence.address] = presence
 
+proc effectiveScore*(peer: BlockExcPeerCtx, cid: Cid, now: Moment): float =
+  without score =? peer.scoreFor(cid):
+    return ColdStartScore
+  score.computeScore(peer.blocksRequested.len)
+  applyDecay(score.score, score.lastUpdated, peer.blocksRequested.len, now)
+
 func cleanPresence*(self: BlockExcPeerCtx, addresses: seq[BlockAddress]) =
   for a in addresses:
     self.blocks.del(a)
@@ -207,18 +213,26 @@ proc blockRequestCleared*(self: BlockExcPeerCtx, address: BlockAddress) =
 proc recordDelivery*(
     self: BlockExcPeerCtx, address: BlockAddress, bytes: int, latencyMs: float
 ) =
-  self.score.recordDelivery(bytes, latencyMs)
+  self.ensureScoreFor(address.cidOrTreeCid).recordDelivery(bytes, latencyMs)
 
-proc recordFailure*(self: BlockExcPeerCtx, isValidation: bool = false) =
-  let wasOpen = self.score.circuitOpen
-  self.score.recordFailure(isValidation)
-  if not wasOpen and self.score.circuitOpen:
+proc recordFailure*(self: BlockExcPeerCtx, cid: Cid, isValidation: bool = false) =
+  var score = self.ensureScoreFor(cid)
+  let wasOpen = score.circuitOpen
+  score.recordFailure(isValidation)
+  if not wasOpen and score.circuitOpen:
+    trace "Peer circuit breaker tripped for dataset",
+      peer = self.id, cid, failures = score.consecutiveFailures
+    archivist_block_exchange_peer_circuit_open.inc(labelValues = [$self.id])
     archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
 
-proc sendBatchFailure*(self: BlockExcPeerCtx) =
-  let wasOpen = self.score.circuitOpen
-  self.score.sendBatchFailure()
-  if not wasOpen and self.score.circuitOpen:
+proc sendBatchFailure*(self: BlockExcPeerCtx, cid: Cid) =
+  var score = self.ensureScoreFor(cid)
+  let wasOpen = score.circuitOpen
+  score.sendBatchFailure()
+  if not wasOpen and score.circuitOpen:
+    trace "Peer circuit breaker tripped for dataset (batch)",
+      peer = self.id, cid, failures = score.consecutiveFailures
+    archivist_block_exchange_peer_circuit_open.inc(labelValues = [$self.id])
     archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
