@@ -31,7 +31,6 @@ type
   Marketplace_TransferFailed* = object of SolidityError
   Marketplace_UnknownRequest* = object of SolidityError
   Marketplace_InvalidState* = object of SolidityError
-  Marketplace_StartNotBeforeExpiry* = object of SolidityError
   Marketplace_SlotNotAcceptingProofs* = object of SolidityError
   Marketplace_SlotIsFree* = object of SolidityError
   Marketplace_ReservationRequired* = object of SolidityError
@@ -84,7 +83,7 @@ proc fillSlot*(
   contract,
   errors: [
     Marketplace_InvalidSlot, Marketplace_ReservationRequired, Marketplace_SlotNotFree,
-    Marketplace_StartNotBeforeExpiry, Marketplace_UnknownRequest,
+    Marketplace_UnknownRequest, Proofs_InvalidProof,
   ]
 .}
 
@@ -113,8 +112,8 @@ proc freeSlot*(
 ): Confirmable {.
   contract,
   errors: [
-    Marketplace_InvalidSlotHost, Marketplace_AlreadyPaid,
-    Marketplace_StartNotBeforeExpiry, Marketplace_UnknownRequest, Marketplace_SlotIsFree,
+    Marketplace_InvalidSlotHost, Marketplace_AlreadyPaid, Marketplace_UnknownRequest,
+    Marketplace_SlotIsFree,
   ]
 .}
 
@@ -176,9 +175,9 @@ proc markProofAsMissing*(
 ): Confirmable {.
   contract,
   errors: [
-    Marketplace_SlotNotAcceptingProofs, Marketplace_StartNotBeforeExpiry,
-    Proofs_PeriodNotEnded, Proofs_ValidationTimedOut, Proofs_ProofNotMissing,
-    Proofs_ProofNotRequired, Proofs_ProofAlreadyMarkedMissing,
+    Marketplace_SlotNotAcceptingProofs, Proofs_PeriodNotEnded,
+    Proofs_ValidationTimedOut, Proofs_ProofNotMissing, Proofs_ProofNotRequired,
+    Proofs_ProofAlreadyMarkedMissing,
   ]
 .}
 
@@ -196,7 +195,7 @@ proc canMarkProofAsMissing*(
 
 proc reserveSlot*(
   marketplace: MarketplaceContract, requestId: RequestId, slotIndex: uint64
-): Confirmable {.contract.}
+): Confirmable {.contract, errors: [SlotReservations_ReservationNotAllowed].}
 
 proc canReserveSlot*(
   marketplace: MarketplaceContract, requestId: RequestId, slotIndex: uint64
