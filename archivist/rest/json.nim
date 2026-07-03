@@ -97,14 +97,14 @@ proc init*(
     cid: Cid,
     overlay: OverlayMetadata,
     hasBlocks: seq[(Natural, bool)],
-    slots: seq[RestDatasetStatusSlot]
+    slots: seq[RestDatasetStatusSlot],
 ): RestDatasetStatus =
   RestDatasetStatus(
     cid: cid,
     status: overlay.status,
     expiry: overlay.expiry,
     hasBlocks: hasBlocks.mapIt(it[1]),
-    slots: slots
+    slots: slots,
   )
 
 proc init*(_: type RestNode, node: dn.Node): RestNode =

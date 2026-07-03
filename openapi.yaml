@@ -422,7 +422,7 @@ components:
           type: array
           items:
             type: boolean
-              description: "Representation of dataset blocks present locally."
+            description: "Representation of dataset blocks present locally."
         slots:
           type: array
           items:
