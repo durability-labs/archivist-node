@@ -422,7 +422,26 @@ components:
           type: array
           items:
             type: boolean
-            description: "Representation of dataset blocks present locally."
+              description: "Representation of dataset blocks present locally."
+        slots:
+          type: array
+          items:
+            type: object
+            properties:
+              cid:
+                $ref: "#/components/schemas/Cid"
+              status:
+                type: string
+                enum:
+                  - Pending
+                  - Failure
+                  - Storing
+                  - Downloading
+                  - Repairing
+                  - Completed
+                  - Deleting
+              expiry:
+                $ref: "#/components/schemas/Expiry"
 
     ManifestItem:
       type: object

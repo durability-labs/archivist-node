@@ -49,11 +49,17 @@ type
   RestContentList* = object
     content* {.serialize.}: seq[RestContent]
 
+  RestDatasetStatusSlot* = object
+    cid* {.serialize.}: Cid
+    status* {.serialize.}: OverlayStatus
+    expiry* {.serialize.}: SecondsSince1970
+
   RestDatasetStatus* = object
     cid* {.serialize.}: Cid
     status* {.serialize.}: OverlayStatus
     expiry* {.serialize.}: SecondsSince1970
     hasBlocks* {.serialize.}: seq[bool]
+    slots* {.serialize.}: seq[RestDatasetStatusSlot]
 
   RestNode* = object
     nodeId* {.serialize.}: RestNodeId
@@ -91,12 +97,14 @@ proc init*(
     cid: Cid,
     overlay: OverlayMetadata,
     hasBlocks: seq[(Natural, bool)],
+    slots: seq[RestDatasetStatusSlot]
 ): RestDatasetStatus =
   RestDatasetStatus(
     cid: cid,
     status: overlay.status,
     expiry: overlay.expiry,
     hasBlocks: hasBlocks.mapIt(it[1]),
+    slots: slots
   )
 
 proc init*(_: type RestNode, node: dn.Node): RestNode =
