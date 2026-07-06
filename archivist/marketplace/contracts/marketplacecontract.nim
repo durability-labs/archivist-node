@@ -1,6 +1,5 @@
 import pkg/ethers
 import pkg/ethers/erc20
-import pkg/json_rpc/rpcclient
 import pkg/stint
 import pkg/chronos
 import ./requests
