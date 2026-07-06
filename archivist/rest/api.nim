@@ -73,12 +73,10 @@ proc formatDatasetSlots(
   if not manifest.verifiable:
     return success(slots)
   for cid in manifest.slotRoots:
-    without overlay =? (await repostore.getOverlay(cid)), err:
-      error "Failed to fetch overlay for slotRoot", err = err.msg, slotCid = $cid
-      return failure(err)
-    slots.add(
-      RestDatasetStatusSlot(cid: cid, status: overlay.status, expiry: overlay.expiry)
-    )
+    if overlay =? (await repostore.getOverlay(cid)):
+      slots.add(
+        RestDatasetStatusSlot(cid: cid, status: overlay.status, expiry: overlay.expiry)
+      )
   return success(slots)
 
 proc formatDatasetStatus(
