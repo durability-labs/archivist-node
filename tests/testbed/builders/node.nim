@@ -254,7 +254,7 @@ proc start*(builder: NodeBuilder): Future[Node] {.async.} =
   for bootstrapNode in await builder.bootstrapNodesResolved:
     arguments.add("--bootstrap-node=" & bootstrapNode)
   if builder.logTopics.len > 0:
-    arguments.add("--log-level=INFO;TRACE:" & builder.logTopics.join(","))
+    arguments.add("--log-level=DEBUG;TRACE:" & builder.logTopics.join(","))
   if builder.persistence:
     arguments.add("--persistence")
     arguments.add("--eth-provider=" & builder.testbed.hardhatInstance.jsonRpcUrl)
