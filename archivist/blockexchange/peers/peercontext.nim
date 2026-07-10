@@ -191,11 +191,7 @@ proc setPresence*(self: BlockExcPeerCtx, presence: Presence) =
 
   self.blocks[presence.address] = presence
 
-proc effectiveScore*(peer: BlockExcPeerCtx, cid: Cid, now: Moment): float =
-  without score =? peer.scoreFor(cid):
-    return ColdStartScore
-  score.computeScore(peer.blocksRequested.len)
-  applyDecay(score.score, score.lastUpdated, peer.blocksRequested.len, now)
+  self.blocks[presence.address] = presence
 
 func cleanPresence*(self: BlockExcPeerCtx, addresses: seq[BlockAddress]) =
   for a in addresses:
@@ -209,6 +205,9 @@ proc blockRequestScheduled*(self: BlockExcPeerCtx, address: BlockAddress) =
 
 proc blockRequestCleared*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.excl(address)
+
+proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
+  address in self.blocksRequested
 
 proc recordDelivery*(
     self: BlockExcPeerCtx, address: BlockAddress, bytes: int, latencyMs: float
