@@ -78,16 +78,6 @@ declareCounter(
   archivist_block_exchange_requests_failed_total,
   "Total number of block requests that failed after exhausting retries",
 )
-declareGauge(
-  archivist_block_exchange_peer_score,
-  "archivist blockexchange peer score (labeled by peer)",
-  labels = ["peer_id"],
-)
-declareCounter(
-  archivist_block_exchange_peer_selections_total,
-  "archivist blockexchange peer selections (labeled by peer)",
-  labels = ["peer_id"],
-)
 
 const
   DefaultTaskQueueSize = 128
@@ -336,8 +326,6 @@ proc scoredPeer(
       picked = Rng.instance.sample(candidates)
       pickedScore = computeEffectiveScore(picked, now)
 
-    archivist_block_exchange_peer_selections_total.inc(labelValues = [$picked.id])
-    archivist_block_exchange_peer_score.set(pickedScore, labelValues = [$picked.id])
     trace "Peer selected",
       address,
       peer = picked.id,
@@ -348,8 +336,6 @@ proc scoredPeer(
 
     return picked
 
-  archivist_block_exchange_peer_selections_total.inc(labelValues = [$best.id])
-  archivist_block_exchange_peer_score.set(bestScore, labelValues = [$best.id])
   trace "Peer selected",
     address,
     peer = best.id,

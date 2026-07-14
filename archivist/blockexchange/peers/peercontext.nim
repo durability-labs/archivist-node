@@ -31,8 +31,7 @@ const
 
 declareCounter(
   archivist_block_exchange_peer_circuit_breaker_trips_total,
-  "archivist blockexchange peer circuit breaker trips (labeled by peer)",
-  labels = ["peer_id"],
+  "archivist blockexchange peer circuit breaker trips",
 )
 
 type BlockExcPeerCtx* = ref object of RootObj
@@ -130,17 +129,13 @@ proc recordFailure*(self: BlockExcPeerCtx, isValidation: bool = false) =
   let wasOpen = self.score.circuitOpen
   self.score.recordFailure(isValidation)
   if not wasOpen and self.score.circuitOpen:
-    archivist_block_exchange_peer_circuit_breaker_trips_total.inc(
-      labelValues = [$self.id]
-    )
+    archivist_block_exchange_peer_circuit_breaker_trips_total.inc()
 
 proc sendBatchFailure*(self: BlockExcPeerCtx) =
   let wasOpen = self.score.circuitOpen
   self.score.sendBatchFailure()
   if not wasOpen and self.score.circuitOpen:
-    archivist_block_exchange_peer_circuit_breaker_trips_total.inc(
-      labelValues = [$self.id]
-    )
+    archivist_block_exchange_peer_circuit_breaker_trips_total.inc()
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksRequested
