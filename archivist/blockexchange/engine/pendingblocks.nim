@@ -523,12 +523,12 @@ proc markRequested*(
         return
 
       if timeoutFut.completed:
-        if not peer.isNil:
-          peer.recordFailure()
         # Requeue the block for retry before notifying the engine.
         if req =? self.blocks .? [address]:
           if req.requestTimeout == currentMonitor and req.requestedPeer == peer:
             # XXX: Don't use clearPeerAssignment here, because it will deadlock
+            if not peer.isNil:
+              peer.recordFailure()
             req.requestedPeer.blockRequestCleared(address)
             req.requestedPeer = nil
             req.requestTimeout = nil
