@@ -1383,7 +1383,7 @@ asyncchecksuite "scoredPeer selector":
     stale.score.recordDelivery(1024, 10.0)
     # Way past grace and many tau.
     stale.score.lastUpdated = Moment.now() - 1.hours
-    let decayed =
-      applyDecay(stale.score.score, stale.score.lastUpdated, 0, Moment.now())
+    let rawScore = stale.score.computeScore(0)
+    let decayed = applyDecay(rawScore, stale.score.lastUpdated, 0, Moment.now())
     check decayed == ColdStartScore
     check decayed > 0.0

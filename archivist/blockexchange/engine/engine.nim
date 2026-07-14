@@ -287,9 +287,8 @@ proc randomPeer(peers: seq[BlockExcPeerCtx], address: BlockAddress): BlockExcPee
   Rng.instance.sample(peers)
 
 proc computeEffectiveScore(peer: BlockExcPeerCtx, now: Moment): float =
-  peer.score.computeScore(peer.blocksRequested.len)
-  return
-    applyDecay(peer.score.score, peer.score.lastUpdated, peer.blocksRequested.len, now)
+  let rawScore = peer.score.computeScore(peer.blocksRequested.len)
+  applyDecay(rawScore, peer.score.lastUpdated, peer.blocksRequested.len, now)
 
 proc scoredPeer(
     peers: seq[BlockExcPeerCtx], address: BlockAddress

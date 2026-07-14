@@ -52,7 +52,7 @@ type PeerScore* = object
   totalBytes*: int
   circuitOpen*: bool
   circuitOpenUntil*: Moment
-  score*: float
+
   lastUpdated*: Moment
 
 template ewmaUpdate(metric, sample; alpha = EwmaAlpha) =
@@ -61,10 +61,9 @@ template ewmaUpdate(metric, sample; alpha = EwmaAlpha) =
 proc loadPenalty(inflightCount: int): float =
   1.0 / (1.0 + float(inflightCount) * InflightPenaltyFactor)
 
-proc computeScore*(self: var PeerScore, inflightCount: int) =
+proc computeScore*(self: PeerScore, inflightCount: int): float =
   if self.totalDeliveries < MinSamplesForScore:
-    self.score = ColdStartScore
-    return
+    return ColdStartScore
 
   let
     successNorm = clamp(self.successRate, 0.0, 1.0)
@@ -74,7 +73,7 @@ proc computeScore*(self: var PeerScore, inflightCount: int) =
       SuccessWeight * successNorm + ThroughputWeight * throughputNorm +
       LatencyWeight * latencyNorm
 
-  self.score = rawScore * loadPenalty(inflightCount)
+  rawScore * loadPenalty(inflightCount)
 
 proc applyDecay*(
     rawScore: float, lastUpdated: Moment, inflightCount: int, now: Moment
