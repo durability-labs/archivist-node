@@ -48,6 +48,15 @@ const NopSendWantCancellationsProc = proc(
 ) {.async: (raises: [CancelledError]).} =
   discard
 
+# Helper: a peer selector that always returns Requeue with a delay
+proc alwaysRequeue(delay: Duration = 0.seconds): PeerSelectorHandler =
+  proc selector(
+      address: BlockAddress
+  ): Future[?!PeerSelection] {.async: (raises: [CancelledError]), gcsafe.} =
+    success PeerSelection(kind: PeerSelectionKind.Requeue, delay: delay)
+
+  return selector
+
 asyncchecksuite "NetworkStore engine basic":
   var
     rng: Rng
@@ -73,6 +82,7 @@ asyncchecksuite "NetworkStore engine basic":
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
+    await pendingBlocks.start()
 
     while true:
       let chunk = (await chunker.getBytes()).tryGet()
@@ -117,6 +127,8 @@ asyncchecksuite "NetworkStore engine basic":
         localStore, network, discovery, advertiser, peerStore, pendingBlocks
       )
 
+    engine.pendingBlocks.getPeerForBlock = alwaysRequeue(30.seconds)
+
     for b in blocks:
       discard engine.pendingBlocks.getWantHandle(b.cid)
 
@@ -125,6 +137,7 @@ asyncchecksuite "NetworkStore engine basic":
     await done.wait(100.millis)
 
   teardown:
+    await pendingBlocks.stop()
     tp.shutdown()
 
 asyncchecksuite "NetworkStore engine handlers":
@@ -166,6 +179,7 @@ asyncchecksuite "NetworkStore engine handlers":
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
+    await pendingBlocks.start()
 
     tp = Taskpool.new(num_threads = 4)
     localStore = RepoStore.new(
@@ -185,8 +199,10 @@ asyncchecksuite "NetworkStore engine handlers":
 
     peerCtx = BlockExcPeerCtx.new(peerId)
     engine.peers.add(peerCtx)
+    pendingBlocks.getPeerForBlock = alwaysRequeue(30.seconds)
 
   teardown:
+    await pendingBlocks.stop()
     tp.shutdown()
 
   test "Should schedule block requests":
@@ -1490,6 +1506,7 @@ suite "NetworkStore engine refresh circuit":
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
+    waitFor pendingBlocks.start()
     tp = Taskpool.new(num_threads = 4)
     localStore = RepoStore.new(
       SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
@@ -1506,6 +1523,7 @@ suite "NetworkStore engine refresh circuit":
 
     peerCtx = BlockExcPeerCtx.new(peerId)
     engine.peers.add(peerCtx)
+    pendingBlocks.getPeerForBlock = alwaysRequeue(30.seconds)
     network.request.sendWantList = capturingSendWantList
     sentFull = false
     sentAddresses = @[]
@@ -1513,6 +1531,7 @@ suite "NetworkStore engine refresh circuit":
       discard engine.pendingBlocks.getWantHandle(b.cid)
 
   teardown:
+    waitFor pendingBlocks.stop()
     tp.shutdown()
 
   test "suppressed refresh returns wake hint":

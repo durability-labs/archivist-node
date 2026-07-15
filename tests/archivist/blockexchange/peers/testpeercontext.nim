@@ -177,3 +177,30 @@ suite "BlockExcPeerCtx want-have circuit":
     peer.closeWindow()
     check peer.state == WantListState.Closed
     check peer.alreadySent.len == 0
+
+  test "decideSend from wait at exact resend-window boundary returns full":
+    var peer = BlockExcPeerCtx.example
+    let baseTime = Moment.now()
+    let treeCid = Cid.example
+    let addrA = makeAddr(treeCid, 0)
+
+    # First send from Closed -> Full, transitions to SendDelta
+    let decision1 = peer.decideSend(toWantSet(addrA), baseTime)
+    check decision1.kind == SendKind.Full
+    check peer.state == WantListState.SendDelta
+
+    # Second call at same time: empty delta -> None, transitions to Wait
+    let decision2 = peer.decideSend(toWantSet(addrA), baseTime)
+    check decision2.kind == SendKind.None
+    check peer.state == WantListState.Wait
+
+    # Set lastSendTime to the boundary so the delta interval check does
+    # not fire, isolating the resend-window boundary check.
+    let boundaryTime = peer.windowOpenTime + peer.resendInterval
+    peer.lastSendTime = boundaryTime
+
+    # At the exact boundary (windowOpenTime + resendInterval), the
+    # inclusive (<=) check expires the window and returns Full.
+    let decision3 = peer.decideSend(toWantSet(addrA), boundaryTime)
+    check decision3.kind == SendKind.Full
+    check peer.state == WantListState.SendDelta

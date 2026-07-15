@@ -308,7 +308,7 @@ proc scheduleTasks(
 proc cancelBlocks(
     self: BlockExcEngine, addrs: seq[BlockAddress]
 ) {.async: (raises: [CancelledError]).} =
-  let toCancell = toHashSet(addrs)
+  let toCancel = toHashSet(addrs)
   var scheduledCancellations: Table[PeerId, HashSet[BlockAddress]]
 
   if self.peers.len == 0:
@@ -321,7 +321,7 @@ proc cancelBlocks(
     peerId
 
   for peerCtx in self.peers.peers.values:
-    let intersection = peerCtx.blocksRequested.intersection(toCancell)
+    let intersection = peerCtx.blocksRequested.intersection(toCancel)
     if intersection.len > 0:
       scheduledCancellations[peerCtx.id] = intersection
       peerCtx.cleanPresence(addrs)

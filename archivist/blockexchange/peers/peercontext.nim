@@ -119,7 +119,7 @@ proc decideSend*(
     return SendDecision(kind: SendKind.Delta, wants: delta, wakeAfter: Duration.none)
   of WantListState.Wait:
     # Check window expiry
-    if self.windowOpenTime + self.resendInterval < now:
+    if self.windowOpenTime + self.resendInterval <= now:
       self.closeWindow()
       return self.decideSend(wantList, now)
 

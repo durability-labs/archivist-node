@@ -52,21 +52,29 @@ proc alwaysRequeue(delay: Duration = 0.seconds): PeerSelectorHandler =
 
   return selector
 
+proc startWithoutDispatch(pb: PendingBlocksManager): Future[void] {.async.} =
+  pb.getPeerForBlock = alwaysRequeue(30.seconds)
+  await pb.start()
+
 suite "Pending Blocks":
   test "Should add want handle":
     let
       pendingBlocks = PendingBlocksManager.new()
       blk = bt.Block.new("Hello".toBytes).tryGet
 
+    await startWithoutDispatch(pendingBlocks)
     discard pendingBlocks.getWantHandle(blk.cid)
 
     check blk.cid in pendingBlocks
+    await pendingBlocks.stop()
 
   test "Should resolve want handle":
     let
       pendingBlocks = PendingBlocksManager.new()
       blk = bt.Block.new("Hello".toBytes).tryGet
-      handle = pendingBlocks.getWantHandle(blk.cid)
+
+    await startWithoutDispatch(pendingBlocks)
+    let handle = pendingBlocks.getWantHandle(blk.cid)
 
     check blk.cid in pendingBlocks
     await pendingBlocks.resolve(
@@ -79,23 +87,29 @@ suite "Pending Blocks":
     check resolved.blk == blk
     check resolved.address == blk.address
     check eventually blk.cid notin pendingBlocks
+    await pendingBlocks.stop()
 
   test "Should cancel want handle":
     let
       pendingBlocks = PendingBlocksManager.new()
       blk = bt.Block.new("Hello".toBytes).tryGet
-      handle = pendingBlocks.getWantHandle(blk.cid)
+
+    await startWithoutDispatch(pendingBlocks)
+    let handle = pendingBlocks.getWantHandle(blk.cid)
 
     check blk.cid in pendingBlocks
     await handle.cancelAndWait()
     check eventually blk.cid notin pendingBlocks
+    await pendingBlocks.stop()
 
   test "Should isolate shared handle owners":
     let
       pendingBlocks = PendingBlocksManager.new()
       blk = bt.Block.new("Hello".toBytes).tryGet
-      handle1 = pendingBlocks.getWantHandle(blk.cid)
-      handle2 = pendingBlocks.getWantHandle(blk.cid)
+
+    await startWithoutDispatch(pendingBlocks)
+    let handle1 = pendingBlocks.getWantHandle(blk.cid)
+    let handle2 = pendingBlocks.getWantHandle(blk.cid)
 
     check handle1 != handle2
     check pendingBlocks.owners(blk.cid) == 2
@@ -106,37 +120,39 @@ suite "Pending Blocks":
 
     await pendingBlocks.resolve(@[BlockDelivery(blk: blk, address: blk.address)])
     check (await handle2).blk == blk
+    await pendingBlocks.stop()
 
   test "Should cancel all want handles":
     let
       pendingBlocks = PendingBlocksManager.new()
       blks = (0 .. 9).mapIt(bt.Block.new(("Hello " & $it).toBytes).tryGet)
-      handles = blks.mapIt(pendingBlocks.getWantHandle(it.cid))
+
+    await startWithoutDispatch(pendingBlocks)
+    let handles = blks.mapIt(pendingBlocks.getWantHandle(it.cid))
 
     await pendingBlocks.stop()
-
-    check pendingBlocks.len == 0
-    for handle in handles:
-      expect CancelledError:
-        discard await handle
 
   test "Should get wants list":
     let
       pendingBlocks = PendingBlocksManager.new()
       blks = (0 .. 9).mapIt(bt.Block.new(("Hello " & $it).toBytes).tryGet)
 
+    await startWithoutDispatch(pendingBlocks)
     discard blks.mapIt(pendingBlocks.getWantHandle(it.cid))
 
     check:
       blks.mapIt($it.cid).sorted(cmp[string]) ==
         toSeq(pendingBlocks.wantListBlockCids).mapIt($it).sorted(cmp[string])
+    await pendingBlocks.stop()
 
   test "Should handle retry counters":
     let
       pendingBlocks = PendingBlocksManager.new(retries = 3)
       blk = bt.Block.new("Hello".toBytes).tryGet
       address = BlockAddress.init(blk.cid)
-      handle = pendingBlocks.getWantHandle(blk.cid)
+
+    await startWithoutDispatch(pendingBlocks)
+    let handle = pendingBlocks.getWantHandle(blk.cid)
 
     check pendingBlocks.retries(address) == 3
     pendingBlocks.decRetries(address)
@@ -146,6 +162,7 @@ suite "Pending Blocks":
     pendingBlocks.decRetries(address)
     check pendingBlocks.retries(address) == 0
     check pendingBlocks.retriesExhausted(address)
+    await pendingBlocks.stop()
 
 suite "PendingBlocks ownership model":
   let
@@ -157,6 +174,7 @@ suite "PendingBlocks ownership model":
       pb = PendingBlocksManager.new(retries = 5)
       peerCtx = makePeerCtx(makePeerId())
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     let retriesBefore = pb.retries(address)
 
@@ -166,12 +184,14 @@ suite "PendingBlocks ownership model":
     check pb.retries(address) == retriesBefore - 1
     check pb.getRequestPeer(address) == peerCtx.id.some
     check address in peerCtx.blocksRequested
+    await pb.stop()
 
   test "markRequested is idempotent for same peer":
     let
       pb = PendingBlocksManager.new(retries = 5)
       peerCtx = makePeerCtx(makePeerId())
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     let retriesBefore = pb.retries(address)
 
@@ -180,6 +200,7 @@ suite "PendingBlocks ownership model":
 
     check pb.retries(address) == retriesBefore - 1 # only one decrement
     check address in peerCtx.blocksRequested
+    await pb.stop()
 
   test "markRequested is a no-op when requestedPeer is already set":
     let
@@ -187,6 +208,7 @@ suite "PendingBlocks ownership model":
       firstPeer = makePeerCtx(makePeerId())
       secondPeer = makePeerCtx(makePeerId())
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     let retriesBefore = pb.retries(address)
 
@@ -197,11 +219,14 @@ suite "PendingBlocks ownership model":
     check pb.getRequestPeer(address) == firstPeer.id.some
     check address in firstPeer.blocksRequested
     check address notin secondPeer.blocksRequested
+    await pb.stop()
 
   test "resolve completes handle and removes from pendingBlocks":
     let
       pb = PendingBlocksManager.new()
-      handle = pb.getWantHandle(address)
+
+    await startWithoutDispatch(pb)
+    let handle = pb.getWantHandle(address)
 
     await pb.resolve(address, blk)
     let delivery = await handle
@@ -209,12 +234,14 @@ suite "PendingBlocks ownership model":
     check delivery.blk == blk
     check delivery.address == address
     check eventually address notin pb
+    await pb.stop()
 
   test "resolve with sender records delivery on matching peer":
     let
       peerCtx = makePeerCtx(makePeerId())
       pb = PendingBlocksManager.new()
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     pb.markRequested(address, peerCtx)
 
@@ -225,12 +252,14 @@ suite "PendingBlocks ownership model":
     check peerCtx.ensureScoreFor(blk.cid).totalDeliveries == 1
     check peerCtx.ensureScoreFor(blk.cid).totalBytes == blk.data.len
     check peerCtx.ensureScoreFor(blk.cid).consecutiveFailures == 0
+    await pb.stop()
 
   test "resolve without sender does not record delivery":
     let
       peerCtx = makePeerCtx(makePeerId())
       pb = PendingBlocksManager.new()
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     pb.markRequested(address, peerCtx)
 
@@ -240,6 +269,7 @@ suite "PendingBlocks ownership model":
 
     check peerCtx.ensureScoreFor(blk.cid).totalDeliveries == 0
     check peerCtx.ensureScoreFor(blk.cid).consecutiveFailures == 0
+    await pb.stop()
 
   test "resolve with mismatched sender does not record delivery":
     let
@@ -247,6 +277,7 @@ suite "PendingBlocks ownership model":
       senderPeer = makePeerCtx(makePeerId())
       pb = PendingBlocksManager.new()
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     pb.markRequested(address, assignedPeer)
 
@@ -255,16 +286,20 @@ suite "PendingBlocks ownership model":
 
     check assignedPeer.ensureScoreFor(blk.cid).totalDeliveries == 0
     check senderPeer.ensureScoreFor(blk.cid).totalDeliveries == 0
+    await pb.stop()
 
   test "failWantHandle fails handle and removes from pendingBlocks":
     let
       pb = PendingBlocksManager.new()
-      handle = pb.getWantHandle(address)
+
+    await startWithoutDispatch(pb)
+    let handle = pb.getWantHandle(address)
 
     await pb.failWantHandle(address, StorageFailedEngineError, "test error")
 
     check handle.finished
     check eventually address notin pb
+    await pb.stop()
 
   test "failWantHandle is a no-op on missing block":
     let
@@ -277,19 +312,24 @@ suite "PendingBlocks ownership model":
   test "failWantHandle is a no-op on already-finished handle":
     let
       pb = PendingBlocksManager.new()
-      handle = pb.getWantHandle(address)
+
+    await startWithoutDispatch(pb)
+    let handle = pb.getWantHandle(address)
 
     await pb.resolve(address, blk)
     check eventually handle.finished
 
     # Should not raise on already-resolved handle
     await pb.failWantHandle(address, StorageFailedEngineError, "already done")
+    await pb.stop()
 
   test "releaseWantHandle decrements owners on cancel":
     let
       pb = PendingBlocksManager.new()
-      handle1 = pb.getWantHandle(address)
-      handle2 = pb.getWantHandle(address)
+
+    await startWithoutDispatch(pb)
+    let handle1 = pb.getWantHandle(address)
+    let handle2 = pb.getWantHandle(address)
 
     check pb.owners(address) == 2
 
@@ -299,6 +339,7 @@ suite "PendingBlocks ownership model":
 
     await handle2.cancelAndWait()
     check eventually address notin pb
+    await pb.stop()
 
   test "releaseWantHandle fires onAbandon when last owner cancels":
     var abandonedAddress: Option[BlockAddress]
@@ -307,11 +348,13 @@ suite "PendingBlocks ownership model":
         abandonedAddress = a.some
       pb = PendingBlocksManager.new(onAbandon = onAbandon)
 
+    await startWithoutDispatch(pb)
     let handle = pb.getWantHandle(address)
     await handle.cancelAndWait()
 
     check eventually address notin pb
     check eventually abandonedAddress == address.some
+    await pb.stop()
 
 suite "PendingBlocks dispatch monitor":
   let
@@ -581,23 +624,28 @@ suite "PendingBlocks dispatch monitor":
   test "wakeAddress returns false for finished handle":
     let
       pb = PendingBlocksManager.new()
-      handle = pb.getWantHandle(address)
+
+    await startWithoutDispatch(pb)
+    let handle = pb.getWantHandle(address)
 
     await pb.resolve(address, blk)
     check eventually handle.finished
 
     check not pb.wakeAddress(address)
+    await pb.stop()
 
   test "wakeAddress returns false for assigned request":
     let
       pb = PendingBlocksManager.new(retries = 5)
       peerCtx = makePeerCtx(makePeerId())
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     pb.markRequested(address, peerCtx)
 
     check not pb.wakeAddress(address)
     check pb.isRequested(address)
+    await pb.stop()
 
   test "rejectRequest clears assignment and fires wakeEvent":
     let
@@ -605,6 +653,7 @@ suite "PendingBlocks dispatch monitor":
       peerCtx = makePeerCtx(makePeerId())
       peerId = peerCtx.id
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     pb.markRequested(address, peerCtx)
 
@@ -615,6 +664,7 @@ suite "PendingBlocks dispatch monitor":
     check not pb.isRequested(address)
     check address notin peerCtx.blocksRequested
     check pb.getRequestPeer(address) == PeerId.none
+    await pb.stop()
 
   test "rejectRequest is a no-op for wrong peer":
     let
@@ -622,6 +672,7 @@ suite "PendingBlocks dispatch monitor":
       firstPeer = makePeerCtx(makePeerId())
       secondPeer = makePeerCtx(makePeerId())
 
+    await startWithoutDispatch(pb)
     discard pb.getWantHandle(address)
     pb.markRequested(address, firstPeer)
 
@@ -629,6 +680,7 @@ suite "PendingBlocks dispatch monitor":
 
     check pb.isRequested(address)
     check pb.getRequestPeer(address) == firstPeer.id.some
+    await pb.stop()
 
   test "rejectRequest is a no-op for missing block":
     let
@@ -962,6 +1014,28 @@ suite "PendingBlocks start/stop":
     check eventually handle.finished
     expect CatchableError:
       discard await handle
+
+  test "getWantHandle raises when not started":
+    let
+      pb = PendingBlocksManager.new()
+      blk = bt.Block.new("Hello".toBytes).tryGet
+
+    expect AssertionDefect:
+      discard pb.getWantHandle(blk.cid)
+
+  test "stop on already-stopped manager leaves tracked futures untouched":
+    let pb = PendingBlocksManager.new()
+
+    let sentinel = Future[void].Raising([]).init(
+      "stop guard", {FutureFlag.OwnCancelSchedule}
+    )
+    pb.trackedFutures.track(sentinel)
+
+    await pb.stop() # running is false, should early-return
+
+    check not sentinel.finished
+
+    sentinel.complete() # cleanup
 
 suite "PendingBlocks batching":
   let

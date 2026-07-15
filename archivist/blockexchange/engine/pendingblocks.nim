@@ -283,6 +283,8 @@ proc addOwner(
 proc getWantHandle*(
     self: PendingBlocksManager, address: BlockAddress, priority = 0
 ): BlockHandle =
+  if not self.running:
+    raiseAssert "PendingBlocksManager should be started before calling getWantHandle()"
   ## Create a handle for the block
   ##
 
@@ -749,6 +751,7 @@ proc start*(self: PendingBlocksManager) {.async: (raises: []).} =
 proc stop*(self: PendingBlocksManager) {.async: (raises: []).} =
   if not self.running:
     trace "Block scheduler not running"
+    return
 
   self.running = false
   await noCancel self.trackedFutures.cancelTracked()
