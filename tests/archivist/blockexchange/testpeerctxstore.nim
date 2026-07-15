@@ -114,6 +114,19 @@ suite "Peer Context Store":
     check restored2.totalDeliveries == 1
     check restored2.totalBytes == 2048
 
+  test "aggregateScore recomputes stale per-dataset scores":
+    # Record enough deliveries to exceed MinSamplesForScore so computeScore
+    # produces a real score instead of ColdStartScore
+    for i in 0 ..< 5:
+      peerCtx.recordDelivery(testAddress, 1024, 50.0)
+
+    # Without calling effectiveScore or any per-CID ranker first,
+    # aggregateScore must still reflect the recorded delivery history.
+    # The stale bug would return ColdStartScore (0.1) per dataset because
+    # score.score was never recomputed after recordDelivery.
+    let aggregate = peerCtx.aggregateScore()
+    check aggregate > float(peerCtx.scores.len) * ColdStartScore
+
 suite "Peer Context Store Peer Selection":
   var
     store: PeerCtxStore
