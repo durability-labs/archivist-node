@@ -11,6 +11,7 @@ import pkg/archivist/chunker
 import pkg/archivist/discovery
 import pkg/archivist/blocktype as bt
 import pkg/archivist/manifest
+import pkg/archivist/errors
 
 import ../../../asynctest
 import ../../helpers
@@ -264,3 +265,124 @@ asyncchecksuite "NetworkStore - multiple nodes":
 
     check pendingBlocks1.mapIt(it.read.blk) == blocks[0 .. 3]
     check pendingBlocks2.mapIt(it.read.blk) == blocks[12 .. 15]
+
+  test "Should return successful blocks when a batch request partially fails":
+    let
+      downloader = nodes[4].networkStore
+      engine = downloader.engine
+      addr0 = BlockAddress.init(manifest0.treeCid, 0.Natural)
+      addr1 = BlockAddress.init(manifest0.treeCid, 1.Natural)
+
+    # Start the batch getBlocks call — this creates handles internally
+    let fut = downloader.getBlocks(manifest0.treeCid, @[0.Natural, 1.Natural])
+
+    # Wait until both handles exist in engine.pendingBlocks
+    require eventually(
+      addr0 in engine.pendingBlocks and addr1 in engine.pendingBlocks, pollInterval = 10
+    )
+
+    # Resolve one handle with a real block
+    await engine.pendingBlocks.resolve(
+      @[BlockDelivery(blk: blocks[0], address: addr0)], BlockExcPeerCtx.none
+    )
+
+    # Fail the other handle explicitly
+    await engine.pendingBlocks.failWantHandle(
+      addr1, RequestAbandonedEngineError, "Simulated failure for partial-batch test"
+    )
+
+    # The batch should succeed with exactly the resolved block
+    let result = await fut
+    check result.isOk
+    let returned = result.tryGet()
+    check returned.len == 1
+    check returned[0][0] == 0.Natural
+    check returned[0][1].cid == blocks[0].cid
+
+  test "Should return successful blocks when a direct-CID batch partially fails":
+    let
+      downloader = nodes[4].networkStore
+      engine = downloader.engine
+      cid0 = blocks[0].cid
+      cid1 = blocks[1].cid
+
+    let fut = downloader.getBlocks(@[cid0, cid1])
+
+    require eventually(
+      BlockAddress.init(cid0) in engine.pendingBlocks and
+        BlockAddress.init(cid1) in engine.pendingBlocks,
+      pollInterval = 10,
+    )
+
+    await engine.pendingBlocks.resolve(
+      @[BlockDelivery(blk: blocks[0], address: BlockAddress.init(cid0))],
+      BlockExcPeerCtx.none,
+    )
+
+    await engine.pendingBlocks.failWantHandle(
+      BlockAddress.init(cid1),
+      RequestAbandonedEngineError,
+      "Simulated failure for direct-CID partial-batch test",
+    )
+
+    let result = await fut
+    check result.isOk
+    let returned = result.tryGet()
+    check returned.len == 1
+    check returned[0].cid == blocks[0].cid
+
+  test "Should return successful tuples when getBlocksAndProofs partially fails":
+    let
+      downloader = nodes[4].networkStore
+      engine = downloader.engine
+      addr0 = BlockAddress.init(manifest0.treeCid, 0.Natural)
+      addr1 = BlockAddress.init(manifest0.treeCid, 1.Natural)
+
+    let fut = downloader.getBlocksAndProofs(manifest0.treeCid, @[0.Natural, 1.Natural])
+
+    require eventually(
+      addr0 in engine.pendingBlocks and addr1 in engine.pendingBlocks, pollInterval = 10
+    )
+
+    let sourceProof = (
+      await nodes[0].localStore.getBlocksAndProofs(manifest0.treeCid, @[0.Natural])
+    ).tryGet()[0][2]
+
+    await engine.pendingBlocks.resolve(
+      @[BlockDelivery(blk: blocks[0], address: addr0, proof: some(sourceProof))],
+      BlockExcPeerCtx.none,
+    )
+
+    await engine.pendingBlocks.failWantHandle(
+      addr1, RequestAbandonedEngineError,
+      "Simulated failure for proof-bearing partial-batch test",
+    )
+
+    let result = await fut
+    check result.isOk
+    let returned = result.tryGet()
+    check returned.len == 1
+    check returned[0][0] == 0.Natural
+    check returned[0][1].cid == blocks[0].cid
+
+  test "allFinishedFailed classifies cancelled futures as failures, not successes":
+    proc work(): Future[int] {.async.} =
+      await sleepAsync(50.millis)
+      return 42
+
+    proc cancelledWork(): Future[int] {.async.} =
+      await sleepAsync(500.millis)
+      return 99
+
+    let
+      good = work()
+      bad = cancelledWork()
+
+    await cancelAndWait(bad)
+
+    let (succeeded, failed) = await allFinishedFailed[int](@[good, bad])
+
+    check succeeded.len == 1
+    check succeeded[0].value == 42
+    check failed.len == 1
+    check failed[0].cancelled

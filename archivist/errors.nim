@@ -56,7 +56,7 @@ proc allFinishedFailed*[T](
   var res: FinishedFailed[T] = (@[], @[])
   await allFutures(futs)
   for f in futs:
-    if f.failed:
+    if f.failed or f.cancelled:
       res.failure.add f
     else:
       res.success.add f
