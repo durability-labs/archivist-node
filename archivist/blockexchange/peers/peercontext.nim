@@ -13,7 +13,7 @@ import std/sets
 
 import pkg/libp2p
 import pkg/chronos
-import pkg/metrics
+import ../engine/metrics
 
 import ../protobuf/blockexc
 import ../protobuf/presence
@@ -28,11 +28,6 @@ const
   MaxRefreshBackoff = 36
   DefaultMaxWantListBatchSize* = 1024
   DefaultPeerActivityTimeout = 1.minutes
-
-declareCounter(
-  archivist_block_exchange_peer_circuit_breaker_trips_total,
-  "archivist blockexchange peer circuit breaker trips",
-)
 
 type BlockExcPeerCtx* = ref object of RootObj
   id*: PeerId
@@ -129,13 +124,13 @@ proc recordFailure*(self: BlockExcPeerCtx, isValidation: bool = false) =
   let wasOpen = self.score.circuitOpen
   self.score.recordFailure(isValidation)
   if not wasOpen and self.score.circuitOpen:
-    archivist_block_exchange_peer_circuit_breaker_trips_total.inc()
+    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
 
 proc sendBatchFailure*(self: BlockExcPeerCtx) =
   let wasOpen = self.score.circuitOpen
   self.score.sendBatchFailure()
   if not wasOpen and self.score.circuitOpen:
-    archivist_block_exchange_peer_circuit_breaker_trips_total.inc()
+    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksRequested

@@ -12,7 +12,7 @@ import std/sequtils
 import pkg/chronos
 import pkg/libp2p/cid
 import pkg/libp2p/multicodec
-import pkg/metrics
+import ./metrics
 import pkg/questionable
 import pkg/questionable/results
 
@@ -31,8 +31,6 @@ import ../../manifest
 
 logScope:
   topics = "archivist discoveryengine"
-
-declareGauge(archivist_inflight_discovery, "inflight discovery requests")
 
 const
   DefaultConcurrentDiscRequests = 10
