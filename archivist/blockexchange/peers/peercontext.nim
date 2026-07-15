@@ -106,6 +106,7 @@ proc ensureScoreFor*(self: BlockExcPeerCtx, cid: Cid): PeerScore =
 proc aggregateScore*(peer: BlockExcPeerCtx): float =
   var total = 0.0
   for _, score in peer.scores:
+    score.computeScore(peer.blocksRequested.len)
     total += float(score.totalDeliveries) * score.score
 
   total
@@ -148,20 +149,10 @@ proc recordDelivery*(
   self.ensureScoreFor(address.cidOrTreeCid).recordDelivery(bytes, latencyMs)
 
 proc recordFailure*(self: BlockExcPeerCtx, cid: Cid, isValidation: bool = false) =
-  let score = self.ensureScoreFor(cid)
-  let wasOpen = score.circuitOpen
-  score.recordFailure(isValidation)
-  if not wasOpen and score.circuitOpen:
-    archivist_block_exchange_peer_circuit_open.inc(labelValues = [$self.id])
-    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
+  self.ensureScoreFor(cid).recordFailure(isValidation)
 
 proc sendBatchFailure*(self: BlockExcPeerCtx, cid: Cid) =
-  let score = self.ensureScoreFor(cid)
-  let wasOpen = score.circuitOpen
-  score.sendBatchFailure()
-  if not wasOpen and score.circuitOpen:
-    archivist_block_exchange_peer_circuit_open.inc(labelValues = [$self.id])
-    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
+  self.ensureScoreFor(cid).sendBatchFailure()
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksRequested
