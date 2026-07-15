@@ -166,8 +166,6 @@ proc sendBatchedWantList(
     archivist_block_exchange_want_have_lists_sent.inc()
     archivist_block_exchange_want_have_entries_sent.inc(batch.len.int64)
 
-    archivist_block_exchange_want_have_lists_sent.inc()
-
     offset = batchEnd
 
 proc refreshBlockKnowledge(
