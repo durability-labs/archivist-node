@@ -222,8 +222,7 @@ suite "PendingBlocks ownership model":
     await pb.stop()
 
   test "resolve completes handle and removes from pendingBlocks":
-    let
-      pb = PendingBlocksManager.new()
+    let pb = PendingBlocksManager.new()
 
     await startWithoutDispatch(pb)
     let handle = pb.getWantHandle(address)
@@ -289,8 +288,7 @@ suite "PendingBlocks ownership model":
     await pb.stop()
 
   test "failWantHandle fails handle and removes from pendingBlocks":
-    let
-      pb = PendingBlocksManager.new()
+    let pb = PendingBlocksManager.new()
 
     await startWithoutDispatch(pb)
     let handle = pb.getWantHandle(address)
@@ -310,8 +308,7 @@ suite "PendingBlocks ownership model":
     await pb.failWantHandle(missingAddress, StorageFailedEngineError, "no block")
 
   test "failWantHandle is a no-op on already-finished handle":
-    let
-      pb = PendingBlocksManager.new()
+    let pb = PendingBlocksManager.new()
 
     await startWithoutDispatch(pb)
     let handle = pb.getWantHandle(address)
@@ -324,8 +321,7 @@ suite "PendingBlocks ownership model":
     await pb.stop()
 
   test "releaseWantHandle decrements owners on cancel":
-    let
-      pb = PendingBlocksManager.new()
+    let pb = PendingBlocksManager.new()
 
     await startWithoutDispatch(pb)
     let handle1 = pb.getWantHandle(address)
@@ -622,8 +618,7 @@ suite "PendingBlocks dispatch monitor":
     check not pb.wakeAddress(missingAddress)
 
   test "wakeAddress returns false for finished handle":
-    let
-      pb = PendingBlocksManager.new()
+    let pb = PendingBlocksManager.new()
 
     await startWithoutDispatch(pb)
     let handle = pb.getWantHandle(address)
@@ -1026,9 +1021,8 @@ suite "PendingBlocks start/stop":
   test "stop on already-stopped manager leaves tracked futures untouched":
     let pb = PendingBlocksManager.new()
 
-    let sentinel = Future[void].Raising([]).init(
-      "stop guard", {FutureFlag.OwnCancelSchedule}
-    )
+    let sentinel =
+      Future[void].Raising([]).init("stop guard", {FutureFlag.OwnCancelSchedule})
     pb.trackedFutures.track(sentinel)
 
     await pb.stop() # running is false, should early-return

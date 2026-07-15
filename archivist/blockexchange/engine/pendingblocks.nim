@@ -375,6 +375,7 @@ proc resolve*(
       )
       if retrievalDurationUs > 500000:
         trace "High block retrieval time", retrievalDurationUs, address = bd.address
+
 proc resolve*(
     self: PendingBlocksManager, address: BlockAddress, blk: Block
 ) {.async: (raises: [CancelledError]).} =
