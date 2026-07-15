@@ -13,6 +13,7 @@ import std/sets
 
 import pkg/libp2p
 import pkg/chronos
+import pkg/questionable
 
 import ../protobuf/blockexc
 import ../protobuf/presence
@@ -40,7 +41,7 @@ type BlockExcPeerCtx* = ref object of RootObj
   blocksRequested*: HashSet[BlockAddress]
   activityTimeout*: Duration
   lastSentWants*: HashSet[BlockAddress]
-  score*: PeerScore
+  scores*: Table[Cid, PeerScore] # scores per dataset (cid)
   disconnected: Future[void] # completed when peer is removed from store
 
 proc isKnowledgeStale*(self: BlockExcPeerCtx): bool =
@@ -91,13 +92,41 @@ proc peerWantsCids*(self: BlockExcPeerCtx): HashSet[Cid] =
 proc contains*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocks
 
-func setPresence*(self: BlockExcPeerCtx, presence: Presence) =
+func scoreFor*(self: BlockExcPeerCtx, cid: Cid): ?PeerScore =
+  self.scores .? [cid]
+
+proc ensureScoreFor*(self: BlockExcPeerCtx, cid: Cid): PeerScore =
+  if score =? self.scores .? [cid]:
+    return score
+
+  let peerScore = PeerScore(lastUpdated: Moment.now())
+  self.scores[cid] = peerScore
+  peerScore
+
+proc aggregateScore*(peer: BlockExcPeerCtx): float =
+  var total = 0.0
+  for _, score in peer.scores:
+    score.computeScore(peer.blocksRequested.len)
+    total += float(score.totalDeliveries) * score.score
+
+  total
+
+proc effectiveScore*(peer: BlockExcPeerCtx, cid: Cid, now: Moment): float =
+  without score =? peer.scoreFor(cid):
+    return ColdStartScore
+  score.computeScore(peer.blocksRequested.len)
+  applyDecay(score.score, score.lastUpdated, peer.blocksRequested.len, now)
+
+proc setPresence*(self: BlockExcPeerCtx, presence: Presence) =
   if not presence.have:
     self.blocks.del(presence.address)
     return
 
   if presence.address notin self.blocks:
     self.havesUpdated()
+    let cid = presence.address.cidOrTreeCid
+    if cid notin self.scores:
+      self.scores[cid] = PeerScore(lastUpdated: Moment.now())
 
   self.blocks[presence.address] = presence
 
@@ -117,13 +146,13 @@ proc blockRequestCleared*(self: BlockExcPeerCtx, address: BlockAddress) =
 proc recordDelivery*(
     self: BlockExcPeerCtx, address: BlockAddress, bytes: int, latencyMs: float
 ) =
-  self.score.recordDelivery(bytes, latencyMs)
+  self.ensureScoreFor(address.cidOrTreeCid).recordDelivery(bytes, latencyMs)
 
-proc recordFailure*(self: BlockExcPeerCtx, isValidation: bool = false) =
-  self.score.recordFailure(isValidation)
+proc recordFailure*(self: BlockExcPeerCtx, cid: Cid, isValidation: bool = false) =
+  self.ensureScoreFor(cid).recordFailure(isValidation)
 
-proc sendBatchFailure*(self: BlockExcPeerCtx) =
-  self.score.sendBatchFailure()
+proc sendBatchFailure*(self: BlockExcPeerCtx, cid: Cid) =
+  self.ensureScoreFor(cid).sendBatchFailure()
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksRequested
@@ -145,8 +174,5 @@ proc new*(
     activityTimeout = DefaultPeerActivityTimeout,
 ): BlockExcPeerCtx =
   BlockExcPeerCtx(
-    id: peerId,
-    activityTimeout: activityTimeout,
-    score: PeerScore(lastUpdated: Moment.now()),
-    disconnected: newFuture[void](),
+    id: peerId, activityTimeout: activityTimeout, disconnected: newFuture[void]()
   )

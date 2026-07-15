@@ -521,7 +521,7 @@ proc markRequested*(
           if req.requestTimeout == currentMonitor and req.requestedPeer == peer:
             # XXX: Don't use clearPeerAssignment here, because it will deadlock
             if not peer.isNil:
-              peer.recordFailure()
+              peer.recordFailure(address.cidOrTreeCid)
             req.requestedPeer.blockRequestCleared(address)
             req.requestedPeer = nil
             req.requestTimeout = nil
@@ -686,7 +686,8 @@ proc peerBatchWorker(
 
         if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
           warn "Batch send failed", peer = batchReq.peer.id, err = err.msg
-          batchReq.peer.sendBatchFailure()
+          for cid in batch.mapIt(it.cidOrTreeCid).deduplicate:
+            batchReq.peer.sendBatchFailure(cid)
           await noCancel allFutures(batch.mapIt(self.clearPeerAssignment(it)))
           await self.retryAddresses(batch, self.blockSendTimeout)
   except CatchableError as exc:
@@ -735,7 +736,8 @@ proc pushPeerBlock(
         trace "Peer disconnected, performing cleanup", peer = peer.id
         # Record failure if peer had work assigned (quality signal)
         if peer.blocksRequested.len > 0:
-          peer.recordFailure()
+          for cid in peer.blocksRequested.toSeq.mapIt(it.cidOrTreeCid).deduplicate:
+            peer.recordFailure(cid)
 
         await noCancel batchReq.workerFut.cancelAndWait()
         # Requeue all blocks assigned to this peer
