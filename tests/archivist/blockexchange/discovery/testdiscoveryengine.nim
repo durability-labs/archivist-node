@@ -3,6 +3,7 @@ import std/tables
 
 import pkg/chronos
 import pkg/kvstore
+import pkg/questionable
 import pkg/taskpools
 
 import pkg/archivist/rng
@@ -22,6 +23,15 @@ import ../../examples
 proc asBlock(m: Manifest): bt.Block =
   let mdata = m.encode().tryGet()
   bt.Block.new(data = mdata, codec = ManifestCodec).tryGet()
+
+# Helper: a peer selector that always returns Requeue with a delay
+proc alwaysRequeue(delay: Duration = 0.seconds): PeerSelectorHandler =
+  proc selector(
+      address: BlockAddress
+  ): Future[?!PeerSelection] {.async: (raises: [CancelledError]), gcsafe.} =
+    success PeerSelection(kind: PeerSelectionKind.Requeue, delay: delay)
+
+  return selector
 
 asyncchecksuite "Test Discovery Engine":
   let chunker = RandomChunker.new(Rng.instance(), size = 4096, chunkSize = 256)
@@ -74,8 +84,11 @@ asyncchecksuite "Test Discovery Engine":
         pendingBlocks,
         discoveryLoopSleep = 100.millis,
       )
-      wants = blocks.mapIt(pendingBlocks.getWantHandle(it.cid))
+      wants: seq[BlockHandle]
 
+    pendingBlocks.getPeerForBlock = alwaysRequeue(30.seconds)
+    await pendingBlocks.start()
+    wants = blocks.mapIt(pendingBlocks.getWantHandle(it.cid))
     blockDiscovery.findBlockProvidersHandler = proc(
         d: MockDiscovery, cid: Cid
     ): Future[seq[SignedPeerRecord]] {.async: (raises: [CancelledError]).} =
@@ -88,6 +101,7 @@ asyncchecksuite "Test Discovery Engine":
     await discoveryEngine.start()
     await allFuturesThrowing(allFinished(wants)).wait(100.millis)
     await discoveryEngine.stop()
+    await pendingBlocks.stop()
 
   test "Should queue discovery request":
     var
