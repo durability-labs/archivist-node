@@ -160,7 +160,6 @@ proc sendBatchedWantList(
       peer.id, batch, full = full and offset == 0, sendDontHave = true
     )
     archivist_block_exchange_want_have_lists_sent.inc()
-    archivist_block_exchange_want_have_entries_sent.inc(batch.len.int64)
 
     for address in batch:
       peer.lastSentWants.incl(address)
