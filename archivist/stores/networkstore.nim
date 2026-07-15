@@ -64,6 +64,7 @@ method getBlocks*(
     localBlocks = ?await self.localStore.getBlocks(uniqueCids)
   archivist_networkstore_blocks_requested.inc(uniqueCids.len.int64)
   archivist_networkstore_blocks_local.inc(localBlocks.len.int64)
+
   if localBlocks.len == uniqueCids.len:
     return success(localBlocks)
 
@@ -77,8 +78,10 @@ method getBlocks*(
       addresses.add(BlockAddress.init(cid))
 
   archivist_networkstore_blocks_network.inc(addresses.len.int64)
-  let deliveries = ?self.engine.requestDeliveries(addresses)
-  let (succeeded, failed) = await allFinishedFailed[BlockDelivery](deliveries)
+  let
+    deliveries = ?self.engine.requestDeliveries(addresses)
+    (succeeded, failed) = await allFinishedFailed[BlockDelivery](deliveries)
+
   archivist_networkstore_blocks_missed.inc(failed.len.int64)
   let networkBlocks = succeeded.mapIt(it.value.blk)
   success(localBlocks & networkBlocks)
@@ -150,8 +153,10 @@ method getBlocks*(
       addresses.add(BlockAddress.init(treeCid, index))
 
   archivist_networkstore_blocks_network.inc(addresses.len.int64)
-  let treeDeliveries = ?self.engine.requestDeliveries(addresses)
-  let (succeeded, failed) = await allFinishedFailed[BlockDelivery](treeDeliveries)
+  let
+    treeDeliveries = ?self.engine.requestDeliveries(addresses)
+    (succeeded, failed) = await allFinishedFailed[BlockDelivery](treeDeliveries)
+
   archivist_networkstore_blocks_missed.inc(failed.len.int64)
   let treeNetworkBlocks = succeeded.mapIt((it.value.address.index, it.value.blk))
   success(localBlocks & treeNetworkBlocks)
@@ -335,8 +340,10 @@ method getBlocksAndProofs*(
       addresses.add(BlockAddress.init(treeCid, index))
 
   var blocks: seq[(Natural, Block, ArchivistProof)]
-  let deliveries = ?self.engine.requestDeliveries(addresses)
-  let (succeeded, failed) = await allFinishedFailed[BlockDelivery](deliveries)
+  let
+    deliveries = ?self.engine.requestDeliveries(addresses)
+    (succeeded, failed) = await allFinishedFailed[BlockDelivery](deliveries)
+
   archivist_networkstore_blocks_missed.inc(failed.len.int64)
   for delivery in succeeded.mapIt(it.value):
     if not delivery.address.leaf:
