@@ -255,19 +255,22 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
 proc randomPeer(peers: seq[BlockExcPeerCtx], address: BlockAddress): BlockExcPeerCtx =
   Rng.instance.sample(peers)
 
-proc computeEffectiveScore(peer: BlockExcPeerCtx, now: Moment): float =
-  let rawScore = peer.score.computeScore(peer.blocksRequested.len)
-  applyDecay(rawScore, peer.score.lastUpdated, peer.blocksRequested.len, now)
+proc computeEffectiveScore(peer: BlockExcPeerCtx, cid: Cid, now: Moment): float =
+  peer.effectiveScore(cid, now)
 
 proc scoredPeer(
     peers: seq[BlockExcPeerCtx], address: BlockAddress
 ): BlockExcPeerCtx {.gcsafe, raises: [].} =
-  # Filter circuit-open peers.
+  let cid = address.cidOrTreeCid
+  # Filter circuit-open peers for this dataset.
   var candidates: seq[BlockExcPeerCtx]
   for peer in peers:
-    peer.score.maybeResetCircuit()
-    if not peer.score.circuitOpen:
-      candidates.add(peer)
+    if score =? peer.scoreFor(cid):
+      score.maybeResetCircuit()
+      if not score.circuitOpen:
+        candidates.add(peer)
+    else:
+      candidates.add(peer) # cold-start peers have no circuit
 
   if candidates.len == 0:
     return nil
@@ -279,10 +282,10 @@ proc scoredPeer(
   let now = Moment.now()
   var
     best = candidates[0]
-    bestScore = computeEffectiveScore(best, now)
+    bestScore = computeEffectiveScore(best, cid, now)
 
   for peer in candidates[1 ..^ 1]:
-    let s = computeEffectiveScore(peer, now)
+    let s = computeEffectiveScore(peer, cid, now)
     if s > bestScore:
       best = peer
       bestScore = s
@@ -292,7 +295,7 @@ proc scoredPeer(
   if Rng.instance.sampleFloat() < DefaultExplorationEpsilon:
     let
       picked = Rng.instance.sample(candidates)
-      pickedScore = computeEffectiveScore(picked, now)
+      pickedScore = computeEffectiveScore(picked, cid, now)
 
     trace "Peer selected",
       address,
@@ -501,7 +504,7 @@ proc blocksDeliveryHandler*(
           peerCtx.cleanPresence(bd.address)
           # Always record validation failure: invalid data from any peer
           # is a quality signal, regardless of assignment.
-          peerCtx.recordFailure(isValidation = true)
+          peerCtx.recordFailure(bd.address.cidOrTreeCid, isValidation = true)
           await self.pendingBlocks.clearRequest(bd.address, peerCtx)
 
         await self.pendingBlocks.retryAddresses(

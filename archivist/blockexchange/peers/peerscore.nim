@@ -42,7 +42,7 @@ const
   DecayGracePeriod* = 2 * DefaultRequestTimeout
   DecayTau* = 2.minutes
 
-type PeerScore* = object
+type PeerScore* = ref object
   successRate*: float
   throughputBps*: float
   latencyMs*: float
@@ -52,7 +52,7 @@ type PeerScore* = object
   totalBytes*: int
   circuitOpen*: bool
   circuitOpenUntil*: Moment
-
+  score*: float
   lastUpdated*: Moment
 
 template ewmaUpdate(metric, sample; alpha = EwmaAlpha) =
@@ -61,9 +61,10 @@ template ewmaUpdate(metric, sample; alpha = EwmaAlpha) =
 proc loadPenalty(inflightCount: int): float =
   1.0 / (1.0 + float(inflightCount) * InflightPenaltyFactor)
 
-proc computeScore*(self: PeerScore, inflightCount: int): float =
+proc computeScore*(self: PeerScore, inflightCount: int) =
   if self.totalDeliveries < MinSamplesForScore:
-    return ColdStartScore
+    self.score = ColdStartScore
+    return
 
   let
     successNorm = clamp(self.successRate, 0.0, 1.0)
@@ -73,7 +74,7 @@ proc computeScore*(self: PeerScore, inflightCount: int): float =
       SuccessWeight * successNorm + ThroughputWeight * throughputNorm +
       LatencyWeight * latencyNorm
 
-  rawScore * loadPenalty(inflightCount)
+  self.score = rawScore * loadPenalty(inflightCount)
 
 proc applyDecay*(
     rawScore: float, lastUpdated: Moment, inflightCount: int, now: Moment
@@ -95,12 +96,12 @@ proc applyDecay*(
 
   max(rawScore * decayFactor, ColdStartScore)
 
-proc checkCircuitBreaker*(self: var PeerScore) =
+proc checkCircuitBreaker*(self: PeerScore) =
   if self.consecutiveFailures >= MaxConsecutiveFailures and not self.circuitOpen:
     self.circuitOpen = true
     self.circuitOpenUntil = Moment.now() + CircuitCooldown
 
-proc maybeResetCircuit*(self: var PeerScore) =
+proc maybeResetCircuit*(self: PeerScore) =
   if not self.circuitOpen:
     return
 
@@ -108,9 +109,9 @@ proc maybeResetCircuit*(self: var PeerScore) =
     return
 
   # Reset to cold-start values; reset decay clock.
-  self = PeerScore(lastUpdated: Moment.now())
+  self[] = PeerScore(lastUpdated: Moment.now())[]
 
-proc recordDelivery*(self: var PeerScore, bytes: int, latencyMs: float) =
+proc recordDelivery*(self: PeerScore, bytes: int, latencyMs: float) =
   self.totalDeliveries += 1
   self.totalBytes += bytes
   self.consecutiveFailures = 0
@@ -131,7 +132,7 @@ proc recordDelivery*(self: var PeerScore, bytes: int, latencyMs: float) =
   ewmaUpdate(self.throughputBps, float(bytes) / seconds)
   self.lastUpdated = Moment.now()
 
-proc recordFailure*(self: var PeerScore, isValidation: bool = false) =
+proc recordFailure*(self: PeerScore, isValidation: bool = false) =
   let weight = if isValidation: ValidationFailureWeight else: 1
   self.consecutiveFailures += weight
   self.totalFailures += weight
@@ -149,7 +150,7 @@ proc recordFailure*(self: var PeerScore, isValidation: bool = false) =
   self.checkCircuitBreaker()
   self.lastUpdated = Moment.now()
 
-proc sendBatchFailure*(self: var PeerScore) =
+proc sendBatchFailure*(self: PeerScore) =
   self.consecutiveFailures += 1
   self.totalFailures += 1
   ewmaUpdate(self.successRate, 0.0)
