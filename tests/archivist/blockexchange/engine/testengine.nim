@@ -1345,4 +1345,3 @@ asyncchecksuite "Task Handler":
     await engine.taskHandler(peersCtx[0])
 
     check blocks[0].address notin peersCtx[0].blocksSent
-

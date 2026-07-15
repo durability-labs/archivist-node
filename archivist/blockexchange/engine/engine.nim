@@ -251,7 +251,6 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
   # Just remove from store - disconnect monitor in PendingBlocksManager handles requeue
   self.peers.remove(peer)
 
-
 proc failBlockRequest(
     self: BlockExcEngine,
     address: BlockAddress,

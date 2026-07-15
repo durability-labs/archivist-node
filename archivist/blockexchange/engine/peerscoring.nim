@@ -11,8 +11,6 @@ import ../../blocktype
 import ../../rng
 import ../peers
 
-import ./metrics
-
 logScope:
   topics = "archivist peerscoring"
 
@@ -27,22 +25,15 @@ proc rankPeersByScore*(peers: seq[BlockExcPeerCtx], cid: Cid): seq[BlockExcPeerC
   for peer in peers:
     without score =? peer.scoreFor(cid):
       ranked.add((ColdStartScore, peer))
-      archivist_block_exchange_peer_score.set(
-        ColdStartScore, labelValues = [$peer.id, $cid]
-      )
       continue
 
-    let wasOpen = score.circuitOpen
     score.maybeResetCircuit()
-    if wasOpen and not score.circuitOpen:
-      archivist_block_exchange_peer_circuit_open.dec(labelValues = [$peer.id])
 
     if score.circuitOpen:
       continue
 
     let s = effectiveScore(peer, cid, now)
     ranked.add((s, peer))
-    archivist_block_exchange_peer_score.set(s, labelValues = [$peer.id, $cid])
 
   ranked.sort(
     proc(a, b: auto): int =
@@ -73,10 +64,8 @@ proc scoredPeer*(
 
   if Rng.instance.sampleFloat() < DefaultExplorationEpsilon:
     let picked = Rng.instance.sample(ranked)
-    archivist_block_exchange_peer_selections.inc(labelValues = [$picked.id])
     return picked
 
   let best = ranked[0]
-  archivist_block_exchange_peer_selections.inc(labelValues = [$best.id])
 
   return best
