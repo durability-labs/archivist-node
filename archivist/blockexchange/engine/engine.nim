@@ -127,6 +127,7 @@ proc sendWantBlock(
   )
 
   archivist_block_exchange_want_block_lists_sent.inc()
+  archivist_block_exchange_want_block_entries_sent.inc(addresses.len.int64)
 
 proc sendWantBlock(
     self: BlockExcEngine, addresses: seq[BlockAddress], blockPeer: BlockExcPeerCtx
@@ -159,6 +160,7 @@ proc sendBatchedWantList(
       peer.id, batch, full = full and offset == 0, sendDontHave = true
     )
     archivist_block_exchange_want_have_lists_sent.inc()
+    archivist_block_exchange_want_have_entries_sent.inc(batch.len.int64)
 
     for address in batch:
       peer.lastSentWants.incl(address)
@@ -591,6 +593,23 @@ proc wantListHandler*(
   let peerCtx = self.peers.get(peer)
   if peerCtx.isNil:
     return
+  var
+    wantHaveCount = 0
+    wantBlockCount = 0
+  for e in wantList.entries:
+    if e.cancel:
+      continue
+    case e.wantType
+    of WantType.WantHave:
+      inc wantHaveCount
+    of WantType.WantBlock:
+      inc wantBlockCount
+  if wantHaveCount > 0:
+    archivist_block_exchange_want_have_lists_received.inc()
+    archivist_block_exchange_want_have_entries_received.inc(wantHaveCount.int64)
+  if wantBlockCount > 0:
+    archivist_block_exchange_want_block_lists_received.inc()
+    archivist_block_exchange_want_block_entries_received.inc(wantBlockCount.int64)
 
   var
     presence: seq[BlockPresence]
@@ -631,12 +650,9 @@ proc wantListHandler*(
           presence.add(
             BlockPresence(address: e.address, `type`: BlockPresenceType.DontHave)
           )
-
-        archivist_block_exchange_want_have_lists_received.inc()
       of WantType.WantBlock:
         peerCtx.wantedBlocks.incl(e.address)
         schedulePeer = true
-        archivist_block_exchange_want_block_lists_received.inc()
 
       if presence.len >= PresenceBatchSize or (Moment.now() - lastIdle) >= runtimeQuota:
         if presence.len > 0:

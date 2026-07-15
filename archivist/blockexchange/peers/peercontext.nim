@@ -13,7 +13,6 @@ import std/sets
 
 import pkg/libp2p
 import pkg/chronos
-import ../engine/metrics
 
 import ../protobuf/blockexc
 import ../protobuf/presence
@@ -121,16 +120,10 @@ proc recordDelivery*(
   self.score.recordDelivery(bytes, latencyMs)
 
 proc recordFailure*(self: BlockExcPeerCtx, isValidation: bool = false) =
-  let wasOpen = self.score.circuitOpen
   self.score.recordFailure(isValidation)
-  if not wasOpen and self.score.circuitOpen:
-    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
 
 proc sendBatchFailure*(self: BlockExcPeerCtx) =
-  let wasOpen = self.score.circuitOpen
   self.score.sendBatchFailure()
-  if not wasOpen and self.score.circuitOpen:
-    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksRequested
