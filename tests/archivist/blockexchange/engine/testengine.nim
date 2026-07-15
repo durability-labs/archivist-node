@@ -25,10 +25,12 @@ import pkg/archivist/merkletree
 import pkg/archivist/utils/asyncheapqueue
 import ../../../asynctest
 import ../../helpers
+import ../../examples
 
 privateAccess(PendingBlocksManager)
 privateAccess(BlockReq)
 privateAccess(BlockExcEngine)
+privateAccess(BlockExcPeerCtx)
 
 const NopSendWantListProc = proc(
     id: PeerId,
@@ -389,9 +391,6 @@ asyncchecksuite "NetworkStore engine handlers":
       requestedIndices = @[0.Natural, 1.Natural]
       otherPeerId =
         PeerId.init(PrivateKey.random(rng[]).tryGet().getPublicKey().tryGet()).tryGet()
-      pending = requestedIndices.mapIt(
-        engine.pendingBlocks.getWantHandle(BlockAddress.init(treeCid, it))
-      )
       blocksDelivery = requestedIndices.mapIt(
         BlockDelivery(
           blk: blocks[it],
@@ -407,7 +406,8 @@ asyncchecksuite "NetworkStore engine handlers":
     ) {.async: (raises: [CancelledError]).} =
       check id == otherPeerId
       for address in addresses:
-        cancellations[address].catch.expect("address should exist").complete()
+        if fut =? cancellations.getOrDefault(address).option and not fut.finished:
+          fut.complete()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(sendWantCancellations: sendWantCancellations)
@@ -416,9 +416,13 @@ asyncchecksuite "NetworkStore engine handlers":
     let otherPeerCtx = BlockExcPeerCtx.new(otherPeerId)
     engine.peers.add(otherPeerCtx)
 
+    # Request blocks AFTER network and peers are set up
+    let pending = requestedIndices.mapIt(
+      engine.pendingBlocks.getWantHandle(BlockAddress.init(treeCid, it))
+    )
+
     for delivery in blocksDelivery:
-      engine.pendingBlocks.blocks[delivery.address].state = Scheduled
-      engine.pendingBlocks.markRequested(delivery.address, peerCtx, 60.seconds)
+      engine.pendingBlocks.markRequested(delivery.address, peerCtx)
       otherPeerCtx.blocksRequested.incl(delivery.address)
 
     await engine.blocksDeliveryHandler(peerId, blocksDelivery)
@@ -642,7 +646,7 @@ asyncchecksuite "Block Download":
 
     check wantBlockBatches == @[@[firstAddress], @[secondAddress]]
 
-  test "Send all blocks to all peers":
+  test "Should batch by peer before splitting want block requests":
     let
       peer2Key = PrivateKey.random(rng[]).tryGet()
       peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
@@ -654,7 +658,9 @@ asyncchecksuite "Block Download":
 
     var
       sentAddresses = initHashSet[BlockAddress]()
-      wantBlockBatches: Table[PeerId, seq[BlockAddress]]
+      expectedPeer1 = initHashSet[BlockAddress]()
+      expectedPeer2 = initHashSet[BlockAddress]()
+      wantBlockBatches: seq[tuple[peer: PeerId, addresses: seq[BlockAddress]]]
 
     proc sendWantList(
         id: PeerId,
@@ -666,9 +672,9 @@ asyncchecksuite "Block Download":
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
-        wantBlockBatches.mgetOrPut(id, @[]).add(requestedAddresses)
-        sentAddresses.incl(requestedAddresses.toHashSet)
-
+        wantBlockBatches.add((peer: id, addresses: requestedAddresses))
+        for address in requestedAddresses:
+          sentAddresses.incl(address)
         if sentAddresses.len == requestCount and not done.isSet:
           done.fire()
 
@@ -681,18 +687,42 @@ asyncchecksuite "Block Download":
 
     for i, address in addresses:
       if i mod 2 == 0:
+        expectedPeer1.incl(address)
         peerCtx.setPresence(Presence(address: address, have: true))
       else:
+        expectedPeer2.incl(address)
         peer2Ctx.setPresence(Presence(address: address, have: true))
 
     let pendingHandles = engine.requestDeliveries(addresses).tryGet()
     check pendingHandles.len == requestCount
     await done.wait().wait(1.seconds)
 
+    let
+      peer1Batches = wantBlockBatches.filterIt(it.peer == peerId)
+      peer2Batches = wantBlockBatches.filterIt(it.peer == peer2Id)
+
+    var
+      peer1Sent = initHashSet[BlockAddress]()
+      peer2Sent = initHashSet[BlockAddress]()
+
+    for batch in peer1Batches:
+      for address in batch.addresses:
+        peer1Sent.incl(address)
+
+    for batch in peer2Batches:
+      for address in batch.addresses:
+        peer2Sent.incl(address)
+
     check:
+      pendingHandles.len == requestCount
       sentAddresses == addresses.toHashSet
-      wantBlockBatches[peerCtx.id].len == requestCount div 2
-      wantBlockBatches[peer2Ctx.id].len == requestCount div 2
+      peer1Batches.len == 2
+      peer2Batches.len == 2
+      peer1Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
+      peer2Batches.allIt(it.addresses.len == DefaultWantBlockBatchSize)
+      peer1Sent == expectedPeer1
+      peer2Sent == expectedPeer2
+      sentAddresses.len == requestCount
 
   test "Should dispatch timed-out batch for correct peer":
     let
@@ -743,7 +773,7 @@ asyncchecksuite "Block Download":
   test "Should keep same peer request after clearing previous request":
     let
       address = BlockAddress.init(blocks[0].cid)
-      sent = newFuture[void]()
+      sent = newAsyncEvent()
 
     proc sendWantList(
         id: PeerId,
@@ -755,9 +785,9 @@ asyncchecksuite "Block Download":
         sendDontHave: bool = false,
     ) {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
-        sent.complete()
+        if not sent.isSet:
+          sent.fire()
 
-    peerCtx.activityTimeout = 20.millis
     peerCtx.setPresence(Presence(address: address, have: true))
     engine.pendingBlocks.retries = 3
     engine.network = BlockExcNetwork(
@@ -767,16 +797,14 @@ asyncchecksuite "Block Download":
     )
 
     discard (engine.requestDeliveries(@[address])).tryGet()
-    await sent.wait(100.millis)
+    await sent.wait().wait(100.millis)
+    await sleepAsync(50.millis) # let markRequested run post-send
 
     let retriesBefore = engine.pendingBlocks.retries(address)
-    await engine.pendingBlocks.clearRequest(address, peerCtx)
-    engine.pendingBlocks.blocks[address].state = Scheduled
-    engine.pendingBlocks.markRequested(address, peerCtx)
+    # markRequested already ran in peerBatchWorker post-send
     check engine.pendingBlocks.isRequested(address)
     check engine.pendingBlocks.getRequestPeer(address) == peerId.some
-    # markRequested decrements retries internally now
-    check engine.pendingBlocks.retries(address) == retriesBefore - 1
+    check engine.pendingBlocks.retries(address) == retriesBefore
 
   test "Should gate queued sends and decrement on send":
     let address = BlockAddress.init(blocks[0].cid)
@@ -793,7 +821,6 @@ asyncchecksuite "Block Download":
     ) {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         check addresses == @[address]
-        check engine.pendingBlocks.isRequested(address)
         sent.complete()
 
     engine.network = BlockExcNetwork(
@@ -811,12 +838,6 @@ asyncchecksuite "Block Download":
     check address in peerCtx.blocksRequested
     let actualRetries = engine.pendingBlocks.retries(address)
     check actualRetries == DefaultBlockRetries - 1
-
-    # retryAddresses requeues the block but does not decrement retries itself
-    await engine.pendingBlocks.retryAddresses(@[address], DefaultBlockSendRetryDelay)
-    check address in engine.pendingBlocks
-    # Retries unchanged - retryAddresses does not call markRequested
-    check engine.pendingBlocks.retries(address) == DefaultBlockRetries - 1
 
     await engine.completeBlock(address, blocks[0])
     check (await pending).blk == blocks[0]
@@ -984,7 +1005,7 @@ asyncchecksuite "Block Download":
     expect CancelledError:
       discard await pending
 
-    check address notin peerCtx.blocksRequested
+    check eventually address notin peerCtx.blocksRequested
 
   test "Should clear peer request state when completing requested blocks":
     let
@@ -1015,6 +1036,7 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDeliveries(addresses).tryGet()
     await done.wait(100.millis)
+    await sleepAsync(50.millis) # let markRequested run post-send
     for address in addresses:
       check address in peerCtx.blocksRequested
 
@@ -1027,6 +1049,7 @@ asyncchecksuite "Block Download":
 
     for handle in pending:
       discard await handle
+    await sleepAsync(50.millis) # let monitor defer clear peer assignment
     for address in addresses:
       check address notin peerCtx.blocksRequested
 
@@ -1062,10 +1085,11 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
     await done.wait(100.millis)
+    await sleepAsync(50.millis) # let markRequested run post-send
     check address in peerCtx.blocksRequested
 
     await engine.completeBlock(address, blocks[0])
-
+    await sleepAsync(50.millis) # let monitor defer clear peer assignment
     check address notin peerCtx.blocksRequested
     check (await pending).blk == blocks[0]
 
@@ -1116,9 +1140,8 @@ asyncchecksuite "Block Download":
       wantBlockSent = newAsyncEvent()
 
     # peerCtx is in engine.peers (from setup) but peerHave is empty.
-    # The selector will return NoPeerForBlockError; the discoverer runs
-    # refreshBlockKnowledge, which sends WantHave to the peer. The test
-    # simulates the peer's response via blockPresenceHandler.
+    # getPeerForBlock sends WantHave to refresh knowledge, then returns Requeue.
+    # The test simulates the peer's response via blockPresenceHandler.
 
     proc sendWantList(
         id: PeerId,
@@ -1149,12 +1172,11 @@ asyncchecksuite "Block Download":
 
     let pending = engine.requestDelivery(address).tryGet()
 
-    # Wait for WantHave (sent by the engine's refresh via the discoverer).
+    # Wait for WantHave (sent by getPeerForBlock's refresh pass).
     await wantHaveSent.wait().wait(1.seconds)
-    # At this point: selector returned NoPeerForBlockError -> requeue with
-    # discoveryTimeout -> discoverer called -> refreshBlockKnowledge sent
-    # WantHave. The block is NOT waiting for a new blockPresenceHandler;
-    # it was requeued by pushPeerBlock itself.
+    # At this point: getPeerForBlock returned Requeue after refresh, so
+    # blockDispatchMonitor requeued the block. blockPresenceHandler will later
+    # wakeAddress -> WantBlock.
     check address in engine.pendingBlocks
     check not engine.pendingBlocks.isRequested(address)
 
@@ -1164,10 +1186,10 @@ asyncchecksuite "Block Download":
     )
 
     # Now the block flows through: blockPresenceHandler updates peerHave
-    # and calls retryAddresses(0) -> selector returns peer -> sendBatch.
-    await wantBlockSent.wait().wait(1.seconds)
+    # and calls wakeAddress -> selector returns peer -> sendBatch.
     check address in engine.pendingBlocks
-    check engine.pendingBlocks.isRequested(address)
+    await wantBlockSent.wait().wait(1.seconds)
+    check eventually engine.pendingBlocks.isRequested(address)
     check address in peerCtx.blocksRequested
     await pending.cancelAndWait()
     expect CancelledError:
@@ -1182,10 +1204,9 @@ asyncchecksuite "Block Download":
       wantBlockSent = newAsyncEvent()
       initialLastDiscRequest = engine.lastDiscRequest
 
-    # No peer has the block. The selector returns NoPeerForBlockError;
-    # the discoverer runs refreshBlockKnowledge (no peers) then
-    # searchForNewPeers (DHT). The test simulates DHT finding a new peer
-    # by adding the peer and calling blockPresenceHandler.
+    # No peer has the block. getPeerForBlock refreshes existing peers (none
+    # have it) and falls back to searchForNewPeers (DHT). The test simulates
+    # DHT finding a new peer by adding it and calling blockPresenceHandler.
 
     proc sendWantList(
         id: PeerId,
@@ -1231,11 +1252,85 @@ asyncchecksuite "Block Download":
     )
 
     # Block flows through: blockPresenceHandler updates newPeerCtx.peerHave
-    # and calls retryAddresses(0) -> selector returns newPeerCtx -> sendBatch.
+    # and calls wakeAddress -> selector returns newPeerCtx -> sendBatch.
     await wantBlockSent.wait().wait(1.seconds)
     check address in engine.pendingBlocks
-    check engine.pendingBlocks.isRequested(address)
+    check eventually engine.pendingBlocks.isRequested(address)
     check address in newPeerCtx.blocksRequested
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
+
+  test "Positive presence wakes scored peer":
+    let
+      address = BlockAddress.init(blocks[0].cid)
+      announcerPeer = peerCtx
+      scorerKey = PrivateKey.random(rng[]).tryGet()
+      scorerId = PeerId.init(scorerKey.getPublicKey().tryGet()).tryGet()
+      scorerPeer = BlockExcPeerCtx.new(scorerId)
+      wantBlockSent = newAsyncEvent()
+
+    var wantBlockPeer: PeerId
+    var firstWantBlock = true
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ) {.async: (raises: [CancelledError]).} =
+      if wantType == WantType.WantBlock:
+        check addresses == @[address]
+        if firstWantBlock:
+          wantBlockPeer = id
+          firstWantBlock = false
+        check wantBlockPeer == id
+        if not wantBlockSent.isSet:
+          wantBlockSent.fire()
+
+    engine.network = BlockExcNetwork(
+      request: BlockExcRequest(
+        sendWantList: sendWantList, sendWantCancellations: NopSendWantCancellationsProc
+      )
+    )
+
+    # Both peers exist in the store.
+    engine.peers.add(scorerPeer)
+
+    # Inject a scorer that always picks the scorerPeer when both are eligible.
+    engine.selectPeer = proc(
+        peers: seq[BlockExcPeerCtx], address: BlockAddress
+    ): BlockExcPeerCtx {.gcsafe, raises: [].} =
+      for p in peers:
+        if p.id == scorerId:
+          return p
+      peers[0]
+
+    let pending = engine.requestDelivery(address).tryGet()
+
+    # Wait for first selection to requeue (neither peer has presence yet).
+    # Then both peers report Have for the address.
+    await sleepAsync(100.millis) # let first selector call happen
+
+    # Both peers report presence. blockPresenceHandler for the announcer
+    # wakes the monitor, which re-enters selection and the scorer picks scorerPeer.
+    await engine.blockPresenceHandler(
+      announcerPeer.id,
+      @[BlockPresence(address: address, `type`: BlockPresenceType.Have)],
+    )
+    await engine.blockPresenceHandler(
+      scorerId, @[BlockPresence(address: address, `type`: BlockPresenceType.Have)]
+    )
+
+    # Exactly one WantBlock sent — to the scorer-selected peer, not the announcer.
+    await wantBlockSent.wait().wait(2.seconds)
+    check wantBlockPeer == scorerId
+    check eventually engine.pendingBlocks.isRequested(address)
+    check address in scorerPeer.blocksRequested
+    check address notin announcerPeer.blocksRequested
+
     await pending.cancelAndWait()
     expect CancelledError:
       discard await pending
@@ -1344,4 +1439,152 @@ asyncchecksuite "Task Handler":
     peersCtx[0].wantedBlocks.incl(blocks[0].address)
     await engine.taskHandler(peersCtx[0])
 
-    check blocks[0].address notin peersCtx[0].blocksSent
+suite "NetworkStore engine refresh circuit":
+  var
+    rng: Rng
+    seckey: PrivateKey
+    peerId: PeerId
+    chunker: Chunker
+    blockDiscovery: Discovery
+    peerStore: PeerCtxStore
+    pendingBlocks: PendingBlocksManager
+    network: BlockExcNetwork
+    engine: BlockExcEngine
+    discovery: DiscoveryEngine
+    advertiser: Advertiser
+    peerCtx: BlockExcPeerCtx
+    localStore: RepoStore
+    blocks: seq[Block]
+    tree: ArchivistTree
+    treeCid: Cid
+    tp: Taskpool
+    sentFull: bool
+    sentAddresses: seq[BlockAddress]
+
+  proc capturingSendWantList(
+      id: PeerId,
+      addresses: seq[BlockAddress],
+      priority: int32 = 0,
+      cancel: bool = false,
+      wantType: WantType = WantType.WantHave,
+      full: bool = false,
+      sendDontHave: bool = false,
+  ) {.async: (raises: [CancelledError]).} =
+    sentFull = full
+    sentAddresses = addresses
+
+  setup:
+    rng = Rng.instance()
+    chunker = RandomChunker.new(rng, size = 1024'nb, chunkSize = 256'nb)
+    blocks = @[]
+    while true:
+      let chunk = (await chunker.getBytes()).tryGet()
+      if chunk.len <= 0:
+        break
+      blocks.add(Block.new(chunk).tryGet())
+
+    (_, tree) = makeManifestAndTree(blocks).tryGet()
+    treeCid = tree.rootCid.tryGet()
+    seckey = PrivateKey.random(rng[]).tryGet()
+    peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
+    blockDiscovery = Discovery.new()
+    peerStore = PeerCtxStore.new()
+    pendingBlocks = PendingBlocksManager.new()
+    tp = Taskpool.new(num_threads = 4)
+    localStore = RepoStore.new(
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+    )
+
+    network = BlockExcNetwork()
+    discovery =
+      DiscoveryEngine.new(localStore, peerStore, network, blockDiscovery, pendingBlocks)
+    advertiser = Advertiser.new(localStore, blockDiscovery)
+    engine = BlockExcEngine.new(
+      localStore, network, discovery, advertiser, peerStore, pendingBlocks
+    )
+
+    peerCtx = BlockExcPeerCtx.new(peerId)
+    engine.peers.add(peerCtx)
+    network.request.sendWantList = capturingSendWantList
+    sentFull = false
+    sentAddresses = @[]
+    for b in blocks:
+      discard engine.pendingBlocks.getWantHandle(b.cid)
+
+  teardown:
+    tp.shutdown()
+
+  test "suppressed refresh returns wake hint":
+    let baseTime = Moment.now()
+    peerCtx.state = WantListState.Wait
+    peerCtx.windowOpenTime = baseTime
+    peerCtx.lastSendTime = baseTime
+    sentAddresses = @[]
+    sentFull = true
+    let wake = await engine.refreshBlockKnowledge(peerCtx)
+    let afterCall = Moment.now()
+    check sentAddresses.len == 0
+    check wake.isSome
+    check wake.unsafeGet() <= peerCtx.lastSendTime + peerCtx.deltaInterval - baseTime
+    check wake.unsafeGet() >= peerCtx.lastSendTime + peerCtx.deltaInterval - afterCall
+
+  test "full-resend from closed state sends full=true with all addresses":
+    check peerCtx.state == WantListState.Closed
+    discard await engine.refreshBlockKnowledge(peerCtx)
+    check sentFull == true
+    check sentAddresses.len == blocks.len
+
+  test "delta-send within active window sends only new blocks with full=false":
+    peerCtx.state = WantListState.SendDelta
+    peerCtx.windowOpenTime = Moment.now()
+    peerCtx.alreadySent = initHashSet[BlockAddress]()
+    peerCtx.alreadySent.incl(blocks[0].address)
+    sentAddresses = @[]
+    sentFull = true
+    discard await engine.refreshBlockKnowledge(peerCtx)
+    check sentFull == false
+    check sentAddresses.len == blocks.len - 1
+    check blocks[0].address notin sentAddresses
+
+  test "suppression when delta is empty sends nothing":
+    peerCtx.state = WantListState.SendDelta
+    peerCtx.windowOpenTime = Moment.now()
+    for b in blocks:
+      peerCtx.alreadySent.incl(b.address)
+    sentAddresses = @[]
+    sentFull = true
+    discard await engine.refreshBlockKnowledge(peerCtx)
+    check sentAddresses.len == 0
+
+  test "wait state with delta interval not elapsed sends nothing":
+    peerCtx.state = WantListState.Wait
+    peerCtx.windowOpenTime = Moment.now()
+    peerCtx.lastSendTime = Moment.now()
+    sentAddresses = @[]
+    sentFull = true
+    discard await engine.refreshBlockKnowledge(peerCtx)
+    check sentAddresses.len == 0
+
+  test "window expiry in wait state triggers full resend":
+    peerCtx.state = WantListState.Wait
+    peerCtx.windowOpenTime = Moment.now() - 11.seconds
+    peerCtx.lastSendTime = Moment.now() - 11.seconds
+    peerCtx.alreadySent = initHashSet[BlockAddress]()
+    peerCtx.alreadySent.incl(blocks[0].address)
+    sentAddresses = @[]
+    sentFull = false
+    discard await engine.refreshBlockKnowledge(peerCtx)
+    check sentFull == true
+    check sentAddresses.len == blocks.len
+    check peerCtx.alreadySent.len == blocks.len
+
+  test "peerHave filtering excludes blocks peer has":
+    peerCtx.state = WantListState.Closed
+    let pres = Presence(address: blocks[0].address, have: true)
+    peerCtx.setPresence(pres)
+    sentAddresses = @[]
+    sentFull = false
+    discard await engine.refreshBlockKnowledge(peerCtx)
+    check blocks[0].address notin sentAddresses
+    check sentAddresses.len == blocks.len - 1

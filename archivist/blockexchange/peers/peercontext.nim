@@ -23,37 +23,115 @@ import ../../logutils
 
 import ./peerscore
 
+logScope:
+  topics = "archivist peercontext"
+
 const
-  MinRefreshInterval = 1.seconds
-  MaxRefreshBackoff = 36
+  DefaultWantHaveResendTimeout* = 10.seconds
+  DefaultWantHaveDeltaInterval* = 50.millis
   DefaultMaxWantListBatchSize* = 1024
-  DefaultPeerActivityTimeout = 1.minutes
 
-type BlockExcPeerCtx* = ref object of RootObj
-  id*: PeerId
-  blocks*: Table[BlockAddress, Presence] # remote peer presence map
-  wantedBlocks*: HashSet[BlockAddress] # blocks that the peer wants
-  exchanged*: int # times peer has exchanged with us
-  refreshInProgress*: bool
-  lastRefresh*: Moment
-  refreshBackoff*: int = 1
-  blocksSent*: HashSet[BlockAddress]
-  blocksRequested*: HashSet[BlockAddress]
-  activityTimeout*: Duration
-  lastSentWants*: HashSet[BlockAddress]
-  scores*: Table[Cid, PeerScore] # scores per dataset (cid)
-  disconnected: Future[void] # completed when peer is removed from store
+type
+  WantListState* {.pure.} = enum
+    Closed
+    SendAll
+    SendDelta
+    Wait
 
-proc isKnowledgeStale*(self: BlockExcPeerCtx): bool =
-  let staleness =
-    self.lastRefresh + self.refreshBackoff * MinRefreshInterval < Moment.now()
+  SendKind* {.pure.} = enum
+    None
+    Full
+    Delta
 
-  if staleness and self.refreshInProgress:
-    trace "Cleaning up refresh state", peer = self.id
-    self.refreshInProgress = false
-    self.refreshBackoff = 1
+  SendDecision* = object
+    kind*: SendKind
+    wants*: HashSet[BlockAddress]
+    wakeAfter*: ?Duration
 
-  staleness
+  BlockExcPeerCtx* = ref object of RootObj
+    id*: PeerId
+
+    ## remote peer view
+    blocks*: Table[BlockAddress, Presence] # remote peer presence map
+    wantedBlocks*: HashSet[BlockAddress] # blocks that the peer wants
+    blocksSent*: HashSet[BlockAddress] # blocks already sent to the peer
+    blocksRequested*: HashSet[BlockAddress] # blocks already requested from the peer
+
+    ## wants exchange
+    alreadySent*: HashSet[BlockAddress] # wants already sent in the current window
+    state*: WantListState # current circuit state
+    windowOpenTime: Moment # when the current window opened
+    lastSendTime: Moment # last time a send decision was made
+    resendInterval: Duration # 10s — large window
+    deltaInterval: Duration # 2s — minimum time between delta sends
+
+    scores*: Table[Cid, PeerScore] # scores per dataset (cid)
+    disconnected: Future[void] # completed when peer is removed from store
+
+proc openWindow*(self: BlockExcPeerCtx, now = Moment.now()) =
+  self.state = WantListState.SendAll
+  self.windowOpenTime = now
+
+proc closeWindow*(self: BlockExcPeerCtx) =
+  self.state = WantListState.Closed
+  self.alreadySent.clear()
+
+proc decideSend*(
+    self: BlockExcPeerCtx, wantList: HashSet[BlockAddress], now = Moment.now()
+): SendDecision =
+  ## Core circuit decision. Transitions state and returns what to send.
+  ## `wakeAfter` is set on suppressed paths to hint when to retry.
+  ## For empty wantList, returns None with no wake hint.
+
+  if wantList.len == 0:
+    return SendDecision(kind: SendKind.None, wakeAfter: Duration.none)
+
+  case self.state
+  of WantListState.Closed:
+    self.openWindow(now)
+    self.alreadySent = wantList
+    self.lastSendTime = now
+    self.state = WantListState.SendDelta
+    return SendDecision(kind: SendKind.Full, wants: wantList, wakeAfter: Duration.none)
+  of WantListState.SendAll:
+    # Defensive: should not be reached (Closed → SendDelta in one call)
+    self.alreadySent = wantList
+    self.lastSendTime = now
+    self.state = WantListState.SendDelta
+    return SendDecision(kind: SendKind.Full, wants: wantList, wakeAfter: Duration.none)
+  of WantListState.SendDelta:
+    # Check window expiry first
+    if self.windowOpenTime + self.resendInterval <= now:
+      self.closeWindow()
+      return self.decideSend(wantList, now)
+    # Compute delta
+    let delta = wantList - self.alreadySent
+    if delta.len == 0:
+      self.state = WantListState.Wait
+      return SendDecision(
+        kind: SendKind.None,
+        wakeAfter: (self.windowOpenTime + self.resendInterval - now).some,
+      )
+
+    self.alreadySent = self.alreadySent + delta
+    self.lastSendTime = now
+    self.state = WantListState.Wait
+    return SendDecision(kind: SendKind.Delta, wants: delta, wakeAfter: Duration.none)
+  of WantListState.Wait:
+    # Check window expiry
+    if self.windowOpenTime + self.resendInterval < now:
+      self.closeWindow()
+      return self.decideSend(wantList, now)
+
+    # Check delta interval elapsed
+    if self.lastSendTime + self.deltaInterval < now:
+      self.state = WantListState.SendDelta
+      return self.decideSend(wantList, now)
+    # Not ready
+    return SendDecision(
+      kind: SendKind.None,
+      wakeAfter: (self.lastSendTime + self.deltaInterval - now).some,
+    )
 
 proc isBlockSent*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksSent
@@ -63,22 +141,6 @@ proc markBlockAsSent*(self: BlockExcPeerCtx, address: BlockAddress) =
 
 proc markBlockAsNotSent*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksSent.excl(address)
-
-proc refreshRequested*(self: BlockExcPeerCtx) =
-  trace "Refresh requested for peer", peer = self.id, backoff = self.refreshBackoff
-  self.refreshInProgress = true
-  self.lastRefresh = Moment.now()
-
-proc refreshReplied*(self: BlockExcPeerCtx) =
-  self.refreshInProgress = false
-  self.lastRefresh = Moment.now()
-  self.refreshBackoff = min(self.refreshBackoff * 2, MaxRefreshBackoff)
-
-proc havesUpdated(self: BlockExcPeerCtx) =
-  self.refreshBackoff = 1
-
-proc wantsUpdated*(self: BlockExcPeerCtx) =
-  self.refreshBackoff = 1
 
 proc peerHave*(self: BlockExcPeerCtx): HashSet[BlockAddress] =
   toHashSet(self.blocks.keys.toSeq)
@@ -123,7 +185,6 @@ proc setPresence*(self: BlockExcPeerCtx, presence: Presence) =
     return
 
   if presence.address notin self.blocks:
-    self.havesUpdated()
     let cid = presence.address.cidOrTreeCid
     if cid notin self.scores:
       self.scores[cid] = PeerScore(lastUpdated: Moment.now())
@@ -143,6 +204,9 @@ proc blockRequestScheduled*(self: BlockExcPeerCtx, address: BlockAddress) =
 proc blockRequestCleared*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.excl(address)
 
+proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
+  address in self.blocksRequested
+
 proc recordDelivery*(
     self: BlockExcPeerCtx, address: BlockAddress, bytes: int, latencyMs: float
 ) =
@@ -154,25 +218,34 @@ proc recordFailure*(self: BlockExcPeerCtx, cid: Cid, isValidation: bool = false)
 proc sendBatchFailure*(self: BlockExcPeerCtx, cid: Cid) =
   self.ensureScoreFor(cid).sendBatchFailure()
 
-proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
-  address in self.blocksRequested
-
 proc disconnect*(self: BlockExcPeerCtx) =
   ## Complete the disconnected future, signaling lifecycle end
+  ##
+
   if not self.disconnected.finished:
     self.disconnected.complete()
+
+func isDisconnected*(self: BlockExcPeerCtx): bool =
+  self.disconnected.finished
 
 proc onDisconnect*(
     self: BlockExcPeerCtx
 ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Await this to be notified when the peer is removed from the store
+  ##
+
   self.disconnected.join()
 
 proc new*(
     T: type BlockExcPeerCtx,
     peerId: PeerId,
-    activityTimeout = DefaultPeerActivityTimeout,
+    wantHaveResendInterval: Duration = DefaultWantHaveResendTimeout,
+    wantHaveDeltaInterval: Duration = DefaultWantHaveDeltaInterval,
 ): BlockExcPeerCtx =
   BlockExcPeerCtx(
-    id: peerId, activityTimeout: activityTimeout, disconnected: newFuture[void]()
+    id: peerId,
+    disconnected: newFuture[void](),
+    resendInterval: wantHaveResendInterval,
+    deltaInterval: wantHaveDeltaInterval,
+    state: WantListState.Closed,
   )

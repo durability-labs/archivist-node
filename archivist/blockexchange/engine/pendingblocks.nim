@@ -12,7 +12,6 @@
 import std/tables
 import std/monotimes
 import std/hashes
-import std/heapqueue
 import std/sequtils
 import std/sets
 import std/strformat
@@ -43,9 +42,20 @@ const
   DefaultMaxBatchBlocksDeadline* = 50.millis
   DefaultBlockRetries* = 3000
   DefaultDiscoveryWaitTimeout = 5.seconds
-  DefaultBlockSendRetryDelay* = 500.millis
 
 type
+  PeerSelectionKind* {.pure.} = enum
+    Peer
+    Requeue
+
+  ## delay == 0.seconds means "no wake hint; use discoveryTimeout backstop"
+  PeerSelection* = object
+    case kind*: PeerSelectionKind
+    of PeerSelectionKind.Peer:
+      peer*: BlockExcPeerCtx
+    of PeerSelectionKind.Requeue:
+      delay*: Duration
+
   BlockHandle* = Future[BlockDelivery].Raising([CancelledError, EngineError])
 
   AbandonHandler* =
@@ -59,55 +69,48 @@ type
     peer: BlockExcPeerCtx, batch: seq[BlockAddress]
   ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).}
 
-  PeerSelectorHandler* =
-    proc(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe, raises: [].}
+  PeerSelectorHandler* = proc(address: BlockAddress): Future[?!PeerSelection] {.
+    async: (raises: [CancelledError]), gcsafe
+  .}
 
-  DiscoverPeersHandler* =
-    proc(address: BlockAddress): Future[void].Raising([]) {.gcsafe, raises: [].}
+  RetryReason* {.pure.} = enum
+    Timeout = "timeout"
+    NoPeer = "no_peer"
+    Presence = "presence"
+    Disconnect = "disconnect"
+    SendError = "send_error"
+    Validation = "validation"
 
-  BlockReqState = enum
-    Pending
-    Queued
-    Dispatching
-    Scheduled
-    InFlight
+  NoPeerAttempt* {.pure.} = enum
+    First = "first"
+    Subsequent = "subsequent"
 
   BlockReq = ref object
     handle: BlockHandle
     address: BlockAddress
     owners: HashSet[BlockHandle]
-    state: BlockReqState
     requestedPeer: BlockExcPeerCtx # nil = unassigned
-    requestTimeout: Future[void]
     startTime: int64
     priority: int
     retries: int
     attempts: int
-    generation: int
+    noPeerFirstAttempted: bool
     addedAt: Moment
-    readyAt: Moment
-
-  BlockItem = object
-    address: BlockAddress
-    readyAt: Moment
-    addedAt: Moment
-    generation: int
-    priority: int
+    dispatchFut: Future[void].Raising([])
+    dispatched: AsyncEvent
+    wakeEvent: AsyncEvent
 
   BatchReq = ref object
     peer: BlockExcPeerCtx
     deadline: Future[void]
-    pipe: AsyncQueue[BlockAddress]
+    pipe: AsyncQueue[BlockReq]
     workerFut: Future[void].Raising([])
     monitorFut: Future[void].Raising([])
 
   PendingBlocksManager* = ref object of RootObj
     blocks: Table[BlockAddress, BlockReq]
     handles: Table[BlockHandle, BlockAddress]
-    blockQueue: HeapQueue[BlockItem]
     byPeer: Table[PeerId, BatchReq]
-    queueWakeEvent: AsyncEvent
-    lastInclusion*: Moment
     batchSize: int
     batchDeadline: Duration
     discoveryTimeout: Duration
@@ -120,17 +123,19 @@ type
     onTimeout*: TimeoutHandler
     sendBatch*: BatchSendHandler
     getPeerForBlock*: PeerSelectorHandler
-    discoverPeersForBlock*: DiscoverPeersHandler
 
 func hash(handle: BlockHandle): Hash =
   cast[pointer](handle).hash
 
-func `<`(a, b: BlockItem): bool =
-  if a.readyAt != b.readyAt:
-    return a.readyAt < b.readyAt
-  if a.priority != b.priority:
-    return a.priority > b.priority # higher numeric = higher priority
-  a.addedAt < b.addedAt
+proc recordRetryOutcome*(self: PendingBlocksManager, addresses: seq[BlockAddress]) =
+  ## Record outcome duration for retried blocks
+  let now = getMonoTime().ticks
+  for address in addresses:
+    if req =? self.blocks .? [address]:
+      let durationUs = (now - req.startTime) div 1000
+      archivist_block_exchange_request_outcome_duration_seconds.observe(
+        durationUs.float64 / 1_000_000, labelValues = ["retried"]
+      )
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
@@ -153,16 +158,6 @@ func retriesExhausted*(self: PendingBlocksManager, address: BlockAddress): bool 
     return pending.retries <= 0
   false
 
-func isRequested*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if pending =? self.blocks .? [address]:
-    return pending.requestedPeer != nil
-  false
-
-func isFirstAttempt*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if pending =? self.blocks .? [address]:
-    return pending.retries == self.retries
-  false
-
 func getRequestPeerCtx*(
     self: PendingBlocksManager, address: BlockAddress
 ): BlockExcPeerCtx =
@@ -176,6 +171,11 @@ func getRequestPeerCtx*(
   if address =? self.handles .? [handle]:
     return self.getRequestPeerCtx(address)
   nil
+
+func isRequested*(self: PendingBlocksManager, address: BlockAddress): bool =
+  if pending =? self.blocks .? [address]:
+    return pending.requestedPeer != nil
+  false
 
 func getRequestPeer*(self: PendingBlocksManager, address: BlockAddress): ?PeerId =
   let peer = self.getRequestPeerCtx(address)
@@ -198,13 +198,6 @@ func contains*(self: PendingBlocksManager, cid: Cid): bool =
 
 func contains*(self: PendingBlocksManager, address: BlockAddress): bool =
   address in self.blocks
-
-func blockInPipeline*(self: PendingBlocksManager, req: BlockReq): bool =
-  req.state in {Queued, Dispatching, Scheduled, InFlight}
-
-func blockInPipeline*(self: PendingBlocksManager, address: BlockAddress): bool =
-  if req =? self.blocks .? [address]:
-    return self.blockInPipeline(req)
 
 iterator wantList*(self: PendingBlocksManager): BlockAddress =
   for a in self.blocks.keys:
@@ -229,76 +222,9 @@ proc wantListLen*(self: PendingBlocksManager): int =
 func len*(self: PendingBlocksManager): int =
   self.blocks.len
 
-proc advanceReqState(
-    self: PendingBlocksManager, req: BlockReq, state: BlockReqState
-): ?!void =
-  var failed = false
-  case state
-  of Queued:
-    if req.state != Pending:
-      failed = true
-    else:
-      req.state = state
-  of Dispatching:
-    if req.state != Queued:
-      failed = true
-    else:
-      req.state = state
-  of Scheduled:
-    if req.state != Dispatching:
-      failed = true
-    else:
-      req.state = state
-  of InFlight:
-    if req.state != Scheduled:
-      failed = true
-    else:
-      req.state = state
-  of Pending:
-    req.state = Pending
-  else:
-    return failure(fmt"Unknown state {state}")
-
-  if failed:
-    trace "Invalid state transition", oldState = req.state, state
-    return failure(fmt"Invalid state transition {req.state} -> {state}")
-
-  success()
-
-proc advanceReqState(
-    self: PendingBlocksManager, address: BlockAddress, state: BlockReqState
-): ?!void =
-  if req =? self.blocks .? [address]:
-    return self.advanceReqState(req, state)
-
-proc retryAddresses*(
-  self: PendingBlocksManager,
-  addresses: seq[BlockAddress],
-  delay: Duration = DefaultBlockSendRetryDelay,
+proc blockDispatchMonitor(
+  self: PendingBlocksManager, req: BlockReq
 ) {.async: (raises: []).}
-
-proc clearPeerAssignment(
-    self: PendingBlocksManager, address: BlockAddress
-) {.async: (raises: []).} =
-  if req =? self.blocks .? [address]:
-    let
-      timeoutFut = req.requestTimeout
-      assignedPeer = req.requestedPeer
-
-    # Detach synchronously - no other async task can observe stale state
-    req.requestTimeout = nil
-    req.requestedPeer = nil
-    if err =? self.advanceReqState(req, Pending).errorOption:
-      trace "Unable to advance request state", err = err.msg
-      return
-
-    if assignedPeer != nil:
-      trace "Clearing peer assignment for block", address, peer = assignedPeer.id
-      assignedPeer.blockRequestCleared(address)
-
-    # Now safely cancel the timeout monitor
-    if timeoutFut != nil:
-      await noCancel timeoutFut.cancelAndWait()
 
 proc releaseWantHandle(
     self: PendingBlocksManager, wrapped: BlockHandle
@@ -321,9 +247,10 @@ proc releaseWantHandle(
     if not self.onAbandon.isNil:
       trace "Handle abandoned, running on abandon hook", address
       await noCancel self.onAbandon(address)
-    await self.clearPeerAssignment(address)
 
-  self.queueWakeEvent.fire()
+    if not req.dispatchFut.isNil:
+      await noCancel req.dispatchFut.cancelAndWait()
+
   return success()
 
 proc addOwner(
@@ -342,29 +269,12 @@ proc addOwner(
         trace "Exception monitoring wrapper blockhandle", address, exc = exc.msg
 
       if err =? (await self.releaseWantHandle(wrapped)).errorOption:
+        archivist_block_exchange_handles_missing_on_release.inc()
         trace "Unable to release handle", address, err = err.msg
 
     self.trackedFutures.track(wrappedMonitor())
     if priority > pending.priority:
       pending.priority = priority
-
-    if not self.blockInPipeline(pending) and pending.requestedPeer.isNil:
-      pending.generation.inc()
-      if err =? self.advanceReqState(pending, Queued).errorOption:
-        trace "Unable to advance request state", err = err.msg
-        raiseAssert err.msg
-
-      self.blockQueue.push(
-        BlockItem(
-          address: address,
-          readyAt: pending.readyAt,
-          addedAt: Moment.now(),
-          generation: pending.generation,
-          priority: pending.priority,
-        )
-      )
-
-      self.queueWakeEvent.fire()
 
     return wrapped
 
@@ -373,35 +283,41 @@ proc addOwner(
 proc getWantHandle*(
     self: PendingBlocksManager, address: BlockAddress, priority = 0
 ): BlockHandle =
+  ## Create a handle for the block
+  ##
+
   if address notin self.blocks:
-    let handle = BlockHandle.init("pendingBlocks.sharedHandle")
-    let now = Moment.now()
-    self.blocks[address] = BlockReq(
+    let
+      handle = BlockHandle.init("pendingBlocks.sharedHandle")
+      now = Moment.now()
+
+    trace "Creating handle for block", address
+    archivist_block_exchange_handles_created.inc()
+    let req = BlockReq(
       address: address,
       handle: handle,
       retries: self.retries,
       startTime: getMonoTime().ticks,
       priority: priority,
       addedAt: now,
-      readyAt: now,
-      state: Pending,
+      dispatched: newAsyncEvent(),
+      wakeEvent: newAsyncEvent(),
     )
-    self.lastInclusion = now
-    self.updatePendingBlockGauge()
 
+    self.blocks[address] = req
     proc handleMonitor() {.async: (raises: []).} =
       try:
         discard await handle
       except CatchableError as exc:
         trace "Exception in handle monitor", exc = exc.msg
 
-      if req =? self.blocks .? [address]:
-        await self.clearPeerAssignment(address)
-
       self.blocks.del(address)
+      await noCancel req.dispatchFut.cancelAndWait()
       self.updatePendingBlockGauge()
 
     self.trackedFutures.track(handleMonitor())
+    req.dispatchFut = self.blockDispatchMonitor(req)
+    self.trackedFutures.track(req.dispatchFut)
 
   return self.addOwner(address, priority)
 
@@ -426,16 +342,27 @@ proc resolve*(
         retrievalDurationUs = (stopTime - startTime) div 1000
         assignedPeer = blockReq.requestedPeer
 
-      await self.clearPeerAssignment(bd.address)
       if blockReq.handle.finished:
         trace "Block handle already finished, skipping",
           address = bd.address, sender = sender .? id
         continue
 
       blockReq.handle.complete(bd)
+      archivist_block_exchange_requests_succeeded.inc()
+      archivist_block_exchange_handles_resolved.inc()
+      archivist_block_exchange_retrieval_duration_seconds.observe(
+        retrievalDurationUs.float64 / 1_000_000
+      )
+
+      # Clear peer assignment synchronously so cancelBlocks doesn't
+      # send redundant cancellations to the assigned peer. The monitor's
+      # defer is a safety net for non-resolve exit paths.
+      if not assignedPeer.isNil:
+        assignedPeer.blockRequestCleared(bd.address)
+        blockReq.requestedPeer = nil
 
       # Record delivery for the assigned peer. Deliveries
-      # for mismatched peers (late deliveries) are not recorderd
+      # for mismatched peers (late deliveries) are not recorded
       # for neither the sender nor the currently requested peer.
       if senderPeer =? sender and senderPeer == assignedPeer:
         let latencyMs = float(retrievalDurationUs) / 1000.0
@@ -446,7 +373,6 @@ proc resolve*(
       )
       if retrievalDurationUs > 500000:
         trace "High block retrieval time", retrievalDurationUs, address = bd.address
-
 proc resolve*(
     self: PendingBlocksManager, address: BlockAddress, blk: Block
 ) {.async: (raises: [CancelledError]).} =
@@ -470,183 +396,102 @@ proc failWantHandle*(
 ) {.async: (raises: []).} =
   if blockReq =? self.blocks .? [address]:
     if not blockReq.handle.finished:
-      await self.clearPeerAssignment(address)
       let err = (ref errType)(address: address, msg: msg)
       blockReq.handle.fail(err)
       self.failOwners(address, err)
 
 proc markRequested*(
-    self: PendingBlocksManager,
-    address: BlockAddress,
-    peer: BlockExcPeerCtx,
-    timeout: Duration = DefaultRequestTimeout,
+    self: PendingBlocksManager, address: BlockAddress, peer: BlockExcPeerCtx
 ) =
   if pending =? self.blocks .? [address]:
     if pending.requestedPeer != nil:
       trace "Block already requested", address, requestedPeer = pending.requestedPeer.id
       return
 
-    if err =? self.advanceReqState(pending, InFlight).errorOption:
-      writeStackTrace()
-      trace "Unable to advance request state", err = err.msg
-      return
-
     pending.requestedPeer = peer
     pending.retries -= 1
     peer.blockRequestScheduled(address)
 
-    let handle = pending.handle
-    var currentMonitor: Future[void].Raising([])
-    proc timeoutMonitor() {.async: (raises: []).} =
-      let timeoutFut = sleepAsync(timeout)
-      try:
-        await handle or timeoutFut
-        let reqPeer = self.getRequestPeerCtx(address).option
-        if reqPeer != peer.option:
-          trace "Requested and timed out peers don't match",
-            oldPeer = peer.id, newPeer = reqPeer .? id, address
-          return
-      except CatchableError as exc:
-        trace "Exception in request timeout monitor", exc = exc.msg
-      finally:
-        await noCancel timeoutFut.cancelAndWait()
-
-      if handle.finished:
-        trace "Exiting timeout monitor, handle finished", address, peer = peer.id
-        return
-
-      if timeoutFut.completed:
-        # Requeue the block for retry before notifying the engine.
-        if req =? self.blocks .? [address]:
-          if req.requestTimeout == currentMonitor and req.requestedPeer == peer:
-            # XXX: Don't use clearPeerAssignment here, because it will deadlock
-            if not peer.isNil:
-              peer.recordFailure(address.cidOrTreeCid)
-            req.requestedPeer.blockRequestCleared(address)
-            req.requestedPeer = nil
-            req.requestTimeout = nil
-            if err =? self.advanceReqState(req, Pending).errorOption:
-              trace "Unable to advance request state", err = err.msg
-              return
-
-            await self.retryAddresses(@[address], 0.millis)
-
-        if not self.onTimeout.isNil:
-          trace "Timeout elapsed, calling onTimeout callback", peer = peer.id, address
-          await noCancel self.onTimeout(address, peer.id)
-
-    currentMonitor = timeoutMonitor()
-    pending.requestTimeout = currentMonitor
-    self.trackedFutures.track(currentMonitor)
-
-proc clearRequest*(
-    self: PendingBlocksManager, address: BlockAddress
-) {.async: (raises: []).} =
-  await self.clearPeerAssignment(address)
-
-proc clearRequest*(
+proc rejectRequest*(
     self: PendingBlocksManager, address: BlockAddress, peer: BlockExcPeerCtx
-) {.async: (raises: []).} =
+): bool =
+  ## Reject an in-flight request: clear assignment and fire wakeEvent.
+  ## Returns true if the request was rejected.
   if req =? self.blocks .? [address]:
-    if req.requestedPeer == peer:
-      await self.clearPeerAssignment(address)
+    if not req.handle.finished and req.requestedPeer == peer:
+      peer.blockRequestCleared(address)
+      req.requestedPeer = nil
+      req.wakeEvent.fire()
+      req.wakeEvent.clear()
+      return true
 
-proc retryAddresses*(
-    self: PendingBlocksManager,
-    addresses: seq[BlockAddress],
-    delay: Duration = DefaultBlockSendRetryDelay,
-) {.async: (raises: []).} =
-  let
-    beforeQueueLen = self.blockQueue.len
-    readyAt = Moment.now() + delay
+  return false
 
-  for address in addresses:
-    without req =? self.blocks .? [address]:
-      trace "No active request, skipping", address
-      continue
+proc wakeAddress*(self: PendingBlocksManager, address: BlockAddress): bool =
+  ## Pulse wakeEvent for an unassigned, unfinished request.
+  ## Returns true only when the pulse was delivered (request exists,
+  ## is unfinished, and has no assigned peer).
+  if req =? self.blocks .? [address]:
+    if not req.handle.finished and req.requestedPeer.isNil:
+      req.wakeEvent.fire()
+      req.wakeEvent.clear()
+      return true
 
-    # Skip if actively being handled
-    if not req.requestedPeer.isNil:
-      trace "Already requested, skipping", address, peer = req.requestedPeer.id
-      continue
+  return false
 
-    # Skip if in active pipeline
-    if req.state in {Dispatching, Scheduled, InFlight}:
-      trace "In active pipeline, skipping", address, state = req.state
-      continue
+proc shouldSkipBatch(self: PendingBlocksManager, item: BlockReq): bool =
+  # Skip if BlockReq is missing or handle already finished
+  if req =? self.blocks .? [item.address]:
+    if req.handle.finished:
+      trace "Block already resolved, skipping", address = item.address
+      return true
+  else:
+    trace "Address not in blocks", address = item.address
+    return true
 
-    # Skip if already queued for earlier time
-    if req.state == Queued and readyAt > req.readyAt:
-      trace "Already queued for earlier time, skipping", address, readyAt = req.readyAt
-      continue
-
-    # Advance Pending -> Queued if needed
-    if req.state == Pending:
-      if err =? self.advanceReqState(req, Queued).errorOption:
-        trace "Unable to advance request state", err = err.msg, address
-        continue
-
-    # Update and requeue (old entry skipped by generation check)
-    req.generation.inc()
-    req.readyAt = readyAt
-    self.blockQueue.push(
-      BlockItem(
-        address: address,
-        readyAt: req.readyAt,
-        addedAt: req.addedAt,
-        generation: req.generation,
-        priority: req.priority,
-      )
-    )
-
-  if beforeQueueLen != self.blockQueue.len:
-    self.queueWakeEvent.fire()
-
-proc validateBlock(
-    self: PendingBlocksManager, address: BlockAddress, state: BlockReqState
-): Future[bool] {.async: (raises: [CancelledError]).} =
-  without req =? self.blocks .? [address]:
-    trace "Address is not pending", address
-    return false
-
-  if req.state != state or not req.requestedPeer.isNil:
-    trace "Address already in pipeline, skipping", address, state = req.state
-    return false
-
-  if self.retriesExhausted(address):
-    trace "Retries exhausted, skipping block", address
-    await self.failWantHandle(
-      address, RetriesExhaustedEngineError, "Block request retries exhausted"
-    )
-    return false
-
-  return true
+  if self.retriesExhausted(item.address):
+    trace "Retries exhausted, skipping block", address = item.address
+    return true
 
 proc peerBatchWorker(
     self: PendingBlocksManager, batchReq: BatchReq
 ) {.async: (raises: []).} =
+  var batch: seq[BlockReq] = @[]
+
   defer:
-    # make sure to drain the queue if we're exiting
-    # while the engine is still running
-    if self.running and not batchReq.pipe.empty():
-      let batch = batchReq.pipe.toSeq
-      await noCancel allFutures(batch.mapIt(self.clearPeerAssignment(it)))
-      await self.retryAddresses(batch, self.blockSendTimeout)
+    # Delete byPeer entry only when it still maps to this exact batchReq;
+    # an old context must not delete its replacement.
+    self.byPeer.withValue(batchReq.peer.id, existing):
+      if existing[] == batchReq:
+        self.byPeer.del(batchReq.peer.id)
 
   try:
-    while self.running:
-      var batch: seq[BlockAddress] = @[]
+    while self.running and not batchReq.peer.isDisconnected:
+      batch = @[]
 
-      # Get first item (blocking wait)
-      let first = await batchReq.pipe.get()
-      trace "Scheduling peer block", address = first, peer = batchReq.peer.id
+      # Race first pipe.get() against disconnect so the idle worker
+      # exits without a separate monitor.
+      let
+        firstFut = batchReq.pipe.get()
+        disconnectFut = batchReq.peer.onDisconnect()
 
-      if not await self.validateBlock(first, Scheduled):
-        trace "Block validation failed", address = first
+      await firstFut or disconnectFut
+      await noCancel firstFut.cancelAndWait()
+      await noCancel disconnectFut.cancelAndWait()
+
+      if disconnectFut.completed:
+        trace "Peer disconnected", peer = batchReq.peer.id
+        return
+
+      let first = await firstFut
+      trace "Scheduling peer block", address = first.address, peer = batchReq.peer.id
+
+      if self.shouldSkipBatch(first):
+        trace "Skipping item from batch",
+          peer = batchReq.peer.id, address = first.address
         continue
 
       batch.add(first)
-
       batchReq.deadline = sleepAsync(self.batchDeadline)
       defer:
         await noCancel batchReq.deadline.cancelAndWait()
@@ -659,12 +504,6 @@ proc peerBatchWorker(
         let next = batchReq.pipe.get()
         try:
           await next or batchReq.deadline
-        except CatchableError as exc:
-          trace "Exception awaiting queue item", exc = exc.msg
-          if batch.len > 0:
-            await noCancel allFutures(batch.mapIt(self.clearPeerAssignment(it)))
-            await self.retryAddresses(batch, self.blockSendTimeout)
-          raise exc
         finally:
           await noCancel next.cancelAndWait()
 
@@ -672,137 +511,233 @@ proc peerBatchWorker(
           trace "Skipping incomplete queue item"
           continue
 
-        let address = await next
-        if not await self.validateBlock(address, Scheduled):
-          trace "Block validation failed", address
+        let item = await next
+        if self.shouldSkipBatch(item):
+          trace "Skipping item from batch",
+            peer = batchReq.peer.id, address = item.address
           continue
 
-        batch.add(address)
+        batch.add(item)
 
       trace "Dispatching batch to peer", peer = batchReq.peer.id, batch = batch.len
       if not self.sendBatch.isNil and batch.len > 0:
-        for a in batch:
-          self.markRequested(a, batchReq.peer)
+        defer:
+          for item in batch:
+            item.dispatched.fire()
+            item.dispatched.clear()
 
-        if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
+        if err =?
+            (await self.sendBatch(batchReq.peer, batch.mapIt(it.address))).errorOption:
           warn "Batch send failed", peer = batchReq.peer.id, err = err.msg
-          for cid in batch.mapIt(it.cidOrTreeCid).deduplicate:
+          for cid in batch.mapIt(it.address.cidOrTreeCid).deduplicate:
             batchReq.peer.sendBatchFailure(cid)
-          await noCancel allFutures(batch.mapIt(self.clearPeerAssignment(it)))
-          await self.retryAddresses(batch, self.blockSendTimeout)
+
+          self.recordRetryOutcome(batch.mapIt(it.address))
+          continue
+
+        trace "Batch to peer dispatched", peer = batchReq.peer.id, batch = batch.len
+        # Success: markRequested post-send, then fire dispatched
+        for item in batch:
+          self.markRequested(item.address, batchReq.peer)
   except CatchableError as exc:
     trace "Exception in peer batch worker", exc = exc.msg
 
-proc pushPeerBlock(
-    self: PendingBlocksManager, address: BlockAddress
+proc deliver(
+    self: PendingBlocksManager, peer: BlockExcPeerCtx, req: BlockReq
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  ## Push onto peer's queue; return once the batch that carried the address
+  ## has been sent. true = sent, false = dropped (caller reselects).
+  ##
+
+  if peer.isDisconnected:
+    trace "Peer already disconnected, skipping batch request",
+      peer = peer.id, address = req.address
+    return false
+
+  var batchReq: BatchReq
+  var staleWorker: Future[void].Raising([]) = nil
+  self.byPeer.withValue(peer.id, existing):
+    if existing[].peer == peer:
+      batchReq = existing[]
+    else:
+      staleWorker = existing[].workerFut
+
+  if staleWorker != nil:
+    trace "Cancelling stale worker for peer", peer = peer.id
+    await noCancel staleWorker.cancelAndWait()
+
+  if batchReq.isNil:
+    trace "Creating new peer request worker", peer = peer.id
+    batchReq = BatchReq(peer: peer, pipe: newAsyncQueue[BlockReq]())
+    self.byPeer[peer.id] = batchReq
+    batchReq.workerFut = self.peerBatchWorker(batchReq)
+    self.trackedFutures.track(batchReq.workerFut)
+
+  if err =? catch(batchReq.pipe.putNoWait(req)).errorOption:
+    trace "Error pushing block to peer batch", err = err.msg
+    return false
+
+  let
+    disconnected = peer.onDisconnect()
+    dispatched = req.dispatched.wait()
+
+  await disconnected or dispatched
+  for fut in [disconnected, dispatched]:
+    await noCancel fut.cancelAndWait()
+
+  # Evaluate sent-success first: return true even if disconnect also completed.
+  if dispatched.completed and req.requestedPeer == peer:
+    trace "Dispatch completed",
+      expectedPeer = peer.id,
+      deliveredPeer = req.requestedPeer.id,
+      address = req.address
+    return true
+
+  if disconnected.completed:
+    trace "Peer disconnected during delivery", peer = peer.id, address = req.address
+    # Cancel worker — identity-guarded (defer owns byPeer removal)
+    self.byPeer.withValue(peer.id, existing):
+      if existing[].peer == peer:
+        await noCancel existing[].workerFut.cancelAndWait()
+
+  return false
+
+proc blockDispatchMonitor(
+    self: PendingBlocksManager, req: BlockReq
 ) {.async: (raises: []).} =
+  defer:
+    if not req.requestedPeer.isNil:
+      req.requestedPeer.blockRequestCleared(req.address)
+      req.requestedPeer = nil
+
   try:
-    without req =? self.blocks .? [address]:
-      trace "Address not in blocks", address
-      return
-
-    if not await self.validateBlock(address, Dispatching):
-      trace "Address already in pipeline", address, state = req.state
-      return
-
-    without peer =? self.getPeerForBlock(address), err:
-      trace "Unable to get peer", address, err = err.msg
-      if err =? self.advanceReqState(req, Pending).errorOption:
-        trace "Unable to set req state", err = err.msg
+    while self.running and not req.handle.finished:
+      trace "Processing block", address = req.address, retries = req.retries
+      if self.retriesExhausted(req.address):
+        await self.failWantHandle(
+          req.address, RetriesExhaustedEngineError, "retries exhausted"
+        )
         return
 
-      await self.retryAddresses(@[address], self.discoveryTimeout)
-      self.trackedFutures.track(self.discoverPeersForBlock(address))
-      return
+      # Install the selection wake waiter before async peer selection.
+      let selectionWakeFut = req.wakeEvent.wait()
 
-    var batchReq: BatchReq
-    self.byPeer.withValue(peer.id, existing):
-      batchReq = existing[]
-    do:
-      trace "Creating new peer request worker", peer = peer.id
-      batchReq = BatchReq(peer: peer, pipe: newAsyncQueue[BlockAddress](self.batchSize))
-      self.byPeer[peer.id] = batchReq
-      batchReq.workerFut = self.peerBatchWorker(batchReq)
-      self.trackedFutures.track(batchReq.workerFut)
+      without selection =? (await self.getPeerForBlock(req.address)), err:
+        trace "Unable to get peer for block", address = req.address, err = err.msg
+        defer:
+          await noCancel selectionWakeFut.cancelAndWait()
 
-      # Register disconnect monitor on first use of this peer
-      proc disconnectMonitor() {.async: (raises: []).} =
-        try:
-          trace "Monitoring peer disconnect", peer = peer.id
-          await peer.onDisconnect()
-        except CatchableError as exc:
-          trace "Exception in disconnect monitor", exc = exc.msg
+        if selectionWakeFut.finished:
+          # A completed wake means peer knowledge changed — reselect now.
+          continue
 
-        trace "Peer disconnected, performing cleanup", peer = peer.id
-        # Record failure if peer had work assigned (quality signal)
-        if peer.blocksRequested.len > 0:
-          for cid in peer.blocksRequested.toSeq.mapIt(it.cidOrTreeCid).deduplicate:
-            peer.recordFailure(cid)
+        # No wake — retain discoveryTimeout backoff.
+        await sleepAsync(self.discoveryTimeout)
+        continue
 
-        await noCancel batchReq.workerFut.cancelAndWait()
-        # Requeue all blocks assigned to this peer
+      case selection.kind
+      of PeerSelectionKind.Requeue:
+        let delay =
+          if selection.delay == 0.seconds:
+            self.discoveryTimeout
+          else:
+            min(selection.delay, self.discoveryTimeout)
+
+        # Race the installed waiter against the clamped delay.
+        let delayFut = sleepAsync(delay)
+        await selectionWakeFut or delayFut
+        trace "Retrying block",
+          address = req.address,
+          isTimeout = delayFut.completed,
+          isWakeup = selectionWakeFut.completed
+
+        await noCancel selectionWakeFut.cancelAndWait()
+        await noCancel delayFut.cancelAndWait()
+      of PeerSelectionKind.Peer:
+        if not await self.deliver(selection.peer, req):
+          trace "Unable to send block", peer = selection.peer.id, address = req.address
+          if selectionWakeFut.finished:
+            # Fresh presence woke during the failed send — reselect now.
+            continue
+
+          # Race the wake against the dropped-send backoff.
+          let backoffFut = sleepAsync(self.discoveryTimeout)
+          await selectionWakeFut or backoffFut
+          trace "Retrying block",
+            address = req.address,
+            isTimeout = backoffFut.completed,
+            isWakeup = selectionWakeFut.completed
+
+          await noCancel selectionWakeFut.cancelAndWait()
+          await noCancel backoffFut.cancelAndWait()
+          continue
+
+        # deliver returned true — sent successfully.
+        # Cancel the selection wake; it is no longer needed.
+        if not selectionWakeFut.finished:
+          await noCancel selectionWakeFut.cancelAndWait()
+
+        # Install the post-send rejection waiter.
+        let wakeFut = req.wakeEvent.wait()
+
+        # Synchronously re-check assignment before the next await:
+        # a rejection may have run between deliver completion and here.
+        if req.requestedPeer != selection.peer:
+          await noCancel wakeFut.cancelAndWait()
+          continue
 
         let
-          blocks = peer.blocksRequested.toSeq
-          (_, failed) = await noCancel allFinishedFailed[void](
-            blocks.mapIt(self.clearPeerAssignment(it))
-          )
+          handleFut = req.handle.join()
+          timeoutFut = sleepAsync(self.blockSendTimeout)
+          disconnectFut = selection.peer.onDisconnect()
 
-        if failed.len > 0:
-          trace "Not all blocks peer assignments were cleared", failed = failed.len
+        await wakeFut or handleFut or timeoutFut or disconnectFut
+        for fut in [wakeFut, handleFut, timeoutFut, disconnectFut]:
+          if not fut.finished:
+            await noCancel fut.cancelAndWait()
 
-        if blocks.len > 0:
-          await self.retryAddresses(blocks, self.discoveryTimeout)
+        if req.handle.finished:
+          trace "Block handle finished",
+            address = req.address, completed = req.handle.completed
+          return
 
-        # Clean up byPeer entry
-        self.byPeer.del(peer.id)
+        if wakeFut.completed:
+          # Rejection — reselect without duplicate scoring/metrics/hooks.
+          trace "Block rejected, reselecting", address = req.address
+          continue
 
-      batchReq.monitorFut = disconnectMonitor()
-      self.trackedFutures.track(batchReq.monitorFut)
+        block:
+          defer:
+            # Clear assignment, record one failure, reselect (no onTimeout).
+            selection.peer.recordFailure(req.address.cidOrTreeCid)
+            selection.peer.blockRequestCleared(req.address)
+            req.requestedPeer = nil
+            self.recordRetryOutcome(@[req.address])
 
-    if err =? self.advanceReqState(req, Scheduled).errorOption:
-      trace "Unable to advance req state", err = err.msg
-      return
+          if disconnectFut.completed:
+            trace "Peer disconnected during in-flight",
+              address = req.address, peer = selection.peer.id
 
-    await batchReq.pipe.put(address)
-  except CatchableError as exc:
-    trace "Exception pushing block to peer worker", address, exc = exc.msg
+            # Cancel worker — identity-guarded (defer owns byPeer removal)
+            self.byPeer.withValue(selection.peer.id, existing):
+              if existing[].peer == selection.peer:
+                await noCancel existing[].workerFut.cancelAndWait()
 
-proc blockRequestScheduler(self: PendingBlocksManager) {.async: (raises: []).} =
-  try:
-    while self.running:
-      if self.blockQueue.len == 0:
-        await self.queueWakeEvent.wait()
-        self.queueWakeEvent.clear()
-        continue
+            continue
 
-      let now = Moment.now()
-      if self.blockQueue[0].readyAt > now:
-        let timer = sleepAsync(self.blockQueue[0].readyAt - now)
-        await timer or self.queueWakeEvent.wait()
-        await noCancel timer.cancelAndWait()
-        self.queueWakeEvent.clear()
-        continue
+          if timeoutFut.completed:
+            trace "Block request timed out",
+              address = req.address, peer = selection.peer.id
 
-      let
-        blockReq = self.blockQueue.pop()
-        address = blockReq.address
+            if not self.onTimeout.isNil:
+              await noCancel self.onTimeout(req.address, selection.peer.id)
 
-      without req =? self.blocks .? [address], err:
-        trace "Request don't seem to exist", err = err.msg
-        continue
+            continue
 
-      if blockReq.generation != req.generation:
-        trace "Block generation don't match, stale block", address
-        continue
-
-      if err =? self.advanceReqState(req, Dispatching).errorOption:
-        trace "Unable to advance request state", err = err.msg
-        continue
-
-      await self.pushPeerBlock(address)
-  except CatchableError as exc:
-    trace "Exception in block request scheduler", err = exc.msg
+        # Should not reach here — one of the futures must have completed.
+        trace "Unexpected state in post-send race", address = req.address
+  except CancelledError as exc:
+    trace "Block dispatch cancelled", err = exc.msg
 
 proc start*(self: PendingBlocksManager) {.async: (raises: []).} =
   if self.running:
@@ -810,32 +745,17 @@ proc start*(self: PendingBlocksManager) {.async: (raises: []).} =
     return
 
   self.running = true
-  self.trackedFutures.track(self.blockRequestScheduler())
 
 proc stop*(self: PendingBlocksManager) {.async: (raises: []).} =
   if not self.running:
     trace "Block scheduler not running"
-    return
 
   self.running = false
-  self.queueWakeEvent.fire()
-
-  self.blockQueue.clear()
-  self.byPeer.clear()
-
-  var handles: seq[BlockHandle]
-  for req in self.blocks.values:
-    handles.add(req.handle)
-    for owner in req.owners:
-      handles.add(owner)
-
-  let cancellations = handles.mapIt(it.cancelAndWait())
-  await noCancel allFutures(cancellations)
-
-  self.blocks.clear()
-  self.updatePendingBlockGauge()
   await noCancel self.trackedFutures.cancelTracked()
 
+  self.byPeer.clear()
+  self.blocks.clear()
+  self.updatePendingBlockGauge()
   self.handles.clear()
 
 func new*(
@@ -844,7 +764,7 @@ func new*(
     batchSize = DefaultMaxBatchBlocks,
     batchDeadline = DefaultMaxBatchBlocksDeadline,
     discoveryTimeout = DefaultDiscoveryWaitTimeout,
-    blockSendTimeout = DefaultBlockSendRetryDelay,
+    blockSendTimeout = DefaultRequestTimeout,
     sendBatch: BatchSendHandler = nil,
     onAbandon: AbandonHandler = nil,
     onTimeout: TimeoutHandler = nil,
@@ -857,7 +777,6 @@ func new*(
     discoveryTimeout: discoveryTimeout,
     blockSendTimeout: blockSendTimeout,
     trackedFutures: TrackedFutures.new(),
-    queueWakeEvent: newAsyncEvent(),
     sendBatch: sendBatch,
     getPeerForBlock: getPeerForBlock,
     onAbandon: onAbandon,

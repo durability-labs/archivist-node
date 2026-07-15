@@ -311,12 +311,12 @@ suite "E2E - Multiple Nodes Discovery":
       advertised.withValue(cid, val):
         result.add(val[])
 
+    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
+    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
+
     let futs = collect(newSeq):
       for m in mBlocks[0 .. 2]:
         blockexc[0].engine.requestDelivery(BlockAddress.init(m.cid)).tryGet()
-
-    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
-    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
 
     await allFutures(futs).wait(10.seconds)
 
@@ -380,12 +380,12 @@ suite "E2E - Multiple Nodes Discovery":
       advertised.withValue(cid, val):
         return @[val[]]
 
+    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
+    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
+
     let futs = mBlocks[0 .. 2].mapIt(
       blockexc[0].engine.requestDelivery(BlockAddress.init(it.cid)).tryGet()
     )
-
-    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
-    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
 
     await allFutures(futs).wait(10.seconds)
 
