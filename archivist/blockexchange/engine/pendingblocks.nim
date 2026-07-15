@@ -20,7 +20,7 @@ import std/strformat
 import pkg/chronos
 import pkg/libp2p
 import pkg/questionable
-import pkg/metrics
+import ./metrics
 import pkg/results
 
 import ../protobuf/blockexc
@@ -37,15 +37,6 @@ export errors
 
 logScope:
   topics = "archivist pendingblocks"
-
-declareGauge(
-  archivist_block_exchange_pending_block_requests,
-  "archivist blockexchange pending block requests",
-)
-declareGauge(
-  archivist_block_exchange_retrieval_time_us,
-  "archivist blockexchange block retrieval time us",
-)
 
 const
   DefaultMaxBatchBlocks* = 128
@@ -450,7 +441,9 @@ proc resolve*(
         let latencyMs = float(retrievalDurationUs) / 1000.0
         assignedPeer.recordDelivery(bd.address, bd.blk.data.len, latencyMs)
 
-      archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
+      archivist_block_exchange_retrieval_duration_seconds.observe(
+        retrievalDurationUs.float64 / 1_000_000
+      )
       if retrievalDurationUs > 500000:
         trace "High block retrieval time", retrievalDurationUs, address = bd.address
 

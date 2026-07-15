@@ -14,6 +14,7 @@ import pkg/taskpools
 import pkg/archivist/rng
 import pkg/archivist/blockexchange
 import pkg/archivist/blockexchange/engine/engine {.all.}
+import pkg/archivist/blockexchange/engine/metrics
 import pkg/archivist/blockexchange/engine/pendingblocks {.all.}
 import pkg/archivist/stores
 import pkg/archivist/chunker
@@ -190,6 +191,11 @@ asyncchecksuite "NetworkStore engine handlers":
     let wantList = makeWantList(blocks.mapIt(it.cid), wantType = WantType.WantBlock)
       # only `wantBlock` are stored in `wantedBlocks`
 
+    when defined(metrics):
+      let
+        beforeLists = archivist_block_exchange_want_block_lists_received.value()
+        beforeEntries = archivist_block_exchange_want_block_entries_received.value()
+
     proc handler() {.async.} =
       let ctx = await engine.taskQueue.pop()
       check ctx.id == peerId
@@ -201,11 +207,21 @@ asyncchecksuite "NetworkStore engine handlers":
     await engine.wantListHandler(peerId, wantList)
     await done
 
+    when defined(metrics):
+      check archivist_block_exchange_want_block_lists_received.value() == beforeLists + 1
+      check archivist_block_exchange_want_block_entries_received.value() ==
+        beforeEntries + blocks.len.float64
+
   test "Should handle want list":
     let wantList = makeWantList(blocks.mapIt(it.cid))
     var
       done = newFuture[void]()
       received: seq[BlockPresence]
+
+    when defined(metrics):
+      let
+        beforeLists = archivist_block_exchange_want_have_lists_received.value()
+        beforeEntries = archivist_block_exchange_want_have_entries_received.value()
 
     proc sendPresence(
         peerId: PeerId, presence: seq[BlockPresence]
@@ -224,6 +240,11 @@ asyncchecksuite "NetworkStore engine handlers":
 
     await engine.wantListHandler(peerId, wantList)
     await done
+
+    when defined(metrics):
+      check archivist_block_exchange_want_have_lists_received.value() == beforeLists + 1
+      check archivist_block_exchange_want_have_entries_received.value() ==
+        beforeEntries + blocks.len.float64
 
   test "Should handle want list - `dont-have`":
     let wantList = makeWantList(blocks.mapIt(it.cid), sendDontHave = true)

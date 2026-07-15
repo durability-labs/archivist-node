@@ -16,7 +16,7 @@ import std/strformat
 
 import pkg/chronos
 import pkg/libp2p/[cid, switch, multihash, multicodec]
-import pkg/metrics
+import ./metrics
 import pkg/questionable
 import pkg/results
 
@@ -44,40 +44,6 @@ export peers, pendingblocks, discovery, errors
 
 logScope:
   topics = "archivist blockexcengine"
-
-declareCounter(
-  archivist_block_exchange_want_have_lists_received,
-  "archivist blockexchange wantHave lists received",
-)
-declareCounter(
-  archivist_block_exchange_want_block_lists_sent,
-  "archivist blockexchange wantBlock lists sent",
-)
-declareCounter(
-  archivist_block_exchange_want_block_lists_received,
-  "archivist blockexchange wantBlock lists received",
-)
-declareCounter(
-  archivist_block_exchange_blocks_sent, "archivist blockexchange blocks sent"
-)
-declareCounter(
-  archivist_block_exchange_blocks_received, "archivist blockexchange blocks received"
-)
-declareCounter(
-  archivist_block_exchange_spurious_blocks_received,
-  "archivist blockexchange unrequested/duplicate blocks received",
-)
-declareCounter(
-  archivist_block_exchange_discovery_requests_total,
-  "Total number of peer discovery requests sent",
-)
-declareCounter(
-  archivist_block_exchange_peer_timeouts_total, "Total number of peer activity timeouts"
-)
-declareCounter(
-  archivist_block_exchange_requests_failed_total,
-  "Total number of block requests that failed after exhausting retries",
-)
 
 const
   DefaultTaskQueueSize = 128
@@ -161,6 +127,7 @@ proc sendWantBlock(
   )
 
   archivist_block_exchange_want_block_lists_sent.inc()
+  archivist_block_exchange_want_block_entries_sent.inc(addresses.len.int64)
 
 proc sendWantBlock(
     self: BlockExcEngine, addresses: seq[BlockAddress], blockPeer: BlockExcPeerCtx
@@ -192,6 +159,8 @@ proc sendBatchedWantList(
     await self.network.request.sendWantList(
       peer.id, batch, full = full and offset == 0, sendDontHave = true
     )
+    archivist_block_exchange_want_have_lists_sent.inc()
+    archivist_block_exchange_want_have_entries_sent.inc(batch.len.int64)
 
     for address in batch:
       peer.lastSentWants.incl(address)
@@ -274,7 +243,7 @@ proc refreshBlockKnowledge(self: BlockExcEngine) {.async: (raises: [CancelledErr
 
 proc searchForNewPeers(self: BlockExcEngine, cid: Cid) =
   if self.lastDiscRequest + DiscoveryRateLimit < Moment.now():
-    archivist_block_exchange_discovery_requests_total.inc()
+    archivist_block_exchange_discovery_requests.inc()
     self.lastDiscRequest = Moment.now()
     self.discovery.queueFindBlocksReq(@[cid])
 
@@ -522,6 +491,7 @@ proc blocksDeliveryHandler*(
 
     try:
       if bd.address notin self.pendingBlocks:
+        archivist_block_exchange_spurious_blocks_received.inc()
         trace "Block is not pending", address = bd.address
         continue
 
@@ -608,6 +578,10 @@ proc blocksDeliveryHandler*(
       peerCtx.cleanPresence(address)
 
   archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
+  var totalBytesReceived = 0
+  for bd in validatedBlocksDelivery:
+    totalBytesReceived += bd.blk.data.len
+  archivist_block_exchange_bytes_received.inc(totalBytesReceived.int64)
 
   await self.resolveBlocks(validatedBlocksDelivery, peerCtx.option)
 
@@ -619,6 +593,23 @@ proc wantListHandler*(
   let peerCtx = self.peers.get(peer)
   if peerCtx.isNil:
     return
+  var
+    wantHaveCount = 0
+    wantBlockCount = 0
+  for e in wantList.entries:
+    if e.cancel:
+      continue
+    case e.wantType
+    of WantType.WantHave:
+      inc wantHaveCount
+    of WantType.WantBlock:
+      inc wantBlockCount
+  if wantHaveCount > 0:
+    archivist_block_exchange_want_have_lists_received.inc()
+    archivist_block_exchange_want_have_entries_received.inc(wantHaveCount.int64)
+  if wantBlockCount > 0:
+    archivist_block_exchange_want_block_lists_received.inc()
+    archivist_block_exchange_want_block_entries_received.inc(wantBlockCount.int64)
 
   var
     presence: seq[BlockPresence]
@@ -659,12 +650,9 @@ proc wantListHandler*(
           presence.add(
             BlockPresence(address: e.address, `type`: BlockPresenceType.DontHave)
           )
-
-        archivist_block_exchange_want_have_lists_received.inc()
       of WantType.WantBlock:
         peerCtx.wantedBlocks.incl(e.address)
         schedulePeer = true
-        archivist_block_exchange_want_block_lists_received.inc()
 
       if presence.len >= PresenceBatchSize or (Moment.now() - lastIdle) >= runtimeQuota:
         if presence.len > 0:
@@ -761,6 +749,8 @@ proc taskHandler*(
     for batch in blockDeliveries.batches(self.maxBatchBlocks):
       await self.network.request.sendBlocksDelivery(peerCtx.id, batch)
       archivist_block_exchange_blocks_sent.inc(batch.len.int64)
+      let batchBytes = batch.foldl(a + b.blk.data.len, 0)
+      archivist_block_exchange_bytes_sent.inc(batchBytes.int64)
       for delivery in batch:
         deliveredAddresses.incl(delivery.address)
 
@@ -830,7 +820,7 @@ proc new*(
       address: BlockAddress, peer: PeerId
   ) {.gcsafe, async: (raises: [CancelledError]).} =
     trace "Block request timed out", address, peer
-    archivist_block_exchange_peer_timeouts_total.inc()
+    archivist_block_exchange_peer_timeouts.inc()
     # Don't drop the peer — a single block timeout doesn't mean
     # the peer is bad. pendingBlocks already retries the block.
 

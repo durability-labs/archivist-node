@@ -13,7 +13,6 @@ import std/sequtils
 import pkg/chronos
 import pkg/libp2p/cid
 import pkg/libp2p/multicodec
-import pkg/metrics
 import pkg/questionable
 import pkg/questionable/results
 
@@ -27,11 +26,10 @@ import ../../discovery
 import ../../stores/blockstore
 import ../../logutils
 import ../../manifest
+import ./metrics
 
 logScope:
   topics = "archivist discoveryengine advertiser"
-
-declareGauge(archivist_inflight_advertise, "inflight advertise requests")
 
 const
   DefaultConcurrentAdvertRequests = 10

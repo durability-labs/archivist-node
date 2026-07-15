@@ -1,0 +1,129 @@
+{.push raises: [].}
+
+import pkg/metrics
+export metrics
+
+# ── Throughput counters ──
+declarePublicCounter(
+  archivist_block_exchange_blocks_sent, "archivist blockexchange blocks sent"
+)
+declarePublicCounter(
+  archivist_block_exchange_bytes_sent, "archivist blockexchange bytes sent"
+)
+declarePublicCounter(
+  archivist_block_exchange_blocks_received, "archivist blockexchange blocks received"
+)
+declarePublicCounter(
+  archivist_block_exchange_bytes_received, "archivist blockexchange bytes received"
+)
+
+# ── Want-list counters ──
+declarePublicCounter(
+  archivist_block_exchange_want_have_lists_received,
+  "archivist blockexchange wantHave lists received",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_have_lists_sent,
+  "archivist blockexchange wantHave lists sent",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_block_lists_sent,
+  "archivist blockexchange wantBlock lists sent",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_block_lists_received,
+  "archivist blockexchange wantBlock lists received",
+)
+
+# ── Want-entry counters (entry-level granularity) ──
+declarePublicCounter(
+  archivist_block_exchange_want_have_entries_sent,
+  "archivist blockexchange wantHave entries sent",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_have_entries_received,
+  "archivist blockexchange wantHave entries received",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_block_entries_sent,
+  "archivist blockexchange wantBlock entries sent",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_block_entries_received,
+  "archivist blockexchange wantBlock entries received",
+)
+
+# ── Discovery / peer counters ──
+# NOTE: variable name is `discovery_requests` (NOT `_total`) — library auto-appends `_total`
+declarePublicCounter(
+  archivist_block_exchange_discovery_requests,
+  "Total number of peer discovery requests sent",
+)
+declarePublicCounter(
+  archivist_block_exchange_peer_timeouts, "Total number of peer activity timeouts"
+)
+declarePublicCounter(
+  archivist_block_exchange_requests_failed,
+  "Total number of block requests that failed after exhausting retries",
+)
+
+# ── Spurious / retry counters ──
+declarePublicCounter(
+  archivist_block_exchange_spurious_blocks_received,
+  "archivist blockexchange unrequested/duplicate blocks received",
+)
+
+# ── Handle lifecycle counters ──
+declarePublicCounter(
+  archivist_block_exchange_handles_created, "Total number of block handles created"
+)
+declarePublicCounter(
+  archivist_block_exchange_handles_resolved,
+  "Total number of block handles resolved successfully",
+)
+declarePublicCounter(
+  archivist_block_exchange_handles_failed, "Total number of block handles that failed"
+)
+declarePublicCounter(
+  archivist_block_exchange_handles_missing_on_release,
+  "Total number of release attempts on already-resolved handles",
+)
+
+# ── Request outcome counters ──
+declarePublicCounter(
+  archivist_block_exchange_requests_succeeded,
+  "Total number of block requests that succeeded",
+)
+declarePublicCounter(
+  archivist_block_exchange_requests_retried,
+  "Total number of block request retries",
+  labels = ["reason", "attempt"],
+)
+declarePublicCounter(
+  archivist_block_exchange_requests_abandoned,
+  "Total number of block requests abandoned",
+)
+
+# ── State gauges ──
+declarePublicGauge(
+  archivist_block_exchange_pending_block_requests,
+  "archivist blockexchange pending block requests",
+)
+
+# ── Inflight gauges (moved from advertiser.nim and discovery.nim) ──
+declarePublicGauge(archivist_inflight_advertise, "inflight advertise requests")
+declarePublicGauge(archivist_inflight_discovery, "inflight discovery requests")
+
+# ── Duration histograms ──
+declarePublicHistogram(
+  archivist_block_exchange_retrieval_duration_seconds,
+  "archivist blockexchange block retrieval duration in seconds",
+  buckets =
+    [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
+)
+declarePublicHistogram(
+  archivist_block_exchange_request_outcome_duration_seconds,
+  "Block request duration by outcome type",
+  labels = ["outcome"],
+  buckets = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0],
+)
