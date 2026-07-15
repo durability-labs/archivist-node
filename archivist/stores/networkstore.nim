@@ -336,7 +336,8 @@ method getBlocksAndProofs*(
 
   var blocks: seq[(Natural, Block, ArchivistProof)]
   let deliveries = ?self.engine.requestDeliveries(addresses)
-  let (succeeded, _) = await allFinishedFailed[BlockDelivery](deliveries)
+  let (succeeded, failed) = await allFinishedFailed[BlockDelivery](deliveries)
+  archivist_networkstore_blocks_missed.inc(failed.len.int64)
   for delivery in succeeded.mapIt(it.value):
     if not delivery.address.leaf:
       warn "Skipping non-leaf delivery for leaf request", address = delivery.address
