@@ -26,12 +26,12 @@ export peercontext, peerscore
 logScope:
   topics = "archivist peerctxstore"
 
-const DefaultPeerScoreCapacity* = 1000
+const DefaultPeerScoreCapacity* = 5000
 
 type
   PeerCtxStore* = ref object of RootObj
     peers*: OrderedTable[PeerId, BlockExcPeerCtx]
-    peerScores: LruCache[PeerId, PeerScore]
+    peerScores: LruCache[(PeerId, Cid), PeerScore]
 
   PeersForBlock* = tuple[with: seq[BlockExcPeerCtx], without: seq[BlockExcPeerCtx]]
 
@@ -50,30 +50,34 @@ func peerIds*(self: PeerCtxStore): seq[PeerId] =
 
 func contains*(self: PeerCtxStore, peerId: PeerId): bool =
   peerId in self.peers
+
 proc add*(self: PeerCtxStore, peer: BlockExcPeerCtx) =
-  let existing = self.peers.getOrDefault(peer.id, nil)
-  if not existing.isNil and existing != peer:
-    # Persist the replaced live context's latest score to LRU before
-    # disconnecting, so it overrides any stale LRU entry.
-    self.peerScores[existing.id] = existing.score
-    existing.disconnect() # disconnect stale context
-  # Inherit prior score on reconnect (LRU retains it across disconnect)
-  let priorScore = self.peerScores.getOption(peer.id)
-  if priorScore.isSome:
-    peer.score = priorScore.unsafeGet() # get + touch
-  self.peerScores[peer.id] = peer.score # touch + (re)insert
+  if existing =? self.peers .? [peer.id]:
+    if existing != peer:
+      # Persist replaced context's per-dataset scores to LRU
+      for cid, score in existing.scores:
+        self.peerScores[(existing.id, cid)] = score
+
+      existing.disconnect()
+
+  # Inherit prior per-dataset scores on reconnect
+  for (peerId, cid) in self.peerScores.keys:
+    if peerId == peer.id:
+      let score = self.peerScores.getOrDefault((peerId, cid), PeerScore())
+      peer.scores[cid] = score
+
   self.peers[peer.id] = peer
 
 proc remove*(self: PeerCtxStore, peerId: PeerId) =
   if peerId in self.peers:
-    let peer = self.peers.getOrDefault(peerId, nil)
-    # Persist latest in-context score to LRU before disconnect so the
-    # most recent EWMA values survive a reconnect.
-    if not peer.isNil:
-      self.peerScores[peer.id] = peer.score # touch + (re)insert
+    if peer =? self.peers .? [peerId]:
+      # Persist latest per-dataset scores to LRU before disconnect
+      for cid, score in peer.scores:
+        self.peerScores[(peer.id, cid)] = score
+
       peer.disconnect()
+
     self.peers.del(peerId)
-  # LRU retains the score for future re-add (capacity-driven eviction)
 
 func get*(self: PeerCtxStore, peerId: PeerId): BlockExcPeerCtx =
   self.peers.getOrDefault(peerId, nil)
@@ -100,6 +104,7 @@ proc getPeersForBlock*(self: PeerCtxStore, address: BlockAddress): PeersForBlock
       res.with.add(peer)
     else:
       res.without.add(peer)
+
   res
 
 proc new*(
@@ -108,5 +113,5 @@ proc new*(
   ## create new instance of a peer context store
   PeerCtxStore(
     peers: initOrderedTable[PeerId, BlockExcPeerCtx](),
-    peerScores: newLruCache[PeerId, PeerScore](peerScoreCapacity),
+    peerScores: newLruCache[(PeerId, Cid), PeerScore](peerScoreCapacity),
   )

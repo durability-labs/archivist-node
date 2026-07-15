@@ -129,12 +129,12 @@ suite "Pending Blocks":
 
       pendingBlocks = PendingBlocksManager.new()
 
-    check peerCtx.score.consecutiveFailures == 0
+    check peerCtx.scoreFor(blk.cid).isNone
     discard pendingBlocks.getWantHandle(blk.cid)
     pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 1.millis)
-    check eventually peerCtx.score.consecutiveFailures == 1
-    check peerCtx.score.totalFailures == 1
+    check eventually peerCtx.scoreFor(blk.cid).isSome
+    check (!peerCtx.scoreFor(blk.cid)).totalFailures == 1
 
   test "Should record delivery on peer when resolve completes with sender":
     let
@@ -148,13 +148,15 @@ suite "Pending Blocks":
     discard pendingBlocks.getWantHandle(blk.cid)
     pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 5.seconds)
-    check peerCtx.score.totalDeliveries == 0
+    check peerCtx.scoreFor(blk.cid).isNone
     await pendingBlocks.resolve(
       @[BlockDelivery(blk: blk, address: address)], peerCtx.some
     )
-    check peerCtx.score.totalDeliveries == 1
-    check peerCtx.score.totalBytes == blk.data.len
-    check peerCtx.score.consecutiveFailures == 0
+    check peerCtx.scoreFor(blk.cid).isSome
+    let score = !peerCtx.scoreFor(blk.cid)
+    check score.totalDeliveries == 1
+    check score.totalBytes == blk.data.len
+    check score.consecutiveFailures == 0
 
   test "Should NOT record delivery on peer when resolve without sender":
     let
@@ -168,10 +170,33 @@ suite "Pending Blocks":
     discard pendingBlocks.getWantHandle(blk.cid)
     pendingBlocks.blocks[address].state = Scheduled
     pendingBlocks.markRequested(address, peerCtx, 5.seconds)
-    check peerCtx.score.totalDeliveries == 0
+    check peerCtx.scoreFor(blk.cid).isNone
     await pendingBlocks.resolve(@[BlockDelivery(blk: blk, address: address)])
-    check peerCtx.score.totalDeliveries == 0
-    check peerCtx.score.consecutiveFailures == 0
+    check peerCtx.scoreFor(blk.cid).isNone
+
+  test "resolve with mismatched sender does not record delivery":
+    let
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peerIdA = makePeerId()
+      peerIdB = makePeerId()
+      peerCtxA = makePeerCtx(peerIdA)
+      peerCtxB = makePeerCtx(peerIdB)
+
+      pendingBlocks = PendingBlocksManager.new()
+
+    discard pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
+    pendingBlocks.markRequested(address, peerCtxA, 5.seconds)
+    check peerCtxA.scoreFor(blk.cid).isNone
+    check peerCtxB.scoreFor(blk.cid).isNone
+    # Resolve with sender B, but request was assigned to A
+    await pendingBlocks.resolve(
+      @[BlockDelivery(blk: blk, address: address)], peerCtxB.some
+    )
+    # Neither peer should have delivery recorded
+    check peerCtxA.scoreFor(blk.cid).isNone
+    check peerCtxB.scoreFor(blk.cid).isNone
 
   test "Should cancel request timeout on clear":
     var timedOut = false
