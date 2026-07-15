@@ -87,12 +87,14 @@ const
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
   CleanupBatchSize = 2048
+  DefaultExplorationEpsilon* = 0.05
 
 type
   TaskHandler* = proc(task: BlockExcPeerCtx): Future[void] {.gcsafe.}
   TaskScheduler* = proc(task: BlockExcPeerCtx): bool {.gcsafe.}
-  PeerSelector* =
-    proc(peers: seq[BlockExcPeerCtx]): BlockExcPeerCtx {.gcsafe, raises: [].}
+  PeerSelector* = proc(
+    peers: seq[BlockExcPeerCtx], address: BlockAddress
+  ): BlockExcPeerCtx {.gcsafe, raises: [].}
 
   BlockExcEngine* = ref object of RootObj
     localStore*: BlockStore
@@ -119,7 +121,7 @@ proc scheduleTask(self: BlockExcEngine, task: BlockExcPeerCtx) {.gcsafe, raises:
 
 proc blockexcTaskRunner(self: BlockExcEngine) {.async: (raises: []).}
 proc resolveBlocks*(
-  self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
+  self: BlockExcEngine, blocksDelivery: seq[BlockDelivery], sender: ?BlockExcPeerCtx
 ) {.async: (raises: [CancelledError]).}
 
 proc start*(self: BlockExcEngine) {.async: (raises: []).} =
@@ -281,8 +283,67 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
   # Just remove from store - disconnect monitor in PendingBlocksManager handles requeue
   self.peers.remove(peer)
 
-proc randomPeer(peers: seq[BlockExcPeerCtx]): BlockExcPeerCtx =
+proc randomPeer(peers: seq[BlockExcPeerCtx], address: BlockAddress): BlockExcPeerCtx =
   Rng.instance.sample(peers)
+
+proc computeEffectiveScore(peer: BlockExcPeerCtx, now: Moment): float =
+  let rawScore = peer.score.computeScore(peer.blocksRequested.len)
+  applyDecay(rawScore, peer.score.lastUpdated, peer.blocksRequested.len, now)
+
+proc scoredPeer(
+    peers: seq[BlockExcPeerCtx], address: BlockAddress
+): BlockExcPeerCtx {.gcsafe, raises: [].} =
+  # Filter circuit-open peers.
+  var candidates: seq[BlockExcPeerCtx]
+  for peer in peers:
+    peer.score.maybeResetCircuit()
+    if not peer.score.circuitOpen:
+      candidates.add(peer)
+
+  if candidates.len == 0:
+    return nil
+
+  if candidates.len == 1:
+    return candidates[0]
+
+  # Find max effective score (raw score + inactivity decay).
+  let now = Moment.now()
+  var
+    best = candidates[0]
+    bestScore = computeEffectiveScore(best, now)
+
+  for peer in candidates[1 ..^ 1]:
+    let s = computeEffectiveScore(peer, now)
+    if s > bestScore:
+      best = peer
+      bestScore = s
+
+  # Epsilon-greedy exploration: occasionally pick a random candidate to
+  # avoid starving cold-start and to escape local optima.
+  if Rng.instance.sampleFloat() < DefaultExplorationEpsilon:
+    let
+      picked = Rng.instance.sample(candidates)
+      pickedScore = computeEffectiveScore(picked, now)
+
+    trace "Peer selected",
+      address,
+      peer = picked.id,
+      score = pickedScore,
+      inflight = picked.blocksRequested.len,
+      candidates = candidates.len,
+      exploration = true
+
+    return picked
+
+  trace "Peer selected",
+    address,
+    peer = best.id,
+    score = bestScore,
+    inflight = best.blocksRequested.len,
+    candidates = candidates.len,
+    exploration = false
+
+  return best
 
 proc failBlockRequest(
     self: BlockExcEngine,
@@ -310,7 +371,7 @@ proc requestDelivery*(
 proc completeBlocks*(
     self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
 ) {.async: (raises: [CancelledError]).} =
-  await self.resolveBlocks(blocksDelivery)
+  await self.resolveBlocks(blocksDelivery, BlockExcPeerCtx.none)
 
 proc completeBlock*(
     self: BlockExcEngine, address: BlockAddress, blk: Block
@@ -392,9 +453,9 @@ proc cancelBlocks(
     warn "Failed to send block request cancellations to peers", peers = failedFuts.len
 
 proc resolveBlocks*(
-    self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
+    self: BlockExcEngine, blocksDelivery: seq[BlockDelivery], sender: ?BlockExcPeerCtx
 ) {.async: (raises: [CancelledError]).} =
-  await self.pendingBlocks.resolve(blocksDelivery)
+  await self.pendingBlocks.resolve(blocksDelivery, sender)
   await self.scheduleTasks(blocksDelivery)
   await self.cancelBlocks(blocksDelivery.mapIt(it.address))
 
@@ -404,7 +465,8 @@ proc resolveBlocks*(
   await self.resolveBlocks(
     blocks.mapIt(
       BlockDelivery(blk: it, address: BlockAddress(leaf: false, cid: it.cid))
-    )
+    ),
+    BlockExcPeerCtx.none,
   )
 
 proc validateBlockDelivery(self: BlockExcEngine, bd: BlockDelivery): ?!void =
@@ -438,10 +500,7 @@ proc validateBlockDelivery(self: BlockExcEngine, bd: BlockDelivery): ?!void =
   success()
 
 proc blocksDeliveryHandler*(
-    self: BlockExcEngine,
-    peer: PeerId,
-    blocksDelivery: seq[BlockDelivery],
-    allowSpurious = false,
+    self: BlockExcEngine, peer: PeerId, blocksDelivery: seq[BlockDelivery]
 ) {.async: (raises: [CancelledError]).} =
   trace "Received blocks from peer", peer, count = blocksDelivery.len
 
@@ -450,12 +509,12 @@ proc blocksDeliveryHandler*(
     leafByTree: Table[Cid, seq[(Block, Natural, ArchivistProof)]]
     nonLeafDeliveries: seq[BlockDelivery]
     acceptedAddresses: seq[BlockAddress]
+    lastIdle = Moment.now()
 
   let
     peerCtx = self.peers.get(peer)
     runtimeQuota = 10.milliseconds
 
-  var lastIdle = Moment.now()
   for bd in blocksDelivery:
     logScope:
       peer = peer
@@ -470,6 +529,9 @@ proc blocksDeliveryHandler*(
         warn "Block validation failed", msg = err.msg
         if not peerCtx.isNil:
           peerCtx.cleanPresence(bd.address)
+          # Always record validation failure: invalid data from any peer
+          # is a quality signal, regardless of assignment.
+          peerCtx.recordFailure(isValidation = true)
           await self.pendingBlocks.clearRequest(bd.address, peerCtx)
 
         await self.pendingBlocks.retryAddresses(
@@ -547,7 +609,7 @@ proc blocksDeliveryHandler*(
 
   archivist_block_exchange_blocks_received.inc(validatedBlocksDelivery.len.int64)
 
-  await self.resolveBlocks(validatedBlocksDelivery)
+  await self.resolveBlocks(validatedBlocksDelivery, peerCtx.option)
 
 proc wantListHandler*(
     self: BlockExcEngine, peer: PeerId, wantList: WantList
@@ -732,7 +794,7 @@ proc new*(
     pendingBlocks: PendingBlocksManager,
     maxBatchBlocks = DefaultMaxBatchBlocks,
     concurrentTasks = DefaultConcurrentTasks,
-    selectPeer: PeerSelector = randomPeer,
+    selectPeer: PeerSelector = scoredPeer,
     blockRequestTimeout = DefaultRequestTimeout,
 ): BlockExcEngine =
   let self = BlockExcEngine(
@@ -778,8 +840,7 @@ proc new*(
       trace "No peer for block", address
       return
         failure(newException(NoPeerForBlockError, fmt"No peer for block {address}"))
-
-    let peer = self.selectPeer(peers.with)
+    let peer = self.selectPeer(peers.with, address)
     if peer.isNil:
       trace "No peer context for block", address
       return failure(

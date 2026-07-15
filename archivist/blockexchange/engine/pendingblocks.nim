@@ -51,7 +51,6 @@ const
   DefaultMaxBatchBlocks* = 128
   DefaultMaxBatchBlocksDeadline* = 50.millis
   DefaultBlockRetries* = 3000
-  DefaultRequestTimeout* = 30.seconds
   DefaultDiscoveryWaitTimeout = 5.seconds
   DefaultBlockSendRetryDelay* = 500.millis
 
@@ -359,7 +358,6 @@ proc addOwner(
       pending.priority = priority
 
     if not self.blockInPipeline(pending) and pending.requestedPeer.isNil:
-      pending.priority = priority
       pending.generation.inc()
       if err =? self.advanceReqState(pending, Queued).errorOption:
         trace "Unable to advance request state", err = err.msg
@@ -420,32 +418,48 @@ proc getWantHandle*(self: PendingBlocksManager, cid: Cid): BlockHandle =
   self.getWantHandle(BlockAddress.init(cid))
 
 proc resolve*(
-    self: PendingBlocksManager, blocksDelivery: seq[BlockDelivery]
+    self: PendingBlocksManager,
+    blocksDelivery: seq[BlockDelivery],
+    sender = BlockExcPeerCtx.none,
 ) {.async: (raises: [CancelledError]).} =
   for bd in blocksDelivery:
-    if blockReq =? self.blocks .? [bd.address]:
-      if not blockReq.handle.finished:
-        trace "Resolving pending block", address = bd.address
-        let
-          startTime = blockReq.startTime
-          stopTime = getMonoTime().ticks
-          retrievalDurationUs = (stopTime - startTime) div 1000
+    without blockReq =? self.blocks .? [bd.address]:
+      trace "Block handle already finished", address = bd.address
+      continue
 
-        await self.clearPeerAssignment(bd.address)
-        if not blockReq.handle.finished:
-          blockReq.handle.complete(bd)
+    if not blockReq.handle.finished:
+      trace "Resolving pending block", address = bd.address, sender = sender .? id
+      let
+        startTime = blockReq.startTime
+        stopTime = getMonoTime().ticks
+        retrievalDurationUs = (stopTime - startTime) div 1000
+        assignedPeer = blockReq.requestedPeer
 
-        archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
+      await self.clearPeerAssignment(bd.address)
+      if blockReq.handle.finished:
+        trace "Block handle already finished, skipping",
+          address = bd.address, sender = sender .? id
+        continue
 
-        if retrievalDurationUs > 500000:
-          trace "High block retrieval time", retrievalDurationUs, address = bd.address
-      else:
-        trace "Block handle already finished", address = bd.address
+      blockReq.handle.complete(bd)
+
+      # Record delivery for the assigned peer. Deliveries
+      # for mismatched peers (late deliveries) are not recorderd
+      # for neither the sender nor the currently requested peer.
+      if senderPeer =? sender and senderPeer == assignedPeer:
+        let latencyMs = float(retrievalDurationUs) / 1000.0
+        assignedPeer.recordDelivery(bd.address, bd.blk.data.len, latencyMs)
+
+      archivist_block_exchange_retrieval_time_us.set(retrievalDurationUs)
+      if retrievalDurationUs > 500000:
+        trace "High block retrieval time", retrievalDurationUs, address = bd.address
 
 proc resolve*(
     self: PendingBlocksManager, address: BlockAddress, blk: Block
 ) {.async: (raises: [CancelledError]).} =
-  await self.resolve(@[BlockDelivery(blk: blk, address: address)])
+  await self.resolve(
+    @[BlockDelivery(blk: blk, address: address)], none(BlockExcPeerCtx)
+  )
 
 proc failOwners(
     self: PendingBlocksManager, address: BlockAddress, err: ref EngineError
@@ -510,10 +524,11 @@ proc markRequested*(
 
       if timeoutFut.completed:
         # Requeue the block for retry before notifying the engine.
-        # Only if we still own the assignment (no concurrent clear/resolve).
         if req =? self.blocks .? [address]:
           if req.requestTimeout == currentMonitor and req.requestedPeer == peer:
             # XXX: Don't use clearPeerAssignment here, because it will deadlock
+            if not peer.isNil:
+              peer.recordFailure()
             req.requestedPeer.blockRequestCleared(address)
             req.requestedPeer = nil
             req.requestTimeout = nil
@@ -678,6 +693,7 @@ proc peerBatchWorker(
 
         if err =? (await self.sendBatch(batchReq.peer, batch)).errorOption:
           warn "Batch send failed", peer = batchReq.peer.id, err = err.msg
+          batchReq.peer.sendBatchFailure()
           await noCancel allFutures(batch.mapIt(self.clearPeerAssignment(it)))
           await self.retryAddresses(batch, self.blockSendTimeout)
   except CatchableError as exc:
@@ -697,10 +713,6 @@ proc pushPeerBlock(
 
     without peer =? self.getPeerForBlock(address), err:
       trace "Unable to get peer", address, err = err.msg
-      if not (err of NoPeerForBlockError):
-        await self.failWantHandle(address, PeerSelectorFailedEngineError, err.msg)
-        return
-
       if err =? self.advanceReqState(req, Pending).errorOption:
         trace "Unable to set req state", err = err.msg
         return
@@ -728,6 +740,10 @@ proc pushPeerBlock(
           trace "Exception in disconnect monitor", exc = exc.msg
 
         trace "Peer disconnected, performing cleanup", peer = peer.id
+        # Record failure if peer had work assigned (quality signal)
+        if peer.blocksRequested.len > 0:
+          peer.recordFailure()
+
         await noCancel batchReq.workerFut.cancelAndWait()
         # Requeue all blocks assigned to this peer
 

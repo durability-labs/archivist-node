@@ -181,7 +181,7 @@ method putBlocks*(
       )
     )
 
-  await self.engine.resolveBlocks(deliveries)
+  await self.engine.completeBlocks(deliveries)
 
   return success()
 
@@ -204,7 +204,7 @@ method putCidsAndProofs*(
     )
 
   if deliveries.len > 0:
-    await self.engine.resolveBlocks(deliveries)
+    await self.engine.completeBlocks(deliveries)
 
   success()
 

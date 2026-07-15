@@ -301,7 +301,7 @@ asyncchecksuite "NetworkStore engine handlers":
       request: BlockExcRequest(sendWantCancellations: NopSendWantCancellationsProc)
     )
 
-    await engine.blocksDeliveryHandler(peerId, blocksDelivery, allowSpurious = true)
+    await engine.blocksDeliveryHandler(peerId, blocksDelivery)
     let resolved = await allFinished(pending)
     check resolved.mapIt(it.read.blk) == blocks
 
@@ -1324,3 +1324,66 @@ asyncchecksuite "Task Handler":
     await engine.taskHandler(peersCtx[0])
 
     check blocks[0].address notin peersCtx[0].blocksSent
+
+asyncchecksuite "scoredPeer selector":
+  let address = BlockAddress(leaf: false, cid: default(Cid))
+
+  proc makeCtx(): BlockExcPeerCtx =
+    let seckey = PrivateKey.random(Rng.instance[]).tryGet()
+    let id = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
+    BlockExcPeerCtx.new(id)
+
+  test "Should return nil when no candidates":
+    check scoredPeer(@[], address).isNil
+
+  test "Should return the only candidate when exactly one":
+    let ctx = makeCtx()
+    check scoredPeer(@[ctx], address) == ctx
+
+  test "Should prefer high-score peer over low-score peer":
+    let good = makeCtx()
+    good.score.recordDelivery(1024, 10.0) # fast delivery
+    good.score.recordDelivery(1024, 10.0)
+    good.score.recordDelivery(1024, 10.0)
+    let bad = makeCtx()
+    bad.score.recordFailure()
+    bad.score.recordFailure()
+    bad.score.recordFailure()
+    # With ~5% exploration, the result is not strictly deterministic,
+    # but good is overwhelmingly more likely. Run many trials.
+    var goodHits = 0
+    for _ in 0 ..< 100:
+      if scoredPeer(@[good, bad], address) == good:
+        inc goodHits
+    check goodHits > 80
+
+  test "Should exclude circuit-open peers":
+    let open = makeCtx()
+    open.score.circuitOpen = true
+    open.score.circuitOpenUntil = Moment.now() + 60.seconds
+    let closed = makeCtx()
+    check scoredPeer(@[open, closed], address) == closed
+
+  test "Should return nil when all candidates are circuit-open":
+    let a = makeCtx()
+    a.score.circuitOpen = true
+    a.score.circuitOpenUntil = Moment.now() + 60.seconds
+    let b = makeCtx()
+    b.score.circuitOpen = true
+    b.score.circuitOpenUntil = Moment.now() + 60.seconds
+    check scoredPeer(@[a, b], address).isNil
+
+  test "Should floor decayed score at ColdStartScore":
+    # A peer with rawScore above ColdStartScore but elapsed way past
+    # grace should be floored at ColdStartScore, not zero.
+    let stale = makeCtx()
+    # Give it a strong base score.
+    stale.score.recordDelivery(1024, 10.0)
+    stale.score.recordDelivery(1024, 10.0)
+    stale.score.recordDelivery(1024, 10.0)
+    # Way past grace and many tau.
+    stale.score.lastUpdated = Moment.now() - 1.hours
+    let rawScore = stale.score.computeScore(0)
+    let decayed = applyDecay(rawScore, stale.score.lastUpdated, 0, Moment.now())
+    check decayed == ColdStartScore
+    check decayed > 0.0

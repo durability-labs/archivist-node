@@ -120,6 +120,59 @@ suite "Pending Blocks":
     pendingBlocks.markRequested(address, peerCtx, 1.millis)
     check eventually timedOut
 
+  test "Should record failure on peer when timeout fires":
+    let
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+
+      pendingBlocks = PendingBlocksManager.new()
+
+    check peerCtx.score.consecutiveFailures == 0
+    discard pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
+    pendingBlocks.markRequested(address, peerCtx, 1.millis)
+    check eventually peerCtx.score.consecutiveFailures == 1
+    check peerCtx.score.totalFailures == 1
+
+  test "Should record delivery on peer when resolve completes with sender":
+    let
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+
+      pendingBlocks = PendingBlocksManager.new()
+
+    discard pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
+    pendingBlocks.markRequested(address, peerCtx, 5.seconds)
+    check peerCtx.score.totalDeliveries == 0
+    await pendingBlocks.resolve(
+      @[BlockDelivery(blk: blk, address: address)], peerCtx.some
+    )
+    check peerCtx.score.totalDeliveries == 1
+    check peerCtx.score.totalBytes == blk.data.len
+    check peerCtx.score.consecutiveFailures == 0
+
+  test "Should NOT record delivery on peer when resolve without sender":
+    let
+      blk = bt.Block.new("Hello".toBytes).tryGet
+      address = BlockAddress.init(blk.cid)
+      peerId = makePeerId()
+      peerCtx = makePeerCtx(peerId)
+
+      pendingBlocks = PendingBlocksManager.new()
+
+    discard pendingBlocks.getWantHandle(blk.cid)
+    pendingBlocks.blocks[address].state = Scheduled
+    pendingBlocks.markRequested(address, peerCtx, 5.seconds)
+    check peerCtx.score.totalDeliveries == 0
+    await pendingBlocks.resolve(@[BlockDelivery(blk: blk, address: address)])
+    check peerCtx.score.totalDeliveries == 0
+    check peerCtx.score.consecutiveFailures == 0
+
   test "Should cancel request timeout on clear":
     var timedOut = false
     let

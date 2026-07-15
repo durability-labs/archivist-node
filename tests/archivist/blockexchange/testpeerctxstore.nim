@@ -29,6 +29,31 @@ suite "Peer Context Store":
   test "Should get peer":
     check store.get(peerCtx.id) == peerCtx
 
+  test "Should persist peer score across remove and re-add":
+    let peerId = peerCtx.id
+    peerCtx.score.recordDelivery(1024, 50.0)
+    check peerCtx.score.totalDeliveries == 1
+    check peerCtx.score.totalBytes == 1024
+    store.remove(peerId)
+    let newCtx = BlockExcPeerCtx.new(peerId)
+    check newCtx.score.totalDeliveries == 0
+    store.add(newCtx)
+    check newCtx.score.totalDeliveries == 1
+    check newCtx.score.totalBytes == 1024
+
+  test "Should persist stale context's latest score on re-add":
+    let peerId = peerCtx.id
+    # peerCtx is already in the store (from setup). Modify its score.
+    peerCtx.score.recordDelivery(2048, 50.0)
+    check peerCtx.score.totalDeliveries == 1
+    # Add a different context for the same peerId without removing first.
+    # This triggers the existing-context-replacement path: the latest
+    # score from the live context must be persisted to LRU before the
+    # new context inherits it.
+    let newCtx = BlockExcPeerCtx.new(peerId)
+    store.add(newCtx)
+    check newCtx.score.totalBytes == 2048
+
 suite "Peer Context Store Peer Selection":
   var
     store: PeerCtxStore
