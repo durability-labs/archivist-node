@@ -20,7 +20,6 @@ import ./metrics
 import pkg/questionable
 import pkg/results
 
-import ../../rng
 import ../../stores/blockstore
 import ../../blocktype
 import ../../utils
@@ -39,8 +38,9 @@ import ./discovery
 import ./advertiser
 import ./errors
 import ./pendingblocks
+import ./peerscoring
 
-export peers, pendingblocks, discovery, errors
+export peers, pendingblocks, discovery, errors, peerscoring
 
 logScope:
   topics = "archivist blockexcengine"
@@ -53,7 +53,6 @@ const
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
   CleanupBatchSize = 2048
-  DefaultExplorationEpsilon* = 0.05
 
 type
   TaskHandler* = proc(task: BlockExcPeerCtx): Future[void] {.gcsafe.}
@@ -252,70 +251,6 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
   # Just remove from store - disconnect monitor in PendingBlocksManager handles requeue
   self.peers.remove(peer)
 
-proc randomPeer(peers: seq[BlockExcPeerCtx], address: BlockAddress): BlockExcPeerCtx =
-  Rng.instance.sample(peers)
-
-proc computeEffectiveScore(peer: BlockExcPeerCtx, cid: Cid, now: Moment): float =
-  peer.effectiveScore(cid, now)
-
-proc scoredPeer(
-    peers: seq[BlockExcPeerCtx], address: BlockAddress
-): BlockExcPeerCtx {.gcsafe, raises: [].} =
-  let cid = address.cidOrTreeCid
-  # Filter circuit-open peers for this dataset.
-  var candidates: seq[BlockExcPeerCtx]
-  for peer in peers:
-    if score =? peer.scoreFor(cid):
-      score.maybeResetCircuit()
-      if not score.circuitOpen:
-        candidates.add(peer)
-    else:
-      candidates.add(peer) # cold-start peers have no circuit
-
-  if candidates.len == 0:
-    return nil
-
-  if candidates.len == 1:
-    return candidates[0]
-
-  # Find max effective score (raw score + inactivity decay).
-  let now = Moment.now()
-  var
-    best = candidates[0]
-    bestScore = computeEffectiveScore(best, cid, now)
-
-  for peer in candidates[1 ..^ 1]:
-    let s = computeEffectiveScore(peer, cid, now)
-    if s > bestScore:
-      best = peer
-      bestScore = s
-
-  # Epsilon-greedy exploration: occasionally pick a random candidate to
-  # avoid starving cold-start and to escape local optima.
-  if Rng.instance.sampleFloat() < DefaultExplorationEpsilon:
-    let
-      picked = Rng.instance.sample(candidates)
-      pickedScore = computeEffectiveScore(picked, cid, now)
-
-    trace "Peer selected",
-      address,
-      peer = picked.id,
-      score = pickedScore,
-      inflight = picked.blocksRequested.len,
-      candidates = candidates.len,
-      exploration = true
-
-    return picked
-
-  trace "Peer selected",
-    address,
-    peer = best.id,
-    score = bestScore,
-    inflight = best.blocksRequested.len,
-    candidates = candidates.len,
-    exploration = false
-
-  return best
 
 proc failBlockRequest(
     self: BlockExcEngine,
