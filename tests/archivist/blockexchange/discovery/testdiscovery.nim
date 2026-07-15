@@ -100,9 +100,9 @@ suite "Block Advertising and Discovery":
     tp.shutdown()
 
   test "Should discover want list":
-    let pendingBlocks = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
-
     await engine.start()
+
+    let pendingBlocks = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
 
     blockDiscovery.publishBlockProvideHandler = proc(
         d: MockDiscovery, cid: Cid
@@ -150,7 +150,6 @@ suite "Block Advertising and Discovery":
 
   test "Should not launch discovery if remote peer has block":
     let
-      pendingBlocks = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
       peerId = PeerId.example
       haves = collect(initTable()):
         for blk in blocks:
@@ -166,6 +165,7 @@ suite "Block Advertising and Discovery":
       check false
 
     await engine.start()
+    let pendingBlocks = blocks.mapIt(engine.pendingBlocks.getWantHandle(it.cid))
     await engine.pendingBlocks.resolve(
       blocks.mapIt(BlockDelivery(blk: it, address: it.address))
     )
@@ -275,6 +275,10 @@ suite "E2E - Multiple Nodes Discovery":
     ) {.async: (raises: [CancelledError]).} =
       advertised[cid] = switch[3].peerInfo.signedPeerRecord
 
+    # Start pendingBlocks on provider nodes before seeding handles
+    for i in 1 .. 3:
+      await blockexc[i].engine.pendingBlocks.start()
+
     discard blockexc[1].engine.pendingBlocks.getWantHandle(mBlocks[0].cid)
     await blockexc[1].engine.blocksDeliveryHandler(
       switch[0].peerInfo.peerId,
@@ -311,12 +315,12 @@ suite "E2E - Multiple Nodes Discovery":
       advertised.withValue(cid, val):
         result.add(val[])
 
+    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
+    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
+
     let futs = collect(newSeq):
       for m in mBlocks[0 .. 2]:
         blockexc[0].engine.requestDelivery(BlockAddress.init(m.cid)).tryGet()
-
-    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
-    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
 
     await allFutures(futs).wait(10.seconds)
 
@@ -343,6 +347,10 @@ suite "E2E - Multiple Nodes Discovery":
         d: MockDiscovery, cid: Cid
     ) {.async: (raises: [CancelledError]).} =
       advertised[cid] = switch[3].peerInfo.signedPeerRecord
+
+    # Start pendingBlocks on provider nodes before seeding handles
+    for i in 1 .. 3:
+      await blockexc[i].engine.pendingBlocks.start()
 
     discard blockexc[1].engine.pendingBlocks.getWantHandle(mBlocks[0].cid)
     await blockexc[1].engine.blocksDeliveryHandler(
@@ -380,12 +388,12 @@ suite "E2E - Multiple Nodes Discovery":
       advertised.withValue(cid, val):
         return @[val[]]
 
+    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
+    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
+
     let futs = mBlocks[0 .. 2].mapIt(
       blockexc[0].engine.requestDelivery(BlockAddress.init(it.cid)).tryGet()
     )
-
-    await allFuturesThrowing(switch.mapIt(it.start())).wait(10.seconds)
-    await allFuturesThrowing(blockexc.mapIt(it.engine.start())).wait(10.seconds)
 
     await allFutures(futs).wait(10.seconds)
 

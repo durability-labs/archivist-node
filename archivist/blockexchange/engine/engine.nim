@@ -7,12 +7,15 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+{.push raises: [].}
+
 import std/hashes
 import std/options
 import std/sequtils
 import std/sets
 import std/tables
 import std/strformat
+import std/algorithm
 
 import pkg/chronos
 import pkg/libp2p/[cid, switch, multihash, multicodec]
@@ -20,6 +23,7 @@ import ./metrics
 import pkg/questionable
 import pkg/results
 
+import ../../rng
 import ../../stores/blockstore
 import ../../blocktype
 import ../../utils
@@ -47,12 +51,13 @@ logScope:
 
 const
   DefaultTaskQueueSize = 128
-  DefaultConcurrentTasks = 10
+  DefaultConcurrentTasks = 30
   DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
   CleanupBatchSize = 2048
+  DefaultWantHaveTopK* = 3
 
 type
   TaskHandler* = proc(task: BlockExcPeerCtx): Future[void] {.gcsafe.}
@@ -161,84 +166,43 @@ proc sendBatchedWantList(
     archivist_block_exchange_want_have_lists_sent.inc()
     archivist_block_exchange_want_have_entries_sent.inc(batch.len.int64)
 
-    for address in batch:
-      peer.lastSentWants.incl(address)
+    archivist_block_exchange_want_have_lists_sent.inc()
 
     offset = batchEnd
 
 proc refreshBlockKnowledge(
-    self: BlockExcEngine, peer: BlockExcPeerCtx, skipDelta = false, resetBackoff = false
-) {.async: (raises: [CancelledError]).} =
-  if peer.lastSentWants.len > 0:
-    var toRemove: seq[BlockAddress]
-
-    for address in peer.lastSentWants:
-      if address notin self.pendingBlocks:
-        toRemove.add(address)
-
-        if toRemove.len >= CleanupBatchSize:
-          await idleAsync()
-          break
-
-    for address in toRemove:
-      peer.lastSentWants.excl(address)
-
+    self: BlockExcEngine, peer: BlockExcPeerCtx
+): Future[?Duration] {.async: (raises: [CancelledError]).} =
   if self.pendingBlocks.wantListLen == 0:
-    if peer.lastSentWants.len > 0:
-      peer.lastSentWants.clear()
-    return
+    return Duration.none
 
   let peerHave = peer.peerHave
-  var toAsk = initHashSet[BlockAddress]()
+  var wantList = initHashSet[BlockAddress]()
   for address in self.pendingBlocks.wantList:
     if address notin peerHave:
-      toAsk.incl(address)
+      wantList.incl(address)
 
-  if toAsk.len == 0:
-    if peer.lastSentWants.len > 0:
-      peer.lastSentWants.clear()
-    return
+  if wantList.len == 0:
+    return Duration.none
 
-  let newWants = toAsk - peer.lastSentWants
-  if peer.lastSentWants.len > 0 and not skipDelta:
-    if newWants.len > 0:
-      await self.sendBatchedWantList(peer, newWants.toSeq, full = false)
+  let decision = peer.decideSend(wantList)
+  case decision.kind
+  of SendKind.None:
+    return decision.wakeAfter
+  of SendKind.Full:
+    await self.sendBatchedWantList(peer, decision.wants.toSeq, full = true)
+    return Duration.none
+  of SendKind.Delta:
+    await self.sendBatchedWantList(peer, decision.wants.toSeq, full = false)
+    return Duration.none
 
-      if resetBackoff:
-        peer.wantsUpdated()
+proc minWakeHint(current: var Option[Duration], candidate: Option[Duration]) =
+  if wake =? candidate:
+    if existing =? current:
+      if wake < existing:
+        current = wake.some
     else:
-      trace "No changes in want list, skipping send", peer = peer.id
-
-    peer.lastSentWants = toAsk
-  else:
-    peer.lastSentWants.clear()
-    await self.sendBatchedWantList(peer, toAsk.toSeq, full = true)
-
-    if resetBackoff:
-      peer.wantsUpdated()
-
-    peer.lastSentWants = toAsk
-
-proc refreshBlockKnowledge(self: BlockExcEngine) {.async: (raises: [CancelledError]).} =
-  let runtimeQuota = 10.milliseconds
-  var lastIdle = Moment.now()
-
-  for peer in self.peers.peers.values.toSeq:
-    let
-      hasNewBlocks = peer.lastRefresh < self.pendingBlocks.lastInclusion
-      isKnowledgeStale = peer.isKnowledgeStale
-
-    if isKnowledgeStale or hasNewBlocks:
-      if not peer.refreshInProgress:
-        peer.refreshRequested()
-        await self.refreshBlockKnowledge(
-          peer, skipDelta = isKnowledgeStale, resetBackoff = hasNewBlocks
-        )
-
-    if (Moment.now() - lastIdle) >= runtimeQuota:
-      await idleAsync()
-
-      lastIdle = Moment.now()
+      current = wake.some
 
 proc searchForNewPeers(self: BlockExcEngine, cid: Cid) =
   if self.lastDiscRequest + DiscoveryRateLimit < Moment.now():
@@ -250,6 +214,22 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
   trace "Evicting disconnected/departed peer", peer
   # Just remove from store - disconnect monitor in PendingBlocksManager handles requeue
   self.peers.remove(peer)
+
+proc topPeersForCid*(self: BlockExcEngine, cid: Cid, topK: int): seq[BlockExcPeerCtx] =
+  let candidates = self.peers.peersHave(cid)
+  if candidates.len == 0:
+    return @[]
+  let ranked = rankPeersByScore(candidates, cid)
+  if ranked.len == 0:
+    return @[]
+  ranked[0 ..< min(topK, ranked.len)]
+
+proc topPeersByAggregate*(self: BlockExcEngine, topK: int): seq[BlockExcPeerCtx] =
+  let allPeers = toSeq(self.peers.peers.values)
+  let ranked = rankPeersByAggregate(allPeers)
+  if ranked.len == 0:
+    return @[]
+  ranked[0 ..< min(topK, ranked.len)]
 
 proc failBlockRequest(
     self: BlockExcEngine,
@@ -296,8 +276,6 @@ proc blockPresenceHandler*(
   if peerCtx.isNil:
     return
 
-  peerCtx.refreshReplied()
-
   for blk in blocks:
     if presence =? Presence.init(blk):
       peerCtx.setPresence(presence)
@@ -311,11 +289,12 @@ proc blockPresenceHandler*(
 
   var toRetry: seq[BlockAddress]
   for address in ourWantList:
-    if address in peerHave and not self.pendingBlocks.retriesExhausted(address):
+    if address in peerHave and not self.pendingBlocks.retriesExhausted(address) and
+        not self.pendingBlocks.isRequested(address):
       toRetry.add(address)
 
-  if toRetry.len > 0:
-    await self.pendingBlocks.retryAddresses(toRetry, 0.seconds)
+  for address in toRetry:
+    discard self.pendingBlocks.wakeAddress(address)
 
 proc scheduleTasks(
     self: BlockExcEngine, blocksDelivery: seq[BlockDelivery]
@@ -439,11 +418,11 @@ proc blocksDeliveryHandler*(
           # Always record validation failure: invalid data from any peer
           # is a quality signal, regardless of assignment.
           peerCtx.recordFailure(bd.address.cidOrTreeCid, isValidation = true)
-          await self.pendingBlocks.clearRequest(bd.address, peerCtx)
-
-        await self.pendingBlocks.retryAddresses(
-          @[bd.address], self.pendingBlocks.blockSendTimeout
-        )
+          if self.pendingBlocks.rejectRequest(bd.address, peerCtx):
+            archivist_block_exchange_requests_retried.inc(
+              labelValues = [$(RetryReason.Validation), ""]
+            )
+            self.pendingBlocks.recordRetryOutcome(@[bd.address])
         continue
 
       if bd.address.leaf:
@@ -493,11 +472,11 @@ proc blocksDeliveryHandler*(
       error "Unable to decode manifest block", err = err.msg
       if not peerCtx.isNil:
         peerCtx.cleanPresence(bd.address)
-        await self.pendingBlocks.clearRequest(bd.address, peerCtx)
-
-      await self.pendingBlocks.retryAddresses(
-        @[bd.address], self.pendingBlocks.blockSendTimeout
-      )
+        if self.pendingBlocks.rejectRequest(bd.address, peerCtx):
+          archivist_block_exchange_requests_retried.inc(
+            labelValues = [$(RetryReason.Validation), ""]
+          )
+          self.pendingBlocks.recordRetryOutcome(@[bd.address])
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
@@ -616,7 +595,7 @@ proc setupPeer*(
     self.peers.add(BlockExcPeerCtx.new(peer))
 
   let peerCtx = self.peers.get(peer)
-  await self.refreshBlockKnowledge(peerCtx, skipDelta = true)
+  discard await self.refreshBlockKnowledge(peerCtx)
 
 proc taskHandler*(
     self: BlockExcEngine, peerCtx: BlockExcPeerCtx
@@ -761,28 +740,53 @@ proc new*(
     # Don't drop the peer — a single block timeout doesn't mean
     # the peer is bad. pendingBlocks already retries the block.
 
-  proc pendingPeerSelector(address: BlockAddress): ?!BlockExcPeerCtx {.gcsafe.} =
+  proc selectKnownPeer(address: BlockAddress): BlockExcPeerCtx {.gcsafe, raises: [].} =
     let peers = self.peers.getPeersForBlock(address)
     if peers.with.len == 0:
-      trace "No peer for block", address
-      return
-        failure(newException(NoPeerForBlockError, fmt"No peer for block {address}"))
-    let peer = self.selectPeer(peers.with, address)
-    if peer.isNil:
-      trace "No peer context for block", address
-      return failure(
-        newException(NoPeerForBlockError, fmt"Unable to select suitable peer {address}")
-      )
+      return nil
+    self.selectPeer(peers.with, address)
 
-    success peer
+  proc pendingPeerSelector(
+      address: BlockAddress
+  ): Future[?!PeerSelection] {.async: (raises: [CancelledError]), gcsafe.} =
+    let localPeer = selectKnownPeer(address)
+    if not localPeer.isNil:
+      return success PeerSelection(kind: PeerSelectionKind.Peer, peer: localPeer)
 
-  proc pendingDiscoverer(address: BlockAddress) {.async: (raises: []), gcsafe.} =
-    try:
-      if self.peers.peersHave(address).len == 0:
-        await self.refreshBlockKnowledge()
-      self.searchForNewPeers(address.cidOrTreeCid)
-    except CancelledError:
-      trace "Peer discovery cancelled", address
+    let
+      cid = address.cidOrTreeCid
+      candidates = self.peers.peersHave(cid)
+      topPeers =
+        if candidates.len > 0:
+          let ranked = rankPeersByScore(candidates, cid)
+          if ranked.len == 0:
+            @[]
+          else:
+            ranked[0 ..< min(DefaultWantHaveTopK, ranked.len)]
+        else:
+          self.topPeersByAggregate(DefaultWantHaveTopK)
+
+    var minWake = Duration.none
+    if topPeers.len > 0:
+      let futs = topPeers.mapIt(self.refreshBlockKnowledge(it))
+      for fut in await allFinished(futs):
+        if fut.completed():
+          try:
+            minWakeHint(minWake, fut.read())
+          except CatchableError:
+            discard
+
+    let discoveredPeer = selectKnownPeer(address)
+    if not discoveredPeer.isNil:
+      return success PeerSelection(kind: PeerSelectionKind.Peer, peer: discoveredPeer)
+
+    if self.peers.peersHave(cid).len == 0:
+      self.searchForNewPeers(cid)
+
+    if wake =? minWake:
+      return success PeerSelection(kind: PeerSelectionKind.Requeue, delay: wake)
+
+    return success PeerSelection(kind: PeerSelectionKind.Requeue, delay: 0.seconds)
 
   proc onBatchReadyHandler(
       peer: BlockExcPeerCtx, batch: seq[BlockAddress]
@@ -800,7 +804,6 @@ proc new*(
     success()
 
   pendingBlocks.getPeerForBlock = pendingPeerSelector
-  pendingBlocks.discoverPeersForBlock = pendingDiscoverer
   pendingBlocks.sendBatch = onBatchReadyHandler
 
   if not isNil(network.switch):
