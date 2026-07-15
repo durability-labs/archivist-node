@@ -35,6 +35,24 @@ declarePublicCounter(
   "archivist blockexchange wantBlock lists received",
 )
 
+# ── Want-entry counters (entry-level granularity) ──
+declarePublicCounter(
+  archivist_block_exchange_want_have_entries_sent,
+  "archivist blockexchange wantHave entries sent",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_have_entries_received,
+  "archivist blockexchange wantHave entries received",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_block_entries_sent,
+  "archivist blockexchange wantBlock entries sent",
+)
+declarePublicCounter(
+  archivist_block_exchange_want_block_entries_received,
+  "archivist blockexchange wantBlock entries received",
+)
+
 # ── Discovery / peer counters ──
 # NOTE: variable name is `discovery_requests` (NOT `_total`) — library auto-appends `_total`
 declarePublicCounter(
@@ -47,23 +65,6 @@ declarePublicCounter(
 declarePublicCounter(
   archivist_block_exchange_requests_failed,
   "Total number of block requests that failed after exhausting retries",
-)
-declarePublicCounter(
-  archivist_block_exchange_peer_selections,
-  "archivist blockexchange peer selections (labeled by peer)",
-  labels = ["peer_id"],
-)
-declarePublicCounter(
-  archivist_block_exchange_peer_circuit_breaker_trips,
-  "archivist blockexchange peer circuit breaker trips (labeled by peer)",
-  labels = ["peer_id"],
-)
-
-# ── Per-peer circuit breaker gauge ──
-declarePublicGauge(
-  archivist_block_exchange_peer_circuit_open,
-  "archivist blockexchange currently-open circuit breakers per peer",
-  labels = ["peer_id"],
 )
 
 # ── Spurious / retry counters ──
@@ -107,11 +108,6 @@ declarePublicCounter(
 declarePublicGauge(
   archivist_block_exchange_pending_block_requests,
   "archivist blockexchange pending block requests",
-)
-declarePublicGauge(
-  archivist_block_exchange_peer_score,
-  "archivist blockexchange peer score (labeled by peer and dataset)",
-  labels = ["peer_id", "cid"],
 )
 
 # ── Inflight gauges (moved from advertiser.nim and discovery.nim) ──
