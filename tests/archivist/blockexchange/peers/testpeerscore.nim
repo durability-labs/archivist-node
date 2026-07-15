@@ -6,29 +6,30 @@ suite "PeerScore":
   test "computeScore returns ColdStartScore for cold-start peers":
     var s = PeerScore(lastUpdated: Moment.now())
     s.totalDeliveries = 0
-    check s.computeScore(inflightCount = 0) == ColdStartScore
+    s.computeScore(inflightCount = 0)
+    check s.score == ColdStartScore
 
   test "computeScore returns ColdStartScore when totalDeliveries < MinSamplesForScore":
     var s = PeerScore(lastUpdated: Moment.now())
     s.totalDeliveries = MinSamplesForScore - 1
-    check s.computeScore(inflightCount = 0) == ColdStartScore
+    s.computeScore(inflightCount = 0)
+    check s.score == ColdStartScore
 
   test "computeScore applies load penalty for active peers":
-    let s = PeerScore(
-      lastUpdated: Moment.now(),
-      totalDeliveries: 10,
-      totalFailures: 0,
-      successRate: 1.0,
-      throughputBps: ThroughputCapBps,
-      latencyMs: 0.0,
-    )
+    var s = PeerScore(lastUpdated: Moment.now())
+    s.totalDeliveries = 10
+    s.totalFailures = 0
+    s.successRate = 1.0
+    s.throughputBps = ThroughputCapBps
+    s.latencyMs = 0.0
     # No in-flight: full score = 0.3*1 + 0.5*1 + 0.2*1 = 1.0
-    let baseScore = s.computeScore(inflightCount = 0)
+    s.computeScore(inflightCount = 0)
+    let baseScore = s.score
     check baseScore > 0.95
     # With in-flight: loadPenalty = 1/(1+5*0.1) = 0.667
-    let loadedScore = s.computeScore(inflightCount = 5)
-    check loadedScore < baseScore
-    check loadedScore > baseScore * 0.6
+    s.computeScore(inflightCount = 5)
+    check s.score < baseScore
+    check s.score > baseScore * 0.6
 
   test "applyDecay returns rawScore when inflightCount > 0":
     let now = Moment.now()
