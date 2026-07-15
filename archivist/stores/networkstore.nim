@@ -335,8 +335,9 @@ method getBlocksAndProofs*(
       addresses.add(BlockAddress.init(treeCid, index))
 
   var blocks: seq[(Natural, Block, ArchivistProof)]
-  for request in await allFinished(?self.engine.requestDeliveries(addresses)):
-    let delivery = ?catchAsync(request.read)
+  let deliveries = ?self.engine.requestDeliveries(addresses)
+  let (succeeded, _) = await allFinishedFailed[BlockDelivery](deliveries)
+  for delivery in succeeded.mapIt(it.value):
     if not delivery.address.leaf:
       warn "Skipping non-leaf delivery for leaf request", address = delivery.address
       continue
