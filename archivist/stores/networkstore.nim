@@ -14,10 +14,12 @@ import std/sets
 
 import pkg/chronos
 import pkg/libp2p
+import pkg/metrics
 import pkg/questionable/results
 
 import ../blocktype
 import ../blockexchange
+import ../errors
 import ../logutils
 import ../manifest
 import ../merkletree
@@ -29,6 +31,19 @@ export blockstore, blockexchange, asyncheapqueue
 
 logScope:
   topics = "archivist networkstore"
+
+declareCounter(
+  archivist_networkstore_blocks_requested, "Total blocks requested from NetworkStore"
+)
+declareCounter(
+  archivist_networkstore_blocks_local, "Total blocks served from local store"
+)
+declareCounter(
+  archivist_networkstore_blocks_network, "Total blocks fetched via network"
+)
+declareCounter(
+  archivist_networkstore_blocks_missed, "Total blocks not found locally or via network"
+)
 
 type NetworkStore* = ref object of BlockStore
   engine*: BlockExcEngine # blockexc decision engine
@@ -47,6 +62,8 @@ method getBlocks*(
   let
     uniqueCids = cids.deduplicate()
     localBlocks = ?await self.localStore.getBlocks(uniqueCids)
+  archivist_networkstore_blocks_requested.inc(uniqueCids.len.int64)
+  archivist_networkstore_blocks_local.inc(localBlocks.len.int64)
   if localBlocks.len == uniqueCids.len:
     return success(localBlocks)
 
@@ -59,11 +76,12 @@ method getBlocks*(
     if cid notin localCids:
       addresses.add(BlockAddress.init(cid))
 
-  let blocks = (await allFinished(?self.engine.requestDeliveries(addresses))).mapIt(
-    ?catchAsync(it.read.blk)
-  )
-
-  success(localBlocks & blocks)
+  archivist_networkstore_blocks_network.inc(addresses.len.int64)
+  let deliveries = ?self.engine.requestDeliveries(addresses)
+  let (succeeded, failed) = await allFinishedFailed[BlockDelivery](deliveries)
+  archivist_networkstore_blocks_missed.inc(failed.len.int64)
+  let networkBlocks = succeeded.mapIt(it.value.blk)
+  success(localBlocks & networkBlocks)
 
 method getBlock*(
     self: NetworkStore, cid: Cid
@@ -115,6 +133,8 @@ method getBlocks*(
     uniqueIndices = indices.deduplicate()
     localBlocks = ?await self.localStore.getBlocks(treeCid, uniqueIndices)
 
+  archivist_networkstore_blocks_requested.inc(uniqueIndices.len.int64)
+  archivist_networkstore_blocks_local.inc(localBlocks.len.int64)
   trace "Got local blocks", count = localBlocks.len
 
   if localBlocks.len == uniqueIndices.len:
@@ -129,13 +149,12 @@ method getBlocks*(
     if index notin localIndices:
       addresses.add(BlockAddress.init(treeCid, index))
 
-  let blocks = (await allFinished(?self.engine.requestDeliveries(addresses))).mapIt(
-    block:
-      let delivery = ?catchAsync(it.read)
-      (delivery.address.index, delivery.blk)
-  )
-
-  success(localBlocks & blocks)
+  archivist_networkstore_blocks_network.inc(addresses.len.int64)
+  let treeDeliveries = ?self.engine.requestDeliveries(addresses)
+  let (succeeded, failed) = await allFinishedFailed[BlockDelivery](treeDeliveries)
+  archivist_networkstore_blocks_missed.inc(failed.len.int64)
+  let treeNetworkBlocks = succeeded.mapIt((it.value.address.index, it.value.blk))
+  success(localBlocks & treeNetworkBlocks)
 
 method completeBlocks*(
     self: NetworkStore, treeCid: Cid, blocks: seq[(Natural, Block)]

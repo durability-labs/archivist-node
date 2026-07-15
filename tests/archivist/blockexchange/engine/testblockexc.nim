@@ -264,3 +264,36 @@ asyncchecksuite "NetworkStore - multiple nodes":
 
     check pendingBlocks1.mapIt(it.read.blk) == blocks[0 .. 3]
     check pendingBlocks2.mapIt(it.read.blk) == blocks[12 .. 15]
+
+  test "Should return successful blocks when a batch request partially fails":
+    let
+      downloader = nodes[4].networkStore
+      engine = downloader.engine
+      addr0 = BlockAddress.init(manifest0.treeCid, 0.Natural)
+      addr1 = BlockAddress.init(manifest0.treeCid, 1.Natural)
+
+    # Start the batch getBlocks call — this creates handles internally
+    let fut = downloader.getBlocks(manifest0.treeCid, @[0.Natural, 1.Natural])
+
+    # Wait until both handles exist in engine.pendingBlocks
+    require eventually(
+      addr0 in engine.pendingBlocks and addr1 in engine.pendingBlocks, pollInterval = 10
+    )
+
+    # Resolve one handle with a real block
+    await engine.pendingBlocks.resolve(
+      @[BlockDelivery(blk: blocks[0], address: addr0)], BlockExcPeerCtx.none
+    )
+
+    # Fail the other handle explicitly
+    await engine.pendingBlocks.failWantHandle(
+      addr1, RequestAbandonedEngineError, "Simulated failure for partial-batch test"
+    )
+
+    # The batch should succeed with exactly the resolved block
+    let result = await fut
+    check result.isOk
+    let returned = result.tryGet()
+    check returned.len == 1
+    check returned[0][0] == 0.Natural
+    check returned[0][1].cid == blocks[0].cid
