@@ -54,6 +54,9 @@ const
   DefaultConcurrentTasks = 30
   DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
   DefaultWantBlockBatchTimeout = 5.millis
+  # Serve-path slice size: smaller than want-batch so first TCP write starts sooner
+  # and store-read of slice N+1 can be prepared after send of slice N.
+  DefaultMaxServeBatchBlocks* = 16
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
   CleanupBatchSize = 2048
@@ -623,15 +626,17 @@ proc taskHandler*(
   for address in wantedBlocks:
     peerCtx.markBlockAsSent(address)
 
-  var
-    leafIndicesByTree: Table[Cid, seq[Natural]]
-    nonLeafAddresses: seq[BlockAddress]
-    blockDeliveries: seq[BlockDelivery]
-    deliveredAddresses = initHashSet[BlockAddress]()
+  var deliveredAddresses = initHashSet[BlockAddress]()
 
-  try:
-    let storeReadStart = Moment.now()
-    for wantedBlock in wantedBlocks:
+  proc loadSlice(
+      slice: seq[BlockAddress]
+  ): Future[seq[BlockDelivery]] {.async: (raises: [CancelledError]).} =
+    var
+      leafIndicesByTree: Table[Cid, seq[Natural]]
+      nonLeafAddresses: seq[BlockAddress]
+      blockDeliveries: seq[BlockDelivery]
+
+    for wantedBlock in slice:
       if wantedBlock.leaf:
         leafIndicesByTree.withValue(wantedBlock.treeCid, slot):
           slot[].add(wantedBlock.index)
@@ -644,7 +649,7 @@ proc taskHandler*(
       let cids = nonLeafAddresses.mapIt(it.cid)
       without blocks =? await self.localStore.getBlocks(cids), err:
         error "Error getting non-leaf blocks from local store", err = err.msg
-        return
+        return @[]
 
       var blocksByCid: Table[Cid, Block]
       for blk in blocks:
@@ -676,25 +681,66 @@ proc taskHandler*(
             )
           )
 
-    archivist_block_exchange_task_store_read_seconds.observe(
-      (Moment.now() - storeReadStart).nanoseconds.float64 / 1e9
-    )
+    blockDeliveries
 
-    if blockDeliveries.len == 0:
+  proc sendSlice(batch: seq[BlockDelivery]) {.async: (raises: [CancelledError]).} =
+    if batch.len == 0:
       return
+    await self.network.request.sendBlocksDelivery(peerCtx.id, batch)
+    archivist_block_exchange_blocks_sent.inc(batch.len.int64)
+    var batchBytes = 0
+    for delivery in batch:
+      batchBytes += delivery.blk.data.len
+      deliveredAddresses.incl(delivery.address)
+    archivist_block_exchange_bytes_sent.inc(batchBytes.int64)
 
-    let sendStart = Moment.now()
-    for batch in blockDeliveries.batches(self.maxBatchBlocks):
-      await self.network.request.sendBlocksDelivery(peerCtx.id, batch)
-      archivist_block_exchange_blocks_sent.inc(batch.len.int64)
-      let batchBytes = batch.foldl(a + b.blk.data.len, 0)
-      archivist_block_exchange_bytes_sent.inc(batchBytes.int64)
-      for delivery in batch:
-        deliveredAddresses.incl(delivery.address)
+  try:
+    # Pipeline: load slice N+1 while send of slice N is in flight (NET_WRITE overlap).
+    # Single TCP stream per peer still serializes writes; store work no longer waits.
+    var
+      totalStoreNs = 0'i64
+      totalSendNs = 0'i64
+      pendingSend: Future[void].Raising([CancelledError])
+      pendingSendStart = Moment.now()
 
-    archivist_block_exchange_task_send_seconds.observe(
-      (Moment.now() - sendStart).nanoseconds.float64 / 1e9
-    )
+    try:
+      var offset = 0
+      while offset < wantedBlocks.len:
+        let
+          batchEnd = min(offset + self.maxBatchBlocks, wantedBlocks.len)
+          slice = wantedBlocks[offset ..< batchEnd]
+        offset = batchEnd
+
+        # Store-read runs concurrent with any prior pendingSend.
+        let storeReadStart = Moment.now()
+        let blockDeliveries = await loadSlice(slice)
+        totalStoreNs += (Moment.now() - storeReadStart).nanoseconds
+
+        if not pendingSend.isNil:
+          await pendingSend
+          totalSendNs += (Moment.now() - pendingSendStart).nanoseconds
+          pendingSend = nil
+
+        if blockDeliveries.len == 0:
+          continue
+
+        pendingSendStart = Moment.now()
+        pendingSend = sendSlice(blockDeliveries)
+
+      if not pendingSend.isNil:
+        await pendingSend
+        totalSendNs += (Moment.now() - pendingSendStart).nanoseconds
+        pendingSend = nil
+    finally:
+      if not pendingSend.isNil:
+        await noCancel pendingSend.cancelAndWait()
+
+    if totalStoreNs > 0:
+      archivist_block_exchange_task_store_read_seconds.observe(
+        totalStoreNs.float64 / 1e9
+      )
+    if totalSendNs > 0:
+      archivist_block_exchange_task_send_seconds.observe(totalSendNs.float64 / 1e9)
 
     for address in deliveredAddresses:
       peerCtx.wantedBlocks.excl(address)
@@ -731,7 +777,7 @@ proc new*(
     advertiser: Advertiser,
     peerStore: PeerCtxStore,
     pendingBlocks: PendingBlocksManager,
-    maxBatchBlocks = DefaultMaxBatchBlocks,
+    maxBatchBlocks = DefaultMaxServeBatchBlocks,
     concurrentTasks = DefaultConcurrentTasks,
     selectPeer: PeerSelector = scoredPeer,
     blockRequestTimeout = DefaultRequestTimeout,
@@ -773,6 +819,8 @@ proc new*(
     # Don't drop the peer — a single block timeout doesn't mean
     # the peer is bad. pendingBlocks already retries the block.
 
+  # Must call self.selectPeer so tests can inject a custom selector.
+  # Load-balance among top-K scored peers lives in scoredPeer (default).
   proc selectKnownPeer(address: BlockAddress): BlockExcPeerCtx {.gcsafe, raises: [].} =
     let peers = self.peers.getPeersForBlock(address)
     if peers.with.len == 0:
