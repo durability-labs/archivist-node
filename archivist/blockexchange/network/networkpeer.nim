@@ -58,9 +58,10 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
 
       let handlerStart = Moment.now()
       await self.handler(self, msg)
-      archivist_block_exchange_recv_handler_seconds.observe(
-        (Moment.now() - handlerStart).nanoseconds.float64 / 1e9
-      )
+      let handlerNs = (Moment.now() - handlerStart).nanoseconds
+      archivist_block_exchange_recv_handler_seconds.observe(handlerNs.float64 / 1e9)
+      trace "Handler completed",
+        peer = self.id, connId = conn.oid, durationMs = handlerNs.float64 / 1e6
   except CancelledError:
     trace "Read loop cancelled"
   except CatchableError as err:
@@ -109,10 +110,21 @@ proc send*(
   )
 
   let writeStart = Moment.now()
+  trace "WriteLp starting", peer = self.id, connId = conn.oid, bytes = encoded.len, kind
   await conn.writeLp(encoded)
+  let writeNs = (Moment.now() - writeStart).nanoseconds
   archivist_block_exchange_network_write_seconds.observe(
-    (Moment.now() - writeStart).nanoseconds.float64 / 1e9, labelValues = [kind]
+    writeNs.float64 / 1e9, labelValues = [kind]
   )
+  archivist_block_exchange_network_write_bytes.observe(
+    encoded.len.float64, labelValues = [kind]
+  )
+  trace "WriteLp completed",
+    peer = self.id,
+    connId = conn.oid,
+    bytes = encoded.len,
+    kind,
+    durationMs = writeNs.float64 / 1e6
 
 func new*(
     T: type NetworkPeer,

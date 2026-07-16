@@ -2789,10 +2789,99 @@
       }
     },
     {
-      "collapsed": true,
+      "id": 200,
+      "type": "timeseries",
+      "title": "Network writeLp p50/p95 by kind (sender)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"x": 0, "y": 55, "w": 12, "h": 8},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_network_write_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p50 {{kind}}", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_network_write_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p95 {{kind}}", "range": true, "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "spanNulls": false}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 201,
+      "type": "timeseries",
+      "title": "Network encode p50/p95 by kind (sender)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"x": 12, "y": 55, "w": 12, "h": 8},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_network_encode_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p50 {{kind}}", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_network_encode_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p95 {{kind}}", "range": true, "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "spanNulls": false}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 202,
+      "type": "timeseries",
+      "title": "Network send p50/p95 by kind (end-to-end sender)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"x": 0, "y": 63, "w": 12, "h": 8},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_network_send_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p50 {{kind}}", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_network_send_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p95 {{kind}}", "range": true, "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "spanNulls": false}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 203,
+      "type": "timeseries",
+      "title": "Recv handler p50/p95 (validate + store + resolve)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"x": 12, "y": 63, "w": 12, "h": 8},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_recv_handler_seconds_bucket{instance=~\"$node\"}[1m])) by (le))", "legendFormat": "p50", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_recv_handler_seconds_bucket{instance=~\"$node\"}[1m])) by (le))", "legendFormat": "p95", "range": true, "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "spanNulls": false}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 204,
+      "type": "timeseries",
+      "title": "Recv decode p50/p95 (protobuf decode in readLoop)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"x": 0, "y": 71, "w": 12, "h": 8},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_recv_decode_seconds_bucket{instance=~\"$node\"}[1m])) by (le))", "legendFormat": "p50", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_recv_decode_seconds_bucket{instance=~\"$node\"}[1m])) by (le))", "legendFormat": "p95", "range": true, "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "spanNulls": false}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 210,
+      "type": "timeseries",
+      "title": "Bytes/write p50/p95 by kind (post-encode buffer)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"x": 12, "y": 71, "w": 12, "h": 8},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_network_write_bytes_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p50 {{kind}}", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_network_write_bytes_bucket{instance=~\"$node\"}[1m])) by (le, kind))", "legendFormat": "p95 {{kind}}", "range": true, "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "spanNulls": false}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 212,
+      "type": "timeseries",
+      "title": "Write throughput while in writeLp (MB/s = rate(bytes) / rate(write_seconds))",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"x": 0, "y": 79, "w": 24, "h": 8},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "editorMode": "code", "expr": "sum(rate(archivist_block_exchange_network_write_bytes_sum{instance=~\"$node\",kind=\"blocks\"}[1m])) / sum(rate(archivist_block_exchange_network_write_seconds_sum{instance=~\"$node\",kind=\"blocks\"}[1m])) / 1048576", "legendFormat": "instant MB/s", "range": true, "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "MBs", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never", "spanNulls": false}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 87,
         "w": 24,
         "h": 1
       },

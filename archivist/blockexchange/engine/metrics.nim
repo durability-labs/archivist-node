@@ -215,3 +215,16 @@ declarePublicHistogram(
   labels = ["kind"],
   buckets = BlockExcDurationBuckets,
 )
+# Bytes per writeLp call — post-protobufEncode buffer size.
+# Used to compute per-write throughput and verify the 64MB-per-batch assumption.
+# Top bucket 128MiB covers 128x512KiB blocks + protobuf framing without
+# clamping p50/p95 into +Inf.
+declarePublicHistogram(
+  archivist_block_exchange_network_write_bytes,
+  "Bytes written per conn.writeLp call (post-protobufEncode buffer)",
+  labels = ["kind"],
+  buckets = [
+    0.0, 1024.0, 16384.0, 65536.0, 262144.0, 1048576.0, 4194304.0, 16777216.0,
+    67108864.0, 134217728.0,
+  ],
+)
