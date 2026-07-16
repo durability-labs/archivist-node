@@ -114,16 +114,78 @@ declarePublicGauge(
 declarePublicGauge(archivist_inflight_advertise, "inflight advertise requests")
 declarePublicGauge(archivist_inflight_discovery, "inflight discovery requests")
 
+# ── Sender capacity gauges (service-side saturation) ──
+# task_queue_depth / inflight_* answer "are we queueing or saturated?"
+declarePublicGauge(
+  archivist_block_exchange_task_queue_depth,
+  "Peers waiting on the block-serve task queue",
+)
+declarePublicGauge(
+  archivist_block_exchange_active_serve_tasks,
+  "taskHandler invocations currently running",
+)
+declarePublicGauge(
+  archivist_block_exchange_inflight_sends,
+  "Network messages currently holding the inflight send semaphore",
+)
+declarePublicGauge(
+  archivist_block_exchange_inflight_send_slots_free,
+  "Free slots on the inflight send semaphore",
+)
+declarePublicGauge(
+  archivist_block_exchange_wanted_blocks,
+  "Total blocks peers currently want from this node (sum wantedBlocks)",
+)
+declarePublicCounter(
+  archivist_block_exchange_task_queue_full,
+  "scheduleTask dropped because task queue was full",
+)
+
 # ── Duration histograms ──
+# Buckets span ~1ms-120s so p95 does not clip at the default 10s top bucket.
+const BlockExcDurationBuckets = [
+  0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
+  120.0,
+]
+
 declarePublicHistogram(
   archivist_block_exchange_retrieval_duration_seconds,
   "archivist blockexchange block retrieval duration in seconds",
-  buckets =
-    [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
+  buckets = BlockExcDurationBuckets,
 )
 declarePublicHistogram(
   archivist_block_exchange_request_outcome_duration_seconds,
   "Block request duration by outcome type",
   labels = ["outcome"],
-  buckets = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0],
+  buckets = BlockExcDurationBuckets,
+)
+
+# Split serve-path latency: queue wait vs store read vs network send.
+# Queue wait high + service low => capacity problem. Service high => store/net.
+declarePublicHistogram(
+  archivist_block_exchange_task_queue_wait_seconds,
+  "Time from scheduleTask to taskHandler start (queue wait)",
+  buckets = BlockExcDurationBuckets,
+)
+declarePublicHistogram(
+  archivist_block_exchange_task_store_read_seconds,
+  "Time reading wanted blocks from local store in taskHandler",
+  buckets = BlockExcDurationBuckets,
+)
+declarePublicHistogram(
+  archivist_block_exchange_task_send_seconds,
+  "Time sending all delivery batches for one taskHandler run",
+  buckets = BlockExcDurationBuckets,
+)
+declarePublicHistogram(
+  archivist_block_exchange_network_inflight_wait_seconds,
+  "Time waiting to acquire the inflight send semaphore",
+  labels = ["kind"],
+  buckets = BlockExcDurationBuckets,
+)
+declarePublicHistogram(
+  archivist_block_exchange_network_send_seconds,
+  "End-to-end network send time (inflight wait + writeLp)",
+  labels = ["kind"],
+  buckets = BlockExcDurationBuckets,
 )

@@ -21,6 +21,7 @@ import ../protobuf/blockexc as pb
 import ../../utils/trackedfutures
 
 import ./networkpeer
+import ../engine/metrics
 
 export networkpeer
 
@@ -94,6 +95,16 @@ proc isSelf*(b: BlockExcNetwork, peer: PeerId): bool =
 
   return b.peerId == peer
 
+proc messageKind(msg: pb.Message): string =
+  if msg.payload.len > 0:
+    "blocks"
+  elif msg.blockPresences.len > 0:
+    "presence"
+  elif msg.wantList.entries.len > 0:
+    "wantlist"
+  else:
+    "other"
+
 proc send*(
     b: BlockExcNetwork, id: PeerId, msg: pb.Message
 ) {.async: (raises: [CancelledError]).} =
@@ -104,17 +115,38 @@ proc send*(
     trace "Unable to send, peer not found", peerId = id
     return
 
+  let
+    kind = messageKind(msg)
+    totalStart = Moment.now()
   try:
     let peer = b.peers[id]
 
+    let inflightWaitStart = Moment.now()
     await b.inflightSema.acquire()
-    await peer.send(msg)
+    archivist_block_exchange_network_inflight_wait_seconds.observe(
+      (Moment.now() - inflightWaitStart).nanoseconds.float64 / 1e9, labelValues = [kind]
+    )
+    archivist_block_exchange_inflight_sends.set(
+      (b.maxInflight - b.inflightSema.count).int64
+    )
+    archivist_block_exchange_inflight_send_slots_free.set(b.inflightSema.count.int64)
+
+    try:
+      await peer.send(msg)
+    finally:
+      b.inflightSema.release()
+      archivist_block_exchange_inflight_sends.set(
+        (b.maxInflight - b.inflightSema.count).int64
+      )
+      archivist_block_exchange_inflight_send_slots_free.set(b.inflightSema.count.int64)
+
+    archivist_block_exchange_network_send_seconds.observe(
+      (Moment.now() - totalStart).nanoseconds.float64 / 1e9, labelValues = [kind]
+    )
   except CancelledError as error:
     raise error
   except CatchableError as err:
     error "Error sending message", peer = id, msg = err.msg
-  finally:
-    b.inflightSema.release()
 
 proc handleWantList(
     b: BlockExcNetwork, peer: NetworkPeer, list: WantList

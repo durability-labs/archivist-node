@@ -3,7 +3,8 @@ ARG BUILDER=nimlang/nim:2.2.6-ubuntu-regular
 ARG IMAGE=ubuntu:24.04
 ARG RUST_VERSION=${RUST_VERSION:-1.79.0}
 ARG BUILD_HOME=/src
-ARG NIMFLAGS="${NIMFLAGS:-"-d:release -d:disableMarchNative -d:nimleopard_portable_build"}"
+ARG NIMFLAGS_DEFAULT=-d:danger -d:release -d:disableMarchNative -d:nimleopard_portable_build
+ARG NIMFLAGS=${NIMFLAGS:-${NIMFLAGS_DEFAULT}}
 ARG APP_HOME=/archivist
 ARG NAT_IP_AUTO=${NAT_IP_AUTO:-false}
 
@@ -22,6 +23,13 @@ RUN echo "export PATH=$PATH:$HOME/.cargo/bin" >> $BASH_ENV
 
 WORKDIR ${BUILD_HOME}
 COPY . .
+# Vendor is shipped complete in the build context; submodule update hits lock races
+# and is a no-op for checked-out SHAs. Wipe host-built objects so Linux ar/ld work.
+RUN find .git -name index.lock -delete 2>/dev/null || true \
+ && test -f vendor/nimble/blscurve/vendor/blst/build/assembly.S \
+ && find vendor \( -name "*.o" -o -name "*.a" -o -name "*.dylib" \) -delete
+RUN sed -i '/exec("make CFLAGS=.*libnatpmp\.a")/a\      exec("ranlib libnatpmp.a")' vendor/nimble/nat_traversal/nat_traversal.nimble \
+  && grep -n 'libnatpmp\|ranlib' vendor/nimble/nat_traversal/nat_traversal.nimble
 RUN nimble build ${NIMFLAGS}
 
 # Create

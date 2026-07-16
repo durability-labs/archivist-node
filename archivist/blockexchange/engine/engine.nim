@@ -84,9 +84,15 @@ type
     lastDiscRequest: Moment
 
 proc scheduleTask(self: BlockExcEngine, task: BlockExcPeerCtx) {.gcsafe, raises: [].} =
+  # Only stamp on first enqueue; pushOrUpdateNoWait must not reset wait clock.
+  if task.taskEnqueuedAt == default(Moment):
+    task.taskEnqueuedAt = Moment.now()
   if self.taskQueue.pushOrUpdateNoWait(task).isOk():
+    archivist_block_exchange_task_queue_depth.set(self.taskQueue.len.int64)
     trace "Task scheduled for peer", peer = task.id
   else:
+    archivist_block_exchange_task_queue_full.inc()
+    # Leave taskEnqueuedAt set — peer still waiting or will be re-scheduled.
     warn "Unable to schedule task for peer", peer = task.id
 
 proc blockexcTaskRunner(self: BlockExcEngine) {.async: (raises: []).}
@@ -600,7 +606,19 @@ proc taskHandler*(
 ) {.gcsafe, async: (raises: [CancelledError]).} =
   let wantedBlocks = peerCtx.wantedBlocks.toSeq.filterIt(not peerCtx.isBlockSent(it))
   if wantedBlocks.len == 0:
+    peerCtx.taskEnqueuedAt = default(Moment)
     return
+
+  # Queue wait: scheduleTask → worker start. High wait + low service => capacity.
+  if peerCtx.taskEnqueuedAt != default(Moment):
+    let wait = Moment.now() - peerCtx.taskEnqueuedAt
+    if wait.nanoseconds > 0:
+      archivist_block_exchange_task_queue_wait_seconds.observe(
+        wait.nanoseconds.float64 / 1e9
+      )
+  peerCtx.taskEnqueuedAt = default(Moment)
+  archivist_block_exchange_task_queue_depth.set(self.taskQueue.len.int64)
+  archivist_block_exchange_active_serve_tasks.inc()
 
   for address in wantedBlocks:
     peerCtx.markBlockAsSent(address)
@@ -612,6 +630,7 @@ proc taskHandler*(
     deliveredAddresses = initHashSet[BlockAddress]()
 
   try:
+    let storeReadStart = Moment.now()
     for wantedBlock in wantedBlocks:
       if wantedBlock.leaf:
         leafIndicesByTree.withValue(wantedBlock.treeCid, slot):
@@ -657,9 +676,14 @@ proc taskHandler*(
             )
           )
 
+    archivist_block_exchange_task_store_read_seconds.observe(
+      (Moment.now() - storeReadStart).nanoseconds.float64 / 1e9
+    )
+
     if blockDeliveries.len == 0:
       return
 
+    let sendStart = Moment.now()
     for batch in blockDeliveries.batches(self.maxBatchBlocks):
       await self.network.request.sendBlocksDelivery(peerCtx.id, batch)
       archivist_block_exchange_blocks_sent.inc(batch.len.int64)
@@ -668,9 +692,19 @@ proc taskHandler*(
       for delivery in batch:
         deliveredAddresses.incl(delivery.address)
 
+    archivist_block_exchange_task_send_seconds.observe(
+      (Moment.now() - sendStart).nanoseconds.float64 / 1e9
+    )
+
     for address in deliveredAddresses:
       peerCtx.wantedBlocks.excl(address)
   finally:
+    archivist_block_exchange_active_serve_tasks.dec()
+    var wantedTotal = 0
+    for p in self.peers:
+      wantedTotal += p.wantedBlocks.len
+    archivist_block_exchange_wanted_blocks.set(wantedTotal.int64)
+
     let wantedSet = wantedBlocks.toHashSet
     var remainingSent = initHashSet[BlockAddress]()
     for address in peerCtx.blocksSent:
@@ -682,6 +716,7 @@ proc blockexcTaskRunner(self: BlockExcEngine) {.async: (raises: []).} =
   try:
     while self.blockexcRunning:
       let peerCtx = await self.taskQueue.pop()
+      archivist_block_exchange_task_queue_depth.set(self.taskQueue.len.int64)
       await self.taskHandler(peerCtx)
   except CancelledError:
     trace "block exchange task runner cancelled"

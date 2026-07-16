@@ -56,6 +56,7 @@ type
     wantedBlocks*: HashSet[BlockAddress] # blocks that the peer wants
     blocksSent*: HashSet[BlockAddress] # blocks already sent to the peer
     blocksRequested*: HashSet[BlockAddress] # blocks already requested from the peer
+    taskEnqueuedAt*: Moment # set when peer is pushed onto serve task queue
 
     ## wants exchange
     alreadySent*: HashSet[BlockAddress] # wants already sent in the current window

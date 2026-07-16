@@ -32,10 +32,10 @@
     {
       "collapsed": false,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "w": 24,
+        "h": 1
       },
       "id": 48,
       "panels": [],
@@ -1886,12 +1886,915 @@
       "type": "timeseries"
     },
     {
+      "id": 177,
+      "type": "row",
+      "title": "Throughput / Latency (optimization)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 165,
+      "type": "stat",
+      "title": "Task queue depth",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(archivist_block_exchange_task_queue_depth{instance=~\"$node\"})",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 166,
+      "type": "stat",
+      "title": "Active serve tasks",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 19,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(archivist_block_exchange_active_serve_tasks{instance=~\"$node\"})",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 167,
+      "type": "stat",
+      "title": "Inflight sends used",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(archivist_block_exchange_inflight_sends{instance=~\"$node\"})",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 168,
+      "type": "stat",
+      "title": "Wanted blocks (serve backlog)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 19,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(archivist_block_exchange_wanted_blocks{instance=~\"$node\"})",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 169,
+      "type": "timeseries",
+      "title": "Block exchange throughput (MB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (rate(archivist_block_exchange_bytes_sent_total{instance=~\"$node\"}[1m])) / 1048576",
+          "legendFormat": "sent {{pod}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (rate(archivist_block_exchange_bytes_received_total{instance=~\"$node\"}[1m])) / 1048576",
+          "legendFormat": "recv {{pod}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MBs",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 170,
+      "type": "timeseries",
+      "title": "Cluster throughput + mesh share (MB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(archivist_block_exchange_bytes_sent_total{instance=~\"$node\"}[1m])) / 1048576",
+          "legendFormat": "all sent",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(archivist_block_exchange_bytes_sent_total{instance=~\"$node\",pod=~\"uploader.*\"}[1m])) / 1048576",
+          "legendFormat": "uploader sent",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(archivist_block_exchange_bytes_sent_total{instance=~\"$node\",pod=~\"downloader.*\"}[1m])) / 1048576",
+          "legendFormat": "mesh (downloaders) sent",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(archivist_block_exchange_bytes_received_total{instance=~\"$node\"}[1m])) / 1048576",
+          "legendFormat": "all recv",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MBs",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 171,
+      "type": "timeseries",
+      "title": "Blocks rate (blk/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (rate(archivist_block_exchange_blocks_sent_total{instance=~\"$node\"}[1m]))",
+          "legendFormat": "sent {{pod}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (rate(archivist_block_exchange_blocks_received_total{instance=~\"$node\"}[1m]))",
+          "legendFormat": "recv {{pod}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 172,
+      "type": "timeseries",
+      "title": "Serve path latency p50/p95 (queue / store / send)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_task_queue_wait_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "queue wait p50",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_task_queue_wait_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "queue wait p95",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_task_store_read_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "store read p50",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_task_store_read_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "store read p95",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_task_send_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "task send p50",
+          "range": true,
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_task_send_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "task send p95",
+          "range": true,
+          "refId": "F"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 173,
+      "type": "timeseries",
+      "title": "Network inflight-wait p50/p95 by message kind",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_network_inflight_wait_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))",
+          "legendFormat": "p50 {{kind}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_network_inflight_wait_seconds_bucket{instance=~\"$node\"}[1m])) by (le, kind))",
+          "legendFormat": "p95 {{kind}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 174,
+      "type": "timeseries",
+      "title": "Sender capacity gauges",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (archivist_block_exchange_task_queue_depth{instance=~\"$node\"})",
+          "legendFormat": "queue depth {{pod}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (archivist_block_exchange_active_serve_tasks{instance=~\"$node\"})",
+          "legendFormat": "active serve {{pod}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (archivist_block_exchange_inflight_sends{instance=~\"$node\"})",
+          "legendFormat": "inflight sends {{pod}}",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (archivist_block_exchange_inflight_send_slots_free{instance=~\"$node\"})",
+          "legendFormat": "inflight free {{pod}}",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (archivist_block_exchange_wanted_blocks{instance=~\"$node\"})",
+          "legendFormat": "wanted blocks {{pod}}",
+          "range": true,
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 175,
+      "type": "timeseries",
+      "title": "E2E retrieval latency p50/p95/p99 (request side)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum(rate(archivist_block_exchange_retrieval_duration_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "p50",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(archivist_block_exchange_retrieval_duration_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(archivist_block_exchange_retrieval_duration_seconds_bucket{instance=~\"$node\"}[1m])) by (le))",
+          "legendFormat": "p99",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 176,
+      "type": "timeseries",
+      "title": "Pending block requests + task queue full",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (archivist_block_exchange_pending_block_requests{instance=~\"$node\"})",
+          "legendFormat": "pending {{pod}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod) (rate(archivist_block_exchange_task_queue_full_total{instance=~\"$node\"}[1m]))",
+          "legendFormat": "queue full rate {{pod}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 18
+        "y": 55,
+        "w": 24,
+        "h": 1
       },
       "id": 97,
       "panels": [
@@ -1959,7 +2862,7 @@
             "h": 17,
             "w": 12,
             "x": 0,
-            "y": 231
+            "y": 0
           },
           "id": 98,
           "options": {
@@ -1978,7 +2881,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "d32523fb-ef36-4856-b61a-b31e73a39fc2"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "chronos_exec_time_with_children_total{instance=~\"$node\"}",
@@ -2055,7 +2958,7 @@
             "h": 17,
             "w": 12,
             "x": 12,
-            "y": 231
+            "y": 0
           },
           "id": 99,
           "options": {
@@ -2074,7 +2977,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "d32523fb-ef36-4856-b61a-b31e73a39fc2"
+                "uid": "${datasource}"
               },
               "editorMode": "code",
               "expr": "increase(chronos_exec_time_with_children_total{instance=~\"$node\"}[60s])",
@@ -2151,7 +3054,7 @@
             "h": 14,
             "w": 12,
             "x": 0,
-            "y": 305
+            "y": 74
           },
           "id": 103,
           "options": {
@@ -2248,7 +3151,7 @@
             "h": 14,
             "w": 12,
             "x": 12,
-            "y": 305
+            "y": 74
           },
           "id": 102,
           "options": {
@@ -2346,7 +3249,7 @@
             "h": 14,
             "w": 12,
             "x": 0,
-            "y": 319
+            "y": 88
           },
           "id": 100,
           "options": {
@@ -2385,10 +3288,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 19
+        "y": 56,
+        "w": 24,
+        "h": 1
       },
       "id": 67,
       "panels": [
@@ -2455,7 +3358,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 309
+            "y": 0
           },
           "id": 69,
           "options": {
@@ -2554,7 +3457,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 318
+            "y": 9
           },
           "id": 86,
           "options": {
@@ -2597,10 +3500,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 20
+        "y": 57,
+        "w": 24,
+        "h": 1
       },
       "id": 70,
       "panels": [
@@ -2671,7 +3574,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 78
+            "y": 0
           },
           "id": 44,
           "options": {
@@ -2813,7 +3716,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 86
+            "y": 8
           },
           "id": 16,
           "options": {
@@ -2945,7 +3848,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 95
+            "y": 17
           },
           "id": 54,
           "options": {
@@ -3061,7 +3964,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 103
+            "y": 25
           },
           "id": 65,
           "options": {
@@ -3174,7 +4077,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 111
+            "y": 33
           },
           "id": 71,
           "options": {
@@ -3219,10 +4122,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 21
+        "y": 58,
+        "w": 24,
+        "h": 1
       },
       "id": 76,
       "panels": [
@@ -3289,7 +4192,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 371
+            "y": 0
           },
           "id": 78,
           "options": {
@@ -3384,7 +4287,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 371
+            "y": 0
           },
           "id": 80,
           "options": {
@@ -3481,7 +4384,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 379
+            "y": 8
           },
           "id": 79,
           "options": {
@@ -3576,7 +4479,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 379
+            "y": 8
           },
           "id": 104,
           "options": {
@@ -3671,7 +4574,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 387
+            "y": 16
           },
           "id": 81,
           "options": {
@@ -3766,7 +4669,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 387
+            "y": 16
           },
           "id": 105,
           "options": {
@@ -3863,7 +4766,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 395
+            "y": 24
           },
           "id": 82,
           "options": {
@@ -3958,7 +4861,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 395
+            "y": 24
           },
           "id": 83,
           "options": {
@@ -4053,7 +4956,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 403
+            "y": 32
           },
           "id": 131,
           "options": {
@@ -4148,7 +5051,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 403
+            "y": 32
           },
           "id": 132,
           "options": {
@@ -4243,7 +5146,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 411
+            "y": 40
           },
           "id": 133,
           "options": {
@@ -4338,7 +5241,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 411
+            "y": 40
           },
           "id": 134,
           "options": {
@@ -4433,7 +5336,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 419
+            "y": 48
           },
           "id": 135,
           "options": {
@@ -4528,7 +5431,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 419
+            "y": 48
           },
           "id": 136,
           "options": {
@@ -4623,7 +5526,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 427
+            "y": 56
           },
           "id": 137,
           "options": {
@@ -4718,7 +5621,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 427
+            "y": 56
           },
           "id": 138,
           "options": {
@@ -4813,7 +5716,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 435
+            "y": 64
           },
           "id": 139,
           "options": {
@@ -4908,7 +5811,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 435
+            "y": 64
           },
           "id": 140,
           "options": {
@@ -5003,7 +5906,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 443
+            "y": 72
           },
           "id": 141,
           "options": {
@@ -5098,7 +6001,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 443
+            "y": 72
           },
           "id": 142,
           "options": {
@@ -5193,7 +6096,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 451
+            "y": 80
           },
           "id": 143,
           "options": {
@@ -5288,7 +6191,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 451
+            "y": 80
           },
           "id": 144,
           "options": {
@@ -5383,7 +6286,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 459
+            "y": 88
           },
           "id": 145,
           "options": {
@@ -5478,7 +6381,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 459
+            "y": 88
           },
           "id": 146,
           "options": {
@@ -5573,7 +6476,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 467
+            "y": 96
           },
           "id": 147,
           "options": {
@@ -5668,7 +6571,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 467
+            "y": 96
           },
           "id": 148,
           "options": {
@@ -5763,7 +6666,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 475
+            "y": 104
           },
           "id": 149,
           "options": {
@@ -5858,7 +6761,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 475
+            "y": 104
           },
           "id": 150,
           "options": {
@@ -5954,7 +6857,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 483
+            "y": 112
           },
           "id": 151,
           "options": {
@@ -6078,7 +6981,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 491
+            "y": 120
           },
           "id": 152,
           "options": {
@@ -6133,10 +7036,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 22
+        "y": 59,
+        "w": 24,
+        "h": 1
       },
       "id": 72,
       "panels": [
@@ -6203,7 +7106,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 370
+            "y": 0
           },
           "id": 73,
           "options": {
@@ -6303,7 +7206,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 379
+            "y": 9
           },
           "id": 75,
           "options": {
@@ -6403,7 +7306,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 388
+            "y": 18
           },
           "id": 74,
           "options": {
@@ -6446,10 +7349,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 23
+        "y": 60,
+        "w": 24,
+        "h": 1
       },
       "id": 130,
       "panels": [
@@ -9108,10 +10011,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 23
+        "y": 61,
+        "w": 24,
+        "h": 1
       },
       "id": 77,
       "panels": [
@@ -9179,7 +10082,7 @@
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 187
+            "y": 0
           },
           "id": 84,
           "options": {
@@ -9277,7 +10180,7 @@
             "h": 8,
             "w": 6,
             "x": 6,
-            "y": 187
+            "y": 0
           },
           "id": 85,
           "options": {
@@ -9375,7 +10278,7 @@
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 187
+            "y": 0
           },
           "id": 87,
           "options": {
@@ -9473,7 +10376,7 @@
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 187
+            "y": 0
           },
           "id": 88,
           "options": {
@@ -9571,7 +10474,7 @@
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 195
+            "y": 8
           },
           "id": 89,
           "options": {
@@ -9669,7 +10572,7 @@
             "h": 8,
             "w": 6,
             "x": 6,
-            "y": 195
+            "y": 8
           },
           "id": 90,
           "options": {
@@ -9767,7 +10670,7 @@
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 195
+            "y": 8
           },
           "id": 91,
           "options": {
@@ -9865,7 +10768,7 @@
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 195
+            "y": 8
           },
           "id": 92,
           "options": {
@@ -9906,10 +10809,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 24
+        "y": 62,
+        "w": 24,
+        "h": 1
       },
       "id": 109,
       "panels": [
@@ -9977,7 +10880,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 188
+            "y": 0
           },
           "id": 110,
           "options": {
@@ -10020,10 +10923,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 26
+        "y": 63,
+        "w": 24,
+        "h": 1
       },
       "id": 157,
       "panels": [
@@ -10090,7 +10993,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 500
+            "y": 0
           },
           "id": 153,
           "options": {
@@ -10185,7 +11088,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 500
+            "y": 0
           },
           "id": 154,
           "options": {
@@ -10280,7 +11183,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 508
+            "y": 8
           },
           "id": 155,
           "options": {
@@ -10375,7 +11278,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 508
+            "y": 8
           },
           "id": 156,
           "options": {
@@ -10414,10 +11317,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 27
+        "y": 64,
+        "w": 24,
+        "h": 1
       },
       "id": 164,
       "panels": [
@@ -10484,7 +11387,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 520
+            "y": 0
           },
           "id": 158,
           "options": {
@@ -10579,7 +11482,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 520
+            "y": 0
           },
           "id": 159,
           "options": {
@@ -10674,7 +11577,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 528
+            "y": 8
           },
           "id": 160,
           "options": {
@@ -10769,7 +11672,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 528
+            "y": 8
           },
           "id": 161,
           "options": {
@@ -10865,7 +11768,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 536
+            "y": 16
           },
           "id": 162,
           "options": {
@@ -10977,7 +11880,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 544
+            "y": 24
           },
           "id": 163,
           "options": {
@@ -11032,10 +11935,10 @@
     {
       "collapsed": true,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 28
+        "y": 65,
+        "w": 24,
+        "h": 1
       },
       "id": 62,
       "panels": [
@@ -11102,7 +12005,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 220
+            "y": 0
           },
           "id": 61,
           "options": {
@@ -11209,7 +12112,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 227
+            "y": 7
           },
           "id": 93,
           "options": {
@@ -11350,7 +12253,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 291
+            "y": 71
           },
           "id": 95,
           "options": {
@@ -11457,7 +12360,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 298
+            "y": 78
           },
           "id": 63,
           "options": {
@@ -11562,7 +12465,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 305
+            "y": 85
           },
           "id": 64,
           "options": {
@@ -11684,7 +12587,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 312
+            "y": 92
           },
           "id": 94,
           "options": {
@@ -11806,7 +12709,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 319
+            "y": 99
           },
           "id": 96,
           "options": {
@@ -11865,8 +12768,9 @@
     "list": [
       {
         "current": {
-          "text": "VictoriaMetrics",
-          "value": "${datasource}"
+          "text": "Prometheus",
+          "value": "PBFA97CFB590B2093",
+          "selected": true
         },
         "includeAll": false,
         "label": "Datasource",
@@ -11905,12 +12809,9 @@
       },
       {
         "current": {
-          "text": [
-            "archivist"
-          ],
-          "value": [
-            "archivist"
-          ]
+          "text": "All",
+          "value": "$__all",
+          "selected": true
         },
         "datasource": {
           "type": "prometheus",
@@ -11960,7 +12861,7 @@
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-3h",
     "to": "now"
   },
   "timepicker": {
