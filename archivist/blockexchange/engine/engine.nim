@@ -54,9 +54,6 @@ const
   DefaultConcurrentTasks = 30
   DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
   DefaultWantBlockBatchTimeout = 5.millis
-  # Serve-path slice size: smaller than want-batch so first TCP write starts sooner
-  # and store-read of slice N+1 can be prepared after send of slice N.
-  DefaultMaxServeBatchBlocks* = 16
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
   CleanupBatchSize = 2048
@@ -99,6 +96,7 @@ proc scheduleTask(self: BlockExcEngine, task: BlockExcPeerCtx) {.gcsafe, raises:
     warn "Unable to schedule task for peer", peer = task.id
 
 proc blockexcTaskRunner(self: BlockExcEngine) {.async: (raises: []).}
+
 proc resolveBlocks*(
   self: BlockExcEngine, blocksDelivery: seq[BlockDelivery], sender: ?BlockExcPeerCtx
 ) {.async: (raises: [CancelledError]).}
@@ -777,7 +775,7 @@ proc new*(
     advertiser: Advertiser,
     peerStore: PeerCtxStore,
     pendingBlocks: PendingBlocksManager,
-    maxBatchBlocks = DefaultMaxServeBatchBlocks,
+    maxBatchBlocks = DefaultMaxBatchBlocks,
     concurrentTasks = DefaultConcurrentTasks,
     selectPeer: PeerSelector = scoredPeer,
     blockRequestTimeout = DefaultRequestTimeout,

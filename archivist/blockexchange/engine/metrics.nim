@@ -189,3 +189,29 @@ declarePublicHistogram(
   labels = ["kind"],
   buckets = BlockExcDurationBuckets,
 )
+
+# Receiver-side: time the serial readLoop handler (validate + store + resolve).
+# High handler time blocks the next readLp, causing TCP backpressure on sender.
+declarePublicHistogram(
+  archivist_block_exchange_recv_handler_seconds,
+  "Time inside blocksDeliveryHandler (validate + store + resolve) per message",
+  buckets = BlockExcDurationBuckets,
+)
+declarePublicHistogram(
+  archivist_block_exchange_recv_decode_seconds,
+  "Time to protobufDecode incoming message in readLoop",
+  buckets = BlockExcDurationBuckets,
+)
+# Sender-side: split network_send into encode (sync CPU) vs writeLp (TCP I/O).
+declarePublicHistogram(
+  archivist_block_exchange_network_encode_seconds,
+  "Time to protobufEncode outgoing message (sync, blocks event loop)",
+  labels = ["kind"],
+  buckets = BlockExcDurationBuckets,
+)
+declarePublicHistogram(
+  archivist_block_exchange_network_write_seconds,
+  "Time in conn.writeLp (TCP write) after encode",
+  labels = ["kind"],
+  buckets = BlockExcDurationBuckets,
+)

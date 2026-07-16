@@ -14,6 +14,7 @@ import pkg/libp2p
 
 import ../protobuf/blockexc
 import ../protobuf/message
+import ../engine/metrics
 import ../../errors
 import ../../logutils
 import ../../utils/trackedfutures
@@ -45,11 +46,21 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   trace "Attaching read loop", peer = self.id, connId = conn.oid
   try:
     while not conn.atEof or not conn.closed:
-      let
-        data = await conn.readLp(MaxMessageSize.int)
-        msg = Message.protobufDecode(data).mapFailure().tryGet()
+      let data = await conn.readLp(MaxMessageSize.int)
+
+      let decodeStart = Moment.now()
+      let msg = Message.protobufDecode(data).mapFailure().tryGet()
+      archivist_block_exchange_recv_decode_seconds.observe(
+        (Moment.now() - decodeStart).nanoseconds.float64 / 1e9
+      )
+
       trace "Received message", peer = self.id, connId = conn.oid
+
+      let handlerStart = Moment.now()
       await self.handler(self, msg)
+      archivist_block_exchange_recv_handler_seconds.observe(
+        (Moment.now() - handlerStart).nanoseconds.float64 / 1e9
+      )
   except CancelledError:
     trace "Read loop cancelled"
   except CatchableError as err:
@@ -79,7 +90,29 @@ proc send*(
     return
 
   trace "Sending message", peer = self.id, connId = conn.oid
-  await conn.writeLp(protobufEncode(msg))
+  let encodeStart = Moment.now()
+  let encoded = protobufEncode(msg)
+  let encodeNs = (Moment.now() - encodeStart).nanoseconds
+
+  let kind =
+    if msg.payload.len > 0:
+      "blocks"
+    elif msg.blockPresences.len > 0:
+      "presence"
+    elif msg.wantList.entries.len > 0:
+      "wantlist"
+    else:
+      "other"
+
+  archivist_block_exchange_network_encode_seconds.observe(
+    encodeNs.float64 / 1e9, labelValues = [kind]
+  )
+
+  let writeStart = Moment.now()
+  await conn.writeLp(encoded)
+  archivist_block_exchange_network_write_seconds.observe(
+    (Moment.now() - writeStart).nanoseconds.float64 / 1e9, labelValues = [kind]
+  )
 
 func new*(
     T: type NetworkPeer,
