@@ -39,6 +39,7 @@ import ./namespaces
 import ./archivisttypes
 import ./logutils
 import ./nat
+import ./chronos_observer
 
 logScope:
   topics = "archivist node"
@@ -111,6 +112,7 @@ proc start*(s: NodeServer) {.async.} =
   await s.connectMarketplace()
   await s.archivistNode.start()
   s.restServer.start()
+  asyncSpawn chronosObserver(2.seconds)
 
 proc stop*(s: NodeServer) {.async.} =
   notice "Stopping node"
