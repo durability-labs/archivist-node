@@ -227,14 +227,16 @@ proc protobufDecode*(_: type Message, msg: seq[byte]): ProtoResult[Message] =
     value = Message()
     pb = initProtoBuffer(msg)
     ipb: ProtoBuffer
-    sublist: seq[seq[byte]]
+    subviews: seq[ProtoBuffer]
   if ?pb.getField(1, ipb):
     value.wantList = ?WantList.decode(ipb)
-  if ?pb.getRepeatedField(3, sublist):
-    for item in sublist:
-      value.payload.add(?BlockDelivery.decode(initProtoBuffer(item)))
-  if ?pb.getRepeatedField(4, sublist):
-    for item in sublist:
-      value.blockPresences.add(?BlockPresence.decode(initProtoBuffer(item)))
+  # Zero-copy views: avoids extracting every (up to 1MB) sub-message into a
+  # fresh seq. Views share `msg`; it stays alive for the whole decode.
+  if ?pb.getRepeatedViews(3, subviews):
+    for v in subviews:
+      value.payload.add(?BlockDelivery.decode(v))
+  if ?pb.getRepeatedViews(4, subviews):
+    for v in subviews:
+      value.blockPresences.add(?BlockPresence.decode(v))
   discard ?pb.getField(5, value.pendingBytes)
   ok(value)
