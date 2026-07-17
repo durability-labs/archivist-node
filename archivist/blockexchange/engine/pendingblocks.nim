@@ -500,14 +500,17 @@ proc peerBatchWorker(
       batch = @[]
 
       # Race first pipe.get() against disconnect so the idle worker
-      # exits without a separate monitor.
+      # exits without a separate monitor. defer: a cancelled worker
+      # must not leave either future pending.
       let
         firstFut = batchReq.pipe.get()
         disconnectFut = batchReq.peer.onDisconnect()
 
+      defer:
+        await noCancel firstFut.cancelAndWait()
+        await noCancel disconnectFut.cancelAndWait()
+
       await firstFut or disconnectFut
-      await noCancel firstFut.cancelAndWait()
-      await noCancel disconnectFut.cancelAndWait()
 
       if disconnectFut.completed:
         trace "Peer disconnected", peer = batchReq.peer.id
@@ -611,9 +614,12 @@ proc deliver(
     disconnected = peer.onDisconnect()
     dispatched = req.dispatched.wait()
 
-  await disconnected or dispatched
-  for fut in [disconnected, dispatched]:
-    await noCancel fut.cancelAndWait()
+  block:
+    defer:
+      for fut in [disconnected, dispatched]:
+        await noCancel fut.cancelAndWait()
+
+    await disconnected or dispatched
 
   # Evaluate sent-success first: return true even if disconnect also completed.
   if dispatched.completed and req.requestedPeer == peer:
@@ -651,12 +657,14 @@ proc blockDispatchMonitor(
         return
 
       # Install the selection wake waiter before async peer selection.
+      # defer: a cancelled dispatch monitor (request resolved elsewhere)
+      # must not leave the waiter pending.
       let selectionWakeFut = req.wakeEvent.wait()
+      defer:
+        await noCancel selectionWakeFut.cancelAndWait()
 
       without selection =? (await self.getPeerForBlock(req.address)), err:
         trace "Unable to get peer for block", address = req.address, err = err.msg
-        defer:
-          await noCancel selectionWakeFut.cancelAndWait()
 
         if selectionWakeFut.finished:
           # A completed wake means peer knowledge changed — reselect now.
@@ -722,10 +730,12 @@ proc blockDispatchMonitor(
           timeoutFut = sleepAsync(self.blockSendTimeout)
           disconnectFut = selection.peer.onDisconnect()
 
-        await wakeFut or handleFut or timeoutFut or disconnectFut
-        for fut in [wakeFut, handleFut, timeoutFut, disconnectFut]:
-          if not fut.finished:
-            await noCancel fut.cancelAndWait()
+        block:
+          defer:
+            for fut in [wakeFut, handleFut, timeoutFut, disconnectFut]:
+              await noCancel fut.cancelAndWait()
+
+          await wakeFut or handleFut or timeoutFut or disconnectFut
 
         if req.handle.finished:
           trace "Block handle finished",

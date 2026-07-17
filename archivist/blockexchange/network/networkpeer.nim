@@ -44,9 +44,13 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
     return
 
   trace "Attaching read loop", peer = self.id, connId = conn.oid
+  var nextRead = conn.readLp(MaxMessageSize.int)
   try:
     while not conn.atEof or not conn.closed:
-      let data = await conn.readLp(MaxMessageSize.int)
+      let data = await nextRead
+      # Resume reading immediately so the socket keeps draining (and the
+      # sender's writeLp keeps progressing) while we decode and handle.
+      nextRead = conn.readLp(MaxMessageSize.int)
 
       let decodeStart = Moment.now()
       let msg = Message.protobufDecode(data).mapFailure().tryGet()
@@ -67,6 +71,7 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   except CatchableError as err:
     warn "Exception in blockexc read loop", msg = err.msg
   finally:
+    await noCancel nextRead.cancelAndWait()
     trace "Detaching read loop", peer = self.id, connId = conn.oid
     await conn.close()
 

@@ -514,17 +514,21 @@ proc wantListHandler*(
   let peerCtx = self.peers.get(peer)
   if peerCtx.isNil:
     return
+
   var
     wantHaveCount = 0
     wantBlockCount = 0
+
   for e in wantList.entries:
     if e.cancel:
       continue
+
     case e.wantType
     of WantType.WantHave:
       inc wantHaveCount
     of WantType.WantBlock:
       inc wantBlockCount
+
   if wantHaveCount > 0:
     archivist_block_exchange_want_have_lists_received.inc()
     archivist_block_exchange_want_have_entries_received.inc(wantHaveCount.int64)
@@ -572,6 +576,9 @@ proc wantListHandler*(
             BlockPresence(address: e.address, `type`: BlockPresenceType.DontHave)
           )
       of WantType.WantBlock:
+        # A re-want of a previously-sent block means the delivery never
+        # landed - clear the sent marker so the block gets re-served
+        peerCtx.markBlockAsNotSent(e.address)
         peerCtx.wantedBlocks.incl(e.address)
         schedulePeer = true
 
@@ -617,6 +624,7 @@ proc taskHandler*(
       archivist_block_exchange_task_queue_wait_seconds.observe(
         wait.nanoseconds.float64 / 1e9
       )
+
   peerCtx.taskEnqueuedAt = default(Moment)
   archivist_block_exchange_task_queue_depth.set(self.taskQueue.len.int64)
   archivist_block_exchange_active_serve_tasks.inc()
@@ -684,12 +692,14 @@ proc taskHandler*(
   proc sendSlice(batch: seq[BlockDelivery]) {.async: (raises: [CancelledError]).} =
     if batch.len == 0:
       return
+
     await self.network.request.sendBlocksDelivery(peerCtx.id, batch)
     archivist_block_exchange_blocks_sent.inc(batch.len.int64)
     var batchBytes = 0
     for delivery in batch:
       batchBytes += delivery.blk.data.len
       deliveredAddresses.incl(delivery.address)
+
     archivist_block_exchange_bytes_sent.inc(batchBytes.int64)
 
   try:
@@ -744,6 +754,7 @@ proc taskHandler*(
       peerCtx.wantedBlocks.excl(address)
   finally:
     archivist_block_exchange_active_serve_tasks.dec()
+
     var wantedTotal = 0
     for p in self.peers:
       wantedTotal += p.wantedBlocks.len
