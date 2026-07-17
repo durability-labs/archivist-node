@@ -107,6 +107,14 @@ proc write*(pb: var ProtoBuffer, field: int, value: BlockPresence) =
 
 proc protobufEncode*(value: Message): seq[byte] =
   var ipb = initProtoBuffer()
+  # Pre-size the buffer: repeated payload blocks dominate (tens of MB).
+  # Without reserve capacity the buffer grows by doubling, reallocating
+  # and copying ~2x the final size during encode.
+  var estimate =
+    64 + 16 + value.wantList.entries.len * 64 + value.blockPresences.len * 64
+  for v in value.payload:
+    estimate += v.blk.data.len + 512
+  ipb.buffer = newSeqOfCap[byte](estimate)
   ipb.write(1, value.wantList)
   for v in value.payload:
     ipb.write(3, v)
