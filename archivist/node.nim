@@ -58,6 +58,7 @@ logScope:
 
 const
   DefaultFetchBatch = 128
+  DefaultFetchPrefetch = 2 ## In-flight fetch batches (pipeline depth)
   DefaultStoreBatch* = 1024 ## Number of blocks to batch when storing data
   MaxInFlightBatches = 4 ## Maximum concurrent batch flushes for bounded parallelism
 
@@ -189,9 +190,16 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
+    prefetch = DefaultFetchPrefetch,
 ): Future[?!void] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Fetch blocks in batches of `batchSize`
   ##
+  ## Keeps up to `prefetch` batch fetches in flight so the network fetch for
+  ## batch N+1 overlaps consumption of batch N. prefetch=1 restores the old
+  ## stop-and-wait behavior.
+  ##
+
+  let prefetch = max(1, prefetch)
 
   await self.repoStore.withOverlay(
     cid,
@@ -207,7 +215,7 @@ proc fetchBatched*(
         else:
           BitSeq.init(0)
 
-      while not iter.finished:
+      proc collectBatch(): seq[Natural] =
         var batchIndices: seq[Natural]
         for i in 0 ..< batchSize:
           if not iter.finished:
@@ -215,19 +223,42 @@ proc fetchBatched*(
             # Include index if fetchLocal is set, or if it's not yet in the bitmap
             if fetchLocal or idx >= bits.len or not bits[idx]:
               batchIndices.add(idx.Natural)
+        batchIndices
 
-        if batchIndices.len == 0:
-          continue
+      var inFlight:
+        seq[(int, Future[?!seq[(Natural, bt.Block)]].Raising([CancelledError]))]
+      defer:
+        for (_, fut) in inFlight:
+          await noCancel fut.cancelAndWait()
 
-        without blocks =? (await self.networkStore.getBlocks(cid, batchIndices)), err:
+      proc fillWindow() =
+        while inFlight.len < prefetch and not iter.finished:
+          let batchIndices = collectBatch()
+          if batchIndices.len == 0:
+            continue
+          inFlight.add(
+            (batchIndices.len, self.networkStore.getBlocks(cid, batchIndices))
+          )
+
+      fillWindow()
+      while inFlight.len > 0:
+        # Await via inFlight[0] (not a popped copy) so that cancelling this
+        # proc mid-await still lets the defer below cancel the current batch.
+        let expected = inFlight[0][0]
+
+        without blocks =? (await inFlight[0][1]), err:
           trace "Some blocks failed to fetch", err = err.msg
           return failure(err)
 
-        if blocks.len != batchIndices.len:
+        if blocks.len != expected:
           return failure(
-            "Some blocks failed to fetch (" & $(batchIndices.len - blocks.len) &
-              " missing)"
+            "Some blocks failed to fetch (" & $(expected - blocks.len) & " missing)"
           )
+
+        inFlight.delete(0)
+
+        # Refill before consuming so the next fetch overlaps streaming out
+        fillWindow()
 
         if not onBatch.isNil and
             batchErr =? (await onBatch(blocks.mapIt(it[1]))).errorOption:
@@ -242,6 +273,7 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
+    prefetch = DefaultFetchPrefetch,
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Fetch manifest in batches of `batchSize`
   ##
@@ -250,7 +282,7 @@ proc fetchBatched*(
     size = batchSize, blocksCount = manifest.blocksCount
 
   let iter = Iter[int].new(0 ..< manifest.blocksCount)
-  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal)
+  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal, prefetch)
 
 proc fetchDatasetAsync*(
     self: ArchivistNodeRef, manifest: Manifest, fetchLocal = true

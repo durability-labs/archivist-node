@@ -53,6 +53,9 @@ const
   DefaultTaskQueueSize = 128
   DefaultConcurrentTasks = 30
   DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
+  # Serve slice sized so a full delivery message stays under the receiver's
+  # 32MB TCP window: 48 x 512KiB blocks = 24MiB.
+  DefaultMaxServeBatchBlocks = 48
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
@@ -786,7 +789,7 @@ proc new*(
     advertiser: Advertiser,
     peerStore: PeerCtxStore,
     pendingBlocks: PendingBlocksManager,
-    maxBatchBlocks = DefaultMaxBatchBlocks,
+    maxBatchBlocks = DefaultMaxServeBatchBlocks,
     concurrentTasks = DefaultConcurrentTasks,
     selectPeer: PeerSelector = scoredPeer,
     blockRequestTimeout = DefaultRequestTimeout,

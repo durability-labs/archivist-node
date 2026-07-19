@@ -39,7 +39,7 @@ logScope:
 
 const
   DefaultMaxBatchBlocks* = 128
-  DefaultMaxBatchBlocksDeadline* = 50.millis
+  DefaultMaxBatchBlocksDeadline* = 10.millis
   DefaultBlockRetries* = 3000
   DefaultDiscoveryWaitTimeout = 5.seconds
 
