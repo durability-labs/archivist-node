@@ -109,10 +109,10 @@ method getBlocks*(
     keyToCid[key] = cid
 
   if keyToCid.len > 0:
-    let records = ?await self.repoDs.get(toSeq(keyToCid.keys))
-    for record in records:
+    var records = ?await self.repoDs.get(toSeq(keyToCid.keys))
+    for record in mitems(records):
       let cid = ?catch(keyToCid[record.key])
-      blocks.add(?Block.new(cid, record.val, verify = true))
+      blocks.add(?Block.new(cid, move(record.val), verify = true))
 
   success(blocks)
 
@@ -471,11 +471,11 @@ method getBlocksAndProofs*(
 
   if keyToCidProof.len > 0:
     # Batch-fetch block data from FS.
-    let blkRecords = ?await self.repoDs.get(toSeq(keyToCidProof.keys))
+    var blkRecords = ?await self.repoDs.get(toSeq(keyToCidProof.keys))
 
-    for record in blkRecords:
+    for record in mitems(blkRecords):
       let (idx, cid, proof) = ?catch(keyToCidProof[record.key])
-      results.add((idx, ?Block.new(cid, record.val, verify = false), proof))
+      results.add((idx, ?Block.new(cid, move(record.val), verify = false), proof))
 
   trace "Batch got blocks and proofs", found = results.len
   success(results)
