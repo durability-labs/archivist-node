@@ -295,6 +295,16 @@ type
       abbr: "c"
     .}: NBytes
 
+    fetchOrder* {.
+      desc:
+        "Block fetch order for dataset fetches (linear, randomized-circular). " &
+        "randomized-circular starts at a random index and wraps; delays " &
+        "time-to-first-byte on streamed downloads",
+      defaultValue: FetchOrder.Linear,
+      defaultValueDesc: "linear",
+      name: "fetch-order"
+    .}: FetchOrder
+
     logFile* {.
       desc: "Logs to file", defaultValue: string.none, name: "log-file", hidden
     .}: Option[string]

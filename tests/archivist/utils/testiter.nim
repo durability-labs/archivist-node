@@ -1,3 +1,4 @@
+import std/algorithm
 import std/sugar
 
 import pkg/questionable
@@ -120,3 +121,46 @@ suite "Test Iter":
     check:
       collected == @["0", "1", "2"]
       iter2.finished
+
+  test "Circular iter should yield nothing for an empty range":
+    let iter = Iter[int].new(0 ..< 0, 0)
+
+    check:
+      iter.toSeq() == newSeq[int]()
+      iter.finished
+
+  test "Circular iter should yield a single element once":
+    let iter = Iter[int].new(0 ..< 1, 0)
+
+    check:
+      iter.toSeq() == @[0]
+      iter.finished
+
+  test "Circular iter should start at `start` and wrap around":
+    let iter = Iter[int].new(0 ..< 5, 3)
+
+    check:
+      iter.toSeq() == @[3, 4, 0, 1, 2]
+      iter.finished
+
+  test "Circular iter should wrap when starting at the last element":
+    let iter = Iter[int].new(0 ..< 5, 4)
+
+    check:
+      iter.toSeq() == @[4, 0, 1, 2, 3]
+      iter.finished
+
+  test "Circular iter should wrap to the slice's first element":
+    let iter = Iter[int].new(2 .. 6, 4)
+
+    check:
+      iter.toSeq() == @[4, 5, 6, 2, 3]
+      iter.finished
+
+  test "Circular iter should yield every index exactly once from any start":
+    for start in 0 ..< 5:
+      let items = Iter[int].new(0 ..< 5, start).toSeq()
+
+      check:
+        items.len == 5
+        items.sorted == @[0, 1, 2, 3, 4]

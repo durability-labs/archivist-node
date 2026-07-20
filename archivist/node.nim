@@ -32,6 +32,7 @@ import pkg/libp2p/signed_envelope
 
 import ./metrics
 import ./chunker
+import ./archivisttypes
 import ./slots
 import ./clock
 import ./blocktype as bt
@@ -50,6 +51,7 @@ import ./logutils
 import ./utils/asynciter
 import ./utils/trackedfutures
 import ./utils/poseidon2digest
+import ./rng
 
 export logutils
 
@@ -74,6 +76,7 @@ type
     marketplace: ?MarketplaceNode
     taskpool: Taskpool
     trackedFutures: TrackedFutures
+    fetchOrder: FetchOrder
     # proofs/period metric:
     numProofs: int64
 
@@ -277,11 +280,29 @@ proc fetchBatched*(
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Fetch manifest in batches of `batchSize`
   ##
+  ## With FetchOrder.RandomizedCircular, block indices are iterated
+  ## circularly from a random linear start point instead of always from
+  ## index 0, so concurrent downloaders of the same dataset work on
+  ## different regions and can re-serve blocks to each other.
+  ##
+
+  let
+    count = manifest.blocksCount
+    randomized = self.fetchOrder == FetchOrder.RandomizedCircular and count > 0
+    start =
+      if randomized:
+        Rng.instance.rand(count - 1)
+      else:
+        0
+    iter =
+      if randomized:
+        Iter[int].new(0 ..< count, start)
+      else:
+        Iter[int].new(0 ..< count)
 
   trace "Fetching blocks in batches of",
-    size = batchSize, blocksCount = manifest.blocksCount
+    size = batchSize, blocksCount = count, fetchOrder = $self.fetchOrder, start = start
 
-  let iter = Iter[int].new(0 ..< manifest.blocksCount)
   self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal, prefetch)
 
 proc fetchDatasetAsync*(
@@ -1035,6 +1056,7 @@ proc new*(
     taskpool: Taskpool,
     prover = Prover.none,
     marketplace = MarketplaceNode.none,
+    fetchOrder = FetchOrder.Linear,
 ): ArchivistNodeRef =
   ## Create new instance of a node, call `start` to run it
   ##
@@ -1049,4 +1071,5 @@ proc new*(
     taskPool: taskpool,
     marketplace: marketplace,
     trackedFutures: TrackedFutures(),
+    fetchOrder: fetchOrder,
   )

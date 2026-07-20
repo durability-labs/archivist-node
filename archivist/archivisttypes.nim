@@ -24,6 +24,11 @@ import ./errors
 
 export tables
 
+type FetchOrder* {.pure.} = enum
+  Linear = "linear" ## iterate block indices 0 ..< count (stream-friendly default)
+  RandomizedCircular = "randomized-circular"
+    ## iterate circularly from a random linear start point
+
 const
   # Size of blocks for storage / network exchange,
   DefaultBlockSize* = 512.KiBs

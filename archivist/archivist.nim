@@ -248,6 +248,7 @@ proc new*(
       discovery = discovery,
       prover = prover,
       taskPool = tp,
+      fetchOrder = config.fetchOrder,
     )
 
     restServer = RestServerRef
