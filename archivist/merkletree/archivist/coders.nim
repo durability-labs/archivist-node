@@ -52,9 +52,10 @@ proc decode*(_: type ArchivistTree, data: openArray[byte]): ?!ArchivistTree =
     nodes: seq[ByteHash]
 
   if ?pb.getRepeatedField(3, nodesBuff).mapFailure:
-    for nodeBuff in nodesBuff:
+    for nodeBuff in nodesBuff.mitems:
       var node: ByteHash
-      discard ?initProtoBuffer(nodeBuff).getField(1, node).mapFailure
+      var nodePb = initProtoBuffer(move nodeBuff)
+      discard ?nodePb.getField(1, node).mapFailure
       nodes.add node
 
   ArchivistTree.fromNodes(mcodec, nodes, leavesCount.int)
@@ -99,9 +100,9 @@ proc decode*(_: type ArchivistProof, data: openArray[byte]): ?!ArchivistProof =
     nodes: seq[ByteHash]
 
   if ?pb.getRepeatedField(4, nodesBuff).mapFailure:
-    for nodeBuff in nodesBuff:
+    for nodeBuff in nodesBuff.mitems:
       var node: ByteHash
-      let nodePb = initProtoBuffer(nodeBuff)
+      var nodePb = initProtoBuffer(move nodeBuff)
       discard ?nodePb.getField(1, node).mapFailure
       nodes.add node
 
