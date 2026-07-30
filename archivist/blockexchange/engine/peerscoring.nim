@@ -14,7 +14,10 @@ import ../peers
 logScope:
   topics = "archivist peerscoring"
 
-const DefaultExplorationEpsilon* = 0.05
+const
+  DefaultExplorationEpsilon* = 0.05
+  ## Among top-scoring peers, prefer least blocksRequested (MESH fan-out).
+  DefaultWantBlockTopK* = 3
 
 proc randomPeer*(peers: seq[BlockExcPeerCtx], address: BlockAddress): BlockExcPeerCtx =
   Rng.instance.sample(peers)
@@ -52,6 +55,8 @@ proc rankPeersByAggregate*(peers: seq[BlockExcPeerCtx]): seq[BlockExcPeerCtx] =
 proc scoredPeer*(
     peers: seq[BlockExcPeerCtx], address: BlockAddress
 ): BlockExcPeerCtx {.gcsafe, raises: [].} =
+  ## Rank by score, then among the top-K pick the least loaded peer so
+  ## concurrent downloaders fan out instead of pinning the origin.
   let
     cid = address.cidOrTreeCid
     ranked = rankPeersByScore(peers, cid)
@@ -63,9 +68,15 @@ proc scoredPeer*(
     return ranked[0]
 
   if Rng.instance.sampleFloat() < DefaultExplorationEpsilon:
-    let picked = Rng.instance.sample(ranked)
-    return picked
+    return Rng.instance.sample(ranked)
 
-  let best = ranked[0]
-
-  return best
+  let k = min(DefaultWantBlockTopK, ranked.len)
+  var
+    best = ranked[0]
+    bestLoad = best.blocksRequested.len
+  for i in 1 ..< k:
+    let load = ranked[i].blocksRequested.len
+    if load < bestLoad:
+      best = ranked[i]
+      bestLoad = load
+  best
