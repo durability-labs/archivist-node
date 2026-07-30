@@ -39,7 +39,7 @@ declareCounter(
   archivist_networkstore_blocks_local, "Total blocks served from local store"
 )
 declareCounter(
-  archivist_networkstore_blocks_network, "Total blocks fetched via network"
+  archivist_networkstore_blocks_network, "Total blocks requested from network"
 )
 declareCounter(
   archivist_networkstore_blocks_missed, "Total blocks not found locally or via network"
@@ -324,6 +324,8 @@ method getBlocksAndProofs*(
   let
     uniqueIndices = indices.deduplicate()
     localBlocks = ?await self.localStore.getBlocksAndProofs(treeCid, uniqueIndices)
+  archivist_networkstore_blocks_requested.inc(uniqueIndices.len.int64)
+  archivist_networkstore_blocks_local.inc(localBlocks.len.int64)
 
   trace "Got local blocks and proofs", count = localBlocks.len
 
@@ -339,6 +341,7 @@ method getBlocksAndProofs*(
     if index notin localIndices:
       addresses.add(BlockAddress.init(treeCid, index))
 
+  archivist_networkstore_blocks_network.inc(addresses.len.int64)
   var blocks: seq[(Natural, Block, ArchivistProof)]
   let
     deliveries = ?self.engine.requestDeliveries(addresses)
