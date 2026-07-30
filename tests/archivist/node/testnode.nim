@@ -1,6 +1,7 @@
 import std/os
 import std/options
 import std/math
+import std/sequtils
 
 import pkg/chronos
 import pkg/stew/byteutils
@@ -129,6 +130,7 @@ suite "Test Node - Basic":
           ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
             check blocks.len > 0 and blocks.len <= batchSize
             return success(),
+          fetchOrder = FetchOrder.RandomizedCircular,
         )
       ).tryGet()
 
@@ -150,13 +152,124 @@ suite "Test Node - Basic":
       await node.fetchBatched(
         manifest,
         batchSize = batchSize,
-        proc(
+        onBatch = proc(
             blocks: seq[bt.Block]
         ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
           return failure("Should not be called"),
+        fetchOrder = FetchOrder.RandomizedCircular,
       )
     )
     check res.isFailure
+
+  test "Fetch pipeline prefetch window delivers every block exactly once":
+    let
+      blocks =
+        (await makeRandomBlocks(datasetSize = 512.KiBs.int, blockSize = 64.KiBs)).tryGet
+      manifest = (await storeDataGetManifest(localStore, blocks)).tryGet
+
+    var fetched: seq[bt.Block]
+
+    (
+      await node.fetchBatched(
+        manifest,
+        batchSize = 2,
+        onBatch = proc(
+            batch: seq[bt.Block]
+        ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+          fetched.add(batch)
+          return success(),
+        prefetch = 4,
+        fetchOrder = FetchOrder.RandomizedCircular,
+      )
+    ).tryGet
+
+    check fetched.len == blocks.len
+    for blk in blocks:
+      check fetched.filterIt(it.cid == blk.cid).len == 1
+
+  test "Fetch with fetchLocal=false skips already-present blocks":
+    let
+      blocks =
+        (await makeRandomBlocks(datasetSize = 512.KiBs.int, blockSize = 64.KiBs)).tryGet
+      manifest = (await storeDataGetManifest(localStore, blocks)).tryGet
+
+    var onBatchCalled = false
+
+    (
+      await node.fetchBatched(
+        manifest,
+        batchSize = 2,
+        fetchLocal = false,
+        onBatch = proc(
+            batch: seq[bt.Block]
+        ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+          onBatchCalled = true
+          return success(),
+        fetchOrder = FetchOrder.RandomizedCircular,
+      )
+    ).tryGet
+
+    check not onBatchCalled
+
+  test "Randomized circular fetch order starts at a random index":
+    let
+      blocks =
+        (await makeRandomBlocks(datasetSize = 512.KiBs.int, blockSize = 64.KiBs)).tryGet
+      manifest = (await storeDataGetManifest(localStore, blocks)).tryGet
+
+    # With batchSize=1 the first delivered block is the iteration start.
+    # Over repeated runs the start must be non-zero at least once; the
+    # probability of drawing start=0 on every run is (1/blocks.len)^runs.
+    var startedOffZero = false
+    for _ in 0 ..< 16:
+      var firstBatch: seq[bt.Block]
+
+      (
+        await node.fetchBatched(
+          manifest,
+          batchSize = 1,
+          onBatch = proc(
+              batch: seq[bt.Block]
+          ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+            if firstBatch.len == 0:
+              firstBatch = batch
+            return success(),
+          fetchOrder = FetchOrder.RandomizedCircular,
+        )
+      ).tryGet
+      if firstBatch.len > 0 and firstBatch[0].cid != blocks[0].cid:
+        startedOffZero = true
+        break
+
+    check startedOffZero
+
+  test "Fetch with circular iter covers all indices exactly once":
+    let
+      blocks =
+        (await makeRandomBlocks(datasetSize = 512.KiBs.int, blockSize = 64.KiBs)).tryGet
+      manifest = (await storeDataGetManifest(localStore, blocks)).tryGet
+
+    let start = 3
+    let iter = Iter[int].new(0 ..< manifest.blocksCount, start)
+
+    var fetched: seq[bt.Block]
+
+    (
+      await node.fetchBatched(
+        manifest.treeCid,
+        iter,
+        batchSize = 2,
+        onBatch = proc(
+            batch: seq[bt.Block]
+        ): Future[?!void] {.gcsafe, async: (raises: [CancelledError]).} =
+          fetched.add(batch)
+          return success(),
+      )
+    ).tryGet
+
+    check fetched.len == blocks.len
+    for blk in blocks:
+      check fetched.filterIt(it.cid == blk.cid).len == 1
 
   test "Should store Data Stream":
     let
