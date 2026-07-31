@@ -39,7 +39,7 @@ logScope:
 
 const
   DefaultMaxBatchBlocks* = 128
-  DefaultMaxBatchBlocksDeadline* = 50.millis
+  DefaultMaxBatchBlocksDeadline* = 10.millis
   DefaultBlockRetries* = 3000
   DefaultDiscoveryWaitTimeout = 5.seconds
 
@@ -139,6 +139,35 @@ proc recordRetryOutcome*(self: PendingBlocksManager, addresses: seq[BlockAddress
 
 proc updatePendingBlockGauge(p: PendingBlocksManager) =
   archivist_block_exchange_pending_block_requests.set(p.blocks.len.int64)
+
+type HandleLifecycleEvent = enum
+  HandleCreated
+  HandleResolved
+  HandleFailed
+  HandleMissingOnRelease
+  RequestSucceeded
+  RequestAbandoned
+  RequestFailed
+
+proc recordLifecycle(
+    self: PendingBlocksManager, events: varargs[HandleLifecycleEvent]
+) =
+  for event in events:
+    case event
+    of HandleCreated:
+      archivist_block_exchange_handles_created.inc()
+    of HandleResolved:
+      archivist_block_exchange_handles_resolved.inc()
+    of HandleFailed:
+      archivist_block_exchange_handles_failed.inc()
+    of HandleMissingOnRelease:
+      archivist_block_exchange_handles_missing_on_release.inc()
+    of RequestSucceeded:
+      archivist_block_exchange_requests_succeeded.inc()
+    of RequestAbandoned:
+      archivist_block_exchange_requests_abandoned.inc()
+    of RequestFailed:
+      archivist_block_exchange_requests_failed.inc()
 
 func owners*(self: PendingBlocksManager, address: BlockAddress): int =
   if pending =? self.blocks .? [address]: pending.owners.len else: 0
@@ -243,6 +272,7 @@ proc releaseWantHandle(
     req.handle.fail(
       newException(RequestAbandonedEngineError, fmt"Abandoning block {address}")
     )
+    self.recordLifecycle(HandleFailed, RequestAbandoned)
 
     if not self.onAbandon.isNil:
       trace "Handle abandoned, running on abandon hook", address
@@ -269,7 +299,7 @@ proc addOwner(
         trace "Exception monitoring wrapper blockhandle", address, exc = exc.msg
 
       if err =? (await self.releaseWantHandle(wrapped)).errorOption:
-        archivist_block_exchange_handles_missing_on_release.inc()
+        self.recordLifecycle(HandleMissingOnRelease)
         trace "Unable to release handle", address, err = err.msg
 
     self.trackedFutures.track(wrappedMonitor())
@@ -294,7 +324,7 @@ proc getWantHandle*(
       now = Moment.now()
 
     trace "Creating handle for block", address
-    archivist_block_exchange_handles_created.inc()
+    self.recordLifecycle(HandleCreated)
     let req = BlockReq(
       address: address,
       handle: handle,
@@ -350,8 +380,7 @@ proc resolve*(
         continue
 
       blockReq.handle.complete(bd)
-      archivist_block_exchange_requests_succeeded.inc()
-      archivist_block_exchange_handles_resolved.inc()
+      self.recordLifecycle(RequestSucceeded, HandleResolved)
       archivist_block_exchange_retrieval_duration_seconds.observe(
         retrievalDurationUs.float64 / 1_000_000
       )
@@ -370,9 +399,6 @@ proc resolve*(
         let latencyMs = float(retrievalDurationUs) / 1000.0
         assignedPeer.recordDelivery(bd.address, bd.blk.data.len, latencyMs)
 
-      archivist_block_exchange_retrieval_duration_seconds.observe(
-        retrievalDurationUs.float64 / 1_000_000
-      )
       if retrievalDurationUs > 500000:
         trace "High block retrieval time", retrievalDurationUs, address = bd.address
 
@@ -402,6 +428,7 @@ proc failWantHandle*(
       let err = (ref errType)(address: address, msg: msg)
       blockReq.handle.fail(err)
       self.failOwners(address, err)
+      self.recordLifecycle(HandleFailed)
 
 proc markRequested*(
     self: PendingBlocksManager, address: BlockAddress, peer: BlockExcPeerCtx
@@ -473,14 +500,17 @@ proc peerBatchWorker(
       batch = @[]
 
       # Race first pipe.get() against disconnect so the idle worker
-      # exits without a separate monitor.
+      # exits without a separate monitor. defer: a cancelled worker
+      # must not leave either future pending.
       let
         firstFut = batchReq.pipe.get()
         disconnectFut = batchReq.peer.onDisconnect()
 
+      defer:
+        await noCancel firstFut.cancelAndWait()
+        await noCancel disconnectFut.cancelAndWait()
+
       await firstFut or disconnectFut
-      await noCancel firstFut.cancelAndWait()
-      await noCancel disconnectFut.cancelAndWait()
 
       if disconnectFut.completed:
         trace "Peer disconnected", peer = batchReq.peer.id
@@ -584,9 +614,12 @@ proc deliver(
     disconnected = peer.onDisconnect()
     dispatched = req.dispatched.wait()
 
-  await disconnected or dispatched
-  for fut in [disconnected, dispatched]:
-    await noCancel fut.cancelAndWait()
+  block:
+    defer:
+      for fut in [disconnected, dispatched]:
+        await noCancel fut.cancelAndWait()
+
+    await disconnected or dispatched
 
   # Evaluate sent-success first: return true even if disconnect also completed.
   if dispatched.completed and req.requestedPeer == peer:
@@ -620,15 +653,18 @@ proc blockDispatchMonitor(
         await self.failWantHandle(
           req.address, RetriesExhaustedEngineError, "retries exhausted"
         )
+        self.recordLifecycle(RequestFailed)
         return
 
       # Install the selection wake waiter before async peer selection.
+      # defer: a cancelled dispatch monitor (request resolved elsewhere)
+      # must not leave the waiter pending.
       let selectionWakeFut = req.wakeEvent.wait()
+      defer:
+        await noCancel selectionWakeFut.cancelAndWait()
 
       without selection =? (await self.getPeerForBlock(req.address)), err:
         trace "Unable to get peer for block", address = req.address, err = err.msg
-        defer:
-          await noCancel selectionWakeFut.cancelAndWait()
 
         if selectionWakeFut.finished:
           # A completed wake means peer knowledge changed — reselect now.
@@ -694,10 +730,12 @@ proc blockDispatchMonitor(
           timeoutFut = sleepAsync(self.blockSendTimeout)
           disconnectFut = selection.peer.onDisconnect()
 
-        await wakeFut or handleFut or timeoutFut or disconnectFut
-        for fut in [wakeFut, handleFut, timeoutFut, disconnectFut]:
-          if not fut.finished:
-            await noCancel fut.cancelAndWait()
+        block:
+          defer:
+            for fut in [wakeFut, handleFut, timeoutFut, disconnectFut]:
+              await noCancel fut.cancelAndWait()
+
+          await wakeFut or handleFut or timeoutFut or disconnectFut
 
         if req.handle.finished:
           trace "Block handle finished",
@@ -736,7 +774,6 @@ proc blockDispatchMonitor(
               await noCancel self.onTimeout(req.address, selection.peer.id)
 
             continue
-
         # Should not reach here — one of the futures must have completed.
         trace "Unexpected state in post-send race", address = req.address
   except CancelledError as exc:
