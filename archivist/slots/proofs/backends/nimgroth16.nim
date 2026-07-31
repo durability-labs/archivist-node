@@ -27,6 +27,7 @@ import pkg/circom_witnessgen/witness
 
 import ../../types
 import ../../../stores
+import ../../../utils
 import ../../../marketplace
 
 import ./converters
@@ -129,45 +130,31 @@ proc prove*[SomeHash](
   ## Prove a statement using backend.
   ##
 
-  var
-    signalPtr = ?ThreadSignalPtr.new().mapFailure
-    task = ProofTask(
+  withThreadSignal(sig):
+    var task = ProofTask(
       self: cast[ptr NimGroth16Backend](self),
-      signal: signalPtr,
+      signal: sig,
       inputs: self.normalizeInput(input),
     )
 
-  defer:
-    if signalPtr != nil:
-      ?signalPtr.close().mapFailure
-      signalPtr = nil
+    self.tp.spawn generateProofTask(task.addr)
+    ?await awaitSpawn(
+      sig.wait(),
+      onError = proc() {.async: (raises: []).} =
+        warn "Error while generating proof, awaiting task to finish"
+      ,
+    )
 
-  self.tp.spawn generateProofTask(task.addr)
+    defer:
+      task.proof = default(Isolated[Proof])
 
-  let taskFut = signalPtr.wait()
-  if err =? catch(await taskFut.join()).errorOption:
-    # XXX: we need this because there is no way to cancel a task
-    # and without waiting for it to finish, we'll be writting to free'd
-    # memory in the task
-    warn "Error while generating proof, awaiting task to finish", err = err.msg
-    ?catch(await noCancel taskFut)
-    if err of CancelledError: # reraise cancelled error
-      trace "Task was cancelled"
-      raise (ref CancelledError) err
+    if not task.ok.load:
+      trace "Task failed, no proof generated"
+      return failure("Failed to generate proof")
 
-    trace "Task failed with error", err = err.msg
-    return failure err
-
-  defer:
-    task.proof = default(Isolated[Proof])
-
-  if not task.ok.load:
-    trace "Task failed, no proof generated"
-    return failure("Failed to generate proof")
-
-  var proof = task.proof.extract
-  trace "Task finished successfully, proof generated"
-  success proof
+    var proof = task.proof.extract
+    trace "Task finished successfully, proof generated"
+    success proof
 
 proc verify*(
     self: NimGroth16BackendRef, proof: NimGroth16Proof
