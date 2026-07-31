@@ -14,6 +14,7 @@ import pkg/libp2p
 
 import ../protobuf/blockexc
 import ../protobuf/message
+import ../engine/metrics
 import ../../errors
 import ../../logutils
 import ../../utils/trackedfutures
@@ -47,9 +48,20 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
     while not conn.atEof or not conn.closed:
       let
         data = await conn.readLp(MaxMessageSize.int)
+        decodeStart = Moment.now()
         msg = Message.protobufDecode(data).mapFailure().tryGet()
+      archivist_block_exchange_recv_decode_seconds.observe(
+        (Moment.now() - decodeStart).nanoseconds.float64 / 1e9
+      )
+
       trace "Received message", peer = self.id, connId = conn.oid
+
+      let handlerStart = Moment.now()
       await self.handler(self, msg)
+      let handlerNs = (Moment.now() - handlerStart).nanoseconds
+      archivist_block_exchange_recv_handler_seconds.observe(handlerNs.float64 / 1e9)
+      trace "Handler completed",
+        peer = self.id, connId = conn.oid, durationMs = handlerNs.float64 / 1e6
   except CancelledError:
     trace "Read loop cancelled"
   except CatchableError as err:
@@ -79,7 +91,32 @@ proc send*(
     return
 
   trace "Sending message", peer = self.id, connId = conn.oid
-  await conn.writeLp(protobufEncode(msg))
+  let encodeStart = Moment.now()
+  let encoded = protobufEncode(msg)
+  let encodeNs = (Moment.now() - encodeStart).nanoseconds
+
+  let kind = messageKind(msg)
+
+  archivist_block_exchange_network_encode_seconds.observe(
+    encodeNs.float64 / 1e9, labelValues = [kind]
+  )
+
+  let writeStart = Moment.now()
+  trace "WriteLp starting", peer = self.id, connId = conn.oid, bytes = encoded.len, kind
+  await conn.writeLp(encoded)
+  let writeNs = (Moment.now() - writeStart).nanoseconds
+  archivist_block_exchange_network_write_seconds.observe(
+    writeNs.float64 / 1e9, labelValues = [kind]
+  )
+  archivist_block_exchange_network_write_bytes.observe(
+    encoded.len.float64, labelValues = [kind]
+  )
+  trace "WriteLp completed",
+    peer = self.id,
+    connId = conn.oid,
+    bytes = encoded.len,
+    kind,
+    durationMs = writeNs.float64 / 1e6
 
 func new*(
     T: type NetworkPeer,

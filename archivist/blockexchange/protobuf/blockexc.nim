@@ -15,7 +15,7 @@ import message
 
 import ../../blocktype
 
-export Message, protobufEncode, protobufDecode
+export Message, protobufEncode, protobufDecode, messageKind
 export Wantlist, WantType, WantListEntry
 export BlockDelivery, BlockPresenceType, BlockPresence
 
