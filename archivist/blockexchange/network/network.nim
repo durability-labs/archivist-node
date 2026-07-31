@@ -286,11 +286,15 @@ proc dialPeer*(b: BlockExcNetwork, peer: PeerRecord) {.async.} =
 
   await b.switch.connect(peer.peerId, peer.addresses.mapIt(it.address))
 
-proc dropPeer*(b: BlockExcNetwork, peer: PeerId) =
+proc dropPeer*(b: BlockExcNetwork, peer: PeerId) {.async: (raises: []).} =
   ## Cleanup disconnected peer
   ##
 
   trace "Dropping peer", peer
+  if err =? catch(await noCancel b.switch.disconnect(peer)).errorOption:
+    trace "Error dropping peer", peer
+    return
+
   b.peers.del(peer)
 
 method init*(self: BlockExcNetwork) =
@@ -303,7 +307,7 @@ method init*(self: BlockExcNetwork) =
     if event.kind == PeerEventKind.Joined:
       self.setupPeer(peerId)
     else:
-      self.dropPeer(peerId)
+      b.peers.del(peer)
 
   self.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Joined)
   self.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Left)
