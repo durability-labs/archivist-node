@@ -58,7 +58,7 @@ type
 # Encoding Message into seq[byte] in Protobuf format
 #
 
-proc write*(pb: var ProtoBuffer, field: int, value: BlockAddress) =
+proc write*(pb: var ProtoBuffer, field: int, value: sink BlockAddress) =
   var ipb = initProtoBuffer()
   ipb.write(1, value.leaf.uint)
   if value.leaf:
@@ -67,9 +67,9 @@ proc write*(pb: var ProtoBuffer, field: int, value: BlockAddress) =
   else:
     ipb.write(4, value.cid.data.buffer)
   ipb.finish()
-  pb.write(field, ipb)
+  pb.write(field, ipb.buffer)
 
-proc write*(pb: var ProtoBuffer, field: int, value: WantListEntry) =
+proc write*(pb: var ProtoBuffer, field: int, value: sink WantListEntry) =
   var ipb = initProtoBuffer()
   ipb.write(1, value.address)
   ipb.write(2, value.priority.uint64)
@@ -77,41 +77,50 @@ proc write*(pb: var ProtoBuffer, field: int, value: WantListEntry) =
   ipb.write(4, value.wantType.uint)
   ipb.write(5, value.sendDontHave.uint)
   ipb.finish()
-  pb.write(field, ipb)
+  pb.write(field, ipb.buffer)
 
-proc write*(pb: var ProtoBuffer, field: int, value: WantList) =
+proc write*(pb: var ProtoBuffer, field: int, value: sink WantList) =
   var ipb = initProtoBuffer()
-  for v in value.entries:
-    ipb.write(1, v)
+  for v in value.entries.mitems:
+    ipb.write(1, move v)
   ipb.write(2, value.full.uint)
   ipb.finish()
-  pb.write(field, ipb)
+  pb.write(field, ipb.buffer)
 
-proc write*(pb: var ProtoBuffer, field: int, value: BlockDelivery) =
+proc write*(pb: var ProtoBuffer, field: int, value: sink BlockDelivery) =
   var ipb = initProtoBuffer()
+  let isLeaf = value.address.leaf
   ipb.write(1, value.blk.cid.data.buffer)
   ipb.write(2, value.blk.data)
   ipb.write(3, value.address)
-  if value.address.leaf:
+  if isLeaf:
     if proof =? value.proof:
       ipb.write(4, proof.encode())
   ipb.finish()
-  pb.write(field, ipb)
+  pb.write(field, ipb.buffer)
 
-proc write*(pb: var ProtoBuffer, field: int, value: BlockPresence) =
+proc write*(pb: var ProtoBuffer, field: int, value: sink BlockPresence) =
   var ipb = initProtoBuffer()
   ipb.write(1, value.address)
   ipb.write(2, value.`type`.uint)
   ipb.finish()
-  pb.write(field, ipb)
+  pb.write(field, ipb.buffer)
 
-proc protobufEncode*(value: Message): seq[byte] =
+proc protobufEncode*(value: sink Message): seq[byte] =
   var ipb = initProtoBuffer()
+  # Pre-size the buffer: repeated payload blocks dominate (tens of MB).
+  # Without reserve capacity the buffer grows by doubling, reallocating
+  # and copying ~2x the final size during encode.
+  var estimate =
+    64 + 16 + value.wantList.entries.len * 64 + value.blockPresences.len * 64
+  for i in 0 ..< value.payload.len:
+    estimate += value.payload[i].blk.data.len + 512
+  ipb.buffer = newSeqOfCap[byte](estimate)
   ipb.write(1, value.wantList)
-  for v in value.payload:
-    ipb.write(3, v)
-  for v in value.blockPresences:
-    ipb.write(4, v)
+  for v in value.payload.mitems:
+    ipb.write(3, move v)
+  for v in value.blockPresences.mitems:
+    ipb.write(4, move v)
   ipb.write(5, value.pendingBytes)
   ipb.finish()
   ipb.buffer
@@ -119,7 +128,7 @@ proc protobufEncode*(value: Message): seq[byte] =
 #
 # Decoding Message from seq[byte] in Protobuf format
 #
-proc decode*(_: type BlockAddress, pb: ProtoBuffer): ProtoResult[BlockAddress] =
+proc decode*(_: type BlockAddress, pb: sink ProtoBuffer): ProtoResult[BlockAddress] =
   var
     value: BlockAddress
     leaf: bool
@@ -146,7 +155,7 @@ proc decode*(_: type BlockAddress, pb: ProtoBuffer): ProtoResult[BlockAddress] =
 
   ok(value)
 
-proc decode*(_: type WantListEntry, pb: ProtoBuffer): ProtoResult[WantListEntry] =
+proc decode*(_: type WantListEntry, pb: sink ProtoBuffer): ProtoResult[WantListEntry] =
   var
     value = WantListEntry()
     field: uint64
@@ -163,19 +172,19 @@ proc decode*(_: type WantListEntry, pb: ProtoBuffer): ProtoResult[WantListEntry]
     value.sendDontHave = bool(field)
   ok(value)
 
-proc decode*(_: type WantList, pb: ProtoBuffer): ProtoResult[WantList] =
+proc decode*(_: type WantList, pb: sink ProtoBuffer): ProtoResult[WantList] =
   var
     value = WantList()
     field: uint64
     sublist: seq[seq[byte]]
   if ?pb.getRepeatedField(1, sublist):
-    for item in sublist:
-      value.entries.add(?WantListEntry.decode(initProtoBuffer(item)))
+    for item in sublist.mitems:
+      value.entries.add(?WantListEntry.decode(initProtoBuffer(move item)))
   if ?pb.getField(2, field):
     value.full = bool(field)
   ok(value)
 
-proc decode*(_: type BlockDelivery, pb: ProtoBuffer): ProtoResult[BlockDelivery] =
+proc decode*(_: type BlockDelivery, pb: sink ProtoBuffer): ProtoResult[BlockDelivery] =
   var
     value = BlockDelivery()
     dataBuf = newSeq[byte]()
@@ -203,7 +212,7 @@ proc decode*(_: type BlockDelivery, pb: ProtoBuffer): ProtoResult[BlockDelivery]
 
   ok(value)
 
-proc decode*(_: type BlockPresence, pb: ProtoBuffer): ProtoResult[BlockPresence] =
+proc decode*(_: type BlockPresence, pb: sink ProtoBuffer): ProtoResult[BlockPresence] =
   var
     value = BlockPresence()
     field: uint64
@@ -214,19 +223,19 @@ proc decode*(_: type BlockPresence, pb: ProtoBuffer): ProtoResult[BlockPresence]
     value.`type` = BlockPresenceType(field)
   ok(value)
 
-proc protobufDecode*(_: type Message, msg: seq[byte]): ProtoResult[Message] =
+proc protobufDecode*(_: type Message, msg: sink seq[byte]): ProtoResult[Message] =
   var
     value = Message()
-    pb = initProtoBuffer(msg)
+    pb = initProtoBuffer(move msg)
     ipb: ProtoBuffer
     sublist: seq[seq[byte]]
   if ?pb.getField(1, ipb):
     value.wantList = ?WantList.decode(ipb)
   if ?pb.getRepeatedField(3, sublist):
-    for item in sublist:
-      value.payload.add(?BlockDelivery.decode(initProtoBuffer(item)))
+    for item in sublist.mitems:
+      value.payload.add(?BlockDelivery.decode(initProtoBuffer(move item)))
   if ?pb.getRepeatedField(4, sublist):
-    for item in sublist:
-      value.blockPresences.add(?BlockPresence.decode(initProtoBuffer(item)))
+    for item in sublist.mitems:
+      value.blockPresences.add(?BlockPresence.decode(initProtoBuffer(move item)))
   discard ?pb.getField(5, value.pendingBytes)
   ok(value)

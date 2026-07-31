@@ -518,7 +518,7 @@ proc store*(
             await allFutures(inFlight.mapIt(it.cancelAndWait()))
 
         while true:
-          let chunk = ?await chunker.getBytes()
+          var chunk = ?await chunker.getBytes()
           archivist_upload_bytes_total.inc(chunk.len.int64)
           if chunk.len == 0:
             trace "Chunker finished reading stream", read = NBytes(chunker.offset)
@@ -527,7 +527,7 @@ proc store*(
           let
             mhash = ?MultiHash.digest($hcodec, chunk).mapFailure
             cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
-            blk = ?bt.Block.new(cid, chunk, verify = false)
+            blk = ?bt.Block.new(cid, move chunk, verify = false)
 
           archivist_upload_blocks_total.inc()
           cids.add(cid)
