@@ -19,8 +19,10 @@ import ../../blocktype as bt
 import ../../logutils
 import ../protobuf/blockexc as pb
 import ../../utils/trackedfutures
+import ../../errors
 
 import ./networkpeer
+import ../engine/metrics
 
 export networkpeer
 
@@ -34,8 +36,10 @@ const
 type
   WantListHandler* =
     proc(peer: PeerId, wantList: WantList) {.gcsafe, async: (raises: []).}
+
   BlocksDeliveryHandler* =
     proc(peer: PeerId, blocks: seq[BlockDelivery]) {.gcsafe, async: (raises: []).}
+
   BlockPresenceHandler* =
     proc(peer: PeerId, precense: seq[BlockPresence]) {.gcsafe, async: (raises: []).}
 
@@ -52,17 +56,17 @@ type
     wantType: WantType = WantType.WantHave,
     full: bool = false,
     sendDontHave: bool = false,
-  ) {.async: (raises: [CancelledError]).}
+  ): Future[?!void] {.async: (raises: [CancelledError]).}
 
-  WantCancellationSender* = proc(peer: PeerId, addresses: seq[BlockAddress]) {.
-    async: (raises: [CancelledError])
-  .}
+  WantCancellationSender* = proc(
+    peer: PeerId, addresses: seq[BlockAddress]
+  ): Future[?!void] {.async: (raises: [CancelledError]).}
 
-  BlocksDeliverySender* = proc(peer: PeerId, blocksDelivery: seq[BlockDelivery]) {.
-    async: (raises: [CancelledError])
-  .}
+  BlocksDeliverySender* = proc(
+    peer: PeerId, blocksDelivery: seq[BlockDelivery]
+  ): Future[?!void] {.async: (raises: [CancelledError]).}
 
-  PresenceSender* = proc(peer: PeerId, presence: seq[BlockPresence]) {.
+  PresenceSender* = proc(peer: PeerId, presence: seq[BlockPresence]): Future[?!void] {.
     async: (raises: [CancelledError])
   .}
 
@@ -73,48 +77,69 @@ type
     sendPresence*: PresenceSender
 
   BlockExcNetwork* = ref object of LPProtocol
-    peers*: Table[PeerId, NetworkPeer]
+    peers: Table[PeerId, NetworkPeer]
     switch*: Switch
     handlers*: BlockExcHandlers
     request*: BlockExcRequest
-    getConn: ConnProvider
     inflightSema: AsyncSemaphore
-    maxInflight: int = DefaultMaxInflight
-    trackedFutures*: TrackedFutures = TrackedFutures()
+    maxInflight = DefaultMaxInflight
+    trackedFutures = TrackedFutures()
 
 proc peerId*(b: BlockExcNetwork): PeerId =
   ## Return peer id
   ##
 
-  return b.switch.peerInfo.peerId
+  b.switch.peerInfo.peerId
 
 proc isSelf*(b: BlockExcNetwork, peer: PeerId): bool =
   ## Check if peer is self
   ##
 
-  return b.peerId == peer
+  b.peerId == peer
 
 proc send*(
     b: BlockExcNetwork, id: PeerId, msg: pb.Message
-) {.async: (raises: [CancelledError]).} =
-  ## Send message to peer
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Send message to peer. Returns success if the message was written to the
+  ## transport, failure with the transport error otherwise.
   ##
 
-  if not (id in b.peers):
+  let peer = b.peers.getOrDefault(id)
+  if peer.isNil:
     trace "Unable to send, peer not found", peerId = id
-    return
+    return failure(newException(ArchivistError, "peer not found: " & $id))
+
+  let
+    kind = messageKind(msg)
+    totalStart = Moment.now()
+
+  let inflightWaitStart = Moment.now()
+  await b.inflightSema.acquire()
+  archivist_block_exchange_network_inflight_wait_seconds.observe(
+    (Moment.now() - inflightWaitStart).nanoseconds.float64 / 1e9, labelValues = [kind]
+  )
+
+  archivist_block_exchange_inflight_sends.set(
+    (b.maxInflight - b.inflightSema.count).int64
+  )
+  archivist_block_exchange_inflight_send_slots_free.set(b.inflightSema.count.int64)
 
   try:
-    let peer = b.peers[id]
-
-    await b.inflightSema.acquire()
-    await peer.send(msg)
-  except CancelledError as error:
-    raise error
-  except CatchableError as err:
-    error "Error sending message", peer = id, msg = err.msg
+    if err =? catchAsync(await peer.send(msg)).errorOption:
+      error "Error sending message", peer = id, msg = err.msg
+      return failure(err)
   finally:
     b.inflightSema.release()
+    archivist_block_exchange_inflight_sends.set(
+      (b.maxInflight - b.inflightSema.count).int64
+    )
+    archivist_block_exchange_inflight_send_slots_free.set(b.inflightSema.count.int64)
+
+  archivist_block_exchange_network_send_seconds.observe(
+    (Moment.now() - totalStart).nanoseconds.float64 / 1e9, labelValues = [kind]
+  )
+
+  success()
 
 proc handleWantList(
     b: BlockExcNetwork, peer: NetworkPeer, list: WantList
@@ -134,7 +159,7 @@ proc sendWantList*(
     wantType: WantType = WantType.WantHave,
     full: bool = false,
     sendDontHave: bool = false,
-) {.async: (raw: true, raises: [CancelledError]).} =
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Send a want message to peer
   ##
 
@@ -151,14 +176,15 @@ proc sendWantList*(
     full: full,
   )
 
-  b.send(id, Message(wantlist: msg))
+  return b.send(id, Message(wantlist: msg))
 
 proc sendWantCancellations*(
     b: BlockExcNetwork, id: PeerId, addresses: seq[BlockAddress]
-): Future[void] {.async: (raises: [CancelledError]).} =
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Informs a remote peer that we're no longer interested in a set of blocks
   ##
-  await b.sendWantList(id = id, addresses = addresses, cancel = true)
+
+  b.sendWantList(id = id, addresses = addresses, cancel = true)
 
 proc handleBlocksDelivery(
     b: BlockExcNetwork, peer: NetworkPeer, blocksDelivery: seq[BlockDelivery]
@@ -171,8 +197,9 @@ proc handleBlocksDelivery(
 
 proc sendBlocksDelivery*(
     b: BlockExcNetwork, id: PeerId, blocksDelivery: seq[BlockDelivery]
-) {.async: (raw: true, raises: [CancelledError]).} =
-  ## Send blocks to remote
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
+  ## Send blocks to remote. Returns success if the batch was written to the
+  ## transport, failure with the transport error otherwise.
   ##
 
   b.send(id, pb.Message(payload: blocksDelivery))
@@ -188,17 +215,18 @@ proc handleBlockPresence(
 
 proc sendBlockPresence*(
     b: BlockExcNetwork, id: PeerId, presence: seq[BlockPresence]
-) {.async: (raw: true, raises: [CancelledError]).} =
+): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Send presence to remote
   ##
 
   b.send(id, Message(blockPresences: @presence))
 
-proc rpcHandler(
+proc rpcHandler*(
     b: BlockExcNetwork, peer: NetworkPeer, msg: Message
 ) {.async: (raises: []).} =
   ## handle rpc messages
   ##
+
   if msg.wantList.entries.len > 0:
     b.trackedFutures.track(b.handleWantList(peer, msg.wantList))
 
@@ -215,25 +243,17 @@ proc getOrCreatePeer(b: BlockExcNetwork, peer: PeerId): NetworkPeer =
   if peer in b.peers:
     return b.peers.getOrDefault(peer, nil)
 
-  var getConn: ConnProvider = proc(): Future[Connection] {.
-      async: (raises: [CancelledError])
-  .} =
-    try:
-      trace "Getting new connection stream", peer
-      return await b.switch.dial(peer, Codec)
-    except CancelledError as error:
-      raise error
-    except CatchableError as exc:
-      trace "Unable to connect to blockexc peer", exc = exc.msg
-
-  if not isNil(b.getConn):
-    getConn = b.getConn
-
-  let rpcHandler = proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
-    await b.rpcHandler(p, msg)
-
   # create new pubsub peer
-  let blockExcPeer = NetworkPeer.new(peer, getConn, rpcHandler)
+  let blockExcPeer = NetworkPeer.new(
+    peer,
+    proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
+      trace "Getting new connection stream", peer
+      catchAsync(await b.switch.dial(peer, Codec)),
+    proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
+      await b.rpcHandler(p, msg)
+    ,
+  )
+
   debug "Created new blockexc peer", peer
 
   b.peers[peer] = blockExcPeer
@@ -261,11 +281,15 @@ proc dialPeer*(b: BlockExcNetwork, peer: PeerRecord) {.async.} =
 
   await b.switch.connect(peer.peerId, peer.addresses.mapIt(it.address))
 
-proc dropPeer*(b: BlockExcNetwork, peer: PeerId) =
+proc dropPeer*(b: BlockExcNetwork, peer: PeerId) {.async: (raises: []).} =
   ## Cleanup disconnected peer
   ##
 
   trace "Dropping peer", peer
+  if err =? catch(await noCancel b.switch.disconnect(peer)).errorOption:
+    trace "Error dropping peer", peer
+    return
+
   b.peers.del(peer)
 
 method init*(self: BlockExcNetwork) =
@@ -278,7 +302,7 @@ method init*(self: BlockExcNetwork) =
     if event.kind == PeerEventKind.Joined:
       self.setupPeer(peerId)
     else:
-      self.dropPeer(peerId)
+      self.peers.del(peerId)
 
   self.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Joined)
   self.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Left)
@@ -286,8 +310,10 @@ method init*(self: BlockExcNetwork) =
   proc handler(
       conn: Connection, proto: string
   ): Future[void] {.async: (raises: [CancelledError]).} =
-    let peerId = conn.peerId
-    let blockexcPeer = self.getOrCreatePeer(peerId)
+    let
+      peerId = conn.peerId
+      blockexcPeer = self.getOrCreatePeer(peerId)
+
     await blockexcPeer.readLoop(conn) # attach read loop
 
   self.handler = handler
@@ -297,17 +323,13 @@ proc stop*(self: BlockExcNetwork) {.async: (raises: []).} =
   await self.trackedFutures.cancelTracked()
 
 proc new*(
-    T: type BlockExcNetwork,
-    switch: Switch,
-    connProvider: ConnProvider = nil,
-    maxInflight = DefaultMaxInflight,
+    T: type BlockExcNetwork, switch: Switch, maxInflight = DefaultMaxInflight
 ): BlockExcNetwork =
   ## Create a new BlockExcNetwork instance
   ##
 
   let self = BlockExcNetwork(
     switch: switch,
-    getConn: connProvider,
     inflightSema: newAsyncSemaphore(maxInflight),
     maxInflight: maxInflight,
   )
@@ -322,22 +344,22 @@ proc new*(
       wantType: WantType = WantType.WantHave,
       full: bool = false,
       sendDontHave: bool = false,
-  ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
+  ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
     self.sendWantList(id, cids, priority, cancel, wantType, full, sendDontHave)
 
   proc sendWantCancellations(
       id: PeerId, addresses: seq[BlockAddress]
-  ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
+  ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
     self.sendWantCancellations(id, addresses)
 
   proc sendBlocksDelivery(
       id: PeerId, blocksDelivery: seq[BlockDelivery]
-  ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
+  ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
     self.sendBlocksDelivery(id, blocksDelivery)
 
   proc sendPresence(
       id: PeerId, presence: seq[BlockPresence]
-  ): Future[void] {.async: (raw: true, raises: [CancelledError]).} =
+  ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
     self.sendBlockPresence(id, presence)
 
   self.request = BlockExcRequest(

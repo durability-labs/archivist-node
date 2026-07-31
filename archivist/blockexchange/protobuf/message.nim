@@ -54,6 +54,16 @@ type
     blockPresences*: seq[BlockPresence]
     pendingBytes*: uint
 
+proc messageKind*(msg: Message): string =
+  if msg.payload.len > 0:
+    "blocks"
+  elif msg.blockPresences.len > 0:
+    "presence"
+  elif msg.wantList.entries.len > 0:
+    "wantlist"
+  else:
+    "other"
+
 #
 # Encoding Message into seq[byte] in Protobuf format
 #

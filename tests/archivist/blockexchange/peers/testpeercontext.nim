@@ -204,3 +204,28 @@ suite "BlockExcPeerCtx want-have circuit":
     let decision3 = peer.decideSend(toWantSet(addrA), boundaryTime)
     check decision3.kind == SendKind.Full
     check peer.state == WantListState.SendDelta
+
+  test "clearSentIfStale within cooldown keeps marker":
+    var peer = BlockExcPeerCtx.example
+    let blkAddr = makeAddr(Cid.example, 0)
+    peer.markBlockAsSent(blkAddr)
+    check peer.isBlockSent(blkAddr)
+    let cleared = peer.clearSentIfStale(blkAddr, 90.seconds)
+    check not cleared
+    check peer.isBlockSent(blkAddr)
+
+  test "clearSentIfStale after cooldown clears marker":
+    var peer = BlockExcPeerCtx.example
+    let blkAddr = makeAddr(Cid.example, 0)
+    peer.markBlockAsSent(blkAddr)
+    check peer.isBlockSent(blkAddr)
+    let cleared = peer.clearSentIfStale(blkAddr, 0.seconds)
+    check cleared
+    check not peer.isBlockSent(blkAddr)
+
+  test "clearSentIfStale on never-sent block returns true":
+    var peer = BlockExcPeerCtx.example
+    let blkAddr = makeAddr(Cid.example, 0)
+    let cleared = peer.clearSentIfStale(blkAddr, 90.seconds)
+    check cleared
+    check not peer.isBlockSent(blkAddr)

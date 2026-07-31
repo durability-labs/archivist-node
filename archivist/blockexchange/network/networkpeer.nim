@@ -14,6 +14,7 @@ import pkg/libp2p
 
 import ../protobuf/blockexc
 import ../protobuf/message
+import ../engine/metrics
 import ../../errors
 import ../../logutils
 import ../../utils/trackedfutures
@@ -23,7 +24,7 @@ logScope:
 
 type
   ConnProvider* =
-    proc(): Future[Connection] {.gcsafe, async: (raises: [CancelledError]).}
+    proc(): Future[?!Connection] {.gcsafe, async: (raises: [CancelledError]).}
 
   RPCHandler* = proc(peer: NetworkPeer, msg: Message) {.gcsafe, async: (raises: []).}
 
@@ -47,9 +48,20 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
     while not conn.atEof or not conn.closed:
       let
         data = await conn.readLp(MaxMessageSize.int)
+        decodeStart = Moment.now()
         msg = Message.protobufDecode(data).mapFailure().tryGet()
+      archivist_block_exchange_recv_decode_seconds.observe(
+        (Moment.now() - decodeStart).nanoseconds.float64 / 1e9
+      )
+
       trace "Received message", peer = self.id, connId = conn.oid
+
+      let handlerStart = Moment.now()
       await self.handler(self, msg)
+      let handlerNs = (Moment.now() - handlerStart).nanoseconds
+      archivist_block_exchange_recv_handler_seconds.observe(handlerNs.float64 / 1e9)
+      trace "Handler completed",
+        peer = self.id, connId = conn.oid, durationMs = handlerNs.float64 / 1e6
   except CancelledError:
     trace "Read loop cancelled"
   except CatchableError as err:
@@ -60,26 +72,53 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
 
 proc connect*(
     self: NetworkPeer
-): Future[Connection] {.async: (raises: [CancelledError]).} =
+): Future[?!Connection] {.async: (raises: [CancelledError]).} =
   if self.connected:
     trace "Already connected", peer = self.id, connId = self.sendConn.oid
-    return self.sendConn
+    return success self.sendConn
 
-  self.sendConn = await self.getConn()
+  self.sendConn = ?await self.getConn()
   self.trackedFutures.track(self.readLoop(self.sendConn))
-  return self.sendConn
+  return success self.sendConn
 
 proc send*(
     self: NetworkPeer, msg: Message
-) {.async: (raises: [CancelledError, LPStreamError]).} =
-  let conn = await self.connect()
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  let conn = ?await self.connect()
 
-  if isNil(conn):
+  if conn.isNil:
     warn "Unable to get send connection for peer message not sent", peer = self.id
-    return
+    return failure("Unable to get send connection for peer message not sent")
 
   trace "Sending message", peer = self.id, connId = conn.oid
-  await conn.writeLp(protobufEncode(msg))
+  let
+    encodeStart = Moment.now()
+    encoded = protobufEncode(msg)
+    encodeNs = (Moment.now() - encodeStart).nanoseconds
+    kind = messageKind(msg)
+
+  archivist_block_exchange_network_encode_seconds.observe(
+    encodeNs.float64 / 1e9, labelValues = [kind]
+  )
+
+  let writeStart = Moment.now()
+  trace "WriteLp starting", peer = self.id, connId = conn.oid, bytes = encoded.len, kind
+  ?catchAsync(await conn.writeLp(encoded))
+
+  let writeNs = (Moment.now() - writeStart).nanoseconds
+  archivist_block_exchange_network_write_seconds.observe(
+    writeNs.float64 / 1e9, labelValues = [kind]
+  )
+  archivist_block_exchange_network_write_bytes.observe(
+    encoded.len.float64, labelValues = [kind]
+  )
+
+  trace "WriteLp completed",
+    peer = self.id,
+    connId = conn.oid,
+    bytes = encoded.len,
+    kind,
+    durationMs = writeNs.float64 / 1e6
 
 func new*(
     T: type NetworkPeer,

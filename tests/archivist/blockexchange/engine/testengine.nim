@@ -40,13 +40,13 @@ const NopSendWantListProc = proc(
     wantType: WantType = WantType.WantHave,
     full: bool = false,
     sendDontHave: bool = false,
-) {.async: (raises: [CancelledError]).} =
-  discard
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  success()
 
 const NopSendWantCancellationsProc = proc(
     id: PeerId, addresses: seq[BlockAddress]
-) {.async: (raises: [CancelledError]).} =
-  discard
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  success()
 
 # Helper: a peer selector that always returns Requeue with a delay
 proc alwaysRequeue(delay: Duration = 0.seconds): PeerSelectorHandler =
@@ -104,9 +104,10 @@ asyncchecksuite "NetworkStore engine basic":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       check addresses.mapIt($it.cidOrTreeCid).sorted == blocks.mapIt($it.cid).sorted
       done.complete()
+      success()
 
     let
       network = BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
@@ -243,12 +244,13 @@ asyncchecksuite "NetworkStore engine handlers":
 
     proc sendPresence(
         peerId: PeerId, presence: seq[BlockPresence]
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       received.add(presence)
       if received.len == wantList.entries.len:
         check received.mapIt($it.address).sorted(cmp[string]) ==
           wantList.entries.mapIt($it.address).sorted(cmp[string])
         done.complete()
+      success()
 
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
@@ -272,7 +274,7 @@ asyncchecksuite "NetworkStore engine handlers":
 
     proc sendPresence(
         peerId: PeerId, presence: seq[BlockPresence]
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       received.add(presence)
       if received.len == wantList.entries.len:
         check received.mapIt($it.address).sorted(cmp[string]) ==
@@ -280,6 +282,7 @@ asyncchecksuite "NetworkStore engine handlers":
         for p in received:
           check p.`type` == BlockPresenceType.DontHave
         done.complete()
+      success()
 
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
@@ -295,7 +298,7 @@ asyncchecksuite "NetworkStore engine handlers":
 
     proc sendPresence(
         peerId: PeerId, presence: seq[BlockPresence]
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       received.add(presence)
       if received.len == wantList.entries.len:
         for p in received:
@@ -306,6 +309,7 @@ asyncchecksuite "NetworkStore engine handlers":
             check p.`type` == BlockPresenceType.Have
 
         done.complete()
+      success()
 
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendPresence: sendPresence))
@@ -378,12 +382,13 @@ asyncchecksuite "NetworkStore engine handlers":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       await engine.pendingBlocks.resolve(
         blocks.filterIt(it.address in addresses).mapIt(
           BlockDelivery(blk: it, address: it.address)
         )
       )
+      success()
 
     engine.network =
       BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
@@ -419,11 +424,12 @@ asyncchecksuite "NetworkStore engine handlers":
 
     proc sendWantCancellations(
         id: PeerId, addresses: seq[BlockAddress]
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       check id == otherPeerId
       for address in addresses:
         if fut =? cancellations.getOrDefault(address).option and not fut.finished:
           fut.complete()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(sendWantCancellations: sendWantCancellations)
@@ -598,10 +604,11 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         wantBlockBatches.add(addresses)
         done.complete()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -636,7 +643,7 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         wantBlockBatches.add(addresses)
 
@@ -647,6 +654,7 @@ asyncchecksuite "Block Download":
 
         if secondAddress in addresses:
           secondSent.fire()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -686,13 +694,14 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         wantBlockBatches.add((peer: id, addresses: requestedAddresses))
         for address in requestedAddresses:
           sentAddresses.incl(address)
         if sentAddresses.len == requestCount and not done.isSet:
           done.fire()
+      success()
 
     engine.peers.add(peer2Ctx)
     engine.network = BlockExcNetwork(
@@ -756,11 +765,12 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         dispatchedBatches.add((peer: id, addresses: addresses))
         if not done.isSet:
           done.fire()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -799,10 +809,11 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         if not sent.isSet:
           sent.fire()
+      success()
 
     peerCtx.setPresence(Presence(address: address, have: true))
     engine.pendingBlocks.retries = 3
@@ -834,10 +845,11 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         check addresses == @[address]
         sent.complete()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -872,7 +884,7 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       case wantType
       of WantHave:
         check addresses == @[address]
@@ -884,6 +896,7 @@ asyncchecksuite "Block Download":
         check address in peerCtx.peerHave
         if not wantBlockSent.isSet:
           wantBlockSent.fire()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -927,7 +940,7 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       case wantType
       of WantHave:
         check engine.pendingBlocks.isRequested(address) == false
@@ -937,6 +950,7 @@ asyncchecksuite "Block Download":
         check engine.pendingBlocks.isRequested(address) == true
         check engine.pendingBlocks.retriesExhausted(address) == false
         steps.fire()
+      success()
 
     engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
@@ -970,8 +984,9 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       done.complete()
+      success()
 
     engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
@@ -1000,10 +1015,11 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         check addresses == @[address]
         done.complete()
+      success()
 
     engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
@@ -1036,9 +1052,10 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         done.complete()
+      success()
 
     engine.pendingBlocks.retries = 10
     engine.network = BlockExcNetwork(
@@ -1082,13 +1099,14 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantBlock:
         done.complete()
+      success()
 
     proc sendWantCancellations(
         id: PeerId, addresses: seq[BlockAddress]
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       raise newException(CancelledError, "cancelled cancellation send")
 
     engine.pendingBlocks.retries = 10
@@ -1125,11 +1143,12 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantType.WantBlock:
         check addresses == @[address]
         if not wantBlockSent.isSet:
           wantBlockSent.fire()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -1167,7 +1186,7 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       case wantType
       of WantType.WantHave:
         check addresses == @[address]
@@ -1179,6 +1198,7 @@ asyncchecksuite "Block Download":
         check address in peerCtx.peerHave
         if not wantBlockSent.isSet:
           wantBlockSent.fire()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -1232,11 +1252,12 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantType.WantBlock:
         check addresses == @[address]
         if not wantBlockSent.isSet:
           wantBlockSent.fire()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -1296,7 +1317,7 @@ asyncchecksuite "Block Download":
         wantType: WantType = WantType.WantHave,
         full: bool = false,
         sendDontHave: bool = false,
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       if wantType == WantType.WantBlock:
         check addresses == @[address]
         if firstWantBlock:
@@ -1305,6 +1326,7 @@ asyncchecksuite "Block Download":
         check wantBlockPeer == id
         if not wantBlockSent.isSet:
           wantBlockSent.fire()
+      success()
 
     engine.network = BlockExcNetwork(
       request: BlockExcRequest(
@@ -1422,10 +1444,11 @@ asyncchecksuite "Task Handler":
   test "Should send wanted blocks":
     proc sendBlocksDelivery(
         id: PeerId, blocksDelivery: seq[BlockDelivery]
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       check blocksDelivery.len == 2
       check blocksDelivery.mapIt($it.address).sorted(cmp[string]) ==
         @[blocks[0].address, blocks[1].address].mapIt($it).sorted(cmp[string])
+      success()
 
     # Store blocks with tree context
     (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
@@ -1440,8 +1463,9 @@ asyncchecksuite "Task Handler":
   test "Should set in-flight for outgoing blocks":
     proc sendBlocksDelivery(
         id: PeerId, blocksDelivery: seq[BlockDelivery]
-    ) {.async: (raises: [CancelledError]).} =
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
       check blocks[0].address in peersCtx[0].blocksSent
+      success()
 
     # Store blocks with tree context
     (await localStore.storeBlocksWithOverlay(treeCid, blocks, tree)).tryGet()
@@ -1485,9 +1509,10 @@ suite "NetworkStore engine refresh circuit":
       wantType: WantType = WantType.WantHave,
       full: bool = false,
       sendDontHave: bool = false,
-  ) {.async: (raises: [CancelledError]).} =
+  ): Future[?!void] {.async: (raises: [CancelledError]).} =
     sentFull = full
     sentAddresses = addresses
+    success()
 
   setup:
     rng = Rng.instance()

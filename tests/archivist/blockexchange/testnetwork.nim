@@ -1,5 +1,6 @@
-import std/sequtils
 import std/tables
+import std/sequtils
+import std/importutils
 
 import pkg/chronos
 
@@ -7,12 +8,16 @@ import pkg/archivist/rng
 import pkg/archivist/chunker
 import pkg/archivist/blocktype as bt
 import pkg/archivist/blockexchange
+import pkg/archivist/blockexchange/network {.all.}
+
+privateAccess(BlockExcNetwork)
+privateAccess(NetworkPeer)
 
 import ../../asynctest
 import ../examples
 import ../helpers
 
-asyncchecksuite "Network - Handlers":
+suite "Network - Handlers":
   let
     rng = Rng.instance()
     seckey = PrivateKey.random(rng[]).tryGet()
@@ -26,9 +31,6 @@ asyncchecksuite "Network - Handlers":
     blocks: seq[bt.Block]
     done: Future[void]
 
-  proc getConn(): Future[Connection] {.async: (raises: [CancelledError]).} =
-    return Connection(buffer)
-
   setup:
     while true:
       let chunk = (await chunker.getBytes()).tryGet()
@@ -39,9 +41,17 @@ asyncchecksuite "Network - Handlers":
 
     done = newFuture[void]()
     buffer = BufferStream.new()
-    network = BlockExcNetwork.new(switch = newStandardSwitch(), connProvider = getConn)
-    network.setupPeer(peerId)
-    networkPeer = network.peers[peerId]
+    network = BlockExcNetwork.new(switch = newStandardSwitch())
+    networkPeer = NetworkPeer.new(
+      peerId,
+      proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
+        return success Connection(buffer),
+      proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
+        await network.rpcHandler(p, msg)
+      ,
+    )
+
+    network.peers[peerId] = networkPeer
     discard await networkPeer.connect()
 
   test "Want List handler":
@@ -65,8 +75,8 @@ asyncchecksuite "Network - Handlers":
       makeWantList(blocks.mapIt(it.cid), 1, true, WantType.WantHave, true, true)
 
     let msg = Message(wantlist: wantList)
-    await buffer.pushData(lenPrefix(protobufEncode(msg)))
 
+    await buffer.pushData(lenPrefix(protobufEncode(msg)))
     await done.wait(500.millis)
 
   test "Blocks Handler":
@@ -80,8 +90,8 @@ asyncchecksuite "Network - Handlers":
 
     let msg =
       Message(payload: blocks.mapIt(BlockDelivery(blk: it, address: it.address)))
-    await buffer.pushData(lenPrefix(protobufEncode(msg)))
 
+    await buffer.pushData(lenPrefix(protobufEncode(msg)))
     await done.wait(500.millis)
 
   test "Presence Handler":
@@ -100,11 +110,11 @@ asyncchecksuite "Network - Handlers":
       blockPresences:
         blocks.mapIt(BlockPresence(address: it.address, type: BlockPresenceType.Have))
     )
-    await buffer.pushData(lenPrefix(protobufEncode(msg)))
 
+    await buffer.pushData(lenPrefix(protobufEncode(msg)))
     await done.wait(500.millis)
 
-asyncchecksuite "Network - Senders":
+suite "Network - Senders":
   let chunker = RandomChunker.new(Rng.instance(), size = 1024, chunkSize = 256)
 
   var
@@ -154,15 +164,18 @@ asyncchecksuite "Network - Senders":
       done.complete()
 
     network2.handlers.onWantList = wantListHandler
-    await network1.sendWantList(
-      switch2.peerInfo.peerId,
-      blocks.mapIt(it.address),
-      1,
-      true,
-      WantType.WantHave,
-      true,
-      true,
-    )
+
+    (
+      await network1.sendWantList(
+        switch2.peerInfo.peerId,
+        blocks.mapIt(it.address),
+        1,
+        true,
+        WantType.WantHave,
+        true,
+        true,
+      )
+    ).tryGet
 
     await done.wait(500.millis)
 
@@ -174,9 +187,13 @@ asyncchecksuite "Network - Senders":
       done.complete()
 
     network2.handlers.onBlocksDelivery = blocksDeliveryHandler
-    await network1.sendBlocksDelivery(
-      switch2.peerInfo.peerId, blocks.mapIt(BlockDelivery(blk: it, address: it.address))
-    )
+
+    (
+      await network1.sendBlocksDelivery(
+        switch2.peerInfo.peerId,
+        blocks.mapIt(BlockDelivery(blk: it, address: it.address)),
+      )
+    ).tryGet
 
     await done.wait(500.millis)
 
@@ -192,14 +209,16 @@ asyncchecksuite "Network - Senders":
 
     network2.handlers.onPresence = presenceHandler
 
-    await network1.sendBlockPresence(
-      switch2.peerInfo.peerId,
-      blocks.mapIt(BlockPresence(address: it.address, type: BlockPresenceType.Have)),
-    )
+    (
+      await network1.sendBlockPresence(
+        switch2.peerInfo.peerId,
+        blocks.mapIt(BlockPresence(address: it.address, type: BlockPresenceType.Have)),
+      )
+    ).tryGet
 
     await done.wait(500.millis)
 
-asyncchecksuite "Network - Test Limits":
+suite "Network - Test Limits":
   var
     switch1, switch2: Switch
     network1, network2: BlockExcNetwork

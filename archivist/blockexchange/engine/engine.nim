@@ -53,6 +53,9 @@ const
   DefaultTaskQueueSize = 128
   DefaultConcurrentTasks = 30
   DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
+  # Serve slice sized so a full delivery message stays under the receiver's
+  # 32MB TCP window: 48 x 512KiB blocks = 24MiB.
+  DefaultMaxServeBatchBlocks = 48
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
@@ -78,18 +81,26 @@ type
     maxBatchBlocks: int
     discoveryDeadline*: Duration
     blockRequestTimeout: Duration
+    wantBlockResendCooldown: Duration
     pendingBlocks*: PendingBlocksManager
     discovery*: DiscoveryEngine
     advertiser*: Advertiser
     lastDiscRequest: Moment
 
 proc scheduleTask(self: BlockExcEngine, task: BlockExcPeerCtx) {.gcsafe, raises: [].} =
+  # Only stamp on first enqueue; pushOrUpdateNoWait must not reset wait clock.
+  if task.taskEnqueuedAt == default(Moment):
+    task.taskEnqueuedAt = Moment.now()
   if self.taskQueue.pushOrUpdateNoWait(task).isOk():
+    archivist_block_exchange_task_queue_depth.set(self.taskQueue.len.int64)
     trace "Task scheduled for peer", peer = task.id
   else:
+    archivist_block_exchange_task_queue_full.inc()
+    # Leave taskEnqueuedAt set — peer still waiting or will be re-scheduled.
     warn "Unable to schedule task for peer", peer = task.id
 
 proc blockexcTaskRunner(self: BlockExcEngine) {.async: (raises: []).}
+
 proc resolveBlocks*(
   self: BlockExcEngine, blocksDelivery: seq[BlockDelivery], sender: ?BlockExcPeerCtx
 ) {.async: (raises: [CancelledError]).}
@@ -126,9 +137,13 @@ proc sendWantBlock(
     self: BlockExcEngine, addresses: seq[BlockAddress], blockPeer: PeerId
 ): Future[void] {.async: (raises: [CancelledError]).} =
   trace "Sending wantBlock request to", addresses, peer = blockPeer
-  await self.network.request.sendWantList(
-    blockPeer, addresses, wantType = WantType.WantBlock
-  )
+  if err =? (
+    await self.network.request.sendWantList(
+      blockPeer, addresses, wantType = WantType.WantBlock
+    )
+  ).errorOption:
+    trace "Want block send failed", peer = blockPeer, err = err.msg
+    return
 
   archivist_block_exchange_want_block_lists_sent.inc()
   archivist_block_exchange_want_block_entries_sent.inc(addresses.len.int64)
@@ -160,13 +175,17 @@ proc sendBatchedWantList(
       total = addresses.len,
       full = full
 
-    await self.network.request.sendWantList(
-      peer.id, batch, full = full and offset == 0, sendDontHave = true
-    )
-    archivist_block_exchange_want_have_lists_sent.inc()
-    archivist_block_exchange_want_have_entries_sent.inc(batch.len.int64)
+    if err =? (
+      await self.network.request.sendWantList(
+        peer.id, batch, full = full and offset == 0, sendDontHave = true
+      )
+    ).errorOption:
+      trace "Want list send failed", peer = peer.id, err = err.msg
+      offset = batchEnd
+      continue
 
     archivist_block_exchange_want_have_lists_sent.inc()
+    archivist_block_exchange_want_have_entries_sent.inc(batch.len.int64)
 
     offset = batchEnd
 
@@ -317,7 +336,11 @@ proc cancelBlocks(
   proc dispatchCancellations(
       peerId: PeerId, addresses: HashSet[BlockAddress]
   ): Future[PeerId] {.async: (raises: [CancelledError]).} =
-    await self.network.request.sendWantCancellations(peerId, addresses.toSeq)
+    if err =? (
+      await self.network.request.sendWantCancellations(peerId, addresses.toSeq)
+    ).errorOption:
+      trace "Want cancellation send failed", peer = peerId, err = err.msg
+
     peerId
 
   for peerCtx in self.peers.peers.values:
@@ -450,8 +473,7 @@ proc blocksDeliveryHandler*(
       lastIdle = Moment.now()
 
   for treeCid, items in leafByTree:
-    let putResult = await self.localStore.putBlocks(treeCid, items)
-    if err =? putResult.errorOption:
+    if err =? (await self.localStore.putBlocks(treeCid, items)).errorOption:
       error "Unable to store leaf blocks", treeCid, err = err.msg
       for delivery in validatedBlocksDelivery:
         if delivery.address.leaf and delivery.address.treeCid == treeCid:
@@ -480,8 +502,7 @@ proc blocksDeliveryHandler*(
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
       continue
 
-    let storeResult = await self.localStore.storeManifest(manifest)
-    if err =? storeResult.errorOption:
+    if err =? (await self.localStore.storeManifest(manifest)).errorOption:
       error "Unable to store manifest", err = err.msg
       await self.failBlockRequest(bd.address, StorageFailedEngineError, err.msg)
       validatedBlocksDelivery.keepItIf(it.address.cid != bd.address.cid)
@@ -509,20 +530,25 @@ proc wantListHandler*(
   let peerCtx = self.peers.get(peer)
   if peerCtx.isNil:
     return
+
   var
     wantHaveCount = 0
     wantBlockCount = 0
+
   for e in wantList.entries:
     if e.cancel:
       continue
+
     case e.wantType
     of WantType.WantHave:
       inc wantHaveCount
     of WantType.WantBlock:
       inc wantBlockCount
+
   if wantHaveCount > 0:
     archivist_block_exchange_want_have_lists_received.inc()
     archivist_block_exchange_want_have_entries_received.inc(wantHaveCount.int64)
+
   if wantBlockCount > 0:
     archivist_block_exchange_want_block_lists_received.inc()
     archivist_block_exchange_want_block_entries_received.inc(wantBlockCount.int64)
@@ -567,19 +593,25 @@ proc wantListHandler*(
             BlockPresence(address: e.address, `type`: BlockPresenceType.DontHave)
           )
       of WantType.WantBlock:
-        peerCtx.wantedBlocks.incl(e.address)
-        schedulePeer = true
+        # Gate must skip wantedBlocks.incl too - the serve-pass cleanup drops
+        # markers for wanted-but-undelivered blocks, which would bypass the
+        # cooldown if the block were added to wantedBlocks unconditionally.
+        if peerCtx.clearSentIfStale(e.address, self.wantBlockResendCooldown):
+          peerCtx.wantedBlocks.incl(e.address)
+          schedulePeer = true
 
       if presence.len >= PresenceBatchSize or (Moment.now() - lastIdle) >= runtimeQuota:
         if presence.len > 0:
-          await self.network.request.sendPresence(peer, presence)
+          if err =? (await self.network.request.sendPresence(peer, presence)).errorOption:
+            trace "Presence send failed", peer, err = err.msg
           presence = @[]
 
         await idleAsync()
         lastIdle = Moment.now()
 
     if presence.len > 0:
-      await self.network.request.sendPresence(peer, presence)
+      if err =? (await self.network.request.sendPresence(peer, presence)).errorOption:
+        trace "Presence send failed", peer, err = err.msg
 
     if schedulePeer:
       self.scheduleTask(peerCtx)
@@ -602,19 +634,35 @@ proc taskHandler*(
 ) {.gcsafe, async: (raises: [CancelledError]).} =
   let wantedBlocks = peerCtx.wantedBlocks.toSeq.filterIt(not peerCtx.isBlockSent(it))
   if wantedBlocks.len == 0:
+    peerCtx.taskEnqueuedAt = default(Moment)
     return
+
+  # Queue wait: scheduleTask → worker start. High wait + low service => capacity.
+  if peerCtx.taskEnqueuedAt != default(Moment):
+    let wait = Moment.now() - peerCtx.taskEnqueuedAt
+    if wait.nanoseconds > 0:
+      archivist_block_exchange_task_queue_wait_seconds.observe(
+        wait.nanoseconds.float64 / 1e9
+      )
+
+  peerCtx.taskEnqueuedAt = default(Moment)
+  archivist_block_exchange_task_queue_depth.set(self.taskQueue.len.int64)
+  archivist_block_exchange_active_serve_tasks.inc()
 
   for address in wantedBlocks:
     peerCtx.markBlockAsSent(address)
 
-  var
-    leafIndicesByTree: Table[Cid, seq[Natural]]
-    nonLeafAddresses: seq[BlockAddress]
-    blockDeliveries: seq[BlockDelivery]
-    deliveredAddresses = initHashSet[BlockAddress]()
+  var deliveredAddresses = initHashSet[BlockAddress]()
 
-  try:
-    for wantedBlock in wantedBlocks:
+  proc loadSlice(
+      slice: seq[BlockAddress]
+  ): Future[seq[BlockDelivery]] {.async: (raises: [CancelledError]).} =
+    var
+      leafIndicesByTree: Table[Cid, seq[Natural]]
+      nonLeafAddresses: seq[BlockAddress]
+      blockDeliveries: seq[BlockDelivery]
+
+    for wantedBlock in slice:
       if wantedBlock.leaf:
         leafIndicesByTree.withValue(wantedBlock.treeCid, slot):
           slot[].add(wantedBlock.index)
@@ -627,7 +675,7 @@ proc taskHandler*(
       let cids = nonLeafAddresses.mapIt(it.cid)
       without blocks =? await self.localStore.getBlocks(cids), err:
         error "Error getting non-leaf blocks from local store", err = err.msg
-        return
+        return @[]
 
       var blocksByCid: Table[Cid, Block]
       for blk in blocks:
@@ -659,31 +707,104 @@ proc taskHandler*(
             )
           )
 
-    if blockDeliveries.len == 0:
-      return
+    blockDeliveries
 
-    for batch in blockDeliveries.batches(self.maxBatchBlocks):
-      await self.network.request.sendBlocksDelivery(peerCtx.id, batch)
-      archivist_block_exchange_blocks_sent.inc(batch.len.int64)
-      let batchBytes = batch.foldl(a + b.blk.data.len, 0)
-      archivist_block_exchange_bytes_sent.inc(batchBytes.int64)
-      for delivery in batch:
-        deliveredAddresses.incl(delivery.address)
+  proc sendSlice(
+      batch: seq[BlockDelivery]
+  ): Future[?!void] {.async: (raises: [CancelledError]).} =
+    ## Send a batch of block deliveries to the peer. Returns success if the batch
+    ## was written to the transport, failure with the transport error otherwise.
+    if batch.len == 0:
+      return success()
+
+    if err =?
+        (await self.network.request.sendBlocksDelivery(peerCtx.id, batch)).errorOption:
+      return failure(err)
+
+    archivist_block_exchange_blocks_sent.inc(batch.len.int64)
+    var batchBytes = 0
+    for delivery in batch:
+      batchBytes += delivery.blk.data.len
+      deliveredAddresses.incl(delivery.address)
+
+    archivist_block_exchange_bytes_sent.inc(batchBytes.int64)
+    success()
+
+  try:
+    # Pipeline: load slice N+1 while send of slice N is in flight (NET_WRITE overlap).
+    # Single TCP stream per peer still serializes writes; store work no longer waits.
+    var
+      totalStoreNs = 0'i64
+      totalSendNs = 0'i64
+      pendingSend: Future[?!void].Raising([CancelledError])
+      pendingSendStart = Moment.now()
+
+    try:
+      var offset = 0
+      while offset < wantedBlocks.len:
+        let
+          batchEnd = min(offset + self.maxBatchBlocks, wantedBlocks.len)
+          slice = wantedBlocks[offset ..< batchEnd]
+        offset = batchEnd
+
+        # Store-read runs concurrent with any prior pendingSend.
+        let storeReadStart = Moment.now()
+        let blockDeliveries = await loadSlice(slice)
+        totalStoreNs += (Moment.now() - storeReadStart).nanoseconds
+
+        if not pendingSend.isNil:
+          let sentResult = await pendingSend
+          totalSendNs += (Moment.now() - pendingSendStart).nanoseconds
+          pendingSend = nil
+          if err =? sentResult.errorOption:
+            # Connection dead - stop serving this peer. Blocks stay marked sent
+            # upfront, but pruneSentBlocks will clean them since they're not in
+            # deliveredAddresses, so they become re-servable after the cooldown.
+            trace "Send failed, stopping serve for peer",
+              peer = peerCtx.id, err = err.msg
+            break
+
+        if blockDeliveries.len == 0:
+          continue
+
+        pendingSendStart = Moment.now()
+        pendingSend = sendSlice(blockDeliveries)
+
+      if not pendingSend.isNil:
+        if err =? (await pendingSend).errorOption:
+          trace "Send failed on final slice", peer = peerCtx.id, err = err.msg
+        totalSendNs += (Moment.now() - pendingSendStart).nanoseconds
+        pendingSend = nil
+    finally:
+      if not pendingSend.isNil:
+        await noCancel pendingSend.cancelAndWait()
+
+    if totalStoreNs > 0:
+      archivist_block_exchange_task_store_read_seconds.observe(
+        totalStoreNs.float64 / 1e9
+      )
+
+    if totalSendNs > 0:
+      archivist_block_exchange_task_send_seconds.observe(totalSendNs.float64 / 1e9)
 
     for address in deliveredAddresses:
       peerCtx.wantedBlocks.excl(address)
   finally:
+    archivist_block_exchange_active_serve_tasks.dec()
+
+    var wantedTotal = 0
+    for p in self.peers:
+      wantedTotal += p.wantedBlocks.len
+    archivist_block_exchange_wanted_blocks.set(wantedTotal.int64)
+
     let wantedSet = wantedBlocks.toHashSet
-    var remainingSent = initHashSet[BlockAddress]()
-    for address in peerCtx.blocksSent:
-      if address notin wantedSet or address in deliveredAddresses:
-        remainingSent.incl(address)
-    peerCtx.blocksSent = remainingSent
+    peerCtx.pruneSentBlocks(wantedSet, deliveredAddresses)
 
 proc blockexcTaskRunner(self: BlockExcEngine) {.async: (raises: []).} =
   try:
     while self.blockexcRunning:
       let peerCtx = await self.taskQueue.pop()
+      archivist_block_exchange_task_queue_depth.set(self.taskQueue.len.int64)
       await self.taskHandler(peerCtx)
   except CancelledError:
     trace "block exchange task runner cancelled"
@@ -698,10 +819,11 @@ proc new*(
     advertiser: Advertiser,
     peerStore: PeerCtxStore,
     pendingBlocks: PendingBlocksManager,
-    maxBatchBlocks = DefaultMaxBatchBlocks,
+    maxBatchBlocks = DefaultMaxServeBatchBlocks,
     concurrentTasks = DefaultConcurrentTasks,
     selectPeer: PeerSelector = scoredPeer,
     blockRequestTimeout = DefaultRequestTimeout,
+    wantBlockResendCooldown = DefaultWantBlockResendTimeout,
 ): BlockExcEngine =
   let self = BlockExcEngine(
     localStore: localStore,
@@ -712,6 +834,7 @@ proc new*(
     trackedFutures: TrackedFutures(),
     maxBatchBlocks: maxBatchBlocks,
     blockRequestTimeout: blockRequestTimeout,
+    wantBlockResendCooldown: wantBlockResendCooldown,
     taskQueue: newAsyncHeapQueue[BlockExcPeerCtx](DefaultTaskQueueSize),
     discovery: discovery,
     advertiser: advertiser,
@@ -740,6 +863,8 @@ proc new*(
     # Don't drop the peer — a single block timeout doesn't mean
     # the peer is bad. pendingBlocks already retries the block.
 
+  # Must call self.selectPeer so tests can inject a custom selector.
+  # Load-balance among top-K scored peers lives in scoredPeer (default).
   proc selectKnownPeer(address: BlockAddress): BlockExcPeerCtx {.gcsafe, raises: [].} =
     let peers = self.peers.getPeersForBlock(address)
     if peers.with.len == 0:
