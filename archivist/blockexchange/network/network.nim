@@ -36,8 +36,10 @@ const
 type
   WantListHandler* =
     proc(peer: PeerId, wantList: WantList) {.gcsafe, async: (raises: []).}
+
   BlocksDeliveryHandler* =
     proc(peer: PeerId, blocks: seq[BlockDelivery]) {.gcsafe, async: (raises: []).}
+
   BlockPresenceHandler* =
     proc(peer: PeerId, precense: seq[BlockPresence]) {.gcsafe, async: (raises: []).}
 
@@ -75,26 +77,25 @@ type
     sendPresence*: PresenceSender
 
   BlockExcNetwork* = ref object of LPProtocol
-    peers*: Table[PeerId, NetworkPeer]
+    peers: Table[PeerId, NetworkPeer]
     switch*: Switch
     handlers*: BlockExcHandlers
     request*: BlockExcRequest
-    getConn: ConnProvider
     inflightSema: AsyncSemaphore
-    maxInflight: int = DefaultMaxInflight
-    trackedFutures*: TrackedFutures = TrackedFutures()
+    maxInflight = DefaultMaxInflight
+    trackedFutures = TrackedFutures()
 
 proc peerId*(b: BlockExcNetwork): PeerId =
   ## Return peer id
   ##
 
-  return b.switch.peerInfo.peerId
+  b.switch.peerInfo.peerId
 
 proc isSelf*(b: BlockExcNetwork, peer: PeerId): bool =
   ## Check if peer is self
   ##
 
-  return b.peerId == peer
+  b.peerId == peer
 
 proc send*(
     b: BlockExcNetwork, id: PeerId, msg: pb.Message
@@ -137,6 +138,7 @@ proc send*(
   archivist_block_exchange_network_send_seconds.observe(
     (Moment.now() - totalStart).nanoseconds.float64 / 1e9, labelValues = [kind]
   )
+
   success()
 
 proc handleWantList(
@@ -219,11 +221,12 @@ proc sendBlockPresence*(
 
   b.send(id, Message(blockPresences: @presence))
 
-proc rpcHandler(
+proc rpcHandler*(
     b: BlockExcNetwork, peer: NetworkPeer, msg: Message
 ) {.async: (raises: []).} =
   ## handle rpc messages
   ##
+
   if msg.wantList.entries.len > 0:
     b.trackedFutures.track(b.handleWantList(peer, msg.wantList))
 
@@ -240,25 +243,17 @@ proc getOrCreatePeer(b: BlockExcNetwork, peer: PeerId): NetworkPeer =
   if peer in b.peers:
     return b.peers.getOrDefault(peer, nil)
 
-  var getConn: ConnProvider = proc(): Future[Connection] {.
-      async: (raises: [CancelledError])
-  .} =
-    try:
-      trace "Getting new connection stream", peer
-      return await b.switch.dial(peer, Codec)
-    except CancelledError as error:
-      raise error
-    except CatchableError as exc:
-      trace "Unable to connect to blockexc peer", exc = exc.msg
-
-  if not isNil(b.getConn):
-    getConn = b.getConn
-
-  let rpcHandler = proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
-    await b.rpcHandler(p, msg)
-
   # create new pubsub peer
-  let blockExcPeer = NetworkPeer.new(peer, getConn, rpcHandler)
+  let blockExcPeer = NetworkPeer.new(
+    peer,
+    proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
+      trace "Getting new connection stream", peer
+      catchAsync(await b.switch.dial(peer, Codec)),
+    proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
+      await b.rpcHandler(p, msg)
+    ,
+  )
+
   debug "Created new blockexc peer", peer
 
   b.peers[peer] = blockExcPeer
@@ -307,7 +302,7 @@ method init*(self: BlockExcNetwork) =
     if event.kind == PeerEventKind.Joined:
       self.setupPeer(peerId)
     else:
-      b.peers.del(peer)
+      self.peers.del(peerId)
 
   self.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Joined)
   self.switch.addPeerEventHandler(peerEventHandler, PeerEventKind.Left)
@@ -318,6 +313,7 @@ method init*(self: BlockExcNetwork) =
     let
       peerId = conn.peerId
       blockexcPeer = self.getOrCreatePeer(peerId)
+
     await blockexcPeer.readLoop(conn) # attach read loop
 
   self.handler = handler
@@ -327,17 +323,13 @@ proc stop*(self: BlockExcNetwork) {.async: (raises: []).} =
   await self.trackedFutures.cancelTracked()
 
 proc new*(
-    T: type BlockExcNetwork,
-    switch: Switch,
-    connProvider: ConnProvider = nil,
-    maxInflight = DefaultMaxInflight,
+    T: type BlockExcNetwork, switch: Switch, maxInflight = DefaultMaxInflight
 ): BlockExcNetwork =
   ## Create a new BlockExcNetwork instance
   ##
 
   let self = BlockExcNetwork(
     switch: switch,
-    getConn: connProvider,
     inflightSema: newAsyncSemaphore(maxInflight),
     maxInflight: maxInflight,
   )

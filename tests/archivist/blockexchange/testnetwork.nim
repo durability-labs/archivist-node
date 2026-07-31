@@ -1,5 +1,6 @@
-import std/sequtils
 import std/tables
+import std/sequtils
+import std/importutils
 
 import pkg/chronos
 
@@ -7,6 +8,10 @@ import pkg/archivist/rng
 import pkg/archivist/chunker
 import pkg/archivist/blocktype as bt
 import pkg/archivist/blockexchange
+import pkg/archivist/blockexchange/network {.all.}
+
+privateAccess(BlockExcNetwork)
+privateAccess(NetworkPeer)
 
 import ../../asynctest
 import ../examples
@@ -26,9 +31,6 @@ suite "Network - Handlers":
     blocks: seq[bt.Block]
     done: Future[void]
 
-  proc getConn(): Future[Connection] {.async: (raises: [CancelledError]).} =
-    return Connection(buffer)
-
   setup:
     while true:
       let chunk = (await chunker.getBytes()).tryGet()
@@ -39,9 +41,17 @@ suite "Network - Handlers":
 
     done = newFuture[void]()
     buffer = BufferStream.new()
-    network = BlockExcNetwork.new(switch = newStandardSwitch(), connProvider = getConn)
-    network.setupPeer(peerId)
-    networkPeer = network.peers[peerId]
+    network = BlockExcNetwork.new(switch = newStandardSwitch())
+    networkPeer = NetworkPeer.new(
+      peerId,
+      proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
+        return success Connection(buffer),
+      proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
+        await network.rpcHandler(p, msg)
+      ,
+    )
+
+    network.peers[peerId] = networkPeer
     discard await networkPeer.connect()
 
   test "Want List handler":

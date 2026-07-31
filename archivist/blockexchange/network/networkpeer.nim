@@ -24,7 +24,7 @@ logScope:
 
 type
   ConnProvider* =
-    proc(): Future[Connection] {.gcsafe, async: (raises: [CancelledError]).}
+    proc(): Future[?!Connection] {.gcsafe, async: (raises: [CancelledError]).}
 
   RPCHandler* = proc(peer: NetworkPeer, msg: Message) {.gcsafe, async: (raises: []).}
 
@@ -72,23 +72,23 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
 
 proc connect*(
     self: NetworkPeer
-): Future[Connection] {.async: (raises: [CancelledError]).} =
+): Future[?!Connection] {.async: (raises: [CancelledError]).} =
   if self.connected:
     trace "Already connected", peer = self.id, connId = self.sendConn.oid
-    return self.sendConn
+    return success self.sendConn
 
-  self.sendConn = await self.getConn()
+  self.sendConn = ?await self.getConn()
   self.trackedFutures.track(self.readLoop(self.sendConn))
-  return self.sendConn
+  return success self.sendConn
 
 proc send*(
     self: NetworkPeer, msg: Message
-) {.async: (raises: [CancelledError, LPStreamError]).} =
-  let conn = await self.connect()
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  let conn = ?await self.connect()
 
-  if isNil(conn):
+  if conn.isNil:
     warn "Unable to get send connection for peer message not sent", peer = self.id
-    return
+    return failure("Unable to get send connection for peer message not sent")
 
   trace "Sending message", peer = self.id, connId = conn.oid
   let
@@ -103,7 +103,8 @@ proc send*(
 
   let writeStart = Moment.now()
   trace "WriteLp starting", peer = self.id, connId = conn.oid, bytes = encoded.len, kind
-  await conn.writeLp(encoded)
+  ?catchAsync(await conn.writeLp(encoded))
+
   let writeNs = (Moment.now() - writeStart).nanoseconds
   archivist_block_exchange_network_write_seconds.observe(
     writeNs.float64 / 1e9, labelValues = [kind]
@@ -111,6 +112,7 @@ proc send*(
   archivist_block_exchange_network_write_bytes.observe(
     encoded.len.float64, labelValues = [kind]
   )
+
   trace "WriteLp completed",
     peer = self.id,
     connId = conn.oid,
