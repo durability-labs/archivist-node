@@ -91,11 +91,11 @@ proc send*(
     return
 
   trace "Sending message", peer = self.id, connId = conn.oid
-  let encodeStart = Moment.now()
-  let encoded = protobufEncode(msg)
-  let encodeNs = (Moment.now() - encodeStart).nanoseconds
-
-  let kind = messageKind(msg)
+  let
+    encodeStart = Moment.now()
+    encoded = protobufEncode(msg)
+    encodeNs = (Moment.now() - encodeStart).nanoseconds
+    kind = messageKind(msg)
 
   archivist_block_exchange_network_encode_seconds.observe(
     encodeNs.float64 / 1e9, labelValues = [kind]

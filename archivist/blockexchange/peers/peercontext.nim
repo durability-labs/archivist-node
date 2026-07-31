@@ -30,6 +30,10 @@ const
   DefaultWantHaveResendTimeout* = 10.seconds
   DefaultWantHaveDeltaInterval* = 50.millis
   DefaultMaxWantListBatchSize* = 1024
+  ## Cooldown before a block can be re-served to the same peer.
+  ## 3x the block request timeout - long enough to prevent amplification,
+  ## short enough to allow genuine retries after a failed delivery.
+  DefaultWantBlockResendTimeout* = 3 * DefaultRequestTimeout
 
 type
   WantListState* {.pure.} = enum
@@ -54,8 +58,9 @@ type
     ## remote peer view
     blocks*: Table[BlockAddress, Presence] # remote peer presence map
     wantedBlocks*: HashSet[BlockAddress] # blocks that the peer wants
-    blocksSent*: HashSet[BlockAddress] # blocks already sent to the peer
+    blocksSent: Table[BlockAddress, Moment] # blocks sent to the peer, with send time
     blocksRequested*: HashSet[BlockAddress] # blocks already requested from the peer
+    taskEnqueuedAt*: Moment # set when peer is pushed onto serve task queue
 
     ## wants exchange
     alreadySent*: HashSet[BlockAddress] # wants already sent in the current window
@@ -134,13 +139,43 @@ proc decideSend*(
     )
 
 proc isBlockSent*(self: BlockExcPeerCtx, address: BlockAddress): bool =
-  address in self.blocksSent
+  self.blocksSent.contains(address)
 
 proc markBlockAsSent*(self: BlockExcPeerCtx, address: BlockAddress) =
-  self.blocksSent.incl(address)
+  self.blocksSent[address] = Moment.now()
 
 proc markBlockAsNotSent*(self: BlockExcPeerCtx, address: BlockAddress) =
-  self.blocksSent.excl(address)
+  ## Unconditionally clear the sent marker. Used by the cancel path -
+  ## a cancelled send never left the peer, so no cooldown applies.
+  self.blocksSent.del(address)
+
+proc clearSentIfStale*(
+    self: BlockExcPeerCtx, address: BlockAddress, cooldown: Duration
+): bool =
+  ## Gated clear for re-want: clear the sent marker only if the cooldown
+  ## has elapsed since the block was last sent to this peer. Returns true
+  ## if the marker was cleared (or was never set).
+  self.blocksSent.withValue(address, sentAt):
+    if (Moment.now() - sentAt[]) >= cooldown:
+      self.blocksSent.del(address)
+      return true
+    return false
+  do:
+    return true
+
+proc pruneSentBlocks*(
+    self: BlockExcPeerCtx,
+    wantedSet: HashSet[BlockAddress],
+    deliveredAddresses: HashSet[BlockAddress],
+) =
+  ## Drop sent markers for wanted-but-undelivered blocks (retried next pass).
+  ## The resend cooldown is preserved because gated re-wants are never added
+  ## to wantedBlocks, so their markers land in the not-wanted bucket and survive.
+  var pruned = initTable[BlockAddress, Moment]()
+  for address, sentAt in self.blocksSent:
+    if address notin wantedSet or address in deliveredAddresses:
+      pruned[address] = sentAt
+  self.blocksSent = pruned
 
 proc peerHave*(self: BlockExcPeerCtx): HashSet[BlockAddress] =
   toHashSet(self.blocks.keys.toSeq)
