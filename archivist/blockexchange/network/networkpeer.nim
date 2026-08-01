@@ -11,6 +11,11 @@
 
 import pkg/chronos
 import pkg/libp2p
+import pkg/taskpools
+
+import std/isolation
+import std/sequtils
+import ../../utils/threadspawn
 
 import ../protobuf/blockexc
 import ../protobuf/message
@@ -21,6 +26,9 @@ import ../../utils/trackedfutures
 
 logScope:
   topics = "archivist blockexcnetworkpeer"
+
+const OffloadThreshold = 64 * 1024
+  # 64 KiB: below this, inline is cheaper than the signal round-trip
 
 type
   ConnProvider* =
@@ -34,9 +42,26 @@ type
     sendConn: Connection
     getConn: ConnProvider
     trackedFutures: TrackedFutures
+    taskpool*: Taskpool
 
 proc connected*(self: NetworkPeer): bool =
   not (isNil(self.sendConn)) and not (self.sendConn.closed or self.sendConn.atEof)
+
+proc decodeMsgTask(
+    ctx: SharedPtr[TaskCtx[Message]], data: seq[byte]
+) {.gcsafe, raises: [].} =
+  defer:
+    discard ctx[].signal.fireSync()
+  var r = Message.protobufDecode(data).mapFailure
+  ctx[].result = unsafeIsolate(move r)
+
+proc encodeMsgTask(
+    ctx: SharedPtr[TaskCtx[seq[byte]]], msg: Message
+) {.gcsafe, raises: [].} =
+  defer:
+    discard ctx[].signal.fireSync()
+  var r = success(protobufEncode(msg))
+  ctx[].result = unsafeIsolate(move r)
 
 proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   if isNil(conn):
@@ -49,7 +74,17 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
       let
         data = await conn.readLp(MaxMessageSize.int)
         decodeStart = Moment.now()
-        msg = Message.protobufDecode(data).mapFailure().tryGet()
+        msg =
+          if not self.taskpool.isNil and data.len > OffloadThreshold:
+            (
+              await spawnJoin[Message](
+                proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
+                  self.taskpool.spawn decodeMsgTask(ctx, data)
+              )
+            ).tryGet()
+          else:
+            Message.protobufDecode(data).mapFailure().tryGet()
+
       archivist_block_exchange_recv_decode_seconds.observe(
         (Moment.now() - decodeStart).nanoseconds.float64 / 1e9
       )
@@ -82,7 +117,7 @@ proc connect*(
   return success self.sendConn
 
 proc send*(
-    self: NetworkPeer, msg: Message
+    self: NetworkPeer, msg: sink Message
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   let conn = ?await self.connect()
 
@@ -91,11 +126,22 @@ proc send*(
     return failure("Unable to get send connection for peer message not sent")
 
   trace "Sending message", peer = self.id, connId = conn.oid
+  # Only offload encode when the payload carries significant block data.
+  # Control messages (wantlist/presence/cancel) encode cheaply inline.
   let
-    encodeStart = Moment.now()
-    encoded = protobufEncode(msg)
-    encodeNs = (Moment.now() - encodeStart).nanoseconds
     kind = messageKind(msg)
+    encodeStart = Moment.now()
+    encoded =
+      if not self.taskpool.isNil and
+          foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
+        ?await spawnJoin[seq[byte]](
+          proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
+            self.taskpool.spawn encodeMsgTask(ctx, msg)
+        )
+      else:
+        protobufEncode(msg)
+
+    encodeNs = (Moment.now() - encodeStart).nanoseconds
 
   archivist_block_exchange_network_encode_seconds.observe(
     encodeNs.float64 / 1e9, labelValues = [kind]
@@ -125,6 +171,7 @@ func new*(
     peer: PeerId,
     connProvider: ConnProvider,
     rpcHandler: RPCHandler,
+    taskpool: Taskpool = nil,
 ): NetworkPeer =
   doAssert(not isNil(connProvider), "should supply connection provider")
 
@@ -133,4 +180,5 @@ func new*(
     getConn: connProvider,
     handler: rpcHandler,
     trackedFutures: TrackedFutures(),
+    taskpool: taskpool,
   )

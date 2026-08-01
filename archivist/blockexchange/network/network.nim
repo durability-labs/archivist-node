@@ -11,12 +11,14 @@ import std/tables
 import std/sequtils
 
 import pkg/chronos
+import pkg/taskpools
 
 import pkg/libp2p
 import pkg/libp2p/utils/semaphore
 
 import ../../blocktype as bt
 import ../../logutils
+import ../../errors
 import ../protobuf/blockexc as pb
 import ../../utils/trackedfutures
 import ../../errors
@@ -84,6 +86,7 @@ type
     inflightSema: AsyncSemaphore
     maxInflight = DefaultMaxInflight
     trackedFutures = TrackedFutures()
+    taskpool*: Taskpool
 
 proc peerId*(b: BlockExcNetwork): PeerId =
   ## Return peer id
@@ -98,7 +101,7 @@ proc isSelf*(b: BlockExcNetwork, peer: PeerId): bool =
   b.peerId == peer
 
 proc send*(
-    b: BlockExcNetwork, id: PeerId, msg: pb.Message
+    b: BlockExcNetwork, id: PeerId, msg: sink pb.Message
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Send message to peer. Returns success if the message was written to the
   ## transport, failure with the transport error otherwise.
@@ -248,10 +251,11 @@ proc getOrCreatePeer(b: BlockExcNetwork, peer: PeerId): NetworkPeer =
     peer,
     proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
       trace "Getting new connection stream", peer
-      catchAsync(await b.switch.dial(peer, Codec)),
+      return catchAsync(await b.switch.dial(peer, Codec)),
     proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
       await b.rpcHandler(p, msg)
     ,
+    b.taskpool,
   )
 
   debug "Created new blockexc peer", peer
@@ -323,7 +327,10 @@ proc stop*(self: BlockExcNetwork) {.async: (raises: []).} =
   await self.trackedFutures.cancelTracked()
 
 proc new*(
-    T: type BlockExcNetwork, switch: Switch, maxInflight = DefaultMaxInflight
+    T: type BlockExcNetwork,
+    switch: Switch,
+    maxInflight = DefaultMaxInflight,
+    taskpool: Taskpool = nil,
 ): BlockExcNetwork =
   ## Create a new BlockExcNetwork instance
   ##
@@ -332,6 +339,7 @@ proc new*(
     switch: switch,
     inflightSema: newAsyncSemaphore(maxInflight),
     maxInflight: maxInflight,
+    taskpool: taskpool,
   )
 
   self.maxIncomingStreams = self.maxInflight

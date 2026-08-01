@@ -7,6 +7,7 @@ import pkg/taskpools
 import pkg/libp2p/multiaddress
 import pkg/chronicles
 import ../errors
+import ../utils
 import ./config
 import ./portmapping
 
@@ -62,24 +63,13 @@ proc mapTask(
 proc map(
     traversal: NatTraversal, address: MultiAddress
 ): Future[?!MultiAddress] {.async: (raises: [CancelledError]).} =
-  without signal =? ThreadSignalPtr.new():
-    return failure "unable to create thread signal"
-  let portmapping = addr traversal.portmapping
-  var mapped: ?!MultiAddress
-  trace "spawning port mapping background task", address
-  traversal.taskpool.spawn mapTask(portmapping, address, signal, addr mapped)
-  let waiting = signal.wait()
-  if error =? catch(await waiting.join()).errorOption:
-    if error of CancelledError:
-      discard catch(await noCancel waiting)
-      discard signal.close()
-      raise (ref CancelledError) error
-    else:
-      discard signal.close()
-      return failure error
-  if error =? signal.close().errorOption:
-    return failure error
-  mapped
+  withThreadSignal(sig):
+    let portmapping = addr traversal.portmapping
+    var mapped: ?!MultiAddress
+    trace "spawning port mapping background task", address
+    traversal.taskpool.spawn mapTask(portmapping, address, sig, addr mapped)
+    ?await awaitSpawn(sig.wait())
+    return mapped
 
 proc map(
     traversal: NatTraversal, addresses: seq[MultiAddress]

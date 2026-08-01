@@ -184,7 +184,7 @@ proc new*(
       store = discoveryStore,
     )
 
-    network = BlockExcNetwork.new(switch)
+    network = BlockExcNetwork.new(switch, taskpool = tp)
 
     repoData: KVStore =
       case config.repoKind

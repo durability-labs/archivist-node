@@ -360,36 +360,22 @@ proc asyncEncode*(
     blocks: ref seq[seq[byte]],
     parity: ref seq[seq[byte]],
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without threadPtr =? ThreadSignalPtr.new():
-    return failure("Unable to create thread signal")
+  withThreadSignal(sig):
+    var task = EncodeTask(
+      erasure: addr self,
+      blockSize: blockSize,
+      blocks: blocks,
+      parity: parity,
+      signal: sig,
+    )
 
-  defer:
-    threadPtr.close().expect("closing once works")
+    doAssert self.taskPool.numThreads > 1,
+      "Must have at least one separate thread or signal will never be fired"
+    self.taskPool.spawn leopardEncodeTask(self.taskPool, addr task)
+    ?await awaitSpawn(sig.wait())
 
-  ## Create an ecode task with block data
-  var task = EncodeTask(
-    erasure: addr self,
-    blockSize: blockSize,
-    blocks: blocks,
-    parity: parity,
-    signal: threadPtr,
-  )
-
-  doAssert self.taskPool.numThreads > 1,
-    "Must have at least one separate thread or signal will never be fired"
-  self.taskPool.spawn leopardEncodeTask(self.taskPool, addr task)
-  let threadFut = threadPtr.wait()
-
-  if joinErr =? catch(await threadFut.join()).errorOption:
-    if err =? catch(await noCancel threadFut).errorOption:
-      return failure(err)
-    if joinErr of CancelledError:
-      raise (ref CancelledError) joinErr
-    else:
-      return failure(joinErr)
-
-  if not task.success.load():
-    return failure("Leopard encoding task failed")
+    if not task.success.load():
+      return failure("Leopard encoding task failed")
 
   success()
 
@@ -547,37 +533,23 @@ proc asyncDecode*(
     blocks, parity: ref seq[seq[byte]],
     recovered: ref seq[seq[byte]],
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
-  without threadPtr =? ThreadSignalPtr.new():
-    return failure("Unable to create thread signal")
+  withThreadSignal(sig):
+    var task = DecodeTask(
+      erasure: addr self,
+      blockSize: blockSize,
+      blocks: blocks,
+      parity: parity,
+      recovered: recovered,
+      signal: sig,
+    )
 
-  defer:
-    threadPtr.close().expect("closing once works")
+    doAssert self.taskPool.numThreads > 1,
+      "Must have at least one separate thread or signal will never be fired"
+    self.taskPool.spawn leopardDecodeTask(self.taskPool, addr task)
+    ?await awaitSpawn(sig.wait())
 
-  ## Create an decode task with block data
-  var task = DecodeTask(
-    erasure: addr self,
-    blockSize: blockSize,
-    blocks: blocks,
-    parity: parity,
-    recovered: recovered,
-    signal: threadPtr,
-  )
-
-  doAssert self.taskPool.numThreads > 1,
-    "Must have at least one separate thread or signal will never be fired"
-  self.taskPool.spawn leopardDecodeTask(self.taskPool, addr task)
-  let threadFut = threadPtr.wait()
-
-  if joinErr =? catch(await threadFut.join()).errorOption:
-    if err =? catch(await noCancel threadFut).errorOption:
-      return failure(err)
-    if joinErr of CancelledError:
-      raise (ref CancelledError) joinErr
-    else:
-      return failure(joinErr)
-
-  if not task.success.load():
-    return failure("Leopard decoding task failed")
+    if not task.success.load():
+      return failure("Leopard decoding task failed")
 
   success()
 

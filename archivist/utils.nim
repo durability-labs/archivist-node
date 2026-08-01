@@ -22,9 +22,11 @@ import ./utils/asynciter
 import ./utils/safeasynciter
 import ./utils/asyncbarrier
 import ./utils/futures
+import ./utils/threadspawn
 
 export
-  asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs, asyncbarrier
+  asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs, asyncbarrier,
+  threadspawn
 
 when defined(posix):
   import os, posix
