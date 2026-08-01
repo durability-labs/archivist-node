@@ -129,9 +129,11 @@ proc send*(
   # Only offload encode when the payload carries significant block data.
   # Control messages (wantlist/presence/cancel) encode cheaply inline.
   let
+    kind = messageKind(msg)
     encodeStart = Moment.now()
     encoded =
-      if foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
+      if not self.taskpool.isNil and
+          foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
         ?await spawnJoin[seq[byte]](
           proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
             self.taskpool.spawn encodeMsgTask(ctx, msg)
@@ -140,7 +142,6 @@ proc send*(
         protobufEncode(msg)
 
     encodeNs = (Moment.now() - encodeStart).nanoseconds
-    kind = messageKind(msg)
 
   archivist_block_exchange_network_encode_seconds.observe(
     encodeNs.float64 / 1e9, labelValues = [kind]
