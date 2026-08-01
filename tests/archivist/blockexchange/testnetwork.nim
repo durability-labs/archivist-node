@@ -249,7 +249,7 @@ suite "Network - Test Limits":
     await sleepAsync(100.millis)
     check not fut.finished
 
-suite "Network - Threadpool Offload":
+asyncchecksuite "Network - Threadpool Offload":
   let bigChunker =
     RandomChunker.new(Rng.instance(), size = 128 * 1024, chunkSize = 128 * 1024)
 
@@ -292,12 +292,9 @@ suite "Network - Threadpool Offload":
       done.complete()
 
     network2.handlers.onBlocksDelivery = blocksDeliveryHandler
-
-    (
-      await network1.sendBlocksDelivery(
-        switch2.peerInfo.peerId,
-        @[BlockDelivery(blk: bigBlock, address: bigBlock.address)],
-      )
-    ).tryGet
+    await network1.sendBlocksDelivery(
+      switch2.peerInfo.peerId,
+      @[BlockDelivery(blk: bigBlock, address: bigBlock.address)],
+    )
 
     await done.wait(500.millis)
