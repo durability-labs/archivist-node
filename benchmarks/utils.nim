@@ -14,7 +14,7 @@ template runit*(cmd: string) =
   echo "RUNNING: ", cmd
   let cmdRes = execShellCmd(cmd)
   echo "STATUS: ", cmdRes
-  assert cmdRes == 0
+  doAssert cmdRes == 0
 
 var benchRuns* = newTable[string, tuple[avgTimeSec: float, count: int]]()
 
@@ -71,5 +71,5 @@ func ceilingLog2*(x: int): int =
 
 func checkPowerOfTwo*(x: int, what: string): int =
   let k = ceilingLog2(x)
-  assert(x == 2 ^ k, ("`" & what & "` is expected to be a power of 2"))
+  doAssert(x == 2 ^ k, ("`" & what & "` is expected to be a power of 2"))
   return x
