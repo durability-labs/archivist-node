@@ -84,8 +84,8 @@ type
     handlers*: BlockExcHandlers
     request*: BlockExcRequest
     inflightSema: AsyncSemaphore
-    maxInflight: int = DefaultMaxInflight
-    trackedFutures*: TrackedFutures = TrackedFutures()
+    maxInflight = DefaultMaxInflight
+    trackedFutures = TrackedFutures()
     taskpool*: Taskpool
 
 proc peerId*(b: BlockExcNetwork): PeerId =
@@ -102,8 +102,9 @@ proc isSelf*(b: BlockExcNetwork, peer: PeerId): bool =
 
 proc send*(
     b: BlockExcNetwork, id: PeerId, msg: sink pb.Message
-) {.async: (raises: [CancelledError]).} =
-  ## Send message to peer
+): Future[?!void] {.async: (raises: [CancelledError]).} =
+  ## Send message to peer. Returns success if the message was written to the
+  ## transport, failure with the transport error otherwise.
   ##
 
   let peer = b.peers.getOrDefault(id)
@@ -246,7 +247,17 @@ proc getOrCreatePeer(b: BlockExcNetwork, peer: PeerId): NetworkPeer =
     return b.peers.getOrDefault(peer, nil)
 
   # create new pubsub peer
-  let blockExcPeer = NetworkPeer.new(peer, getConn, rpcHandler, b.taskpool)
+  let blockExcPeer = NetworkPeer.new(
+    peer,
+    proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
+      trace "Getting new connection stream", peer
+      return catchAsync(await b.switch.dial(peer, Codec)),
+    proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
+      await b.rpcHandler(p, msg)
+    ,
+    b.taskpool,
+  )
+
   debug "Created new blockexc peer", peer
 
   b.peers[peer] = blockExcPeer
@@ -318,7 +329,6 @@ proc stop*(self: BlockExcNetwork) {.async: (raises: []).} =
 proc new*(
     T: type BlockExcNetwork,
     switch: Switch,
-    connProvider: ConnProvider = nil,
     maxInflight = DefaultMaxInflight,
     taskpool: Taskpool = nil,
 ): BlockExcNetwork =
