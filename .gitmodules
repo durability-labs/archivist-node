@@ -160,3 +160,9 @@
 [submodule "vendor/nimble/lsquic"]
 	path = vendor/nimble/lsquic
 	url = https://github.com/vacp2p/nim-lsquic.git
+[submodule "vendor/nimble/nim-kvstore"]
+	path = vendor/nimble/nim-kvstore
+	url = git@github.com:durability-labs/nim-kvstore.git
+[submodule "vendor/nimble/threading"]
+	path = vendor/nimble/threading
+	url = https://github.com/nim-lang/threading.git
