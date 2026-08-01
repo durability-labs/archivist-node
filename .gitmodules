@@ -167,6 +167,3 @@
 	path = vendor/nimble/threading
 	url = https://github.com/nim-lang/threading.git
 
-[submodule "vendor/nimble/boringssl"]
-	path = vendor/nimble/boringssl
-	url = https://github.com/vacp2p/nim-boringssl
