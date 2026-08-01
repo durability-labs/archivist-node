@@ -11,12 +11,14 @@ import std/tables
 import std/sequtils
 
 import pkg/chronos
+import pkg/taskpools
 
 import pkg/libp2p
 import pkg/libp2p/utils/semaphore
 
 import ../../blocktype as bt
 import ../../logutils
+import ../../errors
 import ../protobuf/blockexc as pb
 import ../../utils/trackedfutures
 import ../../errors
@@ -82,8 +84,9 @@ type
     handlers*: BlockExcHandlers
     request*: BlockExcRequest
     inflightSema: AsyncSemaphore
-    maxInflight = DefaultMaxInflight
-    trackedFutures = TrackedFutures()
+    maxInflight: int = DefaultMaxInflight
+    trackedFutures*: TrackedFutures = TrackedFutures()
+    taskpool*: Taskpool
 
 proc peerId*(b: BlockExcNetwork): PeerId =
   ## Return peer id
@@ -98,10 +101,9 @@ proc isSelf*(b: BlockExcNetwork, peer: PeerId): bool =
   b.peerId == peer
 
 proc send*(
-    b: BlockExcNetwork, id: PeerId, msg: pb.Message
-): Future[?!void] {.async: (raises: [CancelledError]).} =
-  ## Send message to peer. Returns success if the message was written to the
-  ## transport, failure with the transport error otherwise.
+    b: BlockExcNetwork, id: PeerId, msg: sink pb.Message
+) {.async: (raises: [CancelledError]).} =
+  ## Send message to peer
   ##
 
   let peer = b.peers.getOrDefault(id)
@@ -244,16 +246,7 @@ proc getOrCreatePeer(b: BlockExcNetwork, peer: PeerId): NetworkPeer =
     return b.peers.getOrDefault(peer, nil)
 
   # create new pubsub peer
-  let blockExcPeer = NetworkPeer.new(
-    peer,
-    proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
-      trace "Getting new connection stream", peer
-      catchAsync(await b.switch.dial(peer, Codec)),
-    proc(p: NetworkPeer, msg: Message) {.async: (raises: []).} =
-      await b.rpcHandler(p, msg)
-    ,
-  )
-
+  let blockExcPeer = NetworkPeer.new(peer, getConn, rpcHandler, b.taskpool)
   debug "Created new blockexc peer", peer
 
   b.peers[peer] = blockExcPeer
@@ -323,7 +316,11 @@ proc stop*(self: BlockExcNetwork) {.async: (raises: []).} =
   await self.trackedFutures.cancelTracked()
 
 proc new*(
-    T: type BlockExcNetwork, switch: Switch, maxInflight = DefaultMaxInflight
+    T: type BlockExcNetwork,
+    switch: Switch,
+    connProvider: ConnProvider = nil,
+    maxInflight = DefaultMaxInflight,
+    taskpool: Taskpool = nil,
 ): BlockExcNetwork =
   ## Create a new BlockExcNetwork instance
   ##
@@ -332,6 +329,7 @@ proc new*(
     switch: switch,
     inflightSema: newAsyncSemaphore(maxInflight),
     maxInflight: maxInflight,
+    taskpool: taskpool,
   )
 
   self.maxIncomingStreams = self.maxInflight

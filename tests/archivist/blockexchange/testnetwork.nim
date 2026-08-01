@@ -3,7 +3,7 @@ import std/sequtils
 import std/importutils
 
 import pkg/chronos
-
+import pkg/taskpools
 import pkg/archivist/rng
 import pkg/archivist/chunker
 import pkg/archivist/blocktype as bt
@@ -248,3 +248,53 @@ suite "Network - Test Limits":
 
     await sleepAsync(100.millis)
     check not fut.finished
+
+asyncchecksuite "Network - Threadpool Offload":
+  let bigChunker =
+    RandomChunker.new(Rng.instance(), size = 128 * 1024, chunkSize = 128 * 1024)
+
+  var
+    switch1, switch2: Switch
+    network1, network2: BlockExcNetwork
+    bigBlock: bt.Block
+    done: Future[void]
+    tp: Taskpool
+
+  setup:
+    let chunk = (await bigChunker.getBytes()).tryGet()
+    bigBlock = bt.Block.new(chunk).tryGet()
+
+    done = newFuture[void]()
+    tp = Taskpool.new(numThreads = 2)
+    switch1 = newStandardSwitch()
+    switch2 = newStandardSwitch()
+    network1 = BlockExcNetwork.new(switch = switch1, taskpool = tp)
+    switch1.mount(network1)
+
+    network2 = BlockExcNetwork.new(switch = switch2, taskpool = tp)
+    switch2.mount(network2)
+
+    await switch1.start()
+    await switch2.start()
+
+    await switch1.connect(switch2.peerInfo.peerId, switch2.peerInfo.addrs)
+
+  teardown:
+    await allFuturesThrowing(switch1.stop(), switch2.stop())
+    tp.shutdown()
+
+  test "send and receive large block via threadpool offload":
+    proc blocksDeliveryHandler(
+        peer: PeerId, blocksDelivery: seq[BlockDelivery]
+    ) {.async: (raises: []).} =
+      check blocksDelivery.len == 1
+      check blocksDelivery[0].blk == bigBlock
+      done.complete()
+
+    network2.handlers.onBlocksDelivery = blocksDeliveryHandler
+    await network1.sendBlocksDelivery(
+      switch2.peerInfo.peerId,
+      @[BlockDelivery(blk: bigBlock, address: bigBlock.address)],
+    )
+
+    await done.wait(500.millis)
