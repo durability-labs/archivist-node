@@ -17,6 +17,7 @@ import pkg/libp2p
 import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
+import pkg/taskpools
 import pkg/constantine/math/io/io_fields
 
 import ../../logutils
@@ -25,13 +26,14 @@ import ../../utils/poseidon2digest
 import ../../stores
 import ../../manifest
 import ../../merkletree
+import ../../merkletree/asyncposeidon2
 import ../../utils/asynciter
 import ../../indexingstrategy
 import ../../archivisttypes
 
 import ../converters
 
-export converters, asynciter
+export converters, asynciter, asyncposeidon2
 
 logScope:
   topics = "archivist slotsbuilder"
@@ -207,15 +209,35 @@ proc getCellHashes*[SomeTree, SomeHash](
   success hashes
 
 proc buildSlotTree*[SomeTree, SomeHash](
-    self: SlotsBuilder[SomeTree, SomeHash], slotIndex: Natural
+    self: SlotsBuilder[SomeTree, SomeHash], slotIndex: Natural, tp: Taskpool
 ): Future[?!SomeTree] {.async: (raises: [CancelledError]).} =
-  ## Build the slot tree from the block digest hashes
-  ## and return the tree.
+  ## Build the slot tree from the block digest hashes, streaming them into
+  ## the async tree builder so layer compression runs on the taskpool while
+  ## the block digest trees are fetched.
+  ##
+  ## The strategy indices are consumed by slot position: pad positions (past
+  ## the real block count) yield the empty digest root, mirroring
+  ## getCellHashes.
 
-  SomeTree.init(?await self.getCellHashes(slotIndex))
+  let indices = toSeq(?catch(self.strategy.getIndices(slotIndex)))
+
+  proc digestAt(pos: int): Future[SomeHash] {.async.} =
+    ## Root of the block digest tree at slot position `pos`; raises on fetch
+    ## or build failure (the async tree builder surfaces it as a failed leaf).
+    if pos > (self.manifest.numSlotBlocks - 1).int:
+      # pad block: no real block, use the empty digest tree root
+      return self.emptyDigestTree.root.tryGet
+    let (_, tree) = (await self.buildBlockTree(indices[pos], pos)).tryGet
+    return tree.root.tryGet
+
+  let
+    items = mapAsync[int, SomeHash](Iter[int].new(0 ..< indices.len), digestAt)
+    tree = ?await SomeTree.buildAsync(items, tp)
+
+  success tree
 
 proc buildSlot*[SomeTree, SomeHash](
-    self: SlotsBuilder[SomeTree, SomeHash], slotIndex: Natural
+    self: SlotsBuilder[SomeTree, SomeHash], slotIndex: Natural, tp: Taskpool
 ): Future[?!SomeHash] {.async: (raises: [CancelledError]).} =
   ## Build a slot tree and store the proofs in
   ## the block store.
@@ -227,7 +249,7 @@ proc buildSlot*[SomeTree, SomeHash](
 
   trace "Building slot tree"
 
-  without tree =? (await self.buildSlotTree(slotIndex)) and
+  without tree =? (await self.buildSlotTree(slotIndex, tp)) and
     treeCid =? tree.root .? toSlotCid, e:
     error "Failed to build slot tree", e = e.msg
     return failure(e)
@@ -271,7 +293,7 @@ func buildVerifyTree*[SomeTree, SomeHash](
   SomeTree.init(@slotRoots)
 
 proc buildSlots*[SomeTree, SomeHash](
-    self: SlotsBuilder[SomeTree, SomeHash]
+    self: SlotsBuilder[SomeTree, SomeHash], tp: Taskpool
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Build all slot trees and store them in the block store.
   ##
@@ -285,7 +307,7 @@ proc buildSlots*[SomeTree, SomeHash](
   if self.slotRoots.len == 0:
     self.slotRoots = collect(newSeq):
       for i in 0 ..< self.manifest.numSlots:
-        ?await self.buildSlot(i)
+        ?await self.buildSlot(i, tp)
 
   without tree =? self.buildVerifyTree(self.slotRoots) and root =? tree.root, e:
     error "Failed to build slot roots tree", e = e.msg
@@ -300,12 +322,12 @@ proc buildSlots*[SomeTree, SomeHash](
   success()
 
 proc buildManifest*[SomeTree, SomeHash](
-    self: SlotsBuilder[SomeTree, SomeHash]
+    self: SlotsBuilder[SomeTree, SomeHash], tp: Taskpool
 ): Future[?!Manifest] {.async: (raises: [CancelledError]).} =
   ## Build the manifest with the slot roots and return it.
   ##
 
-  ?await self.buildSlots() # build the slots
+  ?await self.buildSlots(tp) # build the slots
   let rootCids = ?self.slotRoots.toSlotCids()
   without rootProvingCidRes =? self.verifyRoot .? toVerifyCid() and
     rootProvingCid =? rootProvingCidRes, e:

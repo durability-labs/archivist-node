@@ -85,7 +85,7 @@ let
   mhash = sha256.mhash().tryGet
   zero: seq[byte] = newSeq[byte](mhash.size)
   compress = proc(x, y: seq[byte], key: ByteTreeKey): seq[byte] =
-    compress(x, y, key, mhash).tryGet
+    compress(x, y, key).tryGet
 
   makeTree = proc(data: seq[seq[byte]]): ArchivistTree =
     ArchivistTree.init(sha256, leaves = data).tryGet

@@ -1,6 +1,7 @@
 import std/sugar
 
 import pkg/chronos
+import pkg/taskpools
 import pkg/libp2p/cid
 
 import pkg/archivist/archivisttypes
@@ -83,6 +84,7 @@ proc createVerifiableManifest*(
     ecM: int,
     blockSize: NBytes,
     cellSize: NBytes,
+    tp: Taskpool,
 ): Future[tuple[manifest: Manifest, protected: Manifest, verifiable: Manifest]] {.
     async
 .} =
@@ -103,6 +105,6 @@ proc createVerifiableManifest*(
 
     builder =
       Poseidon2Builder.new(store, store, protectedManifest, cellSize = cellSize).tryGet
-    verifiableManifest = (await builder.buildManifest()).tryGet
+    verifiableManifest = (await builder.buildManifest(tp)).tryGet
 
   (manifest, protectedManifest, verifiableManifest)

@@ -107,7 +107,7 @@ suite "Test Sampler":
     store = RepoStore.new(repoDs, metaDs)
 
     (manifest, protected, verifiable) = await createVerifiableManifest(
-      store, datasetBlocks, ecK, ecM, blockSize, cellSize
+      store, datasetBlocks, ecK, ecM, blockSize, cellSize, tp
     )
 
     # create sampler

@@ -131,7 +131,7 @@ proc `$`*(self: ArchivistProof): string =
     ", path: " & $self.path.mapIt(byteutils.toHex(it)) & ", mcodec: " & $self.mcodec &
     " )"
 
-func compress*(x, y: openArray[byte], key: ByteTreeKey, mhash: MHash): ?!ByteHash =
+func compress*(x, y: openArray[byte], key: ByteTreeKey): ?!ByteHash =
   ## Compress two hashes
   ##
 
@@ -154,7 +154,7 @@ func init*(
   let
     mhash = ?mcodec.mhash()
     compressor = proc(x, y: seq[byte], key: ByteTreeKey): ?!ByteHash {.noSideEffect.} =
-      compress(x, y, key, mhash)
+      compress(x, y, key)
     Zero: ByteHash = newSeq[byte](mhash.size)
 
   if mhash.size != leaves[0].len:
@@ -198,7 +198,7 @@ proc fromNodes*(
     mhash = ?mcodec.mhash()
     Zero = newSeq[byte](mhash.size)
     compressor = proc(x, y: seq[byte], key: ByteTreeKey): ?!ByteHash {.noSideEffect.} =
-      compress(x, y, key, mhash)
+      compress(x, y, key)
 
   if mhash.size != nodes[0].len:
     return failure "Invalid hash length"
@@ -236,7 +236,7 @@ func init*(
     mhash = ?mcodec.mhash()
     Zero = newSeq[byte](mhash.size)
     compressor = proc(x, y: seq[byte], key: ByteTreeKey): ?!seq[byte] {.noSideEffect.} =
-      compress(x, y, key, mhash)
+      compress(x, y, key)
 
   success ArchivistProof(
     compress: compressor,

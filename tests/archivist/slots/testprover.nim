@@ -55,6 +55,7 @@ suite "Test CircomCompat Prover":
         3, # ecM
         blockSize,
         cellSize,
+        dbTp,
       )
 
       builder = Poseidon2Builder.new(
@@ -80,6 +81,7 @@ suite "Test CircomCompat Prover":
         1, # ecM
         blockSize,
         cellSize,
+        dbTp,
       )
 
       builder = Poseidon2Builder.new(
@@ -134,6 +136,7 @@ suite "Test NimGroth16 Prover":
         3, # ecM
         blockSize,
         cellSize,
+        dbTp,
       )
 
       builder = Poseidon2Builder.new(
@@ -159,6 +162,7 @@ suite "Test NimGroth16 Prover":
         1, # ecM
         blockSize,
         cellSize,
+        dbTp,
       )
 
       builder = Poseidon2Builder.new(

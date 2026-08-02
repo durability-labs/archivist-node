@@ -215,7 +215,7 @@ suite "Slot builder":
               SpongeMerkle.digest(datasetBlocks[idx].data, cellSize.int)
 
         expectedRoot = Merkle.digest(expectedHashes)
-        slotTree = (await builder.buildSlotTree(i)).tryGet()
+        slotTree = (await builder.buildSlotTree(i, tp)).tryGet()
 
       check:
         slotTree.root().tryGet() == expectedRoot
@@ -227,8 +227,8 @@ suite "Slot builder":
 
     for i in 0 ..< numSlots:
       let
-        slotTree = (await builder.buildSlotTree(i)).tryGet()
-        slotRoot = (await builder.buildSlot(i)).tryGet()
+        slotTree = (await builder.buildSlotTree(i, tp)).tryGet()
+        slotRoot = (await builder.buildSlot(i, tp)).tryGet()
         slotCid = slotRoot.toSlotCid().tryGet()
 
       for cellIndex in 0 ..< numPadSlotBlocks:
@@ -252,7 +252,7 @@ suite "Slot builder":
         .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
-    (await builder.buildSlots()).tryGet
+    (await builder.buildSlots(tp)).tryGet
     let
       slotsHashes = collect(newSeq):
         for i in 0 ..< numSlots:
@@ -292,7 +292,7 @@ suite "Slot builder":
           Merkle.digest(slotHashes)
 
       expectedRoot = Merkle.digest(slotsHashes)
-      manifest = (await builder.buildManifest()).tryGet()
+      manifest = (await builder.buildManifest(tp)).tryGet()
       mhash = manifest.verifyRoot.mhash.tryGet()
       mhashBytes = mhash.digestBytes
       rootHash = Poseidon2Hash.fromBytes(mhashBytes.toArray32).get
@@ -305,7 +305,7 @@ suite "Slot builder":
       builder = Poseidon2Builder
         .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
-      verifyManifest = (await builder.buildManifest()).tryGet()
+      verifyManifest = (await builder.buildManifest(tp)).tryGet()
 
     verifyManifest.slotRoots = @[]
     check Poseidon2Builder.new(
@@ -318,7 +318,7 @@ suite "Slot builder":
         .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
-      verifyManifest = (await builder.buildManifest()).tryGet()
+      verifyManifest = (await builder.buildManifest(tp)).tryGet()
 
     verifyManifest.slotRoots.del(verifyManifest.slotRoots.len - 1)
 
@@ -331,7 +331,7 @@ suite "Slot builder":
       .new(localStore, localStore, protectedManifest, cellSize = cellSize)
       .tryGet()
 
-    var verifyManifest = (await builder.buildManifest()).tryGet()
+    var verifyManifest = (await builder.buildManifest(tp)).tryGet()
 
     rng.shuffle(Rng.instance, verifyManifest.verifyRoot.data.buffer)
 
@@ -345,7 +345,7 @@ suite "Slot builder":
         .new(localStore, localStore, protectedManifest, cellSize = cellSize)
         .tryGet()
 
-      verifyManifest = (await builder.buildManifest()).tryGet()
+      verifyManifest = (await builder.buildManifest(tp)).tryGet()
 
       verificationBuilder = Poseidon2Builder
         .new(localStore, localStore, verifyManifest, cellSize = cellSize)
@@ -415,7 +415,7 @@ suite "Cell-aware slot building":
       .new(localStore, localStore, protectedManifest, cellSize = cellSize)
       .tryGet()
 
-    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotRoot = (await builder.buildSlot(0, tp)).tryGet()
     let slotCid = slotRoot.toSlotCid().tryGet()
 
     # Verify that leaf metadata has cell flag set
@@ -430,7 +430,7 @@ suite "Cell-aware slot building":
       .new(localStore, localStore, protectedManifest, cellSize = cellSize)
       .tryGet()
 
-    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotRoot = (await builder.buildSlot(0, tp)).tryGet()
     let slotCid = slotRoot.toSlotCid().tryGet()
 
     # ALL positions (including pad blocks) should have leaf metadata
@@ -454,7 +454,7 @@ suite "Cell-aware slot building":
       .tryGet()
 
     # Build one slot
-    let slotRoot = (await builder.buildSlot(0)).tryGet()
+    let slotRoot = (await builder.buildSlot(0, tp)).tryGet()
     let slotCid = slotRoot.toSlotCid().tryGet()
 
     # Get the first block's CID and check its refcount
@@ -474,7 +474,7 @@ suite "Cell-aware slot building":
       .tryGet()
 
     # Build all slots
-    (await builder.buildSlots()).tryGet()
+    (await builder.buildSlots(tp)).tryGet()
 
     # Get refcount on first dataset block
     let firstBlockCid = datasetBlocks[0].cid

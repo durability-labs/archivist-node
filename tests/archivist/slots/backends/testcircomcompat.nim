@@ -85,7 +85,7 @@ suite "Test Circom Compat Backend":
     store = RepoStore.new(repoDs, metaDs)
 
     (manifest, protected, verifiable) = await createVerifiableManifest(
-      store, numDatasetBlocks, ecK, ecM, blockSize, cellSize
+      store, numDatasetBlocks, ecK, ecM, blockSize, cellSize, tp
     )
 
     builder = Poseidon2Builder.new(store, store, verifiable).tryGet

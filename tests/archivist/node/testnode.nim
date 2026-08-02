@@ -281,12 +281,16 @@ suite "Test Node - Purchase request":
     let
       referenceManifest =
         (await storeDataGetManifest(localStore, referenceBlocks)).tryGet()
+      # Reuse the node's own taskpool (visible via privateAccess): creating a
+      # second pool on this thread would redirect main-thread spawns through
+      # taskpools' threadvar to the newest pool, and shutting that one down
+      # would deadlock later spawns on the node's pool.
       erasure = Erasure.new(
-        networkStore, localStore, leoEncoderProvider, leoDecoderProvider, Taskpool.new()
+        networkStore, localStore, leoEncoderProvider, leoDecoderProvider, node.taskpool
       )
       protected = (await erasure.encode(referenceManifest, 3, 2)).tryGet()
       builder = Poseidon2Builder.new(networkStore, localStore, protected).tryGet()
-      verifiable = (await builder.buildManifest()).tryGet()
+      verifiable = (await builder.buildManifest(node.taskpool)).tryGet()
 
     protectedManifestBlock =
       bt.Block.new(protected.encode().tryGet(), codec = ManifestCodec).tryGet()
