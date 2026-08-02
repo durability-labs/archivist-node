@@ -18,12 +18,13 @@ import pkg/chronos/threadsync
 import pkg/taskpools
 import pkg/questionable/results
 
-import pkg/groth16
+from pkg/groth16 import Witness, Proof, generateProof, verifyProof
 import pkg/groth16/files/r1cs
 import pkg/groth16/zkey_types
 import pkg/circom_witnessgen
 import pkg/circom_witnessgen/load
-import pkg/circom_witnessgen/witness
+from pkg/circom_witnessgen/witness import generateWitness
+from pkg/circom_witnessgen/types import Inputs
 
 import ../../types
 import ../../../stores
@@ -98,31 +99,38 @@ proc normalizeInput[SomeHash](
     ).concat,
   }.toTable
 
+proc generateWitnessValues(graph: Graph, inputs: Inputs): auto {.raises: [].} =
+  ## Upstream circom_witnessgen uses unannotated proc-typed callbacks, which Nim
+  ## conservatively infers as raising and not gcsafe. The closures only capture
+  ## locals, so this is safe for the taskpool worker.
+  {.cast(gcsafe).}:
+    try:
+      return generateWitness(graph, inputs)
+    except Exception as exc:
+      error "Exception generating witness", exc = exc.msg
+      raiseAssert(exc.msg)
+
 proc generateProofTask(task: ptr ProofTask) =
   defer:
     if task[].signal != nil:
       discard task[].signal.fireSync()
 
-  try:
-    trace "Generating witness"
-    let
-      witnessValues = generateWitness(task[].self[].graph, task[].inputs)
-      witness = Witness(
-        curve: task[].self[].curve,
-        r: task[].self[].r1cs.r,
-        nvars: task[].self[].r1cs.cfg.nWires,
-        values: witnessValues,
-      )
+  trace "Generating witness"
+  let
+    witnessValues = generateWitnessValues(task[].self[].graph, task[].inputs)
+    witness = Witness(
+      curve: task[].self[].curve,
+      r: task[].self[].r1cs.r,
+      nvars: task[].self[].r1cs.cfg.nWires,
+      values: witnessValues,
+    )
 
-    trace "Generating nim groth16 proof"
-    var proof = generateProof(task[].self[].zkey, witness, task[].self[].tp)
-    trace "Proof generated, copying to main thread"
-    var isolatedProof = isolate(proof)
-    task[].proof = move isolatedProof
-    task[].ok.store true
-  except CatchableError as e:
-    error "Failed to generate proof", err = e.msg
-    task[].ok.store false
+  trace "Generating nim groth16 proof"
+  var proof = generateProof(task[].self[].zkey, witness, task[].self[].tp)
+  trace "Proof generated, copying to main thread"
+  var isolatedProof = isolate(proof)
+  task[].proof = move isolatedProof
+  task[].ok.store true
 
 proc prove*[SomeHash](
     self: NimGroth16BackendRef, input: ProofInputs[SomeHash]
