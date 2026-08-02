@@ -1,4 +1,5 @@
 import pkg/chronos
+import pkg/libp2p/crypto/rng as libp2p_rng
 
 import pkg/archivist/rng
 import pkg/archivist/blockexchange
@@ -12,7 +13,7 @@ suite "scoredPeer selector":
   let address = BlockAddress(leaf: false, cid: testCid)
 
   proc makeCtx(): BlockExcPeerCtx =
-    let seckey = PrivateKey.random(Rng.instance[]).tryGet()
+    let seckey = PrivateKey.random(libp2p_rng.newBearSslRng(Rng.instance())).tryGet()
     let id = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     BlockExcPeerCtx.new(id)
 

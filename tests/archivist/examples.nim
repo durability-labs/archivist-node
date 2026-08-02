@@ -1,6 +1,7 @@
 import std/random
 import std/sequtils
 import pkg/libp2p
+import pkg/libp2p/crypto/rng as libp2p_rng
 import pkg/ethers
 import pkg/archivist/conf
 import pkg/archivist/rng
@@ -22,7 +23,7 @@ proc example*(_: type bt.Block, size: int = 4096): bt.Block =
   bt.Block.new(bytes).tryGet()
 
 proc example*(_: type PeerId): PeerId =
-  let key = libp2p.PrivateKey.random(rng.Rng.instance[]).get
+  let key = libp2p.PrivateKey.random(libp2p_rng.newBearSslRng(rng.Rng.instance())).get
   PeerId.init(key.getPublicKey().get).get
 
 proc example*(_: type BlockExcPeerCtx): BlockExcPeerCtx =
