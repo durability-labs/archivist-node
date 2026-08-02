@@ -21,6 +21,7 @@ import pkg/taskpools
 import ../logutils
 import ../manifest
 import ../merkletree
+import ../merkletree/archivist/asynctree
 import ../stores
 import ../blocktype as bt
 import ../utils
@@ -463,8 +464,22 @@ proc encode*(
   proc treeAndProofs(
       cids: ref seq[Cid], targetCid: Cid
   ): Future[?!Cid] {.async: (raises: [CancelledError]).} =
+    if cids[].len == 0:
+      return failure "Empty leaves"
+
+    proc liftCid(cid: Cid): Future[Cid] {.async.} =
+      cid
+
+    let cidsIter = mapAsync[Cid, Cid](Iter[Cid].new(cids[]), liftCid)
+    defer:
+      if err =? catchAsync(await cidsIter.dispose()).errorOption:
+        warn "Failed to dispose tree iterator", err = err.msg
+
     let
-      tree = ?ArchivistTree.init(cids[])
+      tree =
+        ?await ArchivistTree.buildAsync(
+          cidsIter, self.taskPool, mcodec = (?cids[][0].mhash.mapFailure).mcodec
+        )
       treeCid = ?tree.rootCid
 
     var proofItems: seq[(Natural, Cid, ArchivistProof)]
@@ -650,7 +665,9 @@ proc decode*(
       let
         (cids, recoveredIndices) =
           ?await self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params)
-        tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
+        tree =
+          # sync build: root comparison only (decode paths do not stream)
+          ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
         treeCid = ?tree.rootCid
 
       if treeCid != encoded.originalTreeCid:
@@ -708,7 +725,9 @@ proc repair*(
       let
         (cids, _) =
           ?await self.decodeInternal(encoded.treeCid, encoded.originalTreeCid, params)
-        tree = ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
+        tree =
+          # sync build: root comparison only (decode paths do not stream)
+          ?ArchivistTree.init(cids[0 ..< encoded.originalBlocksCount])
         treeCid = ?tree.rootCid
 
       if treeCid != encoded.originalTreeCid:
