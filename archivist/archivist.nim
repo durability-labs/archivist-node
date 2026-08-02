@@ -15,6 +15,7 @@ import pkg/chronos
 import pkg/taskpools
 import pkg/presto
 import pkg/libp2p
+import pkg/libp2p/crypto/rng as libp2p_rng
 import pkg/confutils
 import pkg/confutils/defs
 import pkg/stew/io2
@@ -137,7 +138,7 @@ proc new*(
     .new()
     .withPrivateKey(privateKey)
     .withAddresses(config.listenAddrs)
-    .withRng(random.Rng.instance())
+    .withRng(libp2p_rng.newBearSslRng(random.Rng.instance()))
     .withNoise()
     .withMplex(5.minutes, 5.minutes)
     .withMaxConnections(config.maxPeers)

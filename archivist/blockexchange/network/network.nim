@@ -14,7 +14,6 @@ import pkg/chronos
 import pkg/taskpools
 
 import pkg/libp2p
-import pkg/libp2p/utils/semaphore
 
 import ../../blocktype as bt
 import ../../logutils

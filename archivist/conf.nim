@@ -41,7 +41,7 @@ import ./conf/nat
 when defaultChroniclesStream.outputs.type.arity == 3:
   import std/terminal
 
-export units, net, archivisttypes, logutils, completeCmdArg, parseCmdArg, NatConfig
+export units, net, archivisttypes, logutils, completeCmdArg, parseCmdArg, nat
 export ValidationGroups, MaxSlots
 
 export
@@ -149,7 +149,7 @@ type
       defaultValue: defaultNatConfig(),
       defaultValueDesc: "any",
       name: "nat"
-    .}: NatConfig
+    .}: nat.NatConfig
 
     natRenewal* {.
       desc: "Time interval for renewing port mappings (NAT-PMP, UPnP)",
@@ -503,8 +503,8 @@ logutils.formatIt(LogFormat.json, EthAddress):
 func defaultAddress*(conf: NodeConf): IpAddress =
   result = static parseIpAddress("127.0.0.1")
 
-func defaultNatConfig*(): NatConfig =
-  result = NatConfig.anyStrategy()
+func defaultNatConfig*(): nat.NatConfig =
+  result = nat.NatConfig.anyStrategy()
 
 proc circuitDirPath*(self: NodeConf): string =
   ## Returns the circuit directory as an absolute path
@@ -576,12 +576,12 @@ proc parseCmdArg*(T: type SignedPeerRecord, uri: string): T =
     quit QuitFailure
   res
 
-func parseCmdArg*(T: type NatConfig, nat: string): T {.raises: [ValueError].} =
+func parseCmdArg*(T: type nat.NatConfig, nat: string): T {.raises: [ValueError].} =
   without config =? parseNatConfig(nat), error:
     raise newException(ValueError, error.msg)
   config
 
-proc completeCmdArg*(T: type NatConfig, val: string): seq[string] =
+proc completeCmdArg*(T: type nat.NatConfig, val: string): seq[string] =
   return @[]
 
 proc parseCmdArg*(T: type EthAddress, address: string): T =
@@ -663,11 +663,11 @@ proc readValue*(
   val = dur
 
 proc readValue*(
-    r: var TomlReader, val: var NatConfig
+    r: var TomlReader, val: var nat.NatConfig
 ) {.raises: [SerializationError].} =
   val =
     try:
-      parseCmdArg(NatConfig, r.readValue(string))
+      parseCmdArg(nat.NatConfig, r.readValue(string))
     except CatchableError as err:
       raise newException(SerializationError, err.msg)
 

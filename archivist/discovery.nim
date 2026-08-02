@@ -299,7 +299,7 @@ proc new*(
     bindPort = bindPort,
     record = self.providerRecord.get,
     bootstrapRecords = bootstrapNodes,
-    rng = Rng.instance(),
+    rng = rng.Rng.instance(),
     providers = ProvidersManager.new(store),
     config = discoveryConfig,
   )
