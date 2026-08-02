@@ -78,7 +78,7 @@ proc GiBs*(v: Natural): NBytes =
 
 func divUp*[T: NBytes](a, b: T): int =
   ## Division with result rounded up (rather than truncated as in 'div')
-  assert(b != T(0))
+  doAssert(b != T(0))
   if a == T(0):
     int(0)
   else:

@@ -1531,7 +1531,7 @@ suite "NetworkStore engine refresh circuit":
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
-    waitFor pendingBlocks.start()
+    await pendingBlocks.start()
     tp = Taskpool.new(num_threads = 4)
     localStore = RepoStore.new(
       SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
@@ -1556,7 +1556,7 @@ suite "NetworkStore engine refresh circuit":
       discard engine.pendingBlocks.getWantHandle(b.cid)
 
   teardown:
-    waitFor pendingBlocks.stop()
+    await pendingBlocks.stop()
     tp.shutdown()
 
   test "suppressed refresh returns wake hint":

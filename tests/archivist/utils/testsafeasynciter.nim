@@ -36,7 +36,7 @@ asyncchecksuite "Test SafeAsyncIter":
 
     check collected == expectedSeq
     let nextRes = await iter.next()
-    assert nextRes.isFailure
+    doAssert nextRes.isFailure
     check nextRes.error.msg == "SafeAsyncIter is finished but next item was requested"
 
   test "getting async iter for simple sync range iterator":
