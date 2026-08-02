@@ -42,7 +42,15 @@ suite "Network - Handlers":
 
     done = newFuture[void]()
     buffer = BufferStream.new()
-    network = BlockExcNetwork.new(switch = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport().withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build())
+    network = BlockExcNetwork.new(
+      switch = SwitchBuilder
+        .new()
+        .withNoise()
+        .withMplex(5.minutes, 5.minutes)
+        .withTcpTransport()
+        .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+        .build()
+    )
     networkPeer = NetworkPeer.new(
       peerId,
       proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
@@ -133,8 +141,20 @@ suite "Network - Senders":
       blocks.add(bt.Block.new(chunk).tryGet())
 
     done = newFuture[void]()
-    switch1 = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport().withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build()
-    switch2 = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport().withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build()
+    switch1 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
+    switch2 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
     network1 = BlockExcNetwork.new(switch = switch1)
     switch1.mount(network1)
 
@@ -227,8 +247,20 @@ suite "Network - Test Limits":
 
   setup:
     done = newFuture[void]()
-    switch1 = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport().withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build()
-    switch2 = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport().withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build()
+    switch1 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
+    switch2 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
 
     network1 = BlockExcNetwork.new(switch = switch1, maxInflight = 1)
     switch1.mount(network1)
@@ -269,8 +301,20 @@ suite "Network - Threadpool Offload":
 
     done = newFuture[void]()
     tp = Taskpool.new(numThreads = 2)
-    switch1 = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport().withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build()
-    switch2 = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport().withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build()
+    switch1 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
+    switch2 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
     network1 = BlockExcNetwork.new(switch = switch1, taskpool = tp)
     switch1.mount(network1)
 

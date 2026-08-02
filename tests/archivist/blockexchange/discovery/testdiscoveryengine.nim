@@ -61,7 +61,13 @@ asyncchecksuite "Test Discovery Engine":
     manifestBlock = manifest.asBlock()
     blocks.add(manifestBlock)
 
-    switch = SwitchBuilder.new().withNoise().withMplex(5.minutes, 5.minutes).withTcpTransport({ServerFlags.ReuseAddr}).withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()]).build()
+    switch = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport({ServerFlags.ReuseAddr})
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
     network = BlockExcNetwork.new(switch)
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()

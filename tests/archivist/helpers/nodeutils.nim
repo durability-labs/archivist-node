@@ -111,7 +111,8 @@ proc generateNodes*(
           "invalid multiaddress"
         )
 
-      switch = SwitchBuilder.new()
+      switch = SwitchBuilder
+        .new()
         .withNoise()
         .withMplex(5.minutes, 5.minutes)
         .withTcpTransport({ServerFlags.ReuseAddr})

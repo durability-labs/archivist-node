@@ -28,7 +28,10 @@ proc setupKey*(path: string): ?!PrivateKey =
   if not path.fileAccessible({AccessFlags.Find}):
     info "Creating a private key and saving it"
     let
-      res = ?PrivateKey.random(libp2p_rng.newBearSslRng(Rng.instance())).mapFailure(ArchivistKeyError)
+      res =
+        ?PrivateKey.random(libp2p_rng.newBearSslRng(Rng.instance())).mapFailure(
+          ArchivistKeyError
+        )
       bytes = ?res.getBytes().mapFailure(ArchivistKeyError)
 
     ?path.secureWriteFile(bytes).mapFailure(ArchivistKeyError)

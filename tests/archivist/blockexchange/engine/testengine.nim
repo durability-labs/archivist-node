@@ -79,7 +79,9 @@ asyncchecksuite "NetworkStore engine basic":
     rng = archivist_rng.Rng.instance()
     seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
-    chunker = RandomChunker.new(archivist_rng.Rng.instance(), size = 1024'nb, chunkSize = 256'nb)
+    chunker = RandomChunker.new(
+      archivist_rng.Rng.instance(), size = 1024'nb, chunkSize = 256'nb
+    )
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
@@ -411,8 +413,15 @@ asyncchecksuite "NetworkStore engine handlers":
 
     let
       requestedIndices = @[0.Natural, 1.Natural]
-      otherPeerId =
-        PeerId.init(PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet().getPublicKey().tryGet()).tryGet()
+      otherPeerId = PeerId
+        .init(
+          PrivateKey
+          .random(libp2p_rng.newBearSslRng(rng))
+          .tryGet()
+          .getPublicKey()
+          .tryGet()
+        )
+        .tryGet()
       blocksDelivery = requestedIndices.mapIt(
         BlockDelivery(
           blk: blocks[it],
@@ -1235,8 +1244,15 @@ asyncchecksuite "Block Download":
   test "DHT discovery reschedules with discoveryTimeout":
     let
       address = BlockAddress.init(blocks[0].cid)
-      newPeerId =
-        PeerId.init(PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet().getPublicKey().tryGet()).tryGet()
+      newPeerId = PeerId
+        .init(
+          PrivateKey
+          .random(libp2p_rng.newBearSslRng(rng))
+          .tryGet()
+          .getPublicKey()
+          .tryGet()
+        )
+        .tryGet()
       newPeerCtx = BlockExcPeerCtx.new(newPeerId)
       wantBlockSent = newAsyncEvent()
       initialLastDiscRequest = engine.lastDiscRequest
