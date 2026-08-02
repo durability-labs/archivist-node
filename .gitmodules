@@ -101,7 +101,7 @@
 	url = git@github.com:durability-labs/archivist-dht.git
 [submodule "vendor/nimble/circom_witnessgen"]
 	path = vendor/nimble/circom_witnessgen
-	url = git@github.com:durability-labs/circom-witnessgen.git
+	url = https://github.com/logos-storage/circom-witnessgen
 [submodule "vendor/nimble/circomcompat"]
 	path = vendor/nimble/circomcompat
 	url = git@github.com:durability-labs/nim-circom-compat.git

@@ -18,7 +18,7 @@ import pkg/chronos/threadsync
 import pkg/taskpools
 import pkg/questionable/results
 
-from pkg/groth16 import Witness, Proof, generateProof, verifyProof
+from pkg/groth16 import Witness, Proof, generateProof, verifyProof, parseZKey
 import pkg/groth16/files/r1cs
 import pkg/groth16/zkey_types
 import pkg/circom_witnessgen
