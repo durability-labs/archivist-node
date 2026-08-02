@@ -229,7 +229,7 @@ suite "Network - Test Limits":
     switch1 = newStandardSwitch()
     switch2 = newStandardSwitch()
 
-    network1 = BlockExcNetwork.new(switch = switch1, maxInflight = 0)
+    network1 = BlockExcNetwork.new(switch = switch1, maxInflight = 1)
     switch1.mount(network1)
 
     network2 = BlockExcNetwork.new(switch = switch2)
@@ -244,6 +244,8 @@ suite "Network - Test Limits":
     await allFuturesThrowing(switch1.stop(), switch2.stop())
 
   test "Concurrent Sends":
+    discard network1.inflightSema.tryAcquire() # exhaust the single inflight slot
+
     let fut = network1.send(switch2.peerInfo.peerId, Message(pendingBytes: 1))
 
     await sleepAsync(100.millis)

@@ -84,7 +84,6 @@ type
     handlers*: BlockExcHandlers
     request*: BlockExcRequest
     inflightSema: AsyncSemaphore
-    inflightSlots: int
     maxInflight = DefaultMaxInflight
     trackedFutures = TrackedFutures()
     taskpool*: Taskpool
