@@ -83,7 +83,6 @@ type
     switch*: Switch
     handlers*: BlockExcHandlers
     request*: BlockExcRequest
-    getConn: ConnProvider
     inflightSema: AsyncSemaphore
     inflightSlots: int
     maxInflight = DefaultMaxInflight
@@ -120,28 +119,29 @@ proc send*(
 
   let inflightWaitStart = Moment.now()
   await b.inflightSema.acquire()
-  if b.maxInflight > 0:
-    dec b.inflightSlots
   archivist_block_exchange_network_inflight_wait_seconds.observe(
     (Moment.now() - inflightWaitStart).nanoseconds.float64 / 1e9, labelValues = [kind]
   )
 
-  archivist_block_exchange_inflight_sends.set((b.maxInflight - b.inflightSlots).int64)
-  archivist_block_exchange_inflight_send_slots_free.set(b.inflightSlots.int64)
+  archivist_block_exchange_inflight_sends.set(
+    (b.maxInflight - b.inflightSema.availableSlots).int64
+  )
+  archivist_block_exchange_inflight_send_slots_free.set(
+    b.inflightSema.availableSlots.int64
+  )
 
   try:
     if err =? catchAsync(await peer.send(msg)).errorOption:
       error "Error sending message", peer = id, msg = err.msg
       return failure(err)
   finally:
-    try:
-      b.inflightSema.release()
-    except AsyncSemaphoreError as error:
-      raise newException(AssertionDefect, error.msg, error)
-    if b.maxInflight > 0:
-      inc b.inflightSlots
-    archivist_block_exchange_inflight_sends.set((b.maxInflight - b.inflightSlots).int64)
-    archivist_block_exchange_inflight_send_slots_free.set(b.inflightSlots.int64)
+    ?catch(b.inflightSema.release())
+    archivist_block_exchange_inflight_sends.set(
+      (b.maxInflight - b.inflightSema.availableSlots).int64
+    )
+    archivist_block_exchange_inflight_send_slots_free.set(
+      b.inflightSema.availableSlots.int64
+    )
 
   archivist_block_exchange_network_send_seconds.observe(
     (Moment.now() - totalStart).nanoseconds.float64 / 1e9, labelValues = [kind]
@@ -334,30 +334,18 @@ proc stop*(self: BlockExcNetwork) {.async: (raises: []).} =
 proc new*(
     T: type BlockExcNetwork,
     switch: Switch,
-    connProvider: ConnProvider = nil,
     maxInflight = DefaultMaxInflight,
     taskpool: Taskpool = nil,
 ): BlockExcNetwork =
   ## Create a new BlockExcNetwork instance
   ##
 
-  var inflightSema: AsyncSemaphore
-  if maxInflight == 0:
-    inflightSema = newAsyncSemaphore(1)
-    discard inflightSema.tryAcquire()
-  else:
-    inflightSema = newAsyncSemaphore(maxInflight)
-
   let self = BlockExcNetwork(
     switch: switch,
-    getConn: connProvider,
-    inflightSema: inflightSema,
-    inflightSlots: (if maxInflight == 0: 0 else: maxInflight),
+    inflightSema: newAsyncSemaphore(maxInflight),
     maxInflight: maxInflight,
     taskpool: taskpool,
   )
-
-  self.maxIncomingStreams = self.maxInflight
 
   proc sendWantList(
       id: PeerId,
