@@ -82,8 +82,7 @@ suite "Test ArchivistTree":
       tree == fromNodes
 
 let
-  mhash = sha256.mhash().tryGet
-  zero: seq[byte] = newSeq[byte](mhash.size)
+  zero: seq[byte] = newSeq[byte](sha256.digestSize.tryGet)
   compress = proc(x, y: seq[byte], key: ByteTreeKey): seq[byte] =
     compress(x, y, key).tryGet
 
