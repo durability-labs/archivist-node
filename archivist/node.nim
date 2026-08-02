@@ -725,7 +725,7 @@ proc ensureVerifiableManifest(
   # Create verifiable manifest from protected manifest
   let builder =
     ?Poseidon2Builder.new(self.networkStore.localStore, self.repoStore, protected)
-  return await builder.buildManifest()
+  return await builder.buildManifest(self.taskpool)
 
 proc setupRequest(
     self: ArchivistNodeRef,
@@ -933,7 +933,7 @@ proc storeSlot*(
       error "Unable to fetch blocks", err = err.msg
       return failure(err)
 
-  without slotRoot =? (await builder.buildSlot(slotIndex.int)), err:
+  without slotRoot =? (await builder.buildSlot(slotIndex.int, self.taskpool)), err:
     error "Unable to build slot", err = err.msg
     return failure(err)
 
