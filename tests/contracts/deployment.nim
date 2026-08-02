@@ -35,10 +35,7 @@ proc latestDeployedAddressesPath(): ?!string =
 
   if newestPath.len == 0:
     return failure(
-      newException(
-        IOError,
-        "no deployed_addresses.json found under " & deploymentsDir,
-      )
+      newException(IOError, "no deployed_addresses.json found under " & deploymentsDir)
     )
 
   success(newestPath)
@@ -67,8 +64,7 @@ proc deployedAddress(placeholder: string): ?!Address =
   without parsed =? Address.init(address):
     return failure(
       newException(
-        ValueError,
-        "invalid deployed address for " & placeholder & ": " & address,
+        ValueError, "invalid deployed address for " & placeholder & ": " & address
       )
     )
 
