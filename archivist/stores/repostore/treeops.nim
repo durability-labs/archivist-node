@@ -18,6 +18,7 @@ import ../blockstore
 import ../keyutils
 import ../../archivisttypes
 import ../../errors
+import ../../manifest
 import ../../merkletree
 import ../../utils
 from ../../utils/digest import digestBytes
@@ -97,11 +98,11 @@ func addProofTreeNodes*(
 
     let parentHash =
       if (index mod 2) != 0:
-        ?compress(siblingHash, hash, bottomFlag, mhash)
+        ?compress(siblingHash, hash, bottomFlag)
       elif index == width - 1:
-        ?compress(hash, siblingHash, ByteTreeKey(bottomFlag.ord + 2), mhash)
+        ?compress(hash, siblingHash, ByteTreeKey(bottomFlag.ord + 2))
       else:
-        ?compress(hash, siblingHash, bottomFlag, mhash)
+        ?compress(hash, siblingHash, bottomFlag)
 
     ?addTreeNodeRecord(
       treeCid,
