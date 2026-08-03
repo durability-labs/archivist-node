@@ -16,6 +16,7 @@ import pkg/questionable/results
 import ./coders
 import ../types
 import ../operations
+import ../treeops
 import ../../keyutils
 import ../../../clock
 import ../../../archivisttypes
@@ -272,17 +273,16 @@ proc dropOverlay*(
 
   trace "Dropping overlay and cleaning up blocks"
 
-<<<<<<< HEAD
-  if err =? (await self.getOverlay(treeCid)).errorOption:
+  without overlay =? (await self.getOverlay(treeCid)), err:
     if err of KVStoreKeyNotFound:
       trace "Overlay already deleted", treeCid
       return success()
     return failure(err)
 
-  if (await self.getOverlay(treeCid)).tryGet().status == Finalizing:
+  if overlay.status == Finalizing:
     return failure(newException(OverlayDeletingError, "Overlay is finalizing"))
 
-  if err =? (await self.putOverlay(treeCid, status = Deleting.some)).errorOption:
+  if err =? (await self.markDeleting(treeCid)).errorOption:
     error "Unable to mark overlay as deleting", exc = err.msg
     return failure(err)
 
@@ -352,7 +352,7 @@ proc finalizeOverlay*(
   # Read original status, mark Finalizing (rejects new writers), drain in-flight writers.
   let tmpRecord = ?await self.metaDs.get(tmpOverlayKey, OverlayMetadata)
   let tmpOrigStatus = tmpRecord.val.status
-  ?await self.putOverlay(tmpCid, status = Finalizing.some)
+  ?await self.markFinalizing(tmpCid)
   await self.deletingLock.drain(tmpCid)
 
   let expiryTime =
@@ -372,9 +372,8 @@ proc finalizeOverlay*(
       ]
     )
   ).errorOption:
-    if restoreErr =? (
-      await noCancel self.putOverlay(tmpCid, status = tmpOrigStatus.some)
-    ).errorOption:
+    if restoreErr =?
+        (await noCancel self.putOverlay(tmpCid, status = tmpOrigStatus.some)).errorOption:
       error "Unable to restore tmp overlay after finalization failure",
         exc = restoreErr.msg
       return failure(restoreErr)
