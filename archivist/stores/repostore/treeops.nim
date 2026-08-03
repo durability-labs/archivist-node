@@ -73,7 +73,7 @@ func addProofTreeNodes*(
   if proof.isNil:
     return success()
 
-  let mhash = ?proof.mcodec.mhash()
+  let digestSize = ?proof.mcodec.digestSize.mapFailure
   var
     hash = ?treeNodeDigest(blkCid, proof.mcodec)
     index = proof.index
@@ -81,7 +81,7 @@ func addProofTreeNodes*(
     bottomFlag = ByteTreeKey.KeyBottomLayer
 
   for level, siblingHash in proof.path:
-    if siblingHash.len != mhash.size:
+    if siblingHash.len != digestSize:
       return failure(
         newException(TreeNodeValidationError, "Tree node hash length is invalid")
       )
@@ -375,7 +375,7 @@ proc getTreeProofs*(
 
   ?validateTreeRoot(treeCid, rootCid)
 
-  let zeroHash = newSeq[byte]((?mcodec.mhash()).size)
+  let zeroHash = newSeq[byte](?mcodec.digestSize.mapFailure)
 
   var proofs: seq[(Natural, ArchivistProof)]
   for index in indices:
