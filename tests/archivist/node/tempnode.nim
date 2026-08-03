@@ -39,6 +39,7 @@ proc initializeNetwork(temporary: TemporaryNode) =
     .withNoise()
     .withMplex(5.minutes, 5.minutes)
     .withTcpTransport()
+    .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
     .build()
   temporary.peerStore = PeerCtxStore.new()
   temporary.exchangeNetwork = BlockExcnetwork.new(temporary.p2p)
