@@ -542,15 +542,19 @@ proc store*(
           # would then suspend the producer forever - the body defer cannot
           # run while we are blocked here.
           let enqFut = cidQueue.addLast(item)
-          await enqFut or treeFut
-          if treeFut.finished():
-            await noCancel enqFut.cancelAndWait()
-            let treeRes = ?catchAsync(await treeFut)
-            if err =? treeRes.errorOption:
-              return failure(err)
-
-            return failure "Tree builder finished before upload completed"
-          success()
+          discard await one(enqFut, treeDoneFut)
+          if enqFut.finished():
+            # The item landed in the queue. If the builder also finished in
+            # the meantime, it did so by consuming this very item (it only
+            # completes after the isLast marker), so this is a normal
+            # completion, not a premature one.
+            return success()
+          # The builder finished before our item could be enqueued.
+          enqFut.cancelSoon()
+          let treeRes = ?catchAsync(await treeFut)
+          if err =? treeRes.errorOption:
+            return failure(err)
+          return failure "Tree builder finished before upload completed"
 
         defer:
           if inFlight.len > 0:
