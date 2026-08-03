@@ -14,13 +14,19 @@ import pkg/kvstore
 import pkg/taskpools
 
 import pkg/archivist/stores
+import pkg/archivist/stores/keyutils
 import pkg/archivist/stores/repostore/operations
 import pkg/archivist/stores/repostore/types
+import pkg/archivist/archivisttypes
 import pkg/archivist/blocktype as bt
 import pkg/archivist/clock
+import pkg/archivist/manifest
 import pkg/archivist/merkletree
 import pkg/archivist/merkletree/archivist
+import pkg/archivist/merkletree/archivist/asynctree
 import pkg/archivist/utils
+import pkg/archivist/utils/asynciter
+import pkg/archivist/utils/iter
 
 import ../../../asynctest
 import ../../helpers
@@ -694,6 +700,295 @@ proc testRepoStore*(
       check $results[1][2] == $proof1.some
       check results[2][1].cid == dataset[2].cid
       check $results[2][2] == $proof2.some
+
+    # -------------------------------------------------------
+    # Flat-tree serving tests
+    # -------------------------------------------------------
+
+    template storeTreeLeaves(
+        repo: RepoStore, treeCid: Cid, tree: ArchivistTree, blocks: seq[bt.Block]
+    ) =
+      var items: seq[(bt.Block, Natural, ArchivistProof)]
+      for i in 0 ..< tree.leavesCount:
+        items.add((blocks[i], i.Natural, tree.getProof(i).tryGet()))
+      (await repo.putBlocks(treeCid, items)).tryGet()
+
+    proc toAsyncIter(cids: seq[Cid]): AsyncIter[Cid] =
+      proc lift(cid: Cid): Future[Cid] {.async.} =
+        cid
+
+      mapAsync[Cid, Cid](Iter[Cid].new(cids), lift)
+
+    test "Should serve generated proofs from flat nodes":
+      let
+        dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
+        (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifest(manifest)).tryGet()
+      storeTreeLeaves(bigRepo, treeCid, tree, dataset)
+
+      let
+        indices = (0 ..< tree.leavesCount).toSeq.mapIt(it.Natural)
+        unsorted = (await bigRepo.getBlocksAndProofs(treeCid, indices)).tryGet()
+        results = unsorted.sortedByIt(it[0])
+
+      check results.len == tree.leavesCount
+      for i in 0 ..< tree.leavesCount:
+        let
+          proof = results[i][2]
+          memoryProof = tree.getProof(i).tryGet()
+        check results[i][0] == i.Natural
+        check proof.index == memoryProof.index
+        check proof.nleaves == memoryProof.nleaves
+        check proof.path == memoryProof.path
+        check proof.verify(tree.leaves[i], tree.root.tryGet()).tryGet()
+
+    test "Should fail serving when flat tree nodes are missing":
+      let
+        dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
+        (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifest(manifest)).tryGet()
+      storeTreeLeaves(bigRepo, treeCid, tree, dataset)
+      (await bigRepo.delTreeNodes(treeCid)).tryGet()
+
+      let got = await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural])
+      check got.isErr
+      check got.error of TreeNodeNotFoundError
+
+    test "Should serve stored proofs when manifest is missing":
+      let
+        dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
+        (_, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      ensureOverlay(treeCid)
+      storeTreeLeaves(bigRepo, treeCid, tree, dataset)
+      (await bigRepo.delTreeNodes(treeCid)).tryGet()
+
+      let
+        unsorted = (
+          await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])
+        ).tryGet()
+        results = unsorted.sortedByIt(it[0])
+
+      check results.len == 3
+      for i in 0 ..< tree.leavesCount:
+        let
+          proof = results[i][2]
+          storedProof = tree.getProof(i).tryGet()
+        check proof.index == storedProof.index
+        check proof.nleaves == storedProof.nleaves
+        check proof.path == storedProof.path
+
+    test "Should serve stored proofs when treeCid is not the manifest dataset tree":
+      let
+        dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
+        (_, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        otherDataset =
+          (await makeRandomBlocks(datasetSize = 512, blockSize = 256'nb)).tryGet
+        (otherManifest, _) = makeManifestAndTree(otherDataset).tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifestBlock(@[treeCid], otherManifest)).tryGet()
+      storeTreeLeaves(bigRepo, treeCid, tree, dataset)
+      (await bigRepo.delTreeNodes(treeCid)).tryGet()
+
+      let
+        unsorted = (
+          await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])
+        ).tryGet()
+        results = unsorted.sortedByIt(it[0])
+
+      check results.len == 3
+      for i in 0 ..< tree.leavesCount:
+        let proof = results[i][2]
+        check proof.path == tree.getProof(i).tryGet().path
+
+    test "Should serve padding leaves from stored proof":
+      let
+        dataset =
+          (await makeRandomBlocks(datasetSize = 1280, blockSize = 256'nb)).tryGet
+        emptyLeafCid = emptyCid(CIDv1, Sha256HashCodec, bt.BlockCodec).tryGet()
+        cids = dataset.mapIt(it.cid) & @[emptyLeafCid]
+        tree = ArchivistTree.init(cids).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        manifest =
+          Manifest.new(treeCid = treeCid, blockSize = 256'nb, datasetSize = 1536'nb)
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      check tree.leavesCount == 6
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifest(manifest)).tryGet()
+
+      var items: seq[(bt.Block, Natural, ArchivistProof)]
+      for i in 0 ..< 5:
+        items.add((dataset[i], i.Natural, tree.getProof(i).tryGet()))
+      items.add(
+        (bt.emptyBlock(emptyLeafCid).tryGet(), 5.Natural, tree.getProof(5).tryGet())
+      )
+      (await bigRepo.putBlocks(treeCid, items)).tryGet()
+
+      let
+        unsorted = (
+          await bigRepo.getBlocksAndProofs(
+            treeCid, (0 ..< tree.leavesCount).toSeq.mapIt(it.Natural)
+          )
+        ).tryGet()
+        results = unsorted.sortedByIt(it[0])
+
+      check results.len == 6
+      for i in 0 ..< 5:
+        check results[i][1].cid == dataset[i].cid
+        check results[i][2].path == tree.getProof(i).tryGet().path
+        check results[i][2].verify(tree.leaves[i], tree.root.tryGet()).tryGet()
+      check results[5][1].cid == emptyLeafCid
+      check results[5][2].path == tree.getProof(5).tryGet().path
+
+    test "Should serve proofs for async-built trees":
+      let
+        dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
+        (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+      var tp = Taskpool.new(numThreads = 4)
+
+      defer:
+        tp.shutdown()
+
+      let asyncTree = (
+        await ArchivistTree.buildAsync(toAsyncIter(dataset.mapIt(it.cid)), tp)
+      ).tryGet()
+
+      check asyncTree.leavesCount == tree.leavesCount
+      check asyncTree.root.tryGet() == tree.root.tryGet()
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifest(manifest)).tryGet()
+      storeTreeLeaves(bigRepo, treeCid, asyncTree, dataset)
+
+      let
+        unsorted = (
+          await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])
+        ).tryGet()
+        results = unsorted.sortedByIt(it[0])
+
+      check results.len == tree.leavesCount
+      for i in 0 ..< tree.leavesCount:
+        let
+          proof = results[i][2]
+          memoryProof = asyncTree.getProof(i).tryGet()
+        check proof.index == memoryProof.index
+        check proof.nleaves == memoryProof.nleaves
+        check proof.path == memoryProof.path
+        check proof.verify(asyncTree.leaves[i], asyncTree.root.tryGet()).tryGet()
+
+    test "Should serve generated proofs even when stored proofs are corrupted":
+      let
+        dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
+        (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifest(manifest)).tryGet()
+      storeTreeLeaves(bigRepo, treeCid, tree, dataset)
+
+      # Corrupt the persisted proofs: serving must still return proofs that
+      # verify, generated from the flat tree nodes.
+      for i in 0 ..< tree.leavesCount:
+        let key = blockLeafKey(treeCid, i.Natural).tryGet()
+        var corrupted = (await bigRepo.metaDs.get(key, LeafMetadata)).tryGet()
+        corrupted.val.proof = nil
+        (await bigRepo.metaDs.put(corrupted)).tryGet()
+
+      let
+        unsorted = (
+          await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])
+        ).tryGet()
+        results = unsorted.sortedByIt(it[0])
+
+      check results.len == 3
+      for i in 0 ..< tree.leavesCount:
+        let proof = results[i][2]
+        check proof.path == tree.getProof(i).tryGet().path
+        check proof.verify(tree.leaves[i], tree.root.tryGet()).tryGet()
+
+    test "Should fall back to stored proof when sibling leaf is missing":
+      let
+        dataset =
+          (await makeRandomBlocks(datasetSize = 1024, blockSize = 256'nb)).tryGet
+        (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      check tree.leavesCount == 4
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifest(manifest)).tryGet()
+
+      # Store only leaves 0 and 2 - their siblings (1 and 3) are absent.
+
+      (
+        await bigRepo.putBlocks(
+          treeCid,
+          @[
+            (dataset[0], 0.Natural, tree.getProof(0).tryGet()),
+            (dataset[2], 2.Natural, tree.getProof(2).tryGet()),
+          ],
+        )
+      ).tryGet()
+
+      let
+        unsorted = (
+          await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])
+        ).tryGet()
+        results = unsorted.sortedByIt(it[0])
+
+      check results.len == 2
+      check results[0][0] == 0.Natural
+      check results[0][2].path == tree.getProof(0).tryGet().path
+      check results[0][2].verify(tree.leaves[0], tree.root.tryGet()).tryGet()
+      check results[1][0] == 2.Natural
+      check results[1][2].path == tree.getProof(2).tryGet().path
+      check results[1][2].verify(tree.leaves[2], tree.root.tryGet()).tryGet()
+
+    test "Should forget tree shape when overlay is dropped":
+      let
+        dataset = (await makeRandomBlocks(datasetSize = 768, blockSize = 256'nb)).tryGet
+        (manifest, tree) = makeManifestAndTree(dataset).tryGet()
+        treeCid = tree.rootCid.tryGet()
+        bigRepo =
+          RepoStore.new(repoDs, metaDs, clock = mockClock, quotaMaxBytes = 5000'nb)
+
+      ensureOverlay(treeCid)
+      discard (await bigRepo.storeManifest(manifest)).tryGet()
+      storeTreeLeaves(bigRepo, treeCid, tree, dataset)
+
+      let served = (await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural])).tryGet()
+      check served.len == 1
+      check treeCid in bigRepo.treeShapeCache
+
+      (await bigRepo.dropOverlay(treeCid)).tryGet()
+      check treeCid notin bigRepo.treeShapeCache
 
     test "Should handle non-existent block with proof":
       let

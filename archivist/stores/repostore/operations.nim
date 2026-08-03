@@ -944,6 +944,7 @@ proc storeManifestBlock*(
   for rootCid in rootCids:
     let key = ?overlayKey(rootCid)
     self.overlayCache.del(key)
+    self.treeShapeCache.del(rootCid)
 
   if err =? (
     await self.repoDs.put(

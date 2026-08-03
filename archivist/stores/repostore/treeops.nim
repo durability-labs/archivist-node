@@ -298,49 +298,60 @@ proc getTree*(
 
   success(tree)
 
-proc getTreeProof*(
+proc getTreeProofs*(
     self: RepoStore,
     treeCid: Cid,
-    index, nleaves: Natural,
+    indices: seq[Natural],
+    nleaves: Natural,
     mcodec: MultiCodec = Sha256HashCodec,
-): Future[?!ArchivistProof] {.async: (raises: [CancelledError]).} =
-  if index.int >= nleaves.int:
-    return
-      failure(newException(TreeNodeValidationError, "Tree leaf index is out of bounds"))
+): Future[?!seq[(Natural, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+  for index in indices:
+    if index.int >= nleaves.int:
+      return failure(
+        newException(TreeNodeValidationError, "Tree leaf index is out of bounds")
+      )
 
   let totalLevels = ?levels(nleaves.int)
 
   var
     leafKeys: seq[Key]
+    leafKeySet: HashSet[Key]
     treeKeys: seq[Key]
-    targetLeafKey = ?blockLeafKey(treeCid, index)
+    treeKeySet: HashSet[Key]
 
-  leafKeys.add(targetLeafKey)
+  for index in indices:
+    let targetKey = ?blockLeafKey(treeCid, index)
+    if targetKey notin leafKeySet:
+      leafKeys.add(targetKey)
+      leafKeySet.incl(targetKey)
 
-  if totalLevels > 1:
-    treeKeys.add(
-      ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, totalLevels - 1, 0)).Natural)
-    )
+    var
+      k = index.int
+      width = nleaves.int
 
-  var
-    k = index.int
-    width = nleaves.int
+    for level in 0 ..< totalLevels - 1:
+      let sibling = k xor 1
+      if sibling < width:
+        if level == 0:
+          let siblingKey = ?blockLeafKey(treeCid, sibling.Natural)
+          if siblingKey notin leafKeySet:
+            leafKeys.add(siblingKey)
+            leafKeySet.incl(siblingKey)
+        else:
+          let siblingKey =
+            ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, level, sibling)).Natural)
+          if siblingKey notin treeKeySet:
+            treeKeys.add(siblingKey)
+            treeKeySet.incl(siblingKey)
 
-  for level in 0 ..< totalLevels - 1:
-    let sibling = k xor 1
-    if sibling < width:
-      if level == 0:
-        let key = ?blockLeafKey(treeCid, sibling.Natural)
-        if key notin leafKeys:
-          leafKeys.add(key)
-      else:
-        let key =
-          ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, level, sibling)).Natural)
-        if key notin treeKeys:
-          treeKeys.add(key)
+      k = k shr 1
+      width = (width + 1) shr 1
 
-    k = k shr 1
-    width = (width + 1) shr 1
+  let rootKey =
+    ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, totalLevels - 1, 0)).Natural)
+  if rootKey notin treeKeySet:
+    treeKeys.add(rootKey)
+    treeKeySet.incl(rootKey)
 
   let
     leafRecords = ?await self.metaDs.get(leafKeys, LeafMetadata)
@@ -356,69 +367,132 @@ proc getTreeProof*(
   for record in treeRecords:
     nodesByKey[record.key] = record.val.cid
 
-  var
-    rootCid: Cid
-    rootHash: seq[byte]
-
-  if totalLevels == 1:
-    if targetLeafKey notin leavesByKey:
-      return
-        failure(newException(BlockNotFoundError, "Key not found: " & $targetLeafKey))
-    if (?catch(leavesByKey[targetLeafKey])).deleted:
-      return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
-    rootCid = (?catch(leavesByKey[targetLeafKey])).blkCid
-    rootHash = ?treeNodeDigest(rootCid, mcodec)
-  else:
-    let rootKey =
-      ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, totalLevels - 1, 0)).Natural)
-    if rootKey notin nodesByKey:
-      return failure(newException(TreeNodeNotFoundError, "Key not found: " & $rootKey))
+  if rootKey notin nodesByKey:
+    return failure(newException(TreeNodeNotFoundError, "Key not found: " & $rootKey))
+  let
     rootCid = ?catch(nodesByKey[rootKey])
     rootHash = ?treeNodeDigest(rootCid, mcodec)
 
   ?validateTreeRoot(treeCid, rootCid)
 
-  var path: seq[ByteHash]
-  k = index.int
-  width = nleaves.int
-
   let zeroHash = newSeq[byte]((?mcodec.mhash()).size)
-  for level in 0 ..< totalLevels - 1:
-    let sibling = k xor 1
-    if sibling < width:
-      if level == 0:
-        let key = ?blockLeafKey(treeCid, sibling.Natural)
-        if key notin leavesByKey:
-          return failure(newException(BlockNotFoundError, "Key not found: " & $key))
-        if (?catch(leavesByKey[key])).deleted:
-          return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
-        path.add(?treeNodeDigest((?catch(leavesByKey[key])).blkCid, mcodec))
-      else:
-        let key =
-          ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, level, sibling)).Natural)
-        if key notin nodesByKey:
-          return failure(newException(TreeNodeNotFoundError, "Key not found: " & $key))
-        path.add(?treeNodeDigest(?catch(nodesByKey[key]), mcodec))
-    else:
-      path.add(zeroHash)
 
-    k = k shr 1
-    width = (width + 1) shr 1
+  var proofs: seq[(Natural, ArchivistProof)]
+  for index in indices:
+    block buildProof:
+      let targetLeafKey = ?blockLeafKey(treeCid, index)
 
-  if targetLeafKey notin leavesByKey:
+      if targetLeafKey notin leavesByKey:
+        break buildProof
+      if (?catch(leavesByKey[targetLeafKey])).deleted:
+        return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
+
+      var path: seq[ByteHash]
+      var
+        k = index.int
+        width = nleaves.int
+
+      for level in 0 ..< totalLevels - 1:
+        let sibling = k xor 1
+        if sibling < width:
+          if level == 0:
+            # The level-0 sibling hash lives only in the sibling's own leaf
+            # record, which is not written atomically with this leaf. A
+            # missing or deleted sibling means the proof cannot be generated;
+            # callers fall back to the stored proof for this index.
+            let key = ?blockLeafKey(treeCid, sibling.Natural)
+            if key notin leavesByKey:
+              break buildProof
+            if (?catch(leavesByKey[key])).deleted:
+              break buildProof
+            path.add(?treeNodeDigest((?catch(leavesByKey[key])).blkCid, mcodec))
+          else:
+            let key =
+              ?treeNodeKey(treeCid, (?flatIndex(nleaves.int, level, sibling)).Natural)
+            if key notin nodesByKey:
+              return
+                failure(newException(TreeNodeNotFoundError, "Key not found: " & $key))
+            path.add(?treeNodeDigest(?catch(nodesByKey[key]), mcodec))
+        else:
+          path.add(zeroHash)
+
+        k = k shr 1
+        width = (width + 1) shr 1
+
+      let
+        proof = ?ArchivistProof.init(mcodec, index.int, nleaves.int, path)
+        leafHash = ?treeNodeDigest((?catch(leavesByKey[targetLeafKey])).blkCid, mcodec)
+      if not ?proof.verify(leafHash, rootHash):
+        return failure(
+          newException(TreeNodeValidationError, "Persisted tree proof is inconsistent")
+        )
+
+      proofs.add((index, proof))
+
+  success(proofs)
+
+proc getTreeProof*(
+    self: RepoStore,
+    treeCid: Cid,
+    index, nleaves: Natural,
+    mcodec: MultiCodec = Sha256HashCodec,
+): Future[?!ArchivistProof] {.async: (raises: [CancelledError]).} =
+  let targetLeafKey = ?blockLeafKey(treeCid, index)
+  let proofs = ?await self.getTreeProofs(treeCid, @[index], nleaves, mcodec)
+  if proofs.len == 0:
     return failure(newException(BlockNotFoundError, "Key not found: " & $targetLeafKey))
-  if (?catch(leavesByKey[targetLeafKey])).deleted:
-    return failure(newException(BlockNotFoundError, "Leaf has been deleted"))
+  success(proofs[0][1])
 
-  let
-    proof = ?ArchivistProof.init(mcodec, index.int, nleaves.int, path)
-    leafHash = ?treeNodeDigest((?catch(leavesByKey[targetLeafKey])).blkCid, mcodec)
-  if not ?proof.verify(leafHash, rootHash):
-    return failure(
-      newException(TreeNodeValidationError, "Persisted tree proof is inconsistent")
-    )
+proc resolveTreeShape*(
+    self: RepoStore, treeCid: Cid
+): Future[?!Option[(Natural, MultiCodec)]] {.async: (raises: [CancelledError]).} =
+  ## Resolve the shape (leaf count and hash codec) of a dataset tree from the
+  ## manifest attached to its overlay. Returns none when the tree cannot be
+  ## served from flat nodes (no overlay, no manifest, or a non-dataset root
+  ## such as a slot root); callers then fall back to stored proofs.
+  ##
+  ## Both positive and negative results are cached: the manifest attachment
+  ## is immutable for a live treeCid, and storeManifestBlock invalidates the
+  ## entry when a manifest is (re)attached. The entry is only written while
+  ## the overlay still exists, so a drop that completes during resolution
+  ## cannot leave a stale entry behind.
+  ##
+  withValue(self.treeShapeCache, treeCid, cachedShape):
+    return success(cachedShape[])
 
-  success(proof)
+  without overlayRec =? (await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)),
+    err:
+    if err of KVStoreKeyNotFound:
+      return success(none[(Natural, MultiCodec)]())
+    return failure(err)
+
+  without manifestCid =? overlayRec.val.manifestCid:
+    return success(none[(Natural, MultiCodec)]())
+
+  without blk =? await self.getBlock(manifestCid), err:
+    if err of BlockNotFoundError:
+      # The overlay references a manifest block that is not on disk yet:
+      # storeManifestBlock commits the manifestCid attachment before the
+      # manifest bytes land in the block store. Treat it as absent.
+      return success(none[(Natural, MultiCodec)]())
+    return failure(err)
+
+  without manifest =? Manifest.decode(blk.data), err:
+    return failure(err)
+
+  let shape =
+    if treeCid == manifest.treeCid:
+      (manifest.blocksCount.Natural, manifest.hcodec).some
+    else:
+      none[(Natural, MultiCodec)]()
+
+  # Do not cache an entry for an overlay that disappeared while we were
+  # resolving - a drop that completed in the meantime would otherwise leave
+  # a stale entry behind a re-created overlay.
+  if ?await self.metaDs.has(?overlayKey(treeCid)):
+    self.treeShapeCache[treeCid] = shape
+
+  success(shape)
 
 proc delTreeNodes*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]

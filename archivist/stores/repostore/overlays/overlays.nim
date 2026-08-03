@@ -309,6 +309,7 @@ proc dropOverlay*(
     trace "Deleted leaf metadata and updated refcounts", count = indices.len
 
   ?await self.delTreeNodes(treeCid)
+  self.treeShapeCache.del(treeCid)
 
   # Detach manifest and try to delete if refcount reaches 0
   ?await self.dropManifest(treeCid)
