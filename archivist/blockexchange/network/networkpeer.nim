@@ -48,20 +48,22 @@ proc connected*(self: NetworkPeer): bool =
   not (isNil(self.sendConn)) and not (self.sendConn.closed or self.sendConn.atEof)
 
 proc decodeMsgTask(
-    ctx: SharedPtr[TaskCtx[Message]], data: seq[byte]
+    ctx: SharedPtr[TaskCtx[Message]], data: ptr seq[byte]
 ) {.gcsafe, raises: [].} =
   defer:
-    discard ctx[].signal.fireSync()
-  var r = Message.protobufDecode(data).mapFailure
-  ctx[].result = unsafeIsolate(move r)
+    if err =? ctx[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
+  var r = Message.protobufDecode(data[]).mapFailure
+  ctx[].result = isolate(move r)
 
 proc encodeMsgTask(
-    ctx: SharedPtr[TaskCtx[seq[byte]]], msg: Message
+    ctx: SharedPtr[TaskCtx[seq[byte]]], msg: ptr Message
 ) {.gcsafe, raises: [].} =
   defer:
-    discard ctx[].signal.fireSync()
-  var r = success(protobufEncode(msg))
-  ctx[].result = unsafeIsolate(move r)
+    if err =? ctx[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
+  var r = success(protobufEncode(msg[]))
+  ctx[].result = isolate(move r)
 
 proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   if isNil(conn):
@@ -71,19 +73,26 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   trace "Attaching read loop", peer = self.id, connId = conn.oid
   try:
     while not conn.atEof or not conn.closed:
-      let
+      var
         data = await conn.readLp(MaxMessageSize.int)
         decodeStart = Moment.now()
-        msg =
-          if not self.taskpool.isNil and data.len > OffloadThreshold:
-            (
-              await spawnJoin[Message](
-                proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
-                  self.taskpool.spawn decodeMsgTask(ctx, data)
-              )
-            ).tryGet()
-          else:
-            Message.protobufDecode(data).mapFailure().tryGet()
+
+      var msg: Message
+      if not self.taskpool.isNil and data.len > OffloadThreshold:
+        # Borrow the payload by pointer (erasure addr-task pattern): the
+        # worker performs zero refcount operations on it, and the caller's
+        # frame - which outlives the worker via the await - frees it on
+        # the allocating thread.  A by-value param copy would inc/dec ORC's
+        # non-atomic refcount from the worker thread while the caller
+        # decrefs on the main thread (lost update, premature free).
+        msg = (
+          await spawnJoin[Message](
+            proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
+              self.taskpool.spawn decodeMsgTask(ctx, addr data)
+          )
+        ).tryGet()
+      else:
+        msg = Message.protobufDecode(data).mapFailure().tryGet()
 
       archivist_block_exchange_recv_decode_seconds.observe(
         (Moment.now() - decodeStart).nanoseconds.float64 / 1e9
@@ -131,17 +140,22 @@ proc send*(
   let
     kind = messageKind(msg)
     encodeStart = Moment.now()
-    encoded =
-      if not self.taskpool.isNil and
-          foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
-        ?await spawnJoin[seq[byte]](
-          proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
-            self.taskpool.spawn encodeMsgTask(ctx, msg)
-        )
-      else:
-        protobufEncode(msg)
 
-    encodeNs = (Moment.now() - encodeStart).nanoseconds
+  var encoded: seq[byte]
+  if not self.taskpool.isNil and
+      foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
+    # Borrow the message by pointer - same reasoning as the decode path:
+    # the worker does zero refcount operations; the sink param lives in
+    # this frame until after the await and is freed on the main thread.
+    encoded =
+      ?await spawnJoin[seq[byte]](
+        proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
+          self.taskpool.spawn encodeMsgTask(ctx, addr msg)
+      )
+  else:
+    encoded = protobufEncode(msg)
+
+  let encodeNs = (Moment.now() - encodeStart).nanoseconds
 
   archivist_block_exchange_network_encode_seconds.observe(
     encodeNs.float64 / 1e9, labelValues = [kind]

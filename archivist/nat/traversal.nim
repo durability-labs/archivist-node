@@ -51,14 +51,18 @@ proc stop*(traversal: NatTraversal) {.async: (raises: []).} =
 
 proc mapTask(
     portmapping: ptr PortMapping,
-    address: MultiAddress,
+    address: ptr MultiAddress,
     signal: ThreadSignalPtr,
     result: ptr [?!MultiAddress],
 ) =
-  trace "started port mapping background task", address
-  result[] = portmapping[].map(address)
-  trace "finished port mapping background task", address, result = result[]
-  discard signal.fireSync()
+  defer:
+    # fireSync is what releases the driver's wait: never discard it.
+    if err =? signal.fireSync().errorOption:
+      warn "Failed to fire port mapping completion signal", error = err
+
+  trace "started port mapping background task", address = address[]
+  result[] = portmapping[].map(address[])
+  trace "finished port mapping background task", address = address[], result = result[]
 
 proc map(
     traversal: NatTraversal, address: MultiAddress
@@ -67,7 +71,7 @@ proc map(
     let portmapping = addr traversal.portmapping
     var mapped: ?!MultiAddress
     trace "spawning port mapping background task", address
-    traversal.taskpool.spawn mapTask(portmapping, address, sig, addr mapped)
+    traversal.taskpool.spawn mapTask(portmapping, addr address, sig, addr mapped)
     ?await awaitSpawn(sig.wait())
     return mapped
 

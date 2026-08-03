@@ -113,7 +113,8 @@ proc generateWitnessValues(graph: Graph, inputs: Inputs): auto {.raises: [].} =
 proc generateProofTask(task: ptr ProofTask) =
   defer:
     if task[].signal != nil:
-      discard task[].signal.fireSync()
+      if err =? task[].signal.fireSync().errorOption:
+        warn "Failed to fire proof completion signal", error = err
 
   trace "Generating witness"
   let

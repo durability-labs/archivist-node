@@ -346,7 +346,9 @@ proc leopardEncodeTask(tp: Taskpool, task: ptr EncodeTask) {.gcsafe.} =
   )
   defer:
     encoder.release()
-    discard task[].signal.fireSync()
+    # fireSync is what releases the driver's wait: never discard it.
+    if err =? task[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
 
   if (let res = encoder.encode(task[].blocks[], task[].parity[]); res.isErr):
     warn "Error from leopard encoder backend!", error = $res.error
@@ -531,7 +533,9 @@ proc leopardDecodeTask(tp: Taskpool, task: ptr DecodeTask) {.gcsafe.} =
   )
   defer:
     decoder.release()
-    discard task[].signal.fireSync()
+    # fireSync is what releases the driver's wait: never discard it.
+    if err =? task[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
 
   if (
     let res = decoder.decode(task[].blocks[], task[].parity[], task[].recovered[])
