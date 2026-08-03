@@ -66,7 +66,7 @@ suite "Test CircomCompat Prover":
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet
 
     check:
-      checked.isSome and checked.get == true
+      checked.isSome and !checked == true
 
   test "Should generate valid proofs when slots consist of single blocks":
     # To get single-block slots, we just need to set the number of blocks in
@@ -92,7 +92,7 @@ suite "Test CircomCompat Prover":
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet
 
     check:
-      checked.isSome and checked.get == true
+      checked.isSome and !checked == true
 
 suite "Test NimGroth16 Prover":
   let
@@ -147,7 +147,7 @@ suite "Test NimGroth16 Prover":
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet
 
     check:
-      checked.isSome and checked.get == true
+      checked.isSome and !checked == true
 
   test "Should generate valid proofs when slots consist of single blocks":
     # To get single-block slots, we just need to set the number of blocks in
@@ -173,4 +173,4 @@ suite "Test NimGroth16 Prover":
         (await prover.prove(sampler, verifiable, challenge, verify = true)).tryGet
 
     check:
-      checked.isSome and checked.get == true
+      checked.isSome and !checked == true

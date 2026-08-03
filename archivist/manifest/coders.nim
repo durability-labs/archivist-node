@@ -93,10 +93,10 @@ proc encode*(manifest: Manifest): ?!seq[byte] =
     header.write(7, erasureInfo)
 
   if manifest.filename.isSome:
-    header.write(8, manifest.filename.get())
+    header.write(8, !manifest.filename)
 
   if manifest.mimetype.isSome:
-    header.write(9, manifest.mimetype.get())
+    header.write(9, !manifest.mimetype)
 
   pbNode.write(1, header) # set the treeCid as the data field
   pbNode.finish()

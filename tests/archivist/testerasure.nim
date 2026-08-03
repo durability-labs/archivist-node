@@ -8,7 +8,7 @@ import pkg/archivist/erasure
 import pkg/archivist/manifest
 import pkg/archivist/stores
 import pkg/archivist/blocktype as bt
-import pkg/archivist/rng
+import pkg/archivist/rng as archivist_rng
 import pkg/archivist/utils
 import pkg/archivist/indexingstrategy
 import pkg/taskpools
@@ -22,7 +22,7 @@ suite "Erasure encode/decode":
   const BlockSize = 128'nb
   const dataSetSize = BlockSize * 123 # weird geometry
 
-  var rng: Rng
+  var rng: archivist_rng.Rng
   var chunker: Chunker
   var manifest: Manifest
   var store: RepoStore
@@ -34,7 +34,7 @@ suite "Erasure encode/decode":
     let
       repoDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
       metaDs = SQLiteKVStore.new(SqliteMemory, tp).tryGet()
-    rng = Rng.instance()
+    rng = archivist_rng.Rng.instance()
     chunker = RandomChunker.new(rng, size = dataSetSize, chunkSize = BlockSize)
     store = RepoStore.new(repoDs, metaDs)
     erasure = Erasure.new(store, store, leoEncoderProvider, leoDecoderProvider, tp)

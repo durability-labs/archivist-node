@@ -111,15 +111,19 @@ proc generateNodes*(
           "invalid multiaddress"
         )
 
-      switch = newStandardSwitch(
-        transportFlags = {ServerFlags.ReuseAddr},
-        sendSignedPeerRecord = true,
-        addrs =
+      switch = SwitchBuilder
+        .new()
+        .withNoise()
+        .withMplex(5.minutes, 5.minutes)
+        .withTcpTransport({ServerFlags.ReuseAddr})
+        .withSignedPeerRecord(true)
+        .withAddresses(
           if config.findFreePorts:
-            listenAddr
+            @[listenAddr]
           else:
-            MultiAddress.init("/ip4/127.0.0.1/tcp/0").expect("invalid multiaddress"),
-      )
+            @[MultiAddress.init("/ip4/127.0.0.1/tcp/0").expect("invalid multiaddress")]
+        )
+        .build()
 
       network = BlockExcNetwork.new(switch)
       peerStore = PeerCtxStore.new()

@@ -295,7 +295,7 @@ suite "Slot builder":
       manifest = (await builder.buildManifest(tp)).tryGet()
       mhash = manifest.verifyRoot.mhash.tryGet()
       mhashBytes = mhash.digestBytes
-      rootHash = Poseidon2Hash.fromBytes(mhashBytes.toArray32).get
+      rootHash = !Poseidon2Hash.fromBytes(mhashBytes.toArray32)
 
     check:
       expectedRoot == rootHash

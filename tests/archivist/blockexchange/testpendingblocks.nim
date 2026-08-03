@@ -4,6 +4,7 @@ import std/importutils
 
 import pkg/chronos
 import pkg/libp2p
+import pkg/libp2p/crypto/rng as libp2p_rng
 import pkg/stew/byteutils
 import pkg/questionable
 
@@ -22,7 +23,7 @@ privateAccess(BatchReq)
 privateAccess(BlockReq)
 
 proc makePeerId(): PeerId =
-  let seckey = PrivateKey.random(Rng.instance()[]).tryGet()
+  let seckey = PrivateKey.random(libp2p_rng.newBearSslRng(Rng.instance())).tryGet()
   PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
 
 proc makePeerCtx(id: PeerId): BlockExcPeerCtx =

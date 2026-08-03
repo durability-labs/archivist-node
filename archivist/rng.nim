@@ -10,6 +10,7 @@
 {.push raises: [].}
 
 import pkg/libp2p/crypto/crypto
+import pkg/libp2p/crypto/rng as libp2p_rng
 import pkg/bearssl/rand
 
 export rand
@@ -22,7 +23,9 @@ var rng {.threadvar.}: Rng
 
 proc instance*(t: type Rng): Rng =
   if rng.isNil:
-    rng = newRng()
+    let fresh = libp2p_rng.newRng()
+    if not fresh.isNil:
+      rng = fresh.bearSslDrbgRef
   rng
 
 # Random helpers: similar as in stdlib, but with HmacDrbgContext rng
