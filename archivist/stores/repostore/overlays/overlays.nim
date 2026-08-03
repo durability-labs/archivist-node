@@ -459,8 +459,15 @@ proc withTmpOverlay*(
     return failure(err)
 
   trace "Body completed successfully, finalizing overlay", realCid, tmpCid
+  # Finalization must run to completion even if the caller is cancelled:
+  # aborting between markFinalizing and the atomic key move would leave the
+  # tmp overlay rejecting writes and deletion forever. noCancel defers the
+  # cancellation until after the move completes; the defer below then sees
+  # the tmp overlay already moved (or deleted) and drops it as a no-op.
   if finalErr =? (
-    await self.finalizeOverlay(tmpCid, realCid, status = OverlayStatus.Completed.some)
+    await noCancel(
+      self.finalizeOverlay(tmpCid, realCid, status = OverlayStatus.Completed.some)
+    )
   ).errorOption:
     error "Unable to finalize tmp overlay", exc = finalErr.msg
     return failure(finalErr)

@@ -690,6 +690,42 @@ proc testLifecycle*(
       check repo.quotaUsedBytes == 0.NBytes
       check repo.totalBlocks == 0.Natural
 
+    test "Should not strand overlays when cancelled during finalization":
+      let
+        blk = createTestBlock(132)
+        (_, tree) = makeManifestAndTree(@[blk]).tryGet()
+        realTreeCid = tree.rootCid.tryGet()
+        proof = tree.getProof(0).tryGet()
+      var
+        capturedTmpCid: Cid
+        bodyDone = newFuture[void]("withTmpOverlay.cancel.finalize")
+
+      let op = repo.withTmpOverlay(
+        body = proc(
+            tmpCid: Cid
+        ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
+          capturedTmpCid = tmpCid
+          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+          if not bodyDone.finished:
+            bodyDone.complete()
+          success(realTreeCid)
+      )
+
+      await bodyDone.wait(500.millis)
+      # Cancel while finalization is in flight: the finalize sequence must
+      # still run to completion so no overlay is left rejecting writes and
+      # deletion forever.
+      await op.cancelAndWait()
+
+      let realMeta = (await repo.getOverlay(realTreeCid)).tryGet()
+      check realMeta.status != Finalizing
+
+      let tmpRes = await repo.getOverlay(capturedTmpCid)
+      if tmpRes.isOk:
+        check tmpRes.get.status != Finalizing
+      else:
+        check tmpRes.error of KVStoreKeyNotFound
+
     test "Should drop tmp overlay metadata when body is cancelled":
       let realTreeCid = Cid.example
       var
