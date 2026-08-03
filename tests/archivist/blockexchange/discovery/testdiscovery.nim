@@ -48,7 +48,13 @@ suite "Block Advertising and Discovery":
 
       blocks.add(bt.Block.new(chunk).tryGet())
 
-    switch = newStandardSwitch(transportFlags = {ServerFlags.ReuseAddr})
+    switch = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport({ServerFlags.ReuseAddr})
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
     blockDiscovery = MockDiscovery.new()
     network = BlockExcNetwork.new(switch)
     tp = Taskpool.new(num_threads = 4)
@@ -205,7 +211,13 @@ suite "E2E - Multiple Nodes Discovery":
       trees.add(tree)
 
       let
-        s = newStandardSwitch(transportFlags = {ServerFlags.ReuseAddr})
+        s = SwitchBuilder
+          .new()
+          .withNoise()
+          .withMplex(5.minutes, 5.minutes)
+          .withTcpTransport({ServerFlags.ReuseAddr})
+          .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+          .build()
         blockDiscovery = MockDiscovery.new()
         network = BlockExcNetwork.new(s)
         localStore = RepoStore.new(

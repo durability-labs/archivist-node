@@ -34,7 +34,13 @@ proc initializeLocalStore(temporary: TemporaryNode, clock: Clock = SystemClock.n
     RepoStore.new(temporary.repoDs, temporary.metaDs, clock = clock)
 
 proc initializeNetwork(temporary: TemporaryNode) =
-  temporary.p2p = newStandardSwitch()
+  temporary.p2p = SwitchBuilder
+    .new()
+    .withNoise()
+    .withMplex(5.minutes, 5.minutes)
+    .withTcpTransport()
+    .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+    .build()
   temporary.peerStore = PeerCtxStore.new()
   temporary.exchangeNetwork = BlockExcnetwork.new(temporary.p2p)
   let privateKey = temporary.p2p.peerInfo.privateKey

@@ -86,7 +86,7 @@ proc switches*(cluster: NodesCluster): seq[Switch] =
 
 proc generateNodes*(
     num: Natural, blocks: openArray[bt.Block] = [], config: NodeConfig = NodeConfig()
-): NodesCluster =
+): Future[NodesCluster] {.async.} =
   var
     components: seq[NodesComponents] = @[]
     taskpool = Taskpool.new()
@@ -96,13 +96,13 @@ proc generateNodes*(
     let basePortForNode = config.basePort + 2 * i.int
     let listenPort =
       if config.findFreePorts:
-        waitFor nextFreePort(basePortForNode)
+        await nextFreePort(basePortForNode)
       else:
         basePortForNode
 
     let bindPort =
       if config.findFreePorts:
-        waitFor nextFreePort(listenPort + 1)
+        await nextFreePort(listenPort + 1)
       else:
         listenPort + 1
 
@@ -111,15 +111,19 @@ proc generateNodes*(
           "invalid multiaddress"
         )
 
-      switch = newStandardSwitch(
-        transportFlags = {ServerFlags.ReuseAddr},
-        sendSignedPeerRecord = true,
-        addrs =
+      switch = SwitchBuilder
+        .new()
+        .withNoise()
+        .withMplex(5.minutes, 5.minutes)
+        .withTcpTransport({ServerFlags.ReuseAddr})
+        .withSignedPeerRecord(true)
+        .withAddresses(
           if config.findFreePorts:
-            listenAddr
+            @[listenAddr]
           else:
-            MultiAddress.init("/ip4/127.0.0.1/tcp/0").expect("invalid multiaddress"),
-      )
+            @[MultiAddress.init("/ip4/127.0.0.1/tcp/0").expect("invalid multiaddress")]
+        )
+        .build()
 
       network = BlockExcNetwork.new(switch)
       peerStore = PeerCtxStore.new()
@@ -139,7 +143,7 @@ proc generateNodes*(
             store = blockDiscoveryStore,
             bootstrapNodes = bootstrapNodes,
           )
-        waitFor store.start()
+        await store.start()
         (store, discovery)
       else:
         let
@@ -198,8 +202,8 @@ proc generateNodes*(
   if config.createFullNode:
     for component in components:
       if component.node != nil:
-        waitFor component.node.switch.start()
-        waitFor component.node.start()
+        await component.node.switch.start()
+        await component.node.start()
 
   return NodesCluster(components: components, taskpool: taskpool)
 

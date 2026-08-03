@@ -116,9 +116,9 @@ suite "Manifest - Attribute Inheritance":
       .tryGet()
 
     check verifiable.filename.isSome == true
-    check verifiable.filename.get() == "example.png"
+    check !verifiable.filename == "example.png"
     check verifiable.mimetype.isSome == true
-    check verifiable.mimetype.get() == "image/png"
+    check !verifiable.mimetype == "image/png"
 
   test "Can provide slot block iterator for verifiable manifest":
     var verifiable = Manifest

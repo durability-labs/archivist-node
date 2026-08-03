@@ -5,13 +5,14 @@ import std/importutils
 
 import pkg/chronos
 import pkg/libp2p/routing_record
+import pkg/libp2p/crypto/rng as libp2p_rng
 import pkg/stew/bitseqs
 import pkg/archivistdht/discv5/protocol as discv5
 
 import pkg/kvstore
 import pkg/taskpools
 
-import pkg/archivist/rng
+import pkg/archivist/rng as archivist_rng
 import pkg/archivist/blockexchange
 import pkg/archivist/blockexchange/engine/engine {.all.}
 import pkg/archivist/blockexchange/engine/metrics
@@ -59,7 +60,7 @@ proc alwaysRequeue(delay: Duration = 0.seconds): PeerSelectorHandler =
 
 asyncchecksuite "NetworkStore engine basic":
   var
-    rng: Rng
+    rng: archivist_rng.Rng
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
@@ -75,10 +76,12 @@ asyncchecksuite "NetworkStore engine basic":
 
   setup:
     tp = Taskpool.new(num_threads = 4)
-    rng = Rng.instance()
-    seckey = PrivateKey.random(rng[]).tryGet()
+    rng = archivist_rng.Rng.instance()
+    seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
-    chunker = RandomChunker.new(Rng.instance(), size = 1024'nb, chunkSize = 256'nb)
+    chunker = RandomChunker.new(
+      archivist_rng.Rng.instance(), size = 1024'nb, chunkSize = 256'nb
+    )
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
@@ -143,7 +146,7 @@ asyncchecksuite "NetworkStore engine basic":
 
 asyncchecksuite "NetworkStore engine handlers":
   var
-    rng: Rng
+    rng: archivist_rng.Rng
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
@@ -163,7 +166,7 @@ asyncchecksuite "NetworkStore engine handlers":
     tp: Taskpool
 
   setup:
-    rng = Rng.instance()
+    rng = archivist_rng.Rng.instance()
     chunker = RandomChunker.new(rng, size = 1024'nb, chunkSize = 256'nb)
 
     while true:
@@ -175,7 +178,7 @@ asyncchecksuite "NetworkStore engine handlers":
 
     (manifest, tree) = makeManifestAndTree(blocks).tryGet()
     treeCid = tree.rootCid.tryGet()
-    seckey = PrivateKey.random(rng[]).tryGet()
+    seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
@@ -410,8 +413,15 @@ asyncchecksuite "NetworkStore engine handlers":
 
     let
       requestedIndices = @[0.Natural, 1.Natural]
-      otherPeerId =
-        PeerId.init(PrivateKey.random(rng[]).tryGet().getPublicKey().tryGet()).tryGet()
+      otherPeerId = PeerId
+        .init(
+          PrivateKey
+          .random(libp2p_rng.newBearSslRng(rng))
+          .tryGet()
+          .getPublicKey()
+          .tryGet()
+        )
+        .tryGet()
       blocksDelivery = requestedIndices.mapIt(
         BlockDelivery(
           blk: blocks[it],
@@ -453,7 +463,7 @@ asyncchecksuite "NetworkStore engine handlers":
 
 asyncchecksuite "Block Download":
   var
-    rng: Rng
+    rng: archivist_rng.Rng
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
@@ -470,7 +480,7 @@ asyncchecksuite "Block Download":
     tp: Taskpool
 
   setup:
-    rng = Rng.instance()
+    rng = archivist_rng.Rng.instance()
     chunker = RandomChunker.new(rng, size = 1024'nb, chunkSize = 256'nb)
 
     while true:
@@ -480,7 +490,7 @@ asyncchecksuite "Block Download":
 
       blocks.add(Block.new(chunk).tryGet())
 
-    seckey = PrivateKey.random(rng[]).tryGet()
+    seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
@@ -672,7 +682,7 @@ asyncchecksuite "Block Download":
 
   test "Should batch by peer before splitting want block requests":
     let
-      peer2Key = PrivateKey.random(rng[]).tryGet()
+      peer2Key = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
       peer2Id = PeerId.init(peer2Key.getPublicKey().tryGet()).tryGet()
       peer2Ctx = BlockExcPeerCtx.new(peer2Id)
       requestCount = DefaultWantBlockBatchSize * 4
@@ -1234,8 +1244,15 @@ asyncchecksuite "Block Download":
   test "DHT discovery reschedules with discoveryTimeout":
     let
       address = BlockAddress.init(blocks[0].cid)
-      newPeerId =
-        PeerId.init(PrivateKey.random(rng[]).tryGet().getPublicKey().tryGet()).tryGet()
+      newPeerId = PeerId
+        .init(
+          PrivateKey
+          .random(libp2p_rng.newBearSslRng(rng))
+          .tryGet()
+          .getPublicKey()
+          .tryGet()
+        )
+        .tryGet()
       newPeerCtx = BlockExcPeerCtx.new(newPeerId)
       wantBlockSent = newAsyncEvent()
       initialLastDiscRequest = engine.lastDiscRequest
@@ -1302,7 +1319,7 @@ asyncchecksuite "Block Download":
     let
       address = BlockAddress.init(blocks[0].cid)
       announcerPeer = peerCtx
-      scorerKey = PrivateKey.random(rng[]).tryGet()
+      scorerKey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
       scorerId = PeerId.init(scorerKey.getPublicKey().tryGet()).tryGet()
       scorerPeer = BlockExcPeerCtx.new(scorerId)
       wantBlockSent = newAsyncEvent()
@@ -1375,7 +1392,7 @@ asyncchecksuite "Block Download":
 
 asyncchecksuite "Task Handler":
   var
-    rng: Rng
+    rng: archivist_rng.Rng
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
@@ -1397,7 +1414,7 @@ asyncchecksuite "Task Handler":
     treeCid: Cid
 
   setup:
-    rng = Rng.instance()
+    rng = archivist_rng.Rng.instance()
     chunker = RandomChunker.new(rng, size = 1024, chunkSize = 256'nb)
     while true:
       let chunk = (await chunker.getBytes()).tryGet()
@@ -1408,7 +1425,7 @@ asyncchecksuite "Task Handler":
 
     (manifest, tree) = makeManifestAndTree(blocks).tryGet()
     treeCid = tree.rootCid.tryGet()
-    seckey = PrivateKey.random(rng[]).tryGet()
+    seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
@@ -1432,7 +1449,7 @@ asyncchecksuite "Task Handler":
     peersCtx = @[]
 
     for i in 0 .. 3:
-      let seckey = PrivateKey.random(rng[]).tryGet()
+      let seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
       peers.add(PeerId.init(seckey.getPublicKey().tryGet()).tryGet())
 
       peersCtx.add(BlockExcPeerCtx.new(peers[i]))
@@ -1481,7 +1498,7 @@ asyncchecksuite "Task Handler":
 
 suite "NetworkStore engine refresh circuit":
   var
-    rng: Rng
+    rng: archivist_rng.Rng
     seckey: PrivateKey
     peerId: PeerId
     chunker: Chunker
@@ -1515,7 +1532,7 @@ suite "NetworkStore engine refresh circuit":
     success()
 
   setup:
-    rng = Rng.instance()
+    rng = archivist_rng.Rng.instance()
     chunker = RandomChunker.new(rng, size = 1024'nb, chunkSize = 256'nb)
     blocks = @[]
     while true:
@@ -1526,12 +1543,12 @@ suite "NetworkStore engine refresh circuit":
 
     (_, tree) = makeManifestAndTree(blocks).tryGet()
     treeCid = tree.rootCid.tryGet()
-    seckey = PrivateKey.random(rng[]).tryGet()
+    seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     blockDiscovery = Discovery.new()
     peerStore = PeerCtxStore.new()
     pendingBlocks = PendingBlocksManager.new()
-    waitFor pendingBlocks.start()
+    await pendingBlocks.start()
     tp = Taskpool.new(num_threads = 4)
     localStore = RepoStore.new(
       SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
@@ -1556,7 +1573,7 @@ suite "NetworkStore engine refresh circuit":
       discard engine.pendingBlocks.getWantHandle(b.cid)
 
   teardown:
-    waitFor pendingBlocks.stop()
+    await pendingBlocks.stop()
     tp.shutdown()
 
   test "suppressed refresh returns wake hint":

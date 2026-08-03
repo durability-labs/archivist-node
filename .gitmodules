@@ -1,9 +1,9 @@
 [submodule "vendor/archivist-contracts"]
 	path = vendor/archivist-contracts
-	url = https://github.com/durability-labs/archivist-contracts.git
+	url = git@github.com:durability-labs/archivist-contracts.git
 [submodule "vendor/archivist-storage-proofs-circuits"]
 	path = vendor/archivist-storage-proofs-circuits
-	url = https://github.com/durability-labs/archivist-storage-proofs-circuits.git
+	url = git@github.com:durability-labs/archivist-storage-proofs-circuits.git
 	ignore = untracked
 	branch = main
 [submodule "vendor/nimble/results"]
@@ -44,13 +44,13 @@
 	url = https://github.com/status-im/nim-testutils
 [submodule "vendor/nimble/chronicles"]
 	path = vendor/nimble/chronicles
-	url = https://github.com/durability-labs/nim-chronicles
+	url = https://github.com/status-im/nim-chronicles
 [submodule "vendor/nimble/httputils"]
 	path = vendor/nimble/httputils
 	url = https://github.com/status-im/nim-http-utils
 [submodule "vendor/nimble/chronos"]
 	path = vendor/nimble/chronos
-	url = https://github.com/durability-labs/nim-chronos
+	url = https://github.com/status-im/nim-chronos
 [submodule "vendor/nimble/dnsclient"]
 	path = vendor/nimble/dnsclient
 	url = https://github.com/ba0f3/dnsclient.nim
@@ -77,16 +77,16 @@
 	url = https://github.com/vacp2p/nim-jwt.git
 [submodule "vendor/nimble/constantine"]
 	path = vendor/nimble/constantine
-	url = https://github.com/durability-labs/constantine
+	url = git@github.com:durability-labs/constantine.git
 [submodule "vendor/nimble/poseidon2"]
 	path = vendor/nimble/poseidon2
-	url = https://github.com/durability-labs/nim-poseidon2
+	url = git@github.com:durability-labs/nim-poseidon2.git
 [submodule "vendor/nimble/libp2p"]
 	path = vendor/nimble/libp2p
-	url = https://github.com/durability-labs/nim-libp2p
+	url = https://github.com/vacp2p/nim-libp2p
 [submodule "vendor/nimble/stint"]
 	path = vendor/nimble/stint
-	url = https://github.com/durability-labs/nim-stint
+	url = git@github.com:durability-labs/nim-stint.git
 [submodule "vendor/nimble/asynctest"]
 	path = vendor/nimble/asynctest
 	url = https://github.com/markspanbroek/asynctest
@@ -98,19 +98,22 @@
 	url = https://github.com/arnetheduck/nim-sqlite3-abi
 [submodule "vendor/nimble/archivistdht"]
 	path = vendor/nimble/archivistdht
-	url = https://github.com/durability-labs/archivist-dht
+	url = git@github.com:durability-labs/archivist-dht.git
 [submodule "vendor/nimble/circom_witnessgen"]
 	path = vendor/nimble/circom_witnessgen
-	url = https://github.com/durability-labs/circom-witnessgen
+	url = https://github.com/logos-storage/circom-witnessgen
 [submodule "vendor/nimble/circomcompat"]
 	path = vendor/nimble/circomcompat
-	url = https://github.com/durability-labs/nim-circom-compat
+	url = git@github.com:durability-labs/nim-circom-compat.git
 [submodule "vendor/nimble/confutils"]
 	path = vendor/nimble/confutils
 	url = https://github.com/status-im/nim-confutils
 [submodule "vendor/nimble/contractabi"]
 	path = vendor/nimble/contractabi
-	url = https://github.com/durability-labs/nim-contract-abi
+	url = git@github.com:durability-labs/nim-contract-abi.git
+[submodule "vendor/nimble/nat_traversal"]
+	path = vendor/nimble/nat_traversal
+	url = git@github.com:durability-labs/nim-nat-traversal.git
 [submodule "vendor/nimble/minilru"]
 	path = vendor/nimble/minilru
 	url = https://github.com/status-im/nim-minilru
@@ -125,16 +128,16 @@
 	url = https://github.com/status-im/nim-json-rpc
 [submodule "vendor/nimble/serde"]
 	path = vendor/nimble/serde
-	url = https://github.com/durability-labs/nim-serde
+	url = git@github.com:durability-labs/nim-serde.git
 [submodule "vendor/nimble/ethers"]
 	path = vendor/nimble/ethers
-	url = https://github.com/durability-labs/nim-ethers
+	url = git@github.com:durability-labs/nim-ethers.git
 [submodule "vendor/nimble/groth16"]
 	path = vendor/nimble/groth16
-	url = https://github.com/durability-labs/nim-groth16
+	url = git@github.com:durability-labs/nim-groth16.git
 [submodule "vendor/nimble/leopard"]
 	path = vendor/nimble/leopard
-	url = https://github.com/durability-labs/nim-leopard
+	url = git@github.com:durability-labs/nim-leopard.git
 [submodule "vendor/nimble/lrucache"]
 	path = vendor/nimble/lrucache
 	url = https://github.com/status-im/lrucache.nim
@@ -147,13 +150,16 @@
 [submodule "vendor/nimble/zippy"]
 	path = vendor/nimble/zippy
 	url = https://github.com/guzba/zippy
+[submodule "vendor/nimble/lsquic"]
+	path = vendor/nimble/lsquic
+	url = https://github.com/vacp2p/nim-lsquic.git
 [submodule "vendor/nimble/nim-kvstore"]
 	path = vendor/nimble/nim-kvstore
 	url = git@github.com:durability-labs/nim-kvstore.git
-	url = https://github.com/durability-labs/nim-kvstore.git
 [submodule "vendor/nimble/threading"]
 	path = vendor/nimble/threading
 	url = https://github.com/nim-lang/threading.git
-[submodule "vendor/nimble/nat_traversal"]
-	path = vendor/nimble/nat_traversal
-	url = https://github.com/durability-labs/nim-nat-traversal.git
+
+[submodule "vendor/nimble/boringssl"]
+	path = vendor/nimble/boringssl
+	url = https://github.com/vacp2p/nim-boringssl

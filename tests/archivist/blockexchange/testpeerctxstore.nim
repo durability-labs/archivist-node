@@ -60,13 +60,13 @@ suite "Peer Context Store":
     peerCtx.recordDelivery(testAddress, 2048, 50.0)
     check peerCtx.scoreFor(testCid).isSome
 
-    let score = peerCtx.scoreFor(testCid).get
+    let score = !peerCtx.scoreFor(testCid)
     check score.totalDeliveries == 1
     let newCtx = BlockExcPeerCtx.new(peerId)
     store.add(newCtx)
     check newCtx.scoreFor(testCid).isSome
 
-    let restored = newCtx.scoreFor(testCid).get
+    let restored = !newCtx.scoreFor(testCid)
     check restored.totalBytes == 2048
 
   test "Should isolate peer feedback by dataset":

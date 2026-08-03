@@ -51,7 +51,7 @@ suite "Test Node - Slot Repair":
     localStores: seq[RepoStore]
 
   setup:
-    cluster = generateNodes(numNodes, config = config)
+    cluster = await generateNodes(numNodes, config = config)
     nodes = cluster.nodes
     localStores = cluster.localStores
     await connectNodes(cluster)

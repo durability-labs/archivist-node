@@ -72,7 +72,7 @@ proc check*(env: var CircuitEnv) =
     withDir env.nimCircuitCli.parentDir:
       runit "nimble build -d:release --styleCheck:off cli"
     echo "CWD: ", getCurrentDir()
-    assert env.nimCircuitCli.fileExists()
+    doAssert env.nimCircuitCli.fileExists()
 
   echo "Found NimCircuitCli: ", env.nimCircuitCli
   echo "Found Circuit Path: ", env.circuitDirIncludes
@@ -155,7 +155,7 @@ proc createCircuit*(
         fmt"snarkjs zkey contribute {name}_0000.zkey {name}_0001.zkey --name='1st Contributor Name'"
       echo "CMD: ", cmd
       let cmdRes = execCmdEx(cmd, options = {}, input = someEntropy & "\n")
-      assert cmdRes.exitCode == 0
+      doAssert cmdRes.exitCode == 0
 
       moveFile fmt"{name}_0001.zkey", fmt"{name}.zkey"
       removeFile fmt"{name}_0000.zkey"

@@ -47,28 +47,6 @@ type
   ArchivistProof* = ref object of ByteProof
     mcodec*: MultiCodec
 
-# CodeHashes is not exported from libp2p
-# So we need to recreate it instead of
-proc initMultiHashCodeTable(): Table[MultiCodec, MHash] {.compileTime.} =
-  for item in HashesList:
-    result[item.mcodec] = item
-
-const CodeHashes = initMultiHashCodeTable()
-
-func mhash*(mcodec: MultiCodec): ?!MHash =
-  let mhash = CodeHashes.getOrDefault(mcodec)
-
-  if isNil(mhash.coder):
-    return failure "Invalid multihash codec"
-
-  success mhash
-
-func digestSize*(self: (ArchivistTree or ArchivistProof)): int =
-  ## Number of leaves
-  ##
-
-  self.mhash.size
-
 func getProof*(self: ArchivistTree, index: int): ?!ArchivistProof =
   var proof = ArchivistProof(mcodec: self.mcodec)
 
@@ -152,12 +130,12 @@ func init*(
     return failure "Empty leaves"
 
   let
-    mhash = ?mcodec.mhash()
+    digestSize = ?mcodec.digestSize.mapFailure
     compressor = proc(x, y: seq[byte], key: ByteTreeKey): ?!ByteHash {.noSideEffect.} =
       compress(x, y, key)
-    Zero: ByteHash = newSeq[byte](mhash.size)
+    Zero: ByteHash = newSeq[byte](digestSize)
 
-  if mhash.size != leaves[0].len:
+  if digestSize != leaves[0].len:
     return failure "Invalid hash length"
 
   var self = ArchivistTree(mcodec: mcodec, compress: compressor, zero: Zero)
@@ -195,12 +173,12 @@ proc fromNodes*(
     return failure "Empty nodes"
 
   let
-    mhash = ?mcodec.mhash()
-    Zero = newSeq[byte](mhash.size)
+    digestSize = ?mcodec.digestSize.mapFailure
+    Zero = newSeq[byte](digestSize)
     compressor = proc(x, y: seq[byte], key: ByteTreeKey): ?!ByteHash {.noSideEffect.} =
       compress(x, y, key)
 
-  if mhash.size != nodes[0].len:
+  if digestSize != nodes[0].len:
     return failure "Invalid hash length"
 
   var
@@ -233,8 +211,8 @@ func init*(
     return failure "Empty nodes"
 
   let
-    mhash = ?mcodec.mhash()
-    Zero = newSeq[byte](mhash.size)
+    digestSize = ?mcodec.digestSize.mapFailure
+    Zero = newSeq[byte](digestSize)
     compressor = proc(x, y: seq[byte], key: ByteTreeKey): ?!seq[byte] {.noSideEffect.} =
       compress(x, y, key)
 

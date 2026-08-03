@@ -135,7 +135,7 @@ suite "Test Node - Basic":
   test "Block Batching with corrupted blocks":
     let blocks =
       (await makeRandomBlocks(datasetSize = 64.KiBs.int, blockSize = 64.KiBs)).tryGet
-    assert blocks.len == 1
+    doAssert blocks.len == 1
 
     let blk = blocks[0]
 

@@ -76,9 +76,8 @@ proc buildAsync*(
       warn "Error disposing leaf iterator", err = err.msg
 
   let
-    mhash = ?mcodec.mhash()
-    mhashSize = mhash.size
-    zero = newSeq[byte](mhashSize)
+    digestSize = ?mcodec.digestSize.mapFailure
+    zero = newSeq[byte](digestSize)
 
   proc toDigest(cid: Cid): Future[?!ByteHash] {.async.} =
     ## Validating mapper: every leaf must carry the tree's multihash codec
@@ -96,7 +95,7 @@ proc buildAsync*(
     # ArchivistTree.init (which checks only leaves[0]): a mixed-length input
     # would silently build a wrong tree.  This check is byte-hash-specific,
     # so it stays here rather than in the generic core.
-    if digest.len != mhashSize:
+    if digest.len != digestSize:
       return failure "Invalid hash length"
 
     success digest

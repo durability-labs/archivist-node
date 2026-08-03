@@ -29,8 +29,8 @@ asyncchecksuite "NetworkStore engine - 2 nodes":
   setup:
     blocks1 = (await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)).tryGet
     blocks2 = (await makeRandomBlocks(datasetSize = 2048, blockSize = 256'nb)).tryGet
-    nodeCmps1 = generateNodes(1).components[0]
-    nodeCmps2 = generateNodes(1).components[0]
+    nodeCmps1 = (await generateNodes(1)).components[0]
+    nodeCmps2 = (await generateNodes(1)).components[0]
 
     # Store blocks as trees on each node
     manifest1 = (await storeDataGetManifest(nodeCmps1.localStore, blocks1)).tryGet()
@@ -166,7 +166,7 @@ asyncchecksuite "NetworkStore - multiple nodes":
 
   setup:
     blocks = (await makeRandomBlocks(datasetSize = 4096, blockSize = 256'nb)).tryGet
-    cluster = generateNodes(5)
+    cluster = await generateNodes(5)
     nodes = cluster.components
 
     # Store blocks as trees on each source node (4 blocks per node)

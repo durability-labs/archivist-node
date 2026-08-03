@@ -4,6 +4,7 @@ import std/importutils
 
 import pkg/chronos
 import pkg/taskpools
+import pkg/libp2p/crypto/rng as libp2p_rng
 import pkg/archivist/rng
 import pkg/archivist/chunker
 import pkg/archivist/blocktype as bt
@@ -20,7 +21,7 @@ import ../helpers
 suite "Network - Handlers":
   let
     rng = Rng.instance()
-    seckey = PrivateKey.random(rng[]).tryGet()
+    seckey = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
     peerId = PeerId.init(seckey.getPublicKey().tryGet()).tryGet()
     chunker = RandomChunker.new(Rng.instance(), size = 1024, chunkSize = 256)
 
@@ -41,7 +42,15 @@ suite "Network - Handlers":
 
     done = newFuture[void]()
     buffer = BufferStream.new()
-    network = BlockExcNetwork.new(switch = newStandardSwitch())
+    network = BlockExcNetwork.new(
+      switch = SwitchBuilder
+        .new()
+        .withNoise()
+        .withMplex(5.minutes, 5.minutes)
+        .withTcpTransport()
+        .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+        .build()
+    )
     networkPeer = NetworkPeer.new(
       peerId,
       proc(): Future[?!Connection] {.async: (raises: [CancelledError]).} =
@@ -132,8 +141,20 @@ suite "Network - Senders":
       blocks.add(bt.Block.new(chunk).tryGet())
 
     done = newFuture[void]()
-    switch1 = newStandardSwitch()
-    switch2 = newStandardSwitch()
+    switch1 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
+    switch2 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
     network1 = BlockExcNetwork.new(switch = switch1)
     switch1.mount(network1)
 
@@ -226,10 +247,22 @@ suite "Network - Test Limits":
 
   setup:
     done = newFuture[void]()
-    switch1 = newStandardSwitch()
-    switch2 = newStandardSwitch()
+    switch1 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
+    switch2 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
 
-    network1 = BlockExcNetwork.new(switch = switch1, maxInflight = 0)
+    network1 = BlockExcNetwork.new(switch = switch1, maxInflight = 1)
     switch1.mount(network1)
 
     network2 = BlockExcNetwork.new(switch = switch2)
@@ -244,6 +277,8 @@ suite "Network - Test Limits":
     await allFuturesThrowing(switch1.stop(), switch2.stop())
 
   test "Concurrent Sends":
+    discard network1.inflightSema.tryAcquire() # exhaust the single inflight slot
+
     let fut = network1.send(switch2.peerInfo.peerId, Message(pendingBytes: 1))
 
     await sleepAsync(100.millis)
@@ -266,8 +301,20 @@ suite "Network - Threadpool Offload":
 
     done = newFuture[void]()
     tp = Taskpool.new(numThreads = 2)
-    switch1 = newStandardSwitch()
-    switch2 = newStandardSwitch()
+    switch1 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
+    switch2 = SwitchBuilder
+      .new()
+      .withNoise()
+      .withMplex(5.minutes, 5.minutes)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/127.0.0.1/tcp/0").tryGet()])
+      .build()
     network1 = BlockExcNetwork.new(switch = switch1, taskpool = tp)
     switch1.mount(network1)
 

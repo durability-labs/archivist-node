@@ -14,7 +14,6 @@ import pkg/chronos
 import pkg/taskpools
 
 import pkg/libp2p
-import pkg/libp2p/utils/semaphore
 
 import ../../blocktype as bt
 import ../../logutils
@@ -123,20 +122,24 @@ proc send*(
   )
 
   archivist_block_exchange_inflight_sends.set(
-    (b.maxInflight - b.inflightSema.count).int64
+    (b.maxInflight - b.inflightSema.availableSlots).int64
   )
-  archivist_block_exchange_inflight_send_slots_free.set(b.inflightSema.count.int64)
+  archivist_block_exchange_inflight_send_slots_free.set(
+    b.inflightSema.availableSlots.int64
+  )
 
   try:
     if err =? catchAsync(await peer.send(msg)).errorOption:
       error "Error sending message", peer = id, msg = err.msg
       return failure(err)
   finally:
-    b.inflightSema.release()
+    ?catch(b.inflightSema.release())
     archivist_block_exchange_inflight_sends.set(
-      (b.maxInflight - b.inflightSema.count).int64
+      (b.maxInflight - b.inflightSema.availableSlots).int64
     )
-    archivist_block_exchange_inflight_send_slots_free.set(b.inflightSema.count.int64)
+    archivist_block_exchange_inflight_send_slots_free.set(
+      b.inflightSema.availableSlots.int64
+    )
 
   archivist_block_exchange_network_send_seconds.observe(
     (Moment.now() - totalStart).nanoseconds.float64 / 1e9, labelValues = [kind]
@@ -341,8 +344,6 @@ proc new*(
     maxInflight: maxInflight,
     taskpool: taskpool,
   )
-
-  self.maxIncomingStreams = self.maxInflight
 
   proc sendWantList(
       id: PeerId,

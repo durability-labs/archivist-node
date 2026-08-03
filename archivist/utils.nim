@@ -64,7 +64,7 @@ func combineSafe*(tgt: var BitSeq, src: BitSeq) =
 
 func divUp*[T: SomeInteger](a, b: T): T =
   ## Division with result rounded up (rather than truncated as in 'div')
-  assert(b != T(0))
+  doAssert(b != T(0))
   if a == T(0):
     T(0)
   else:
