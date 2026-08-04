@@ -495,7 +495,7 @@ proc store*(
           blockBatch: seq[(bt.Block, Natural)] ## (block, index) pairs for batching
 
         proc fireBoundedBatch(
-            batch: seq[(bt.Block, Natural)]
+            batch: sink seq[(bt.Block, Natural)]
         ): Future[?!void] {.async: (raises: [CancelledError]).} =
           # wait if at capacity before launching new batch
           if inFlight.len >= MaxInFlightBatches:
@@ -505,7 +505,6 @@ proc store*(
             ?catchAsync(?await fut)
 
           # Launch batch flush without awaiting (adds to window)
-          var batch = batch
           inFlight.add(flushBatch(tmpCid, move batch))
           archivist_upload_batches_total.inc()
           archivist_upload_active_batches.set(inFlight.len.int64)
@@ -514,7 +513,7 @@ proc store*(
 
         # Progressive tree builder: consume cids as blocks are produced.  One
         # cid is held back; at EOF it is enqueued flagged `isLast`, and the
-        # builder only finishes after consuming that flagged item -- no race
+        # builder only finishes after consuming that flagged item - no race
         # between a done-flag and a queue that can still be draining, and no
         # permanently blocked popFirst.
         var
@@ -535,13 +534,6 @@ proc store*(
           treeIter = AsyncIter[Cid].new(genNext = genNext, isFinished = isFinished)
           treeFut = ArchivistTree.buildAsync(treeIter, self.taskpool)
 
-        proc watchTree(): Future[void] {.async: (raises: [CancelledError]).} =
-          # Completes when the tree builder completes; used to race blocking
-          # queue enqueues against an early builder failure.
-          discard await treeFut
-
-        let treeDoneFut = watchTree()
-
         proc enqueueCid(
             item: tuple[cid: Cid, isLast: bool]
         ): Future[?!void] {.async: (raises: [CancelledError]).} =
@@ -550,12 +542,13 @@ proc store*(
           # would then suspend the producer forever - the body defer cannot
           # run while we are blocked here.
           let enqFut = cidQueue.addLast(item)
-          discard await one(enqFut, treeDoneFut)
+          await enqFut or treeFut
           if treeFut.finished():
-            enqFut.cancelSoon()
+            await noCancel enqFut.cancelAndWait()
             let treeRes = ?catchAsync(await treeFut)
             if err =? treeRes.errorOption:
               return failure(err)
+
             return failure "Tree builder finished before upload completed"
           success()
 
@@ -595,13 +588,13 @@ proc store*(
           # Flush batch when full
           if blockBatch.len >= storeBatchSize:
             archivist_upload_active_batches.set(inFlight.len.int64)
-            ?await fireBoundedBatch(blockBatch)
+            ?await fireBoundedBatch(move blockBatch)
             archivist_upload_active_batches.set(inFlight.len.int64)
             blockBatch.setLen(0)
 
         # Flush batch on last iteration
         if blockBatch.len > 0:
-          ?await fireBoundedBatch(blockBatch)
+          ?await fireBoundedBatch(move blockBatch)
           blockBatch.setLen(0)
 
         await allFutures(inFlight)
@@ -627,6 +620,7 @@ proc store*(
           tree = ?await treeFut
           treeCid = ?tree.rootCid(CIDv1, dataCodec)
           treeDone = Moment.now()
+
         archivist_upload_tree_build_duration_seconds.observe(
           (treeDone - treeStart).milliseconds.float64 / 1000.0
         )
