@@ -208,7 +208,7 @@ proc spawnJoin*[T](
   ## ``onError`` is invoked if the await fails or is cancelled, before the
   ## noCancel drain (use it to flip ``finished`` flags etc).
   ##
-  ## Signal lifecycle (create/close) is fully encapsulated -- the caller never
+  ## Signal lifecycle (create/close) is fully encapsulated - the caller never
   ## touches ``ThreadSignalPtr``.  The defer runs on ALL exit paths, so the
   ## signal fd is never leaked.
   ##

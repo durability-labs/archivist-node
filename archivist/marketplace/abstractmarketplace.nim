@@ -33,7 +33,7 @@ type
   OnProofSubmitted* = proc(id: SlotId) {.gcsafe, raises: [].}
   ProofChallenge* = array[32, byte]
 
-  # Marketplace events -- located here due to the AbstractMarketplace abstraction
+  # Marketplace events - located here due to the AbstractMarketplace abstraction
   MarketplaceEvent* = Event
   StorageRequested* = object of MarketplaceEvent
     requestId*: RequestId

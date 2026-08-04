@@ -237,11 +237,11 @@ proc contains*(self: SlotQueue, item: SlotQueueItem): bool =
   self.queue.contains(item)
 
 proc pause*(self: SlotQueue) =
-  # set unpaused flag to false -- coroutines will block on unpaused.wait()
+  # set unpaused flag to false - coroutines will block on unpaused.wait()
   self.unpaused.clear()
 
 proc unpause*(self: SlotQueue) =
-  # set unpaused flag to true -- unblocks coroutines waiting on unpaused.wait()
+  # set unpaused flag to true - unblocks coroutines waiting on unpaused.wait()
   self.unpaused.fire()
 
 proc push*(self: SlotQueue, item: SlotQueueItem): ?!void {.raises: [].} =

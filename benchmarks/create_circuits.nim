@@ -23,7 +23,7 @@ type
     index*: int
 
 proc findProjectDir(): string =
-  ## find proj dir -- assumes this script is in subfolder benchmarks
+  ## find proj dir - assumes this script is in subfolder benchmarks
   result = currentSourcePath().parentDir.parentDir
 
 func default*(tp: typedesc[CircuitEnv]): CircuitEnv =
@@ -97,7 +97,7 @@ proc getCircuitBenchPath*(args: CircuitArgs, env: CircuitEnv): string =
   result = env.projDir / "benchmarks/circuit_bench" & getCircuitBenchStr(args)
 
 proc generateCircomAndSamples*(args: CircuitArgs, env: CircuitEnv, name: string) =
-  ## run nim circuit and sample generator 
+  ## run nim circuit and sample generator
   var cliCmd = env.nimCircuitCli
   for f, v in fieldPairs(args):
     cliCmd &= " --" & f & "=" & $v
@@ -115,12 +115,12 @@ proc createCircuit*(
     doGenerateWitness = false,
 ): tuple[dir: string, name: string] =
   ## Generates all the files needed for to run a proof circuit. Downloads the PTAU file if needed.
-  ## 
-  ## All needed circuit files will be generated as needed. 
+  ##
+  ## All needed circuit files will be generated as needed.
   ## They will be located in `circBenchDir` which defaults to a folder like:
   ##    `benchmarks/circuit_bench_depth32_maxslots256_cellsize2048_blocksize65536_nsamples9_entropy1234567_seed12345_nslots11_ncells512_index3`
   ## with all the given CircuitArgs.
-  ## 
+  ##
   let circdir = circBenchDir
 
   downloadPtau env.ptauPath, env.ptauUrl
@@ -172,10 +172,10 @@ when isMainModule:
   env.check()
 
   let args = CircuitArgs(
-    depth: 32, # maximum depth of the slot tree 
+    depth: 32, # maximum depth of the slot tree
     maxslots: 256, # maximum number of slots
-    cellsize: 2048, # cell size in bytes 
-    blocksize: 65536, # block size in bytes 
+    cellsize: 2048, # cell size in bytes
+    blocksize: 65536, # block size in bytes
     nsamples: 5, # number of samples to prove
     entropy: 1234567, # external randomness
     seed: 12345, # seed for creating fake data

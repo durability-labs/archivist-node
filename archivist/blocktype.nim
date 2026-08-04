@@ -110,7 +110,7 @@ proc new*(
     mcodec = Sha256HashCodec,
     codec = BlockCodec,
 ): ?!Block =
-  ## Sink overload -- avoids copying when caller can transfer ownership.
+  ## Sink overload - avoids copying when caller can transfer ownership.
   ##
 
   let
@@ -136,7 +136,7 @@ proc new*(
   return Block(cid: cid, data: @data).success
 
 proc new*(T: type Block, cid: Cid, data: sink seq[byte], verify: bool = true): ?!Block =
-  ## Sink overload -- avoids copying when caller can transfer ownership.
+  ## Sink overload - avoids copying when caller can transfer ownership.
   ##
 
   if verify:
