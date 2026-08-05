@@ -58,7 +58,6 @@ proc getBlocksBitmap*(
 
   without overlayMeta =? await self.metaDs.get(key, OverlayMetadata), err:
     if err of KVStoreKeyNotFound:
-      trace "Overlay not found, returning empty", treeCid
       return success(BitSeq.init(0))
     return failure(err)
 
