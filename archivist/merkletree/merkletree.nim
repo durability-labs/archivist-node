@@ -60,6 +60,10 @@ func root*[H, K](self: MerkleTree[H, K]): ?!H =
 
   return success last[0]
 
+func `==`*[H, K](a, b: MerkleProof[H, K]): bool =
+  a.index == b.index and a.path == b.path and a.nleaves == b.nleaves and
+    a.compress == b.compress and a.zero == b.zero
+
 func getProof*[H, K](
     self: MerkleTree[H, K], index: int, proof: var MerkleProof[H, K]
 ): ?!void =
