@@ -80,9 +80,11 @@ type
     ## Must not raise - a cancelled cleanup callback would hit Chronos'
     ## ``noCancel`` ``raiseAssert`` and convert a cancellation into a Defect.
 
-  ThreadSpawnRes*[T] = Result[T, cstring]
+  ThreadSpawnRes*[T] = Result[T, string]
     ## Thread safe result type
     ##
+    ## The error is an owned string so the message stays valid after the
+    ## worker's scope ends
 
   TaskCtx*[T] = object
     ## Per-task state for cross-thread communication with generic results.
@@ -100,22 +102,18 @@ type
     result*: Isolated[ThreadSpawnRes[T]]
 
 template mapThreadSpawnErr*[T, V](exp: Result[T, V]): ThreadSpawnRes[T] =
-  ## Convert `Result[T, E]` to `Result[T, cstring]`
+  ## Convert `Result[T, E]` to `Result[T, string]`.
   ##
-  ## LIFETIME CAVEAT: the cstring is a VIEW, not a copy - it is valid
-  ## only while the source outlives the use. Literal/strlit sources are
-  ## immortal. However, this is used in the context of ref Exception or
-  ## string literal and it both cases the lifetime of the owning object
-  ## outlives this call.
-  ##
+  ## The message is copied into an owned string, so it stays valid after the
+  ## worker's scope ends.
 
   exp.mapErr(
-    proc(e: V): cstring =
+    proc(e: V): string =
       when typeof(e) is (ref Exception):
-        cstring($e.msg)
+        e.msg
       else:
         mixin `$`
-        cstring($e)
+        $e
   )
 
 proc awaitSpawn*(

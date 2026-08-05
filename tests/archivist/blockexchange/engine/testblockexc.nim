@@ -365,6 +365,25 @@ asyncchecksuite "NetworkStore - multiple nodes":
     check returned[0][0] == 0.Natural
     check returned[0][1].cid == blocks[0].cid
 
+  test "Should not send leaf blocks without proofs":
+    let
+      downloader = nodes[4].networkStore
+      blk = bt.Block.new("Block 1".toBytes).tryGet()
+      tmpTreeCid = (await nodes[2].localStore.createTmpOverlay()).tryGet()
+    check (await nodes[2].localStore.putBlock(tmpTreeCid, blk, 0)).isOk
+
+    # Store the leaf without its proof (no putCidAndProof call)
+    let (manifest, tree) = makeManifestAndTree(@[blk]).tryGet()
+    let treeCid = manifest.treeCid
+    check (await nodes[2].localStore.finalizeOverlay(tmpTreeCid, treeCid)).isOk
+    check (await nodes[2].localStore.hasBlock(treeCid, 0.Natural)).tryGet()
+    discard (await nodes[2].localStore.storeManifest(manifest)).tryGet()
+    discard (await nodes[4].localStore.storeManifest(manifest)).tryGet()
+
+    # The proofless leaf must not be delivered - the request stays pending
+    let fut = downloader.getBlock(treeCid, 0.Natural)
+    check not (await withTimeout(fut, 5.seconds))
+
   test "allFinishedFailed classifies cancelled futures as failures, not successes":
     proc work(): Future[int] {.async.} =
       await sleepAsync(50.millis)

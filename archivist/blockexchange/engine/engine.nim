@@ -697,6 +697,9 @@ proc taskHandler*(
       for index in indices:
         if entry =? itemsByIndex .? [index]:
           let (blk, proof) = entry
+          if proof.isNone:
+            warn "Skipping leaf delivery without proof", treeCid, index
+            continue
           blockDeliveries.add(
             BlockDelivery(
               address: BlockAddress.init(treeCid, index), blk: blk, proof: proof
