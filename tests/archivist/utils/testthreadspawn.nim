@@ -64,7 +64,7 @@ suite "threadspawn wrappers":
 
   test "spawnJoin extracts generic result":
     proc runIntTask(ctx: SharedPtr[TaskCtx[int]]) {.gcsafe.} =
-      var r = success(123)
+      var r = ThreadSpawnRes[int].ok(123)
       ctx[].result = unsafeIsolate(move r)
       discard ctx[].signal.fireSync()
 
@@ -77,8 +77,7 @@ suite "threadspawn wrappers":
 
   test "spawnJoin extracts error result":
     proc runErrTask(ctx: SharedPtr[TaskCtx[int]]) {.gcsafe.} =
-      var r: ?!int =
-        Result[int, ref CatchableError].err(newException(ValueError, "boom"))
+      var r = ThreadSpawnRes[int].err("boom")
       ctx[].result = unsafeIsolate(move r)
       discard ctx[].signal.fireSync()
 
@@ -92,7 +91,7 @@ suite "threadspawn wrappers":
 
   test "spawnJoin with seq result (move, not copy)":
     proc runSeqTask(ctx: SharedPtr[TaskCtx[seq[int]]]) {.gcsafe.} =
-      var r = success(@[1, 2, 3, 4, 5])
+      var r = ThreadSpawnRes[seq[int]].ok(@[1, 2, 3, 4, 5])
       ctx[].result = unsafeIsolate(move r)
       discard ctx[].signal.fireSync()
 

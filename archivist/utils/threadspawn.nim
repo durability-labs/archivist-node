@@ -80,6 +80,10 @@ type
     ## Must not raise - a cancelled cleanup callback would hit Chronos'
     ## ``noCancel`` ``raiseAssert`` and convert a cancellation into a Defect.
 
+  ThreadSpawnRes*[T] = Result[T, cstring]
+    ## Thread safe result type
+    ##
+
   TaskCtx*[T] = object
     ## Per-task state for cross-thread communication with generic results.
     ##
@@ -93,7 +97,30 @@ type
     ## handles cleanup.  The ``SharedPtr`` passes through ``toTask``'s
     ## ``isolate`` as a single pointer move.
     signal*: ThreadSignalPtr
-    result*: Isolated[?!T]
+    result*: Isolated[ThreadSpawnRes[T]]
+
+template mapThreadSpawnErr*[T, V](exp: Result[T, V]): ThreadSpawnRes[T] =
+  ## Convert `Result[T, E]` to `Result[T, cstring]`
+  ##
+  ## LIFETIME CAVEAT: the cstring is a VIEW, not a copy - it is valid
+  ## only while the source outlives the use. Literal/strlit sources are
+  ## immortal; runtime-composed sources (string concatenations,
+  ## `$` on non-enum values) dangle once the source object dies. In the
+  ## crossing pattern the source dies at the end of the worker's
+  ## statement (mapErr closure param + Result-expression temps), so a
+  ## cstring consumed on the main thread afterwards reads freed memory.
+  ## Only use this template when the error type is a pure enum (strlit
+  ## static) or the source is otherwise immortal; cross runtime-composed
+  ## errors as string VALUES instead (see nat/traversal.nim mapTask).
+
+  exp.mapErr(
+    proc(e: V): cstring =
+      when typeof(e) is (ref Exception):
+        cstring($e.msg)
+      else:
+        mixin `$`
+        cstring($e)
+  )
 
 proc awaitSpawn*(
     taskFut: SpawnFut, onError: OnSpawnError = nil
@@ -204,4 +231,4 @@ proc spawnJoin*[T](
       return failure(taskFut.error())
     spawnFn(ctx)
     ?await awaitSpawn(taskFut, onError)
-    success ?extract(ctx[].result)
+    success ?extract(ctx[].result).mapFailure
