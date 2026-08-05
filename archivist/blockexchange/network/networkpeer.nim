@@ -12,6 +12,7 @@
 import pkg/chronos
 import pkg/libp2p
 import pkg/taskpools
+import pkg/results
 
 import std/isolation
 import std/sequtils
@@ -53,7 +54,8 @@ proc decodeMsgTask(
   defer:
     if err =? ctx[].signal.fireSync().errorOption:
       warn "Failed to fire worker completion signal", error = err
-  var r = Message.protobufDecode(data[]).mapFailure
+
+  var r = Message.decode(data[]).mapThreadSpawnErr
   ctx[].result = isolate(move r)
 
 proc encodeMsgTask(
@@ -62,7 +64,8 @@ proc encodeMsgTask(
   defer:
     if err =? ctx[].signal.fireSync().errorOption:
       warn "Failed to fire worker completion signal", error = err
-  var r = success(protobufEncode(msg[]))
+
+  var r = ThreadSpawnRes[seq[byte]].ok(encode(msg[]))
   ctx[].result = isolate(move r)
 
 proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
@@ -79,12 +82,12 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
 
       var msg: Message
       if not self.taskpool.isNil and data.len > OffloadThreshold:
-        # Borrow the payload by pointer (erasure addr-task pattern): the
-        # worker performs zero refcount operations on it, and the caller's
-        # frame - which outlives the worker via the await - frees it on
-        # the allocating thread.  A by-value param copy would inc/dec ORC's
-        # non-atomic refcount from the worker thread while the caller
-        # decrefs on the main thread (lost update, premature free).
+        # Offload decode to the taskpool for large payloads. The worker
+        # borrows the payload by pointer (the caller's frame outlives
+        # the worker via awaitSpawn's drain - zero refcount operations
+        # on the payload). Block refs are created and copied on the
+        # worker; with `{.acyclic.}` on Block the decrefs are plain (no
+        # cycle-registry involvement), so cross-thread destroy is safe.
         msg = (
           await spawnJoin[Message](
             proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
@@ -92,7 +95,7 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
           )
         ).tryGet()
       else:
-        msg = Message.protobufDecode(data).mapFailure().tryGet()
+        msg = Message.decode(data).mapFailure().tryGet()
 
       archivist_block_exchange_recv_decode_seconds.observe(
         (Moment.now() - decodeStart).nanoseconds.float64 / 1e9
@@ -144,16 +147,19 @@ proc send*(
   var encoded: seq[byte]
   if not self.taskpool.isNil and
       foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
-    # Borrow the message by pointer - same reasoning as the decode path:
-    # the worker does zero refcount operations; the sink param lives in
-    # this frame until after the await and is freed on the main thread.
+    # Offload encode to the taskpool for payloads with significant block
+    # data. The worker borrows the message by pointer - the sink param
+    # copy is destroyed at encode's scope end ON THE WORKER (plain
+    # decrefs - Block is acyclic, so no cycle-registry involvement); the
+    # caller's message and the engine's blk refs survive to the main
+    # thread for deterministic destroy.
     encoded =
       ?await spawnJoin[seq[byte]](
         proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
           self.taskpool.spawn encodeMsgTask(ctx, addr msg)
       )
   else:
-    encoded = protobufEncode(msg)
+    encoded = encode(msg)
 
   let encodeNs = (Moment.now() - encodeStart).nanoseconds
 

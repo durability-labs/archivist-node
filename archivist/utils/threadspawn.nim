@@ -111,7 +111,7 @@ template mapThreadSpawnErr*[T, V](exp: Result[T, V]): ThreadSpawnRes[T] =
   ## cstring consumed on the main thread afterwards reads freed memory.
   ## Only use this template when the error type is a pure enum (strlit
   ## static) or the source is otherwise immortal; cross runtime-composed
-  ## errors as string VALUES instead (see nat/traversal.nim mapTask).
+  ## errors as string VALUES instead.
 
   exp.mapErr(
     proc(e: V): cstring =

@@ -55,13 +55,6 @@ type
 
   NimGroth16BackendRef* = ref NimGroth16Backend
 
-  ProofTask* = object
-    proof: Isolated[Proof]
-    self: ptr NimGroth16Backend
-    inputs: Inputs
-    signal: ThreadSignalPtr
-    ok: Atomic[bool]
-
 proc release*(self: NimGroth16BackendRef) =
   ## Release the ctx
   ##
@@ -110,28 +103,36 @@ proc generateWitnessValues(graph: Graph, inputs: Inputs): auto {.raises: [].} =
       error "Exception generating witness", exc = exc.msg
       raiseAssert(exc.msg)
 
-proc generateProofTask(task: ptr ProofTask) =
+proc generateProofTask(
+    ctx: SharedPtr[TaskCtx[NimGroth16Proof]],
+    self: ptr NimGroth16Backend,
+    inputs: ptr Inputs,
+) {.gcsafe, raises: [].} =
   defer:
-    if task[].signal != nil:
-      if err =? task[].signal.fireSync().errorOption:
-        warn "Failed to fire proof completion signal", error = err
+    if err =? ctx[].signal.fireSync().errorOption:
+      warn "Failed to fire proof completion signal", error = err
+
+  # Pre-initialized failure + unconditional write: if the worker dies
+  # (witnessgen failures are raised as Defects, which no catch sees),
+  # main still extracts a valid Result instead of an unwritten one.
+  var r = ThreadSpawnRes[NimGroth16Proof].err("Failed to generate proof")
+  defer:
+    ctx[].result = isolate(move r)
 
   trace "Generating witness"
   let
-    witnessValues = generateWitnessValues(task[].self[].graph, task[].inputs)
+    witnessValues = generateWitnessValues(self[].graph, inputs[])
     witness = Witness(
-      curve: task[].self[].curve,
-      r: task[].self[].r1cs.r,
-      nvars: task[].self[].r1cs.cfg.nWires,
+      curve: self[].curve,
+      r: self[].r1cs.r,
+      nvars: self[].r1cs.cfg.nWires,
       values: witnessValues,
     )
 
   trace "Generating nim groth16 proof"
-  var proof = generateProof(task[].self[].zkey, witness, task[].self[].tp)
+  var proof = generateProof(self[].zkey, witness, self[].tp)
   trace "Proof generated, copying to main thread"
-  var isolatedProof = isolate(proof)
-  task[].proof = move isolatedProof
-  task[].ok.store true
+  r = ThreadSpawnRes[NimGroth16Proof].ok(proof)
 
 proc prove*[SomeHash](
     self: NimGroth16BackendRef, input: ProofInputs[SomeHash]
@@ -139,31 +140,13 @@ proc prove*[SomeHash](
   ## Prove a statement using backend.
   ##
 
-  withThreadSignal(sig):
-    var task = ProofTask(
-      self: cast[ptr NimGroth16Backend](self),
-      signal: sig,
-      inputs: self.normalizeInput(input),
-    )
-
-    self.tp.spawn generateProofTask(task.addr)
-    ?await awaitSpawn(
-      sig.wait(),
-      onError = proc() {.async: (raises: []).} =
-        warn "Error while generating proof, awaiting task to finish"
-      ,
-    )
-
-    defer:
-      task.proof = default(Isolated[Proof])
-
-    if not task.ok.load:
-      trace "Task failed, no proof generated"
-      return failure("Failed to generate proof")
-
-    var proof = task.proof.extract
-    trace "Task finished successfully, proof generated"
-    success proof
+  var inputs = self.normalizeInput(input)
+  await spawnJoin[NimGroth16Proof](
+    proc(ctx: SharedPtr[TaskCtx[NimGroth16Proof]]) {.gcsafe, raises: [].} =
+      self.tp.spawn generateProofTask(
+        ctx, cast[ptr NimGroth16Backend](self), addr inputs
+      )
+  )
 
 proc verify*(
     self: NimGroth16BackendRef, proof: NimGroth16Proof
