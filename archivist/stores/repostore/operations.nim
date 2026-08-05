@@ -328,6 +328,11 @@ proc putLeafBlockMetaImpl(
   if overlayRejectsWrites(overlayMeta.status):
     return failure(newException(OverlayDeletingError, "Overlay is not writable"))
 
+  # Shape binding for peer-supplied proofs: resolve the manifest-backed tree
+  # shape (never cached in this mode) so forged nleaves/codec proofs are
+  # rejected before they poison /tree/<treeCid>/*.
+  let shape = ?await self.resolveTreeShape(treeCid, requireCompleted = false)
+
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
@@ -366,6 +371,15 @@ proc putLeafBlockMetaImpl(
     blocksBits.setBit(index)
     leafsMap[leafKey] = leafRec.toRaw
     if cellCid.isNone and not blkCid.isEmpty:
+      if not proof.isNil:
+        if shapeVal =? shape:
+          let (nleaves, mcodec) = shapeVal
+          if proof.nleaves != nleaves.int or proof.mcodec != mcodec:
+            return failure(
+              newException(
+                TreeNodeValidationError, "Proof shape does not match tree shape"
+              )
+            )
       ?addProofTreeNodes(treeCid, blkCid, proof, treeRecords, treeNodesByKey)
 
     # Skip block metadata for empty blkCid (pad blocks)
@@ -1030,6 +1044,7 @@ proc dropManifest*(
   )
 
   self.overlayCache.del(key)
+  self.treeShapeCache.del(treeCid)
   discard ?await self.tryDeleteBlocks(manifestCid)
   trace "Manifest detached from overlay", manifestCid
 

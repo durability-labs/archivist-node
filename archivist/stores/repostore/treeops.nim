@@ -73,6 +73,15 @@ func addProofTreeNodes*(
   if proof.isNil:
     return success()
 
+  if proof.index < 0 or proof.index >= proof.nleaves:
+    return failure(
+      newException(TreeNodeValidationError, "Proof index out of range for nleaves")
+    )
+  if proof.path.len != (?levels(proof.nleaves)) - 1:
+    return failure(
+      newException(TreeNodeValidationError, "Proof path length does not match nleaves")
+    )
+
   let digestSize = ?proof.mcodec.digestSize.mapFailure
   var
     hash = ?treeNodeDigest(blkCid, proof.mcodec)
@@ -440,22 +449,34 @@ proc getTreeProof*(
   let targetLeafKey = ?blockLeafKey(treeCid, index)
   let proofs = ?await self.getTreeProofs(treeCid, @[index], nleaves, mcodec)
   if proofs.len == 0:
+    if ?await self.metaDs.has(targetLeafKey):
+      return failure(
+        newException(
+          TreeNodeNotFoundError, "Level-0 sibling missing for " & $targetLeafKey
+        )
+      )
     return failure(newException(BlockNotFoundError, "Key not found: " & $targetLeafKey))
   success(proofs[0][1])
 
 proc resolveTreeShape*(
-    self: RepoStore, treeCid: Cid
+    self: RepoStore, treeCid: Cid, requireCompleted = true
 ): Future[?!Option[(Natural, MultiCodec)]] {.async: (raises: [CancelledError]).} =
   ## Resolve the shape (leaf count and hash codec) of a dataset tree from the
   ## manifest attached to its overlay. Returns none when the tree cannot be
-  ## served from flat nodes (no overlay, no manifest, or a non-dataset root
-  ## such as a slot root); callers then fall back to stored proofs.
+  ## served from flat nodes (no overlay, no manifest, a non-dataset root
+  ## such as a slot root, or - when requireCompleted is set - an overlay that
+  ## is not Completed); callers then fall back to stored proofs.
   ##
   ## Both positive and negative results are cached: the manifest attachment
   ## is immutable for a live treeCid, and storeManifestBlock invalidates the
-  ## entry when a manifest is (re)attached. The entry is only written while
-  ## the overlay still exists, so a drop that completes during resolution
-  ## cannot leave a stale entry behind.
+  ## entry when a manifest is (re)attached. Entries are only cached when
+  ## requireCompleted is set - non-Completed negatives (and the
+  ## requireCompleted = false mode, used for write-time shape binding) are
+  ## never cached, so the post-finalize transition picks up generated
+  ## serving on the next call. putOverlay additionally invalidates the entry
+  ## whenever an overlay transitions away from Completed. The entry is only
+  ## written while the overlay still exists; a drop racing resolution is
+  ## cleaned up by the re-del in dropOverlay and by dropManifest.
   ##
   withValue(self.treeShapeCache, treeCid, cachedShape):
     return success(cachedShape[])
@@ -465,6 +486,12 @@ proc resolveTreeShape*(
     if err of KVStoreKeyNotFound:
       return success(none[(Natural, MultiCodec)]())
     return failure(err)
+
+  if requireCompleted and overlayRec.val.status != Completed:
+    # In-flight writes (Storing/Repairing) can hold leaves whose flat nodes
+    # have not landed yet (erasure recovery writes nil-proof leaves first).
+    # Serve those from stored proofs; resolved again once Completed.
+    return success(none[(Natural, MultiCodec)]())
 
   without manifestCid =? overlayRec.val.manifestCid:
     return success(none[(Natural, MultiCodec)]())
@@ -488,8 +515,9 @@ proc resolveTreeShape*(
 
   # Do not cache an entry for an overlay that disappeared while we were
   # resolving - a drop that completed in the meantime would otherwise leave
-  # a stale entry behind a re-created overlay.
-  if ?await self.metaDs.has(?overlayKey(treeCid)):
+  # a stale entry behind a re-created overlay. Only cache in the
+  # requireCompleted mode: non-Completed negatives must not stick around.
+  if requireCompleted and ?await self.metaDs.has(?overlayKey(treeCid)):
     self.treeShapeCache[treeCid] = shape
 
   success(shape)

@@ -102,6 +102,8 @@ proc putOverlay*(
 
   # cache the final merged overlay
   self.overlayCache[key] = cachedOverlay
+  if cachedOverlay.status != Completed:
+    self.treeShapeCache.del(treeCid)
   trace "Overlay metadata stored", treeCid = treeCid, status = cachedOverlay.status
   success()
 
@@ -316,6 +318,7 @@ proc dropOverlay*(
 
   # Delete overlay metadata
   ?await self.deleteOverlay(treeCid)
+  self.treeShapeCache.del(treeCid)
 
   trace "Overlay dropped successfully"
 
