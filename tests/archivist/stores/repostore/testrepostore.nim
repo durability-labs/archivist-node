@@ -1115,12 +1115,14 @@ proc testRepoStore*(
       check generatedResults.len == 3
       for i in 0 ..< tree.leavesCount:
         check generatedResults[i][2].path == tree.getProof(i).tryGet().path
+      check treeCid in bigRepo.treeShapeCache
 
       (await bigRepo.delTreeNodes(treeCid)).tryGet()
 
       # Storing: the status gate must fall back to the stored proofs; the
       # non-Completed putOverlay also invalidates the cached shape.
       (await bigRepo.putOverlay(treeCid, status = Storing.some)).tryGet()
+      check treeCid notin bigRepo.treeShapeCache
       let
         fallback = (
           await bigRepo.getBlocksAndProofs(treeCid, @[0.Natural, 1.Natural, 2.Natural])

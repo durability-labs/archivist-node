@@ -513,11 +513,20 @@ proc resolveTreeShape*(
     else:
       none[(Natural, MultiCodec)]()
 
-  # Do not cache an entry for an overlay that disappeared while we were
-  # resolving - a drop that completed in the meantime would otherwise leave
-  # a stale entry behind a re-created overlay. Only cache in the
-  # requireCompleted mode: non-Completed negatives must not stick around.
-  if requireCompleted and ?await self.metaDs.has(?overlayKey(treeCid)):
+  # Re-check the overlay before caching: a transition away from Completed
+  # (or a drop) that landed while the manifest was being read must not be
+  # overwritten by a stale shape - the putOverlay invalidation already ran
+  # against an empty entry. Only cache in the requireCompleted mode.
+  if requireCompleted:
+    without latest =? (await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)),
+      err:
+      if err of KVStoreKeyNotFound:
+        # Overlay dropped mid-resolution: serving short-circuits via the
+        # bitmap check, and re-creation invalidates the cache.
+        return success(shape)
+      return failure(err)
+    if latest.val.status != Completed:
+      return success(none[(Natural, MultiCodec)]())
     self.treeShapeCache[treeCid] = shape
 
   success(shape)
