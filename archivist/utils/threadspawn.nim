@@ -104,14 +104,10 @@ template mapThreadSpawnErr*[T, V](exp: Result[T, V]): ThreadSpawnRes[T] =
   ##
   ## LIFETIME CAVEAT: the cstring is a VIEW, not a copy - it is valid
   ## only while the source outlives the use. Literal/strlit sources are
-  ## immortal; runtime-composed sources (string concatenations,
-  ## `$` on non-enum values) dangle once the source object dies. In the
-  ## crossing pattern the source dies at the end of the worker's
-  ## statement (mapErr closure param + Result-expression temps), so a
-  ## cstring consumed on the main thread afterwards reads freed memory.
-  ## Only use this template when the error type is a pure enum (strlit
-  ## static) or the source is otherwise immortal; cross runtime-composed
-  ## errors as string VALUES instead.
+  ## immortal. However, this is used in the context of ref Exception or
+  ## string literal and it both cases the lifetime of the owning object
+  ## outlives this call.
+  ##
 
   exp.mapErr(
     proc(e: V): cstring =

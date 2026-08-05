@@ -98,7 +98,7 @@ proc generateWitnessValues(graph: Graph, inputs: Inputs): auto {.raises: [].} =
   ## locals, so this is safe for the taskpool worker.
   {.cast(gcsafe).}:
     try:
-      return generateWitness(graph, inputs)
+      generateWitness(graph, inputs)
     except Exception as exc:
       error "Exception generating witness", exc = exc.msg
       raiseAssert(exc.msg)
@@ -112,13 +112,7 @@ proc generateProofTask(
     if err =? ctx[].signal.fireSync().errorOption:
       warn "Failed to fire proof completion signal", error = err
 
-  # Pre-initialized failure + unconditional write: if the worker dies
-  # (witnessgen failures are raised as Defects, which no catch sees),
-  # main still extracts a valid Result instead of an unwritten one.
-  var r = ThreadSpawnRes[NimGroth16Proof].err("Failed to generate proof")
-  defer:
-    ctx[].result = isolate(move r)
-
+  var res = ThreadSpawnRes[NimGroth16Proof].err("Failed to generate proof")
   trace "Generating witness"
   let
     witnessValues = generateWitnessValues(self[].graph, inputs[])
@@ -132,7 +126,8 @@ proc generateProofTask(
   trace "Generating nim groth16 proof"
   var proof = generateProof(self[].zkey, witness, self[].tp)
   trace "Proof generated, copying to main thread"
-  r = ThreadSpawnRes[NimGroth16Proof].ok(proof)
+  res = ThreadSpawnRes[NimGroth16Proof].ok(proof)
+  ctx[].result = isolate(move res)
 
 proc prove*[SomeHash](
     self: NimGroth16BackendRef, input: ProofInputs[SomeHash]

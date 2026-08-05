@@ -85,8 +85,8 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
         # Offload decode to the taskpool for large payloads. The worker
         # borrows the payload by pointer (the caller's frame outlives
         # the worker via awaitSpawn's drain - zero refcount operations
-        # on the payload). Block refs are created and copied on the
-        # worker; with `{.acyclic.}` on Block the decrefs are plain (no
+        # on the payload). Block refs are created and moved on the
+        # worker. With `{.acyclic.}` on Block the decrefs are plain (no
         # cycle-registry involvement), so cross-thread destroy is safe.
         msg = (
           await spawnJoin[Message](
@@ -148,11 +148,9 @@ proc send*(
   if not self.taskpool.isNil and
       foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
     # Offload encode to the taskpool for payloads with significant block
-    # data. The worker borrows the message by pointer - the sink param
-    # copy is destroyed at encode's scope end ON THE WORKER (plain
-    # decrefs - Block is acyclic, so no cycle-registry involvement); the
-    # caller's message and the engine's blk refs survive to the main
-    # thread for deterministic destroy.
+    # data. The worker borrows the message by pointer. The caller's message
+    # and the engine's blk refs survive to the main thread for deterministic
+    # destroy.
     encoded =
       ?await spawnJoin[seq[byte]](
         proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =

@@ -14,7 +14,7 @@ import std/tables
 
 import pkg/chronos
 import pkg/kvstore
-import pkg/libp2p/cid
+import pkg/libp2p/[cid, multicodec]
 import pkg/questionable
 import pkg/questionable/results
 import pkg/stew/bitseqs
@@ -188,8 +188,7 @@ method putBlocks*(
     uniqueBlks: HashSet[Cid]
 
   let blocks = collect(newSeq):
-    # for (blk, idx, proof) in items.deduplicate():
-    for (blk, idx, proof) in items:
+    for (blk, idx, proof) in items.deduplicate():
       if not blk.cid.isEmpty:
         totalSize += blk.data.len
         uniqueBlks.incl(blk.cid)

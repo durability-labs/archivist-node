@@ -115,8 +115,6 @@ proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
 
   let blkCid = ?Cid.init(blkCidBytes).mapFailure
 
-  # Field 3 is optional - absent means no proof; present-but-empty is
-  # an encoder bug and fails loudly (strict decode).
   var proof: ?ArchivistProof
   if ?pb.getField(3, proofBytes).mapFailure:
     without decodedProof =? ArchivistProof.decode(proofBytes), err:

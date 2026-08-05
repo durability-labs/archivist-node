@@ -67,9 +67,6 @@ func fromVerifyCid*(cid: Cid): ?!Poseidon2Hash =
   toPoseidon2Hash(cid, multiCodec("identity"), SlotProvingRootCodec)
 
 func toEncodableProof*(proof: Poseidon2Proof): ?!ArchivistProof =
-  ## Wire/persistence form. compress/zero intentionally unset: no
-  ## byte-domain compressor exists for a poseidon path - the receiver
-  ## derives them via decode -> init. Never verify an encodable proof.
   let encodableProof = ArchivistProof(
     mcodec: multiCodec("identity"),
     index: proof.index,
