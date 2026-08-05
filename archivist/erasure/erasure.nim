@@ -496,6 +496,7 @@ proc encode*(
     if manifest.protected:
       ?await self.repoStore.withOverlay(
         manifest.treeCid,
+        status = Repairing.some,
         body = proc(): Future[?!Cid] {.
             closure, gcsafe, async: (raises: [CancelledError])
         .} =
