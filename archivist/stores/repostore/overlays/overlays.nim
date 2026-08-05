@@ -352,6 +352,7 @@ proc finalizeOverlay*(
 
   defer:
     self.overlayCache.del(tmpOverlayKey)
+    self.treeShapeCache.del(tmpCid)
 
   # Read original status, mark Finalizing (rejects new writers), drain in-flight writers.
   let tmpRecord = ?await self.metaDs.get(tmpOverlayKey, OverlayMetadata)
