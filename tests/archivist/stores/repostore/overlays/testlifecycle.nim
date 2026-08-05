@@ -72,7 +72,7 @@ proc testLifecycle*(
           treeCid = treeCid, status = Completed.some, blocks = blocks
         )
       ).tryGet()
-      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       let manifestBlk = (await repo.storeManifest(manifest)).tryGet()
 
       check repo.quotaUsedBytes > 0.NBytes
@@ -121,8 +121,8 @@ proc testLifecycle*(
         )
       ).tryGet()
 
-      (await repo.putBlocks(treeCid1, @[(shared, 0.Natural, proof1)])).tryGet()
-      (await repo.putBlocks(treeCid2, @[(shared, 1.Natural, proof2)])).tryGet()
+      (await repo.putBlocks(treeCid1, @[(shared, 0.Natural, proof1.some)])).tryGet()
+      (await repo.putBlocks(treeCid2, @[(shared, 1.Natural, proof2.some)])).tryGet()
       check (await repo.blockRefCount(shared.cid)).tryGet() == 2.Natural
 
       let
@@ -176,7 +176,7 @@ proc testLifecycle*(
         proof = tree.getProof(0).tryGet()
         tmpCid = (await repo.createTmpOverlay()).tryGet()
 
-      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       (await repo.finalizeOverlay(tmpCid, realTreeCid)).tryGet()
 
       let
@@ -195,7 +195,7 @@ proc testLifecycle*(
         proof = tree.getProof(0).tryGet()
         tmpCid = (await repo.createTmpOverlay()).tryGet()
 
-      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       (await repo.finalizeOverlay(tmpCid, realTreeCid)).tryGet()
 
       let res = await repo.getOverlay(tmpCid)
@@ -210,14 +210,14 @@ proc testLifecycle*(
         proof = tree.getProof(0).tryGet()
         tmpCid = (await repo.createTmpOverlay()).tryGet()
 
-      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       (await repo.finalizeOverlay(tmpCid, realTreeCid)).tryGet()
 
       let (_, gotBlock, gotProof) =
         (await repo.getBlockAndProof(realTreeCid, 0.Natural)).tryGet()
       check gotBlock.cid == blk.cid
-      check gotProof.index == proof.index
-      check gotProof.nleaves == proof.nleaves
+      check gotProof.unsafeGet().index == proof.index
+      check gotProof.unsafeGet().nleaves == proof.nleaves
 
     test "finalizeOverlay succeeds when destination leaf exists (content-addressed idempotency)":
       let
@@ -229,10 +229,10 @@ proc testLifecycle*(
 
       # Pre-populate destination with the SAME block at same index
       (await repo.putOverlay(realTreeCid, status = Storing.some)).tryGet()
-      (await repo.putBlocks(realTreeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(realTreeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
       # Put same data in tmp overlay
-      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
       # Finalize should succeed (idempotent operation)
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
@@ -261,10 +261,14 @@ proc testLifecycle*(
         (_, existingTree) = makeManifestAndTree(@[existingBlk]).tryGet()
         existingProof = existingTree.getProof(0).tryGet()
 
-      (await repo.putBlocks(realTreeCid, @[(existingBlk, 0.Natural, existingProof)])).tryGet()
+      (
+        await repo.putBlocks(
+          realTreeCid, @[(existingBlk, 0.Natural, existingProof.some)]
+        )
+      ).tryGet()
 
       # Put different data in tmp overlay
-      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
       # Finalize should succeed (KVConflictError is caught and handled)
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
@@ -289,7 +293,7 @@ proc testLifecycle*(
       # Create destination with metadata but no leaf data
       (await repo.putOverlay(realTreeCid, status = Completed.some)).tryGet()
 
-      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
 
       check res.isOk
@@ -310,7 +314,7 @@ proc testLifecycle*(
         ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
           capturedTmpCid = tmpCid
           ?await repo.putBlocks(
-            tmpCid, @[(blk1, 0.Natural, proof1), (blk2, 1.Natural, proof2)]
+            tmpCid, @[(blk1, 0.Natural, proof1.some), (blk2, 1.Natural, proof2.some)]
           )
           success(realTreeCid)
       )
@@ -338,7 +342,7 @@ proc testLifecycle*(
       (await repo.putOverlay(treeCid, status = Completed.some)).tryGet()
 
       # Insert
-      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       let meta1 = (await repo.getOverlay(treeCid)).tryGet()
       check meta1.blocks[0] == true
 
@@ -353,7 +357,7 @@ proc testLifecycle*(
       check meta3.blocks[0] == false
 
       # Attempting to re-insert should fail with OverlayDeletingError
-      let putResult = await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])
+      let putResult = await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])
       check putResult.isErr
       check putResult.error() of OverlayDeletingError
 
@@ -376,7 +380,7 @@ proc testLifecycle*(
         )
       ).tryGet()
 
-      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
       discard (await repo.getLeafMetadata(treeCid, 0.Natural)).tryGet()
 
@@ -402,11 +406,11 @@ proc testLifecycle*(
         )
       ).tryGet()
 
-      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
       (await repo.delBlock(treeCid, 0.Natural)).tryGet()
 
-      let putResult = await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])
+      let putResult = await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])
       check putResult.isErr
       check putResult.error() of OverlayDeletingError
 
@@ -532,7 +536,7 @@ proc testLifecycle*(
         treeCid,
         status = Storing.some,
         body = proc(): Future[?!void] {.closure, async: (raises: [CancelledError]).} =
-          ?await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])
+          ?await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])
           if not writeDone.finished:
             writeDone.complete()
           await sleepAsync(10.seconds)
@@ -584,7 +588,7 @@ proc testLifecycle*(
             tmpCid: Cid
         ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
           capturedTmpCid = tmpCid
-          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])
           success(realTreeCid)
       )
 
@@ -631,7 +635,7 @@ proc testLifecycle*(
             tmpCid: Cid
         ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
           capturedTmpCid = tmpCid
-          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])
           Cid.failure("encode failed after storing")
       )
 
@@ -691,7 +695,7 @@ proc testLifecycle*(
             tmpCid: Cid
         ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
           capturedTmpCid = tmpCid
-          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])
           if not writeDone.finished:
             writeDone.complete()
           await sleepAsync(10.seconds)
@@ -747,9 +751,9 @@ proc testLifecycle*(
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
 
-      var blkProofs: seq[(bt.Block, Natural, ArchivistProof)]
+      var blkProofs: seq[(bt.Block, Natural, ?ArchivistProof)]
       for i, blk in blocks:
-        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet()))
+        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet().some))
 
       (await repo.putBlocks(treeCid, blkProofs)).tryGet()
 
@@ -799,9 +803,9 @@ proc testLifecycle*(
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
 
-      var blkProofs: seq[(bt.Block, Natural, ArchivistProof)]
+      var blkProofs: seq[(bt.Block, Natural, ?ArchivistProof)]
       for i, blk in blocks:
-        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet()))
+        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet().some))
 
       (await repo.putBlocks(treeCid, blkProofs)).tryGet()
 
@@ -862,9 +866,9 @@ proc testLifecycle*(
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
 
-      var blkProofs: seq[(bt.Block, Natural, ArchivistProof)]
+      var blkProofs: seq[(bt.Block, Natural, ?ArchivistProof)]
       for i, blk in blocks:
-        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet()))
+        blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet().some))
 
       (await repo.putBlocks(treeCid, blkProofs)).tryGet()
 

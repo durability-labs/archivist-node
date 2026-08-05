@@ -169,7 +169,7 @@ method putCellCidsAndProofs*(
   return success()
 
 method putBlocks*(
-    self: RepoStore, treeCid: Cid, items: seq[(Block, Natural, ArchivistProof)]
+    self: RepoStore, treeCid: Cid, items: seq[(Block, Natural, ?ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Put multiple leafs and blocks as a batch (primary method)
   ##
@@ -188,7 +188,8 @@ method putBlocks*(
     uniqueBlks: HashSet[Cid]
 
   let blocks = collect(newSeq):
-    for (blk, idx, proof) in items.deduplicate():
+    # for (blk, idx, proof) in items.deduplicate():
+    for (blk, idx, proof) in items:
       if not blk.cid.isEmpty:
         totalSize += blk.data.len
         uniqueBlks.incl(blk.cid)
@@ -412,7 +413,9 @@ method delBlocks*(
 
 method getBlocksAndProofs*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[(Natural, Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+): Future[?!seq[(Natural, Block, ?ArchivistProof)]] {.
+    async: (raises: [CancelledError])
+.} =
   ## Get multiple blocks and proofs as a batch.
   ##
   ## Fetches overlay bitmap once, filters indices, then batch-fetches
@@ -421,7 +424,7 @@ method getBlocksAndProofs*(
   ##
 
   if indices.len == 0:
-    return success(newSeq[(Natural, Block, ArchivistProof)]())
+    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
 
   logScope:
     treeCid = treeCid
@@ -436,7 +439,7 @@ method getBlocksAndProofs*(
       presentIndices.add(idx)
 
   if presentIndices.len == 0:
-    return success(newSeq[(Natural, Block, ArchivistProof)]())
+    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
 
   # Batch-fetch leaf metadata for all present indices
   var leafKeys: seq[Key]
@@ -453,8 +456,8 @@ method getBlocksAndProofs*(
   # Empty-CID leaves (erasure padding) are synthesized directly without
   # repoDs lookup - they are never stored but callers expect them back.
   var
-    keyToCidProof: Table[Key, (Natural, Cid, ArchivistProof)]
-    results: seq[(Natural, Block, ArchivistProof)]
+    keyToCidProof: Table[Key, (Natural, Cid, ?ArchivistProof)]
+    results: seq[(Natural, Block, ?ArchivistProof)]
   for record in leafRecords:
     let blkCid = record.val.blkCid
 
@@ -482,7 +485,7 @@ method getBlocksAndProofs*(
 
 method getCidsAndProofs*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[(Cid, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+): Future[?!seq[(Cid, ?ArchivistProof)]] {.async: (raises: [CancelledError]).} =
   ## Get multiple CIDs and proofs as a batch.
   ##
   ## Fetches overlay bitmap once, filters indices, then batch-fetches
@@ -491,7 +494,7 @@ method getCidsAndProofs*(
   ##
 
   if indices.len == 0:
-    return success(newSeq[(Cid, ArchivistProof)]())
+    return success(newSeq[(Cid, ?ArchivistProof)]())
 
   logScope:
     treeCid = treeCid
@@ -506,7 +509,7 @@ method getCidsAndProofs*(
       presentIndices.add(idx)
 
   if presentIndices.len == 0:
-    return success(newSeq[(Cid, ArchivistProof)]())
+    return success(newSeq[(Cid, ?ArchivistProof)]())
 
   # Batch-fetch leaf metadata for all present indices
   var leafKeys: seq[Key]
@@ -519,7 +522,7 @@ method getCidsAndProofs*(
     treeCid, leafKeysLen = leafKeys.len, leafRecordsLen = leafRecords.len
 
   # Extract CID and proof from each leaf record
-  var results: seq[(Cid, ArchivistProof)]
+  var results: seq[(Cid, ?ArchivistProof)]
   for record in leafRecords:
     results.add((record.val.blkCid, record.val.proof))
 
@@ -532,7 +535,7 @@ method putBlocks*(
   ## Put multiple blocks without proofs (for non-leaf blocks)
   ##
   for (index, blk) in blocks:
-    ?await self.putBlock(treeCid, blk, index, nil)
+    ?await self.putBlock(treeCid, blk, index, ArchivistProof.none)
   success()
 
 method close*(self: RepoStore): Future[void] {.async: (raises: []).} =

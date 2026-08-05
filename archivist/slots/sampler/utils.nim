@@ -41,7 +41,7 @@ func ceilingLog2*(x: int): int =
   doAssert (x > 0)
   return (floorLog2(x - 1) + 1)
 
-func toBlkInSlot*(cell: Natural, numCells: Natural): Natural =
+func toBlkInSlot*(cell: Natural, numCells: Natural): Natural {.gcsafe.} =
   let log2 = ceilingLog2(numCells)
   doAssert(1 shl log2 == numCells, "`numCells` is assumed to be a power of two")
 

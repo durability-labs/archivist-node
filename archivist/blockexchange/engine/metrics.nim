@@ -199,13 +199,13 @@ declarePublicHistogram(
 )
 declarePublicHistogram(
   archivist_block_exchange_recv_decode_seconds,
-  "Time to protobufDecode incoming message in readLoop",
+  "Time to decode incoming message in readLoop",
   buckets = BlockExcDurationBuckets,
 )
 # Sender-side: split network_send into encode (sync CPU) vs writeLp (TCP I/O).
 declarePublicHistogram(
   archivist_block_exchange_network_encode_seconds,
-  "Time to protobufEncode outgoing message (sync, blocks event loop)",
+  "Time to encode outgoing message (sync, blocks event loop)",
   labels = ["kind"],
   buckets = BlockExcDurationBuckets,
 )
@@ -215,13 +215,13 @@ declarePublicHistogram(
   labels = ["kind"],
   buckets = BlockExcDurationBuckets,
 )
-# Bytes per writeLp call — post-protobufEncode buffer size.
+# Bytes per writeLp call — post-encode buffer size.
 # Used to compute per-write throughput and verify the 64MB-per-batch assumption.
 # Top bucket 128MiB covers 128x512KiB blocks + protobuf framing without
 # clamping p50/p95 into +Inf.
 declarePublicHistogram(
   archivist_block_exchange_network_write_bytes,
-  "Bytes written per conn.writeLp call (post-protobufEncode buffer)",
+  "Bytes written per conn.writeLp call (post-encode buffer)",
   labels = ["kind"],
   buckets = [
     0.0, 1024.0, 16384.0, 65536.0, 262144.0, 1048576.0, 4194304.0, 16777216.0,

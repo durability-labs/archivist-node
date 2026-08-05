@@ -213,7 +213,7 @@ suite "BlockMaintainer":
       )
     ).tryGet()
 
-    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+    (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
     discard (await repo.storeManifest(manifest)).tryGet()
 
     check repo.quotaUsedBytes > 0.NBytes
@@ -260,9 +260,9 @@ suite "BlockMaintainer":
     ).tryGet()
 
     # Store data blocks
-    var blkProofs: seq[(bt.Block, Natural, ArchivistProof)]
+    var blkProofs: seq[(bt.Block, Natural, ?ArchivistProof)]
     for i, blk in blocks:
-      blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet()))
+      blkProofs.add((blk, i.Natural, tree.getProof(i).tryGet().some))
     (await repo.putBlocks(treeCid, blkProofs)).tryGet()
 
     # Store protected manifest on tree overlay

@@ -54,7 +54,7 @@ type
     blockPresences*: seq[BlockPresence]
     pendingBytes*: uint
 
-proc messageKind*(msg: Message): string =
+template messageKind*(msg: Message): string =
   if msg.payload.len > 0:
     "blocks"
   elif msg.blockPresences.len > 0:
@@ -116,7 +116,7 @@ proc write*(pb: var ProtoBuffer, field: int, value: sink BlockPresence) =
   ipb.finish()
   pb.write(field, ipb.buffer)
 
-proc protobufEncode*(value: sink Message): seq[byte] =
+proc encode*(value: sink Message): seq[byte] =
   var ipb = initProtoBuffer()
   # Pre-size the buffer: repeated payload blocks dominate (tens of MB).
   # Without reserve capacity the buffer grows by doubling, reallocating
@@ -213,7 +213,8 @@ proc decode*(_: type BlockDelivery, pb: sink ProtoBuffer): ProtoResult[BlockDeli
   if value.address.leaf:
     var proofBuf = newSeq[byte]()
     if ?pb.getField(4, proofBuf):
-      let proof = ?ArchivistProof.decode(proofBuf).mapErr(x => ProtoError.IncorrectBlob)
+      let proof =
+        ?(ArchivistProof.decode(proofBuf).mapErr(x => ProtoError.IncorrectBlob))
       value.proof = proof.some
     else:
       value.proof = ArchivistProof.none
@@ -233,7 +234,7 @@ proc decode*(_: type BlockPresence, pb: sink ProtoBuffer): ProtoResult[BlockPres
     value.`type` = BlockPresenceType(field)
   ok(value)
 
-proc protobufDecode*(_: type Message, msg: sink seq[byte]): ProtoResult[Message] =
+proc decode*(_: type Message, msg: sink seq[byte]): ProtoResult[Message] =
   var
     value = Message()
     pb = initProtoBuffer(move msg)

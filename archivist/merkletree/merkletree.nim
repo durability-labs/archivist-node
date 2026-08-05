@@ -25,7 +25,7 @@ type
     zero*: H
 
   # TODO: Make object, not ref
-  MerkleProof*[H, K] = ref object of RootObj
+  MerkleProof*[H, K] = object of RootObj
     index*: int # linear index of the leaf, starting from 0
     path*: seq[H] # order: from the bottom to the top
     nleaves*: int # number of leaves in the tree (=size of input)
@@ -61,7 +61,7 @@ func root*[H, K](self: MerkleTree[H, K]): ?!H =
   return success last[0]
 
 func getProof*[H, K](
-    self: MerkleTree[H, K], index: int, proof: MerkleProof[H, K]
+    self: MerkleTree[H, K], index: int, proof: var MerkleProof[H, K]
 ): ?!void =
   let depth = self.depth
   let nleaves = self.leavesCount
@@ -97,6 +97,9 @@ func getProof*[H, K](self: MerkleTree[H, K], index: int): ?!MerkleProof[H, K] =
   success proof
 
 func reconstructRoot*[H, K](proof: MerkleProof[H, K], leaf: H): ?!H =
+  if proof.compress.isNil:
+    return failure "Proof has no compressor (wire-only proof?)"
+
   var
     m = proof.nleaves
     j = proof.index

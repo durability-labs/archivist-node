@@ -423,14 +423,14 @@ proc encodeData(
     ?await self.asyncEncode(params.blockSize.int, data, parity)
     var
       idx = params.rounded + step
-      blocks: seq[(bt.Block, Natural, ArchivistProof)]
+      blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
 
     for j in 0 ..< params.ecM:
       let blk = ?bt.Block.new(parity[j])
 
       trace "Adding parity block", cid = blk.cid, idx
       cids[idx] = blk.cid
-      blocks.add((blk, idx.Natural, nil))
+      blocks.add((blk, idx.Natural, ArchivistProof.none))
       idx.inc(params.steps)
 
     trace "Storing parity blocks", count = blocks.len
@@ -618,7 +618,7 @@ proc decodeInternal(
 
     trace "Erasure decoding data"
     ?await self.asyncDecode(params.blockSize.int, data, parityData, recovered)
-    var blocks: seq[(bt.Block, Natural, ArchivistProof)]
+    var blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
     for i in 0 ..< params.ecK:
       let idx = i * params.steps + step
       if data[i].len <= 0 and not cids[idx].isEmpty:
@@ -630,7 +630,7 @@ proc decodeInternal(
         await self.networkStore.completeBlock(encodedTreeCid, idx, blk)
 
         cids[idx] = blk.cid
-        blocks.add((blk, idx.Natural, nil))
+        blocks.add((blk, idx.Natural, ArchivistProof.none))
         recoveredIndices.add(idx)
 
     trace "Storing recovered blocks", count = blocks.len

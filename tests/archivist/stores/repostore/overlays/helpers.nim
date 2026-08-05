@@ -32,7 +32,7 @@ proc putBlockWithOverlay*(
   blocks.setBit(0)
 
   (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = blocks)).tryGet()
-  (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+  (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
   success((treeCid, 0.Natural))
 
 proc verifyBlockBitState*(

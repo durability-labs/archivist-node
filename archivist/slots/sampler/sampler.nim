@@ -66,11 +66,16 @@ proc getSample*[SomeTree, SomeHash](
     origBlockIdx = origBlockIdx
 
   trace "Retrieving sample from block tree"
-  let
-    (_, proof) = (await self.blockStore.getCidAndProof(slotTreeCid, blkSlotIdx.Natural)).valueOr:
-      return failure("Failed to get slot tree CID and proof")
+  let (_, proof) = (
+    await self.blockStore.getCidAndProof(slotTreeCid, blkSlotIdx.Natural)
+  ).valueOr:
+    return failure("Failed to get slot tree CID and proof")
 
-    slotProof = proof.toVerifiableProof().valueOr:
+  without slotProofVal =? proof:
+    return failure("Failed to get slot tree CID and proof")
+
+  let
+    slotProof = slotProofVal.toVerifiableProof().valueOr:
       return failure("Failed to get verifiable proof")
 
     (bytes, blkTree) = (await self.builder.buildBlockTree(origBlockIdx, blkSlotIdx)).valueOr:

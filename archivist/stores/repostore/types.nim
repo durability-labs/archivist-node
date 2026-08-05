@@ -57,7 +57,7 @@ type
   LeafMetadata* {.serialize.} = object
     deleted*: bool
     blkCid*: Cid
-    proof*: ArchivistProof
+    proof*: ?ArchivistProof
     case isCell*: bool
     of true:
       cellCid*: Cid

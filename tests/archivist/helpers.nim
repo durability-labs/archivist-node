@@ -193,10 +193,10 @@ proc storeBlocksWithOverlay*(
 
   ?await store.putOverlay(treeCid, status, bits)
 
-  var items: seq[(Block, Natural, ArchivistProof)]
+  var items: seq[(Block, Natural, ?ArchivistProof)]
   for i in idx:
     let proof = ?tree.getProof(i)
-    items.add((blocks[i], i.Natural, proof))
+    items.add((blocks[i], i.Natural, proof.some))
 
   ?await store.putBlocks(treeCid, items)
 

@@ -467,11 +467,11 @@ proc store*(
     let batchStart = Moment.now()
     trace "Flushing block batch", count = batch.len
 
-    # Convert to the format expected by putBlocks: (Block, Natural, ArchivistProof)
-    # We don't have proofs yet (built after tree construction), so use nil
-    var items: seq[(bt.Block, Natural, ArchivistProof)]
+    # Convert to the format expected by putBlocks: (Block, Natural, ?ArchivistProof)
+    # We don't have proofs yet (built after tree construction), so use none
+    var items: seq[(bt.Block, Natural, ?ArchivistProof)]
     for (blk, idx) in batch:
-      items.add((blk, idx, nil))
+      items.add((blk, idx, ArchivistProof.none))
 
     ?await self.repoStore.putBlocks(tmpCid, items)
     let batchDone = Moment.now()

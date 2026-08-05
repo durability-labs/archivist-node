@@ -85,7 +85,7 @@ suite "Network - Handlers":
 
     let msg = Message(wantlist: wantList)
 
-    await buffer.pushData(lenPrefix(protobufEncode(msg)))
+    await buffer.pushData(lenPrefix(encode(msg)))
     await done.wait(500.millis)
 
   test "Blocks Handler":
@@ -100,7 +100,7 @@ suite "Network - Handlers":
     let msg =
       Message(payload: blocks.mapIt(BlockDelivery(blk: it, address: it.address)))
 
-    await buffer.pushData(lenPrefix(protobufEncode(msg)))
+    await buffer.pushData(lenPrefix(encode(msg)))
     await done.wait(500.millis)
 
   test "Presence Handler":
@@ -120,7 +120,7 @@ suite "Network - Handlers":
         blocks.mapIt(BlockPresence(address: it.address, type: BlockPresenceType.Have))
     )
 
-    await buffer.pushData(lenPrefix(protobufEncode(msg)))
+    await buffer.pushData(lenPrefix(encode(msg)))
     await done.wait(500.millis)
 
 suite "Network - Senders":

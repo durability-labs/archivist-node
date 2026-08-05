@@ -414,7 +414,7 @@ proc blocksDeliveryHandler*(
 
   var
     validatedBlocksDelivery: seq[BlockDelivery]
-    leafByTree: Table[Cid, seq[(Block, Natural, ArchivistProof)]]
+    leafByTree: Table[Cid, seq[(Block, Natural, ?ArchivistProof)]]
     nonLeafDeliveries: seq[BlockDelivery]
     acceptedAddresses: seq[BlockAddress]
     lastIdle = Moment.now()
@@ -454,9 +454,9 @@ proc blocksDeliveryHandler*(
           continue
 
         leafByTree.withValue(bd.address.treeCid, slot):
-          slot[].add((bd.blk, bd.address.index, proof))
+          slot[].add((bd.blk, bd.address.index, proof.some))
         do:
-          leafByTree[bd.address.treeCid] = @[(bd.blk, bd.address.index, proof)]
+          leafByTree[bd.address.treeCid] = @[(bd.blk, bd.address.index, proof.some)]
       else:
         nonLeafDeliveries.add(bd)
     except CancelledError as exc:
@@ -690,20 +690,16 @@ proc taskHandler*(
         error "Error getting leaf blocks from local store", treeCid, err = err.msg
         continue
 
-      var itemsByIndex: Table[Natural, (Block, ArchivistProof)]
+      var itemsByIndex: Table[Natural, (Block, ?ArchivistProof)]
       for item in items:
         itemsByIndex[item[0]] = (item[1], item[2])
 
       for index in indices:
         if entry =? itemsByIndex .? [index]:
           let (blk, proof) = entry
-          if proof.isNil:
-            warn "Skipping leaf delivery without proof", treeCid, index
-            continue
-
           blockDeliveries.add(
             BlockDelivery(
-              address: BlockAddress.init(treeCid, index), blk: blk, proof: proof.some
+              address: BlockAddress.init(treeCid, index), blk: blk, proof: proof
             )
           )
 

@@ -349,7 +349,7 @@ asyncchecksuite "NetworkStore - multiple nodes":
     ).tryGet()[0][2]
 
     await engine.pendingBlocks.resolve(
-      @[BlockDelivery(blk: blocks[0], address: addr0, proof: some(sourceProof))],
+      @[BlockDelivery(blk: blocks[0], address: addr0, proof: sourceProof)],
       BlockExcPeerCtx.none,
     )
 

@@ -44,7 +44,7 @@ type
   ArchivistTree* = ref object of ByteTree
     mcodec*: MultiCodec
 
-  ArchivistProof* = ref object of ByteProof
+  ArchivistProof* = object of ByteProof
     mcodec*: MultiCodec
 
 func getProof*(self: ArchivistTree, index: int): ?!ArchivistProof =
@@ -71,7 +71,7 @@ func verify*(self: ArchivistProof, leaf: MultiHash, root: MultiHash): ?!bool =
   self.verify(leafBytes, rootBytes)
 
 func verify*(self: ArchivistProof, leaf: Cid, root: Cid): ?!bool =
-  self.verify(?leaf.mhash.mapFailure, ?leaf.mhash.mapFailure)
+  self.verify(?leaf.mhash.mapFailure, ?root.mhash.mapFailure)
 
 proc rootCid*(
     self: ArchivistTree, version = CIDv1, dataCodec = DatasetRootCodec

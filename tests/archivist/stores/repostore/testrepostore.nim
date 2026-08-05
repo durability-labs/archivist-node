@@ -197,7 +197,7 @@ proc testRepoStore*(
 
       (
         await repo.putBlocks(
-          treeCid, @[(blk, 0.Natural, proof0), (blk, 1.Natural, proof1)]
+          treeCid, @[(blk, 0.Natural, proof0.some), (blk, 1.Natural, proof1.some)]
         )
       ).tryGet()
 
@@ -262,7 +262,7 @@ proc testRepoStore*(
       bits.setBit(0)
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
-      (await repo.putBlock(treeCid, blk, 0.Natural, proof)).tryGet()
+      (await repo.putBlock(treeCid, blk, 0.Natural, proof.some)).tryGet()
 
       check (await repo.hasBlock(blk.cid)).tryGet()
 
@@ -277,11 +277,11 @@ proc testRepoStore*(
       bits.setBit(0)
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
-      (await repo.putBlock(treeCid, blk, 0.Natural, proof)).tryGet()
+      (await repo.putBlock(treeCid, blk, 0.Natural, proof.some)).tryGet()
 
       let got = (await repo.getBlockAndProof(treeCid, 0.Natural)).tryGet()
       check got[1].cid == blk.cid
-      check $got[2] == $proof
+      check $got[2] == $proof.some
 
     test "Should delete block with proof":
       let
@@ -294,7 +294,7 @@ proc testRepoStore*(
       bits.setBit(0)
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
-      (await repo.putBlock(treeCid, blk, 0.Natural, proof)).tryGet()
+      (await repo.putBlock(treeCid, blk, 0.Natural, proof.some)).tryGet()
       check (await repo.hasBlock(blk.cid)).tryGet()
 
       (await repo.delBlock(treeCid, 0.Natural)).tryGet()
@@ -330,9 +330,9 @@ proc testRepoStore*(
         await bigRepo.putBlocks(
           treeCid,
           @[
-            (dataset[0], 0.Natural, proof0),
-            (dataset[1], 1.Natural, proof1),
-            (dataset[2], 2.Natural, proof2),
+            (dataset[0], 0.Natural, proof0.some),
+            (dataset[1], 1.Natural, proof1.some),
+            (dataset[2], 2.Natural, proof2.some),
           ],
         )
       ).tryGet()
@@ -344,11 +344,11 @@ proc testRepoStore*(
 
       check results.len == 3
       check results[0][1].cid == dataset[0].cid
-      check $results[0][2] == $proof0
+      check $results[0][2] == $proof0.some
       check results[1][1].cid == dataset[1].cid
-      check $results[1][2] == $proof1
+      check $results[1][2] == $proof1.some
       check results[2][1].cid == dataset[2].cid
-      check $results[2][2] == $proof2
+      check $results[2][2] == $proof2.some
 
     test "Should handle non-existent block with proof":
       let
@@ -385,7 +385,8 @@ proc testRepoStore*(
 
       (
         await bigRepo.putBlocks(
-          treeCid, @[(dataset[0], 0.Natural, proof0), (dataset[1], 1.Natural, proof1)]
+          treeCid,
+          @[(dataset[0], 0.Natural, proof0.some), (dataset[1], 1.Natural, proof1.some)],
         )
       ).tryGet()
 
@@ -415,7 +416,7 @@ proc testRepoStore*(
 
       let proof0 = tree.getProof(0).tryGet()
 
-      (await bigRepo.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof0)])).tryGet()
+      (await bigRepo.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof0.some)])).tryGet()
 
       # Deleting index 1 (never stored) should still succeed
       (await bigRepo.delBlocks(treeCid, @[0.Natural, 1.Natural])).tryGet()
@@ -446,7 +447,7 @@ proc testRepoStore*(
 
       let proof0 = tree.getProof(0).tryGet()
 
-      (await bigRepo.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof0)])).tryGet()
+      (await bigRepo.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof0.some)])).tryGet()
 
       let unsorted =
         (await bigRepo.hasBlocks(treeCid, @[0.Natural, 1.Natural])).tryGet()
@@ -491,9 +492,9 @@ proc testRepoStore*(
         await bigRepo.putBlocks(
           treeCid,
           @[
-            (dataset[0], 0.Natural, proof0),
-            (dataset[1], 1.Natural, proof1),
-            (dataset[2], 2.Natural, proof2),
+            (dataset[0], 0.Natural, proof0.some),
+            (dataset[1], 1.Natural, proof1.some),
+            (dataset[2], 2.Natural, proof2.some),
           ],
         )
       ).tryGet()
@@ -531,9 +532,9 @@ proc testRepoStore*(
         await bigRepo.putBlocks(
           treeCid,
           @[
-            (dataset[0], 0.Natural, proof0),
-            (dataset[1], 1.Natural, proof1),
-            (dataset[2], 2.Natural, proof2),
+            (dataset[0], 0.Natural, proof0.some),
+            (dataset[1], 1.Natural, proof1.some),
+            (dataset[2], 2.Natural, proof2.some),
           ],
         )
       ).tryGet()
@@ -575,9 +576,9 @@ proc testRepoStore*(
       # Store blocks concurrently
       let putFuts = await allFinished(
         @[
-          bigRepo.putBlock(treeCid, dataset[0], 0.Natural, proof0),
-          bigRepo.putBlock(treeCid, dataset[1], 1.Natural, proof1),
-          bigRepo.putBlock(treeCid, dataset[2], 2.Natural, proof2),
+          bigRepo.putBlock(treeCid, dataset[0], 0.Natural, proof0.some),
+          bigRepo.putBlock(treeCid, dataset[1], 1.Natural, proof1.some),
+          bigRepo.putBlock(treeCid, dataset[2], 2.Natural, proof2.some),
         ]
       )
 
@@ -617,7 +618,7 @@ proc testRepoStore*(
       ).tryGet()
 
       # Empty putBlocks
-      (await bigRepo.putBlocks(treeCid, newSeq[(bt.Block, Natural, ArchivistProof)]())).tryGet()
+      (await bigRepo.putBlocks(treeCid, newSeq[(bt.Block, Natural, ?ArchivistProof)]())).tryGet()
 
       # Empty getBlocks
       let emptyGet = (await bigRepo.getBlocks(treeCid, newSeq[Natural]())).tryGet()
@@ -641,7 +642,7 @@ proc testRepoStore*(
       bits.setBit(0)
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
-      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
       let got = (await repo.getBlocks(treeCid, @[0.Natural])).tryGet()
       check got.len == 1
@@ -663,7 +664,7 @@ proc testRepoStore*(
 
       (
         await repo.putBlocks(
-          treeCid, @[(blk, 0.Natural, proof0), (blk, 1.Natural, proof1)]
+          treeCid, @[(blk, 0.Natural, proof0.some), (blk, 1.Natural, proof1.some)]
         )
       ).tryGet()
 
@@ -682,7 +683,7 @@ proc testRepoStore*(
       bits.setBit(0)
 
       (await repo.putOverlay(treeCid = treeCid, status = Completed.some, blocks = bits)).tryGet()
-      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
 
       # Request index 0 (exists) and index 5 (missing)
       let results = (await repo.getBlocks(treeCid, @[0.Natural, 5.Natural])).tryGet()
@@ -714,7 +715,7 @@ proc testRepoStore*(
       ).tryGet()
 
       let proof = tree.getProof(0).tryGet()
-      (await bigRepo.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof)])).tryGet()
+      (await bigRepo.putBlocks(treeCid, @[(dataset[0], 0.Natural, proof.some)])).tryGet()
 
       # Delete index 0 (exists) and index 5 (does not exist)
       (await bigRepo.delBlocks(treeCid, @[0.Natural, 5.Natural])).tryGet()
@@ -749,7 +750,8 @@ proc testRepoStore*(
 
       (
         await bigRepo.putBlocks(
-          treeCid, @[(dataset[0], 0.Natural, proof0), (dataset[2], 2.Natural, proof2)]
+          treeCid,
+          @[(dataset[0], 0.Natural, proof0.some), (dataset[2], 2.Natural, proof2.some)],
         )
       ).tryGet()
 
@@ -817,8 +819,8 @@ proc testRepoStore*(
         proof1 = tree1.getProof(0).tryGet()
         proof2 = tree2.getProof(0).tryGet()
 
-      (await bigRepo.putBlocks(treeCid1, @[(sharedBlk, 0.Natural, proof1)])).tryGet()
-      (await bigRepo.putBlocks(treeCid2, @[(sharedBlk, 0.Natural, proof2)])).tryGet()
+      (await bigRepo.putBlocks(treeCid1, @[(sharedBlk, 0.Natural, proof1.some)])).tryGet()
+      (await bigRepo.putBlocks(treeCid2, @[(sharedBlk, 0.Natural, proof2.some)])).tryGet()
 
       check (await bigRepo.blockRefCount(sharedBlk.cid)).tryGet() == 2.Natural
 
@@ -868,11 +870,12 @@ proc testRepoStore*(
 
       (
         await bigRepo.putBlocks(
-          treeCid1, @[(sharedBlk, 0.Natural, tproof0), (uniqueBlk, 1.Natural, tproof1)]
+          treeCid1,
+          @[(sharedBlk, 0.Natural, tproof0.some), (uniqueBlk, 1.Natural, tproof1.some)],
         )
       ).tryGet()
 
-      (await bigRepo.putBlocks(treeCid2, @[(sharedBlk, 0.Natural, t2proof0)])).tryGet()
+      (await bigRepo.putBlocks(treeCid2, @[(sharedBlk, 0.Natural, t2proof0.some)])).tryGet()
 
       # sharedBlk has refCount 2, uniqueBlk has refCount 1
       check (await bigRepo.blockRefCount(sharedBlk.cid)).tryGet() == 2.Natural
@@ -921,8 +924,8 @@ proc testRepoStore*(
         proof1 = tree1.getProof(0).tryGet()
         proof2 = tree2.getProof(0).tryGet()
 
-      (await bigRepo.putBlocks(treeCid1, @[(sharedBlk, 0.Natural, proof1)])).tryGet()
-      (await bigRepo.putBlocks(treeCid2, @[(sharedBlk, 0.Natural, proof2)])).tryGet()
+      (await bigRepo.putBlocks(treeCid1, @[(sharedBlk, 0.Natural, proof1.some)])).tryGet()
+      (await bigRepo.putBlocks(treeCid2, @[(sharedBlk, 0.Natural, proof2.some)])).tryGet()
 
       check (await bigRepo.blockRefCount(sharedBlk.cid)).tryGet() == 2.Natural
 
@@ -951,7 +954,7 @@ proc testRepoStore*(
           treeCid = treeCid, status = Completed.some, blocks = blocks
         )
       ).tryGet
-      (await innerRepo.putBlock(treeCid, blk, 0, proof)).tryGet
+      (await innerRepo.putBlock(treeCid, blk, 0, proof.some)).tryGet
       let err = (await innerRepo.delBlock(blk.cid)).error()
       check err.msg ==
         "Directly deleting a block that is part of a dataset is not allowed."
@@ -974,7 +977,7 @@ proc testRepoStore*(
           treeCid = treeCid, status = Completed.some, blocks = blocks
         )
       ).tryGet
-      (await innerRepo.putBlock(treeCid, blk, 0, proof)).tryGet
+      (await innerRepo.putBlock(treeCid, blk, 0, proof.some)).tryGet
 
       (await innerRepo.delBlock(treeCid, 0.Natural)).tryGet()
       check not (await blk.cid in innerRepo)
@@ -1014,7 +1017,10 @@ proc testRepoStore*(
       (
         await innerRepo.putBlocks(
           treeCid1,
-          @[(blockPool[0], 0.Natural, proof1_0), (sharedBlock, 1.Natural, proof1_1)],
+          @[
+            (blockPool[0], 0.Natural, proof1_0.some),
+            (sharedBlock, 1.Natural, proof1_1.some),
+          ],
         )
       ).tryGet()
 
@@ -1040,7 +1046,10 @@ proc testRepoStore*(
       (
         await innerRepo.putBlocks(
           treeCid2,
-          @[(sharedBlock, 0.Natural, proof2_0), (blockPool[2], 1.Natural, proof2_1)],
+          @[
+            (sharedBlock, 0.Natural, proof2_0.some),
+            (blockPool[2], 1.Natural, proof2_1.some),
+          ],
         )
       ).tryGet()
 

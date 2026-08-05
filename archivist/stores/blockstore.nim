@@ -80,7 +80,7 @@ method getBlock*(
 
 method getBlocksAndProofs*(
     self: BlockStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[(Natural, Block, ArchivistProof)]] {.
+): Future[?!seq[(Natural, Block, ?ArchivistProof)]] {.
     base, async: (raises: [CancelledError]), gcsafe
 .} =
   ## Get multiple blocks and proofs by tree CID and indices as a batch
@@ -90,7 +90,7 @@ method getBlocksAndProofs*(
 
 method getBlockAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural
-): Future[?!(Natural, Block, ArchivistProof)] {.
+): Future[?!(Natural, Block, ?ArchivistProof)] {.
     base, async: (raises: [CancelledError]), gcsafe
 .} =
   ## Get a block and proof by tree CID and index.
@@ -104,7 +104,7 @@ method getBlockAndProof*(
 
 method getCidsAndProofs*(
     self: BlockStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[(Cid, ArchivistProof)]] {.
+): Future[?!seq[(Cid, ?ArchivistProof)]] {.
     base, async: (raises: [CancelledError]), gcsafe
 .} =
   ## Get multiple CIDs and proofs as a batch
@@ -114,7 +114,7 @@ method getCidsAndProofs*(
 
 method getCidAndProof*(
     self: BlockStore, treeCid: Cid, index: Natural
-): Future[?!(Cid, ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
+): Future[?!(Cid, ?ArchivistProof)] {.base, async: (raises: [CancelledError]), gcsafe.} =
   ## Get a CID and proof by tree CID and index.
   ## Default: delegates to getCidsAndProofs batch.
   ##
@@ -152,7 +152,7 @@ method putBlock*(
     base,
     gcsafe,
     async: (raises: [CancelledError]),
-    deprecated: "Use putBlocks(treeCid, seq[(Natural, Block, ArchivistProof)])"
+    deprecated: "Use putBlocks(treeCid, seq[(Block, Natural, ?ArchivistProof)])"
 .} =
   ## Put a block to the blockstore (deprecated)
   ##
@@ -160,7 +160,7 @@ method putBlock*(
   raiseAssert("putBlock not implemented!")
 
 method putBlocks*(
-    self: BlockStore, treeCid: Cid, items: seq[(Block, Natural, ArchivistProof)]
+    self: BlockStore, treeCid: Cid, items: seq[(Block, Natural, ?ArchivistProof)]
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =
   ## Put multiple leafs and blocks as a batch (primary method)
   ##
@@ -168,7 +168,7 @@ method putBlocks*(
   raiseAssert("putBlocks not implemented!")
 
 method putBlock*(
-    self: BlockStore, treeCid: Cid, blk: Block, index: Natural, proof: ArchivistProof
+    self: BlockStore, treeCid: Cid, blk: Block, index: Natural, proof: ?ArchivistProof
 ): Future[?!void] {.base, async: (raises: [CancelledError]).} =
   ## Put a single leaf and block.
   ## Default: delegates to putBlocks batch.
