@@ -70,9 +70,8 @@ func addProofTreeNodes*(
     records: var seq[RawKVRecord],
     incomingByKey: var Table[Key, Cid],
 ): ?!void =
-  if proof.isNil:
-    return success()
-
+  # Caller contracts a present proof (unwrapped with `=?` at the call
+  # site); absent proofs never reach the flat-node derivation.
   if proof.index < 0 or proof.index >= proof.nleaves:
     return failure(
       newException(TreeNodeValidationError, "Proof index out of range for nleaves")

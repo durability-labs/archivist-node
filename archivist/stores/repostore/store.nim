@@ -87,7 +87,9 @@ proc checkBitmap*(
 
 proc getBlocksAndProofsImpl(
     self: RepoStore, treeCid: Cid, indices: seq[Natural], withProofs: bool
-): Future[?!seq[(Natural, Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+): Future[?!seq[(Natural, Block, ?ArchivistProof)]] {.
+    async: (raises: [CancelledError])
+.} =
   ## Core of getBlocks / getBlocksAndProofs.
   ##
   ## Fetches overlay bitmap once, filters indices, then batch-fetches
@@ -98,7 +100,7 @@ proc getBlocksAndProofsImpl(
   ##
 
   if indices.len == 0:
-    return success(newSeq[(Natural, Block, ArchivistProof)]())
+    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
 
   logScope:
     treeCid = treeCid
@@ -113,7 +115,7 @@ proc getBlocksAndProofsImpl(
       presentIndices.add(idx)
 
   if presentIndices.len == 0:
-    return success(newSeq[(Natural, Block, ArchivistProof)]())
+    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
 
   # Batch-fetch leaf metadata for all present indices
   var leafKeys: seq[Key]
@@ -153,8 +155,8 @@ proc getBlocksAndProofsImpl(
   # Empty-CID leaves (erasure padding) are synthesized directly without
   # repoDs lookup - they are never stored but callers expect them back.
   var
-    keyToCidProof: Table[Key, (Natural, Cid, ArchivistProof)]
-    results: seq[(Natural, Block, ArchivistProof)]
+    keyToCidProof: Table[Key, (Natural, Cid, ?ArchivistProof)]
+    results: seq[(Natural, Block, ?ArchivistProof)]
   for record in leafRecords:
     let blkCid = record.val.blkCid
 
@@ -168,7 +170,7 @@ proc getBlocksAndProofsImpl(
       proof =
         if shapeResolved and not record.val.blkCid.isEmpty and not record.val.deleted and
             generatedProofs.hasKey(index):
-          ?catch(generatedProofs[index])
+          (?catch(generatedProofs[index])).some
         else:
           record.val.proof
       key = ?makePrefixKey(self.postFixLen, blkCid)
@@ -594,7 +596,7 @@ method getCidsAndProofs*(
       proof =
         if shapeResolved and not record.val.blkCid.isEmpty and not record.val.deleted and
             generatedProofs.hasKey(index):
-          ?catch(generatedProofs[index])
+          (?catch(generatedProofs[index])).some
         else:
           record.val.proof
     results.add((record.val.blkCid, proof))

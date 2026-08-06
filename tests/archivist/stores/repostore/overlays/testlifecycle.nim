@@ -705,7 +705,7 @@ proc testLifecycle*(
             tmpCid: Cid
         ): Future[?!Cid] {.closure, async: (raises: [CancelledError]).} =
           capturedTmpCid = tmpCid
-          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof)])
+          ?await repo.putBlocks(tmpCid, @[(blk, 0.Natural, proof.some)])
           if not bodyDone.finished:
             bodyDone.complete()
           success(realTreeCid)

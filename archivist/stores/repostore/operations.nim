@@ -363,24 +363,25 @@ proc putLeafBlockMetaImpl(
     # already exists, we skip the refCount.inc, thus we make
     # a mapping of block rec -> leaf rec to be able to filter
     # out inserts from updates
-    if not proof.isNil and proof.index != index.int:
-      return failure(
-        newException(TreeNodeValidationError, "Proof index does not match leaf index")
-      )
+    if p =? proof:
+      if p.index != index.int:
+        return failure(
+          newException(TreeNodeValidationError, "Proof index does not match leaf index")
+        )
 
     blocksBits.setBit(index)
     leafsMap[leafKey] = leafRec.toRaw
     if cellCid.isNone and not blkCid.isEmpty:
-      if not proof.isNil:
+      if p =? proof:
         if shapeVal =? shape:
           let (nleaves, mcodec) = shapeVal
-          if proof.nleaves != nleaves.int or proof.mcodec != mcodec:
+          if p.nleaves != nleaves.int or p.mcodec != mcodec:
             return failure(
               newException(
                 TreeNodeValidationError, "Proof shape does not match tree shape"
               )
             )
-      ?addProofTreeNodes(treeCid, blkCid, proof, treeRecords, treeNodesByKey)
+        ?addProofTreeNodes(treeCid, blkCid, p, treeRecords, treeNodesByKey)
 
     # Skip block metadata for empty blkCid (pad blocks)
     if not blkCid.isEmpty:

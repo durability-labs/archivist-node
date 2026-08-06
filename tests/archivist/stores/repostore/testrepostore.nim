@@ -3,6 +3,7 @@ import std/algorithm
 import std/sequtils
 import std/os
 import std/tempfiles
+import std/options
 
 import pkg/questionable
 import pkg/questionable/results
@@ -708,9 +709,9 @@ proc testRepoStore*(
     template storeTreeLeaves(
         repo: RepoStore, treeCid: Cid, tree: ArchivistTree, blocks: seq[bt.Block]
     ) =
-      var items: seq[(bt.Block, Natural, ArchivistProof)]
+      var items: seq[(bt.Block, Natural, ?ArchivistProof)]
       for i in 0 ..< tree.leavesCount:
-        items.add((blocks[i], i.Natural, tree.getProof(i).tryGet()))
+        items.add((blocks[i], i.Natural, tree.getProof(i).tryGet().some))
       (await repo.putBlocks(treeCid, items)).tryGet()
 
     proc toAsyncIter(cids: seq[Cid]): AsyncIter[Cid] =
@@ -739,7 +740,7 @@ proc testRepoStore*(
       check results.len == tree.leavesCount
       for i in 0 ..< tree.leavesCount:
         let
-          proof = results[i][2]
+          proof = results[i][2].get()
           memoryProof = tree.getProof(i).tryGet()
         check results[i][0] == i.Natural
         check proof.index == memoryProof.index
@@ -785,7 +786,7 @@ proc testRepoStore*(
       check results.len == 3
       for i in 0 ..< tree.leavesCount:
         let
-          proof = results[i][2]
+          proof = results[i][2].get()
           storedProof = tree.getProof(i).tryGet()
         check proof.index == storedProof.index
         check proof.nleaves == storedProof.nleaves
@@ -815,7 +816,7 @@ proc testRepoStore*(
 
       check results.len == 3
       for i in 0 ..< tree.leavesCount:
-        let proof = results[i][2]
+        let proof = results[i][2].get()
         check proof.path == tree.getProof(i).tryGet().path
 
     test "Should serve padding leaves from stored proof":
@@ -836,11 +837,15 @@ proc testRepoStore*(
       ensureOverlay(treeCid)
       discard (await bigRepo.storeManifest(manifest)).tryGet()
 
-      var items: seq[(bt.Block, Natural, ArchivistProof)]
+      var items: seq[(bt.Block, Natural, ?ArchivistProof)]
       for i in 0 ..< 5:
-        items.add((dataset[i], i.Natural, tree.getProof(i).tryGet()))
+        items.add((dataset[i], i.Natural, tree.getProof(i).tryGet().some))
       items.add(
-        (bt.emptyBlock(emptyLeafCid).tryGet(), 5.Natural, tree.getProof(5).tryGet())
+        (
+          bt.emptyBlock(emptyLeafCid).tryGet(),
+          5.Natural,
+          tree.getProof(5).tryGet().some,
+        )
       )
       (await bigRepo.putBlocks(treeCid, items)).tryGet()
 
@@ -855,10 +860,10 @@ proc testRepoStore*(
       check results.len == 6
       for i in 0 ..< 5:
         check results[i][1].cid == dataset[i].cid
-        check results[i][2].path == tree.getProof(i).tryGet().path
-        check results[i][2].verify(tree.leaves[i], tree.root.tryGet()).tryGet()
+        check results[i][2].get().path == tree.getProof(i).tryGet().path
+        check results[i][2].get().verify(tree.leaves[i], tree.root.tryGet()).tryGet()
       check results[5][1].cid == emptyLeafCid
-      check results[5][2].path == tree.getProof(5).tryGet().path
+      check results[5][2].get().path == tree.getProof(5).tryGet().path
 
     test "Should serve proofs for async-built trees":
       let
@@ -892,7 +897,7 @@ proc testRepoStore*(
       check results.len == tree.leavesCount
       for i in 0 ..< tree.leavesCount:
         let
-          proof = results[i][2]
+          proof = results[i][2].get()
           memoryProof = asyncTree.getProof(i).tryGet()
         check proof.index == memoryProof.index
         check proof.nleaves == memoryProof.nleaves
@@ -916,7 +921,7 @@ proc testRepoStore*(
       for i in 0 ..< tree.leavesCount:
         let key = blockLeafKey(treeCid, i.Natural).tryGet()
         var corrupted = (await bigRepo.metaDs.get(key, LeafMetadata)).tryGet()
-        corrupted.val.proof = nil
+        corrupted.val.proof = ArchivistProof.none
         (await bigRepo.metaDs.put(corrupted)).tryGet()
 
       let
@@ -927,7 +932,7 @@ proc testRepoStore*(
 
       check results.len == 3
       for i in 0 ..< tree.leavesCount:
-        let proof = results[i][2]
+        let proof = results[i][2].get()
         check proof.path == tree.getProof(i).tryGet().path
         check proof.verify(tree.leaves[i], tree.root.tryGet()).tryGet()
 
@@ -951,8 +956,8 @@ proc testRepoStore*(
         await bigRepo.putBlocks(
           treeCid,
           @[
-            (dataset[0], 0.Natural, tree.getProof(0).tryGet()),
-            (dataset[2], 2.Natural, tree.getProof(2).tryGet()),
+            (dataset[0], 0.Natural, tree.getProof(0).tryGet().some),
+            (dataset[2], 2.Natural, tree.getProof(2).tryGet().some),
           ],
         )
       ).tryGet()
@@ -965,11 +970,11 @@ proc testRepoStore*(
 
       check results.len == 2
       check results[0][0] == 0.Natural
-      check results[0][2].path == tree.getProof(0).tryGet().path
-      check results[0][2].verify(tree.leaves[0], tree.root.tryGet()).tryGet()
+      check results[0][2].get().path == tree.getProof(0).tryGet().path
+      check results[0][2].get().verify(tree.leaves[0], tree.root.tryGet()).tryGet()
       check results[1][0] == 2.Natural
-      check results[1][2].path == tree.getProof(2).tryGet().path
-      check results[1][2].verify(tree.leaves[2], tree.root.tryGet()).tryGet()
+      check results[1][2].get().path == tree.getProof(2).tryGet().path
+      check results[1][2].get().verify(tree.leaves[2], tree.root.tryGet()).tryGet()
 
     test "Should forget tree shape when overlay is dropped":
       let
@@ -1008,11 +1013,12 @@ proc testRepoStore*(
 
       check results.len == tree.leavesCount
       for (_, proof) in results:
-        let memoryProof = tree.getProof(proof.index).tryGet()
-        check proof.index == memoryProof.index
-        check proof.nleaves == memoryProof.nleaves
-        check proof.path == memoryProof.path
-        check proof.verify(tree.leaves[proof.index], tree.root.tryGet()).tryGet()
+        if p =? proof:
+          let memoryProof = tree.getProof(p.index).tryGet()
+          check p.index == memoryProof.index
+          check p.nleaves == memoryProof.nleaves
+          check p.path == memoryProof.path
+          check p.verify(tree.leaves[p.index], tree.root.tryGet()).tryGet()
 
     test "Should not require flat nodes in getBlocks":
       let
@@ -1114,7 +1120,7 @@ proc testRepoStore*(
         generatedResults = generated.sortedByIt(it[0])
       check generatedResults.len == 3
       for i in 0 ..< tree.leavesCount:
-        check generatedResults[i][2].path == tree.getProof(i).tryGet().path
+        check generatedResults[i][2].get().path == tree.getProof(i).tryGet().path
       check treeCid in bigRepo.treeShapeCache
 
       (await bigRepo.delTreeNodes(treeCid)).tryGet()
@@ -1130,7 +1136,7 @@ proc testRepoStore*(
         fallbackResults = fallback.sortedByIt(it[0])
       check fallbackResults.len == 3
       for i in 0 ..< tree.leavesCount:
-        check fallbackResults[i][2].path == tree.getProof(i).tryGet().path
+        check fallbackResults[i][2].get().path == tree.getProof(i).tryGet().path
 
       # Completed again: generated serving is back, and with the flat nodes
       # gone the missing root now hard-fails.
@@ -1153,7 +1159,7 @@ proc testRepoStore*(
 
       (
         await bigRepo.putBlocks(
-          treeCid, @[(dataset[0], 0.Natural, tree.getProof(0).tryGet())]
+          treeCid, @[(dataset[0], 0.Natural, tree.getProof(0).tryGet().some)]
         )
       ).tryGet()
 
