@@ -57,7 +57,7 @@ type
 
   NodePrivateKey* = libp2p.PrivateKey # alias
 
-proc connectMarketplace(s: NodeServer) {.async.} =
+proc connectMarketplace(s: NodeServer) {.async: (raises: [CancelledError]).} =
   let config = s.config
 
   if config.persistence:
@@ -65,28 +65,40 @@ proc connectMarketplace(s: NodeServer) {.async.} =
       error "Persistence enabled, but no Ethereum private key was set"
       quit QuitFailure
 
-    let marketplaceResult = await MarketplaceNode.connect(
-      ethProviderUrl = config.ethProvider,
-      ethPrivateKeyFile = ethPrivateKeyFile,
-      datastore = s.repoStore.metaDs,
-      storage = MarketplaceStorage.new(s.archivistNode, s.repoStore),
-      options = MarketplaceOptions(
-        marketplaceAddress: config.marketplaceAddress,
-        maxPriorityFeePerGas: config.maxPriorityFeePerGas,
-        requestCacheSize: config.marketplaceRequestCacheSize,
-        validationEnabled: config.validator,
-        validationMaxSlots: some config.validatorMaxSlots,
-        validationGroups: config.validatorGroups,
-        validationGroupIndex: some config.validatorGroupIndex,
-        useSystemClock: config.useSystemClock,
-      ),
-    )
+    # The RPC node may not be reachable on the first attempt (e.g. the geth
+    # endpoint is still propagating after a restart); retry before giving up.
+    var marketplace: ?MarketplaceNode
+    for attempt in 1 .. config.marketplaceConnectRetries:
+      without res =? (
+        await MarketplaceNode.connect(
+          ethProviderUrl = config.ethProvider,
+          ethPrivateKeyFile = ethPrivateKeyFile,
+          datastore = s.repoStore.metaDs,
+          storage = MarketplaceStorage.new(s.archivistNode, s.repoStore),
+          options = MarketplaceOptions(
+            marketplaceAddress: config.marketplaceAddress,
+            maxPriorityFeePerGas: config.maxPriorityFeePerGas,
+            requestCacheSize: config.marketplaceRequestCacheSize,
+            validationEnabled: config.validator,
+            validationMaxSlots: some config.validatorMaxSlots,
+            validationGroups: config.validatorGroups,
+            validationGroupIndex: some config.validatorGroupIndex,
+            useSystemClock: config.useSystemClock,
+          ),
+        )
+      ), err:
+        error "Unable to connect to marketplace", error = err.msg, attempt = attempt
+        if attempt < config.marketplaceConnectRetries:
+          await sleepAsync(config.marketplaceConnectRetryDelay)
+        continue
 
-    without marketplace =? marketplaceResult, err:
-      error "Unable to connect to marketplace", error = err.msg
+      marketplace = res.some
+      break
+
+    without marketplaceNode =? marketplace:
       quit QuitFailure
 
-    s.archivistNode.marketplace = marketplace
+    s.archivistNode.marketplace = marketplaceNode
 
 proc start*(s: NodeServer) {.async.} =
   trace "Starting node", config = $s.config
