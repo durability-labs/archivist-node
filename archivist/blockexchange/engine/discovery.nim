@@ -8,6 +8,7 @@
 ## those terms.
 
 import std/sequtils
+import std/sets
 
 import pkg/chronos
 import pkg/libp2p/cid
@@ -37,6 +38,10 @@ const
   DefaultDiscoveryTimeout = 1.minutes
   DefaultMinPeersPerBlock = 3
   DefaultDiscoveryLoopSleep = 3.seconds
+  DefaultDiscoverBackoffBase = 3.seconds
+  DefaultDiscoverBackoffMax = 60.seconds
+  DefaultDiscoverBackoffMaxMult = 5
+    # base << 5 (96s) exceeds the 60s cap, so the interval saturates there
 
 type DiscoveryEngine* = ref object of RootObj
   localStore*: BlockStore # Local block store for this instance
@@ -51,18 +56,41 @@ type DiscoveryEngine* = ref object of RootObj
   trackedFutures*: TrackedFutures # Tracked Discovery tasks futures
   minPeersPerBlock*: int # Max number of peers with block
   discoveryLoopSleep: Duration # Discovery loop sleep
+  discoverBackoffBase: Duration # Backoff base for failed discovery requests
+  discoverBackoffMax: Duration # Backoff cap for failed discovery requests
   inFlightDiscReqs*: Table[Cid, Future[seq[SignedPeerRecord]]]
     # Inflight discovery requests
+  discoverBackoff: Table[Cid, tuple[due: Moment, mult: int]]
+    # Earliest retry time and backoff multiplier per CID
 
 proc discoveryQueueLoop(b: DiscoveryEngine) {.async: (raises: []).} =
   try:
     while b.discEngineRunning:
+      # Drop backoff state for blocks that are no longer wanted - the table
+      # must not grow with every cid ever queued. wantListCids covers leaf
+      # wants' tree cids, which also get discovery finds (searchForNewPeers).
+      let wanted = toHashSet(toSeq(b.pendingBlocks.wantListCids))
+      for cid in toSeq(b.discoverBackoff.keys):
+        if cid notin wanted:
+          b.discoverBackoff.del(cid)
+
       for cid in toSeq(b.pendingBlocks.wantListBlockCids):
         await b.discoveryQueue.put(cid)
 
       await sleepAsync(b.discoveryLoopSleep)
   except CancelledError:
     trace "Discovery loop cancelled"
+
+proc nextDiscoverBackoff(b: DiscoveryEngine, cid: Cid) {.raises: [].} =
+  ## Advance the per-CID discovery backoff after a failed or empty find:
+  ## increment the stored multiplier (capped at
+  ## DefaultDiscoverBackoffMaxMult), then the next attempt is due in
+  ## base * 2^mult, capped at discoverBackoffMax.
+  var mult = 0
+  b.discoverBackoff.withValue(cid, entry):
+    mult = min(entry[].mult + 1, DefaultDiscoverBackoffMaxMult)
+  let interval = min(b.discoverBackoffBase * (1 shl mult), b.discoverBackoffMax)
+  b.discoverBackoff[cid] = (due: Moment.now() + interval, mult: mult)
 
 proc discoveryTaskLoop(b: DiscoveryEngine) {.async: (raises: []).} =
   ## Run discovery tasks
@@ -77,8 +105,13 @@ proc discoveryTaskLoop(b: DiscoveryEngine) {.async: (raises: []).} =
         continue
 
       let haves = b.peers.peersHave(cid)
-
       if haves.len < b.minPeersPerBlock:
+        var notDue = false
+        b.discoverBackoff.withValue(cid, entry):
+          notDue = Moment.now() < entry[].due
+        if notDue:
+          continue
+
         let request = b.discovery.find(cid)
         b.inFlightDiscReqs[cid] = request
         archivist_inflight_discovery.set(b.inFlightDiscReqs.len.int64)
@@ -89,11 +122,17 @@ proc discoveryTaskLoop(b: DiscoveryEngine) {.async: (raises: []).} =
 
         if (await request.withTimeout(DefaultDiscoveryTimeout)) and
             peers =? (await request).catch:
-          let dialed = await allFinished(peers.mapIt(b.network.dialPeer(it.data)))
+          if peers.len > 0:
+            b.discoverBackoff.del(cid)
 
-          for i, f in dialed:
-            if f.failed:
-              await b.discovery.removeProvider(peers[i].data.peerId)
+            let dialed = await allFinished(peers.mapIt(b.network.dialPeer(it.data)))
+            for i, f in dialed:
+              if f.failed:
+                await b.discovery.removeProvider(peers[i].data.peerId)
+          else:
+            b.nextDiscoverBackoff(cid)
+        else:
+          b.nextDiscoverBackoff(cid)
   except CancelledError:
     trace "Discovery task cancelled"
     return
@@ -154,6 +193,8 @@ proc new*(
     concurrentDiscReqs = DefaultConcurrentDiscRequests,
     discoveryLoopSleep = DefaultDiscoveryLoopSleep,
     minPeersPerBlock = DefaultMinPeersPerBlock,
+    discoverBackoffBase = DefaultDiscoverBackoffBase,
+    discoverBackoffMax = DefaultDiscoverBackoffMax,
 ): DiscoveryEngine =
   ## Create a discovery engine instance for advertising services
   ##
@@ -169,4 +210,7 @@ proc new*(
     inFlightDiscReqs: initTable[Cid, Future[seq[SignedPeerRecord]]](),
     discoveryLoopSleep: discoveryLoopSleep,
     minPeersPerBlock: minPeersPerBlock,
+    discoverBackoffBase: discoverBackoffBase,
+    discoverBackoffMax: discoverBackoffMax,
+    discoverBackoff: initTable[Cid, tuple[due: Moment, mult: int]](),
   )

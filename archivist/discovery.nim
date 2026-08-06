@@ -123,7 +123,7 @@ method provide*(d: Discovery, cid: Cid) {.async: (raises: [CancelledError]), bas
   except CatchableError as exc:
     warn "Error providing block", cid, exc = exc.msg
 
-proc nodesDiscovered*(d: Discovery): int =
+method nodesDiscovered*(d: Discovery): int {.base, gcsafe.} =
   if d.protocol.isNil:
     return 0
 
