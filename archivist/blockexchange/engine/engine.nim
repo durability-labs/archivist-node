@@ -210,9 +210,11 @@ proc refreshBlockKnowledge(
     return decision.wakeAfter
   of SendKind.Full:
     await self.sendBatchedWantList(peer, decision.wants.toSeq, full = true)
+    peer.markQueried()
     return Duration.none
   of SendKind.Delta:
     await self.sendBatchedWantList(peer, decision.wants.toSeq, full = false)
+    peer.markQueried()
     return Duration.none
 
 proc minWakeHint(current: var Option[Duration], candidate: Option[Duration]) =
@@ -222,6 +224,16 @@ proc minWakeHint(current: var Option[Duration], candidate: Option[Duration]) =
         current = wake.some
     else:
       current = wake.some
+
+proc hasUnsentWants(self: BlockExcEngine, peer: BlockExcPeerCtx): bool =
+  ## True when some wanted block has not been asked of this peer yet.
+  ## The query quarantine only suppresses re-asks of the same want list -
+  ## newly queued wants must still reach the peer (mirrors decideSend's
+  ## delta computation without mutating the circuit state).
+  for address in self.pendingBlocks.wantList:
+    if address notin peer.blocks and address notin peer.alreadySent:
+      return true
+  false
 
 proc searchForNewPeers(self: BlockExcEngine, cid: Cid) =
   if self.lastDiscRequest + DiscoveryRateLimit < Moment.now():
@@ -235,20 +247,24 @@ proc evictPeer(self: BlockExcEngine, peer: PeerId) {.gcsafe, async: (raises: [])
   self.peers.remove(peer)
 
 proc topPeersForCid*(self: BlockExcEngine, cid: Cid, topK: int): seq[BlockExcPeerCtx] =
-  let candidates = self.peers.peersHave(cid)
-  if candidates.len == 0:
-    return @[]
-  let ranked = rankPeersByScore(candidates, cid)
-  if ranked.len == 0:
-    return @[]
-  ranked[0 ..< min(topK, ranked.len)]
+  let ranked = rankPeersByScore(self.peers.peersHave(cid), cid)
+  var top: seq[BlockExcPeerCtx]
+  for peer in ranked:
+    if top.len >= topK:
+      break
+    if peer.queryQuarantineLeft().isNone or self.hasUnsentWants(peer):
+      top.add(peer)
+  top
 
 proc topPeersByAggregate*(self: BlockExcEngine, topK: int): seq[BlockExcPeerCtx] =
-  let allPeers = toSeq(self.peers.peers.values)
-  let ranked = rankPeersByAggregate(allPeers)
-  if ranked.len == 0:
-    return @[]
-  ranked[0 ..< min(topK, ranked.len)]
+  let ranked = rankPeersByAggregate(toSeq(self.peers.peers.values))
+  var top: seq[BlockExcPeerCtx]
+  for peer in ranked:
+    if top.len >= topK:
+      break
+    if peer.queryQuarantineLeft().isNone or self.hasUnsentWants(peer):
+      top.add(peer)
+  top
 
 proc failBlockRequest(
     self: BlockExcEngine,
@@ -882,11 +898,7 @@ proc new*(
       candidates = self.peers.peersHave(cid)
       topPeers =
         if candidates.len > 0:
-          let ranked = rankPeersByScore(candidates, cid)
-          if ranked.len == 0:
-            @[]
-          else:
-            ranked[0 ..< min(DefaultWantHaveTopK, ranked.len)]
+          self.topPeersForCid(cid, DefaultWantHaveTopK)
         else:
           self.topPeersByAggregate(DefaultWantHaveTopK)
 
@@ -899,6 +911,16 @@ proc new*(
             minWakeHint(minWake, fut.read())
           except CatchableError:
             discard
+    else:
+      # Every candidate was queried recently - wake when the first quarantine
+      # expires instead of re-running selection in a tight loop.
+      let pool =
+        if candidates.len > 0:
+          candidates
+        else:
+          toSeq(self.peers.peers.values)
+      for peer in pool:
+        minWakeHint(minWake, peer.queryQuarantineLeft())
 
     let discoveredPeer = selectKnownPeer(address)
     if not discoveredPeer.isNil:
