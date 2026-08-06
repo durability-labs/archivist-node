@@ -6,14 +6,16 @@ import std/options
 
 import pkg/chronos
 import pkg/kvstore
-import pkg/libp2p/cid
+import pkg/libp2p/[cid, multicodec, multihash]
 import pkg/metrics
 import pkg/stew/bitseqs
 import pkg/questionable
 import pkg/questionable/results
 
 import ./coders
+import ./lifecycle
 import ./types
+import ./treeops
 import ./overlays/coders
 import ../blockstore
 import ../keyutils
@@ -23,6 +25,8 @@ import ../../logutils
 import ../../merkletree
 import ../../manifest
 import ../../utils
+
+export treeops, lifecycle
 
 logScope:
   topics = "archivist repostore"
@@ -309,6 +313,10 @@ proc putLeafBlockMetaImpl(
   # (overlay must exist before putBlocks is called)
   trace "Fetching existing overlay", treeCid = treeCid, blocksCount = blocks.len
 
+  self.deletingLock.enter(treeCid)
+  defer:
+    self.deletingLock.leave(treeCid)
+
   let
     existingOverlayRec = ?await self.metaDs.get(?overlayKey(treeCid), OverlayMetadata)
     treeCidStr = $treeCid
@@ -316,17 +324,20 @@ proc putLeafBlockMetaImpl(
   var overlayMeta = existingOverlayRec.val
   trace "Got existing overlay", treeCid, existingBitmapLen = overlayMeta.blocks.len
 
-  # abort if overlay is already being deleted
-  if overlayMeta.status == Deleting:
-    return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
+  # Abort if overlay is being deleted or promoted.
+  if overlayRejectsWrites(overlayMeta.status):
+    return failure(newException(OverlayDeletingError, "Overlay is not writable"))
 
-  self.deletingLock.enter(treeCid)
-  defer:
-    self.deletingLock.leave(treeCid)
+  # Shape binding for peer-supplied proofs: resolve the manifest-backed tree
+  # shape (never cached in this mode) so forged nleaves/codec proofs are
+  # rejected before they poison /tree/<treeCid>/*.
+  let shape = ?await self.resolveTreeShape(treeCid, requireCompleted = false)
 
   var
     blkToLeafMap: Table[Key, (RawKVRecord, HashSet[RawKVRecord])]
     leafsMap: Table[Key, RawKVRecord]
+    treeRecords: seq[RawKVRecord]
+    treeNodesByKey: Table[Key, Cid]
     blocksBits = BitSeq.init(blocks.mapIt(it[0]).max() + 1)
 
   for (index, blkCid, cellCid, proof, data) in blocks:
@@ -352,8 +363,25 @@ proc putLeafBlockMetaImpl(
     # already exists, we skip the refCount.inc, thus we make
     # a mapping of block rec -> leaf rec to be able to filter
     # out inserts from updates
+    if p =? proof:
+      if p.index != index.int:
+        return failure(
+          newException(TreeNodeValidationError, "Proof index does not match leaf index")
+        )
+
     blocksBits.setBit(index)
     leafsMap[leafKey] = leafRec.toRaw
+    if cellCid.isNone and not blkCid.isEmpty:
+      if p =? proof:
+        if shapeVal =? shape:
+          let (nleaves, mcodec) = shapeVal
+          if p.nleaves != nleaves.int or p.mcodec != mcodec:
+            return failure(
+              newException(
+                TreeNodeValidationError, "Proof shape does not match tree shape"
+              )
+            )
+        ?addProofTreeNodes(treeCid, blkCid, p, treeRecords, treeNodesByKey)
 
     # Skip block metadata for empty blkCid (pad blocks)
     if not blkCid.isEmpty:
@@ -382,9 +410,9 @@ proc putLeafBlockMetaImpl(
     for i, rec in refreshed:
       if ArchivistOverlaysKey.ancestor(rec.key):
         let overlayMetaRec = ?toRecord[OverlayMetadata](rec)
-        # Abort if overlay is being deleted
-        if overlayMetaRec.val.status == Deleting:
-          return failure(newException(OverlayDeletingError, "Overlay is being deleted"))
+        # Abort if overlay is being deleted or promoted.
+        if overlayRejectsWrites(overlayMetaRec.val.status):
+          return failure(newException(OverlayDeletingError, "Overlay is not writable"))
 
         # Update overlay and mark for removal
         var updatedRec = overlayMetaRec
@@ -434,6 +462,13 @@ proc putLeafBlockMetaImpl(
               cid = blockMeta.val.cid, refCount = blockMeta.val.refCount
 
           record = blockMeta.toRaw
+      elif TreeNodeKey.ancestor(record.key):
+        let
+          existing = ?toRecord[TreeNodeMetadata](record)
+          incomingCid = ?catch(treeNodesByKey[record.key])
+        if existing.val.cid != incomingCid:
+          return
+            failure(newException(TreeNodeConflictError, "Tree node already exists"))
 
       # update records
       records[record.key] = record
@@ -443,7 +478,7 @@ proc putLeafBlockMetaImpl(
 
   let updates =
     @[existingOverlayRec.fromRecord(overlayMeta).toRaw] &
-    blkToLeafMap.values.toSeq.mapIt(it[0]) & leafsMap.values.toSeq
+    blkToLeafMap.values.toSeq.mapIt(it[0]) & leafsMap.values.toSeq & treeRecords
 
   trace "Put or update leaf and block metadata", treeCid, recordsCount = updates.len
   if err =? (
@@ -455,31 +490,38 @@ proc putLeafBlockMetaImpl(
   # cache the final overlay
   self.overlayCache[?overlayKey(treeCid)] = overlayMeta
 
-  # Write block data to disk and update counters (inside semaphore)
-  var
-    diskRecords: seq[RawKVRecord]
-    diskKeySizes: seq[(Key, int)]
-    seen: HashSet[Cid]
+  proc persistBlockData(): Future[?!void] {.async: (raises: [CancelledError]).} =
+    ## Metadata is already committed. Finish disk persistence before allowing
+    ## finalization or deletion to drain this writer.
+    ##
+    var
+      diskRecords: seq[RawKVRecord]
+      diskKeySizes: seq[(Key, int)]
+      seen: HashSet[Cid]
 
-  for (index, blkCid, cellCid, proof, data) in blocks:
-    if data.len > 0 and not blkCid.isEmpty and blkCid notin seen:
-      seen.incl(blkCid)
-      let key = ?makePrefixKey(self.postFixLen, blkCid)
-      diskKeySizes.add((key, data.len))
-      diskRecords.add(RawKVRecord.init(key, data))
+    for (index, blkCid, cellCid, proof, data) in blocks:
+      if data.len > 0 and not blkCid.isEmpty and blkCid notin seen:
+        seen.incl(blkCid)
+        let key = ?makePrefixKey(self.postFixLen, blkCid)
+        diskKeySizes.add((key, data.len))
+        diskRecords.add(RawKVRecord.init(key, data))
 
-  if diskRecords.len > 0:
-    trace "Writing blocks to disk", count = diskRecords.len
-    let skipped = (?await self.repoDs.put(move(diskRecords))).toHashSet
+    if diskRecords.len > 0:
+      trace "Writing blocks to disk", count = diskRecords.len
+      let skipped = (?await self.repoDs.put(move(diskRecords))).toHashSet
 
-    var newBlocks, newBytes = 0
-    for (key, size) in diskKeySizes:
-      if key notin skipped:
-        newBytes += size
-        newBlocks += 1
+      var newBlocks, newBytes = 0
+      for (key, size) in diskKeySizes:
+        if key notin skipped:
+          newBytes += size
+          newBlocks += 1
 
-    if newBlocks > 0:
-      ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+      if newBlocks > 0:
+        ?await self.updateCounters(quotaDelta = newBytes, blocksDelta = newBlocks)
+
+    success()
+
+  ?await noCancel persistBlockData()
 
   success()
 
@@ -568,11 +610,7 @@ proc delLeafBlockMetadata*(
     ovKey = ?overlayKey(treeCid)
     preDeleteOverlay = ?await self.metaDs.get(ovKey, OverlayMetadata)
 
-  var preDeleteMeta = preDeleteOverlay.val
-  preDeleteMeta.status = Deleting
-  ?await self.metaDs.tryPut(preDeleteOverlay.fromRecord(preDeleteMeta), maxRetries = 3)
-  # Update cache so concurrent readers see Deleting immediately
-  self.overlayCache[ovKey] = preDeleteMeta
+  ?await self.markDeleting(treeCid)
 
   await self.deletingLock.drain(treeCid)
 
@@ -687,6 +725,10 @@ proc delLeafBlockMetadata*(
         for i in uniqueIdxs:
           overlayMetaRec.val.blocks.clearBit(i)
 
+        if overlayMetaRec.val.status == Finalizing:
+          return failure(
+            newException(OverlayDeletingError, "Cannot delete: overlay is Finalizing")
+          )
         overlayMetaRec.val.status = Deleting
         overlayMetaRec.val.expiry = deleteExpiry
 
@@ -806,6 +848,11 @@ proc storeManifestBlock*(
     ?await self.metaDs.get(toSeq(overlayUpdates.keys), OverlayMetadata)
   ).mapIt((it.key.id, it)).toTable
 
+  # Reject overlays that are being deleted or finalized.
+  for rec in overlayRecsById.values:
+    if overlayRejectsWrites(rec.val.status):
+      return failure(newException(OverlayDeletingError, "Overlay is not writable"))
+
   # Track which overlays require a new manifest attachment for refCount updates.
   var newOverlayAttachmentIds = initHashSet[string]()
 
@@ -867,6 +914,9 @@ proc storeManifestBlock*(
       for raw in refreshedById.values:
         if ArchivistOverlaysKey.ancestor(raw.key):
           var record = ?toRecord[OverlayMetadata](raw)
+          if overlayRejectsWrites(record.val.status):
+            return
+              failure(newException(OverlayDeletingError, "Overlay is not writable"))
           let wasNewAttachment = raw.key.id in newOverlayAttachmentIds
           if not record.val.manifestCid.isSome:
             if not wasNewAttachment:
@@ -909,6 +959,7 @@ proc storeManifestBlock*(
   for rootCid in rootCids:
     let key = ?overlayKey(rootCid)
     self.overlayCache.del(key)
+    self.treeShapeCache.del(rootCid)
 
   if err =? (
     await self.repoDs.put(
@@ -994,6 +1045,7 @@ proc dropManifest*(
   )
 
   self.overlayCache.del(key)
+  self.treeShapeCache.del(treeCid)
   discard ?await self.tryDeleteBlocks(manifestCid)
   trace "Manifest detached from overlay", manifestCid
 

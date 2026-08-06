@@ -26,6 +26,10 @@
 ##   bytes  proof = 3;      # ArchivistProof bytes (optional)
 ##   bytes  cellCid = 4;    # the cid of the cell if isCell == true
 ## }
+##
+## message TreeNodeMetadata {
+##   bytes cid = 1;         # Merkle node CID bytes
+## }
 ## ```
 
 {.push raises: [].}
@@ -132,6 +136,23 @@ proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
     )
   else:
     success LeafMetadata(deleted: deleted.bool, blkCid: blkCid, proof: proof)
+
+proc encode*(t: TreeNodeMetadata): seq[byte] =
+  var pb = initProtoBuffer()
+  pb.write(1, t.cid.data.buffer)
+  pb.finish()
+  pb.buffer
+
+proc decode*(T: type TreeNodeMetadata, bytes: openArray[byte]): ?!T =
+  var
+    pb = initProtoBuffer(bytes)
+    cidBytes: seq[byte]
+
+  if pb.getField(1, cidBytes).isErr:
+    return
+      failure(newException(TreeNodeValidationError, "Unable to decode tree node CID"))
+
+  success TreeNodeMetadata(cid: ?Cid.init(cidBytes).mapFailure)
 
 proc encode*(i: uint64): seq[byte] =
   @(i.toBytesBE)

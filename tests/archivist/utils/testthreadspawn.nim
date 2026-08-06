@@ -117,7 +117,7 @@ suite "threadspawn wrappers":
         check spawnFut.cancelled()
 
         # The noCancel drain must have waited for the worker to finish
-        # before returning -- task is still valid because the signal
+        # before returning - task is still valid because the signal
         # close defer hasn't freed it yet.
         check task.ok.load()
       success()

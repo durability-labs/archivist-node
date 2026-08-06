@@ -24,6 +24,7 @@ const
   ArchivistOverlaysKey* = Key.init(ArchivistOverlayNamespace).tryGet
   BlocksMetaKey* = Key.init(ArchivistBlocksMetaNamespace).tryGet
   BlockLeafKey* = Key.init(ArchivistBlockLeafNamespace).tryGet
+  TreeNodeKey* = Key.init(ArchivistTreeNodeNamespace).tryGet
   QuotaKey* = Key.init(ArchivistQuotaNamespace).tryGet
   QuotaUsedKey* = (QuotaKey / "used").tryGet
   QuotaReservedKey* = (QuotaKey / "reserved").tryGet
@@ -60,3 +61,13 @@ func blockLeafKey*(treeCidStr: string, index: Natural): ?!Key {.inline.} =
 func blockLeafQueryKey*(treeCid: Cid): ?!Key =
   ## Query key for iterating all leafs under a tree: /meta/leafs/{treeCid}/*
   Key.init(?(BlockLeafKey / $treeCid / "*"))
+
+func treeNodeKey*(treeCid: Cid, flatIdx: Natural): ?!Key {.inline.} =
+  Key.init(ArchivistTreeNodeNamespace & "/" & $treeCid & "/" & $flatIdx)
+
+func treeNodeKey*(treeCidStr: string, flatIdx: Natural): ?!Key {.inline.} =
+  Key.init(ArchivistTreeNodeNamespace & "/" & treeCidStr & "/" & $flatIdx)
+
+func treeNodeQueryKey*(treeCid: Cid): ?!Key =
+  ## Query key for iterating all flat tree nodes under a tree: /tree/{treeCid}/*
+  Key.init(?(TreeNodeKey / $treeCid / "*"))

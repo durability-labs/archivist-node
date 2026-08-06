@@ -90,3 +90,27 @@ suite "KeyUtils":
       namespaces[0].value == ArchivistMetaNamespace
       namespaces[1].value == "blocks"
       namespaces[2].value == "*"
+
+  test "treeNodeKey should create flat tree node key":
+    let
+      treeCid = Cid.example
+      key = !treeNodeKey(treeCid, 42.Natural).option
+      namespaces = key.namespaces
+
+    check:
+      namespaces.len == 3
+      namespaces[0].value == ArchivistTreeNodeNamespace
+      namespaces[1].value == $treeCid
+      namespaces[2].value == "42"
+
+  test "treeNodeQueryKey should create key for all tree nodes":
+    let
+      treeCid = Cid.example
+      key = !treeNodeQueryKey(treeCid).option
+      namespaces = key.namespaces
+
+    check:
+      namespaces.len == 3
+      namespaces[0].value == ArchivistTreeNodeNamespace
+      namespaces[1].value == $treeCid
+      namespaces[2].value == "*"

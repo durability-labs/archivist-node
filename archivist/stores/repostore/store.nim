@@ -85,6 +85,108 @@ proc checkBitmap*(
 
   success(true)
 
+proc getBlocksAndProofsImpl(
+    self: RepoStore, treeCid: Cid, indices: seq[Natural], withProofs: bool
+): Future[?!seq[(Natural, Block, ?ArchivistProof)]] {.
+    async: (raises: [CancelledError])
+.} =
+  ## Core of getBlocks / getBlocksAndProofs.
+  ##
+  ## Fetches overlay bitmap once, filters indices, then batch-fetches
+  ## leaf metadata and block data in two round-trips total.
+  ## Missing blocks are silently omitted from the result.
+  ## When withProofs is false, stored proofs are returned as-is without
+  ## generating any from flat tree nodes (getBlocks discards them).
+  ##
+
+  if indices.len == 0:
+    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
+
+  logScope:
+    treeCid = treeCid
+    count = indices.len
+
+  trace "Batch getting blocks and proofs"
+
+  # Filter to indices present in bitmap
+  var presentIndices: seq[Natural]
+  for idx in indices:
+    if ?await self.checkBitmap(treeCid, idx.Natural):
+      presentIndices.add(idx)
+
+  if presentIndices.len == 0:
+    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
+
+  # Batch-fetch leaf metadata for all present indices
+  var leafKeys: seq[Key]
+  for idx in presentIndices:
+    leafKeys.add(?blockLeafKey(treeCid, idx))
+
+  let leafRecords = ?await self.metaDs.get(leafKeys, LeafMetadata)
+
+  trace "Leaf metadata fetched",
+    treeCid, leafKeysLen = leafKeys.len, leafRecordsLen = leafRecords.len
+
+  # Generate proofs from flat tree nodes for dataset trees with a manifest.
+  # Empty-CID leaves (erasure padding) and trees without a resolvable shape
+  # (no manifest, slot roots) keep their stored proofs.
+  var
+    generatedProofs: Table[Natural, ArchivistProof]
+    shapeResolved = false
+  if withProofs:
+    let shape = ?await self.resolveTreeShape(treeCid)
+    if shapeVal =? shape:
+      shapeResolved = true
+      let (nleaves, mcodec) = shapeVal
+
+      var nonEmptyIndices: seq[Natural]
+      for record in leafRecords:
+        if not record.val.blkCid.isEmpty and not record.val.deleted:
+          nonEmptyIndices.add((?catch(parseInt(record.key.value))).Natural)
+
+      if nonEmptyIndices.len > 0:
+        let proofs =
+          ?await self.getTreeProofs(treeCid, nonEmptyIndices, nleaves, mcodec)
+        for (index, proof) in proofs:
+          generatedProofs[index] = proof
+
+  # Collect block data keys from leaf records.
+  # leafRecords may be a subset of leafKeys (missing silently skipped).
+  # Empty-CID leaves (erasure padding) are synthesized directly without
+  # repoDs lookup - they are never stored but callers expect them back.
+  var
+    keyToCidProof: Table[Key, (Natural, Cid, ?ArchivistProof)]
+    results: seq[(Natural, Block, ?ArchivistProof)]
+  for record in leafRecords:
+    let blkCid = record.val.blkCid
+
+    if blkCid.isEmpty:
+      let index = ?catch(parseInt(record.key.value))
+      results.add((index.Natural, ?blkCid.emptyBlock, record.val.proof))
+      continue
+
+    let
+      index = ?catch(parseInt(record.key.value))
+      proof =
+        if shapeResolved and not record.val.blkCid.isEmpty and not record.val.deleted and
+            generatedProofs.hasKey(index):
+          (?catch(generatedProofs[index])).some
+        else:
+          record.val.proof
+      key = ?makePrefixKey(self.postFixLen, blkCid)
+    keyToCidProof[key] = (index.Natural, blkCid, proof)
+
+  if keyToCidProof.len > 0:
+    # Batch-fetch block data from FS.
+    var blkRecords = ?await self.repoDs.get(toSeq(keyToCidProof.keys))
+
+    for record in blkRecords.mitems:
+      let (idx, cid, proof) = ?catch(keyToCidProof[record.key])
+      results.add((idx, ?Block.new(cid, move record.val, verify = false), proof))
+
+  trace "Batch got blocks and proofs", found = results.len
+  success(results)
+
 method getBlocks*(
     self: RepoStore, cids: seq[Cid]
 ): Future[?!seq[Block]] {.async: (raises: [CancelledError]).} =
@@ -119,10 +221,15 @@ method getBlocks*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
 ): Future[?!seq[(Natural, Block)]] {.async: (raises: [CancelledError]).} =
   ## Get multiple blocks by tree CID and indices as a batch.
-  ## Delegates to getBlocksAndProofs and strips proofs.
+  ## Delegates to the core fetch without proof generation (proofs are
+  ## discarded here, so generating them would be wasted work).
   ##
 
-  success (?await self.getBlocksAndProofs(treeCid, indices)).mapIt((it[0], it[1]))
+  success(
+    (?await self.getBlocksAndProofsImpl(treeCid, indices, withProofs = false)).mapIt(
+      (it[0], it[1])
+    )
+  )
 
 method putCidsAndProofs*(
     self: RepoStore, treeCid: Cid, items: seq[(Natural, Cid, ArchivistProof)]
@@ -416,70 +523,11 @@ method getBlocksAndProofs*(
 .} =
   ## Get multiple blocks and proofs as a batch.
   ##
-  ## Fetches overlay bitmap once, filters indices, then batch-fetches
-  ## leaf metadata and block data in two round-trips total.
-  ## Missing blocks are silently omitted from the result.
+  ## For dataset trees with an attached manifest, proofs are generated from
+  ## the persisted flat tree nodes; otherwise stored proofs are returned.
   ##
 
-  if indices.len == 0:
-    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
-
-  logScope:
-    treeCid = treeCid
-    count = indices.len
-
-  trace "Batch getting blocks and proofs"
-
-  # Filter to indices present in bitmap
-  var presentIndices: seq[Natural]
-  for idx in indices:
-    if ?await self.checkBitmap(treeCid, idx.Natural):
-      presentIndices.add(idx)
-
-  if presentIndices.len == 0:
-    return success(newSeq[(Natural, Block, ?ArchivistProof)]())
-
-  # Batch-fetch leaf metadata for all present indices
-  var leafKeys: seq[Key]
-  for idx in presentIndices:
-    leafKeys.add(?blockLeafKey(treeCid, idx))
-
-  let leafRecords = ?await self.metaDs.get(leafKeys, LeafMetadata)
-
-  trace "Leaf metadata fetched",
-    treeCid, leafKeysLen = leafKeys.len, leafRecordsLen = leafRecords.len
-
-  # Collect block data keys from leaf records.
-  # leafRecords may be a subset of leafKeys (missing silently skipped).
-  # Empty-CID leaves (erasure padding) are synthesized directly without
-  # repoDs lookup - they are never stored but callers expect them back.
-  var
-    keyToCidProof: Table[Key, (Natural, Cid, ?ArchivistProof)]
-    results: seq[(Natural, Block, ?ArchivistProof)]
-  for record in leafRecords:
-    let blkCid = record.val.blkCid
-
-    if blkCid.isEmpty:
-      let index = ?catch(parseInt(record.key.value))
-      results.add((index.Natural, ?blkCid.emptyBlock, record.val.proof))
-      continue
-
-    let
-      index = ?catch(parseInt(record.key.value))
-      proof = record.val.proof
-      key = ?makePrefixKey(self.postFixLen, blkCid)
-    keyToCidProof[key] = (index.Natural, blkCid, proof)
-
-  if keyToCidProof.len > 0:
-    # Batch-fetch block data from FS.
-    var blkRecords = ?await self.repoDs.get(toSeq(keyToCidProof.keys))
-
-    for record in blkRecords.mitems:
-      let (idx, cid, proof) = ?catch(keyToCidProof[record.key])
-      results.add((idx, ?Block.new(cid, move record.val, verify = false), proof))
-
-  trace "Batch got blocks and proofs", found = results.len
-  success(results)
+  success(?await self.getBlocksAndProofsImpl(treeCid, indices, withProofs = true))
 
 method getCidsAndProofs*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]
@@ -519,10 +567,39 @@ method getCidsAndProofs*(
   trace "Leaf metadata fetched",
     treeCid, leafKeysLen = leafKeys.len, leafRecordsLen = leafRecords.len
 
+  # Generate proofs from flat tree nodes for dataset trees with a manifest.
+  # Empty-CID leaves (erasure padding) and trees without a resolvable shape
+  # (no manifest, slot roots) keep their stored proofs.
+  var
+    generatedProofs: Table[Natural, ArchivistProof]
+    shapeResolved = false
+  let shape = ?await self.resolveTreeShape(treeCid)
+  if shapeVal =? shape:
+    shapeResolved = true
+    let (nleaves, mcodec) = shapeVal
+
+    var nonEmptyIndices: seq[Natural]
+    for record in leafRecords:
+      if not record.val.blkCid.isEmpty and not record.val.deleted:
+        nonEmptyIndices.add((?catch(parseInt(record.key.value))).Natural)
+
+    if nonEmptyIndices.len > 0:
+      let proofs = ?await self.getTreeProofs(treeCid, nonEmptyIndices, nleaves, mcodec)
+      for (index, proof) in proofs:
+        generatedProofs[index] = proof
+
   # Extract CID and proof from each leaf record
   var results: seq[(Cid, ?ArchivistProof)]
   for record in leafRecords:
-    results.add((record.val.blkCid, record.val.proof))
+    let
+      index = (?catch(parseInt(record.key.value))).Natural
+      proof =
+        if shapeResolved and not record.val.blkCid.isEmpty and not record.val.deleted and
+            generatedProofs.hasKey(index):
+          (?catch(generatedProofs[index])).some
+        else:
+          record.val.proof
+    results.add((record.val.blkCid, proof))
 
   trace "Batch got CIDs and proofs", found = results.len
   success(results)

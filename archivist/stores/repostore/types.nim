@@ -7,12 +7,13 @@
 ## This file may not be copied, modified, or distributed except according to
 ## those terms.
 
+import std/options
 import std/sets
 import std/tables
 
 import pkg/chronos
 import pkg/kvstore
-import pkg/libp2p/cid
+import pkg/libp2p/[cid, multicodec]
 import pkg/questionable
 import pkg/stew/bitseqs
 
@@ -32,6 +33,9 @@ const
 type
   QuotaNotEnoughError* = object of ArchivistError
   OverlayDeletingError* = object of ArchivistError
+  TreeNodeConflictError* = object of ArchivistError
+  TreeNodeNotFoundError* = object of ArchivistError
+  TreeNodeValidationError* = object of ArchivistError
 
   RepoStore* = ref object of BlockStore
     postFixLen*: int
@@ -45,6 +49,7 @@ type
     started*: bool
     deletingLock*: KeyedBarrier[Cid]
     overlayCache*: Table[Key, OverlayMetadata]
+    treeShapeCache*: Table[Cid, Option[(Natural, MultiCodec)]]
 
   QuotaUsage* {.serialize.} = object
     used*: NBytes
@@ -64,6 +69,9 @@ type
     else:
       discard
 
+  TreeNodeMetadata* {.serialize.} = object
+    cid*: Cid
+
   OverlayStatus* {.serialize.} = enum
     Pending ## Initial state, not yet active
     Failure ## Unrecoverable error
@@ -72,6 +80,7 @@ type
     Repairing ## Repair in progress
     Completed ## All blocks received/stored
     Deleting ## Deletion in progress
+    Finalizing ## Promotion in progress; new writes are rejected
 
   CleanupMode* {.serialize.} = enum
     ## Mode for cleaning up after storage request

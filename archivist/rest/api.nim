@@ -25,6 +25,7 @@ import pkg/stint
 
 import pkg/libp2p
 import pkg/libp2p/routing_record
+import pkg/kvstore
 import pkg/archivistdht/discv5/spr as spr
 
 import ../logutils
@@ -261,6 +262,8 @@ proc initDataApi(node: ArchivistNodeRef, repoStore: RepoStore, router: var RestR
       ), error:
         if error of QuotaNotEnoughError:
           return RestApiResponse.error(Http413, error.msg)
+        if error of KVConflictError:
+          return RestApiResponse.error(Http409, error.msg)
         error "Error uploading file", exc = error.msg
         return RestApiResponse.error(Http500, error.msg)
 

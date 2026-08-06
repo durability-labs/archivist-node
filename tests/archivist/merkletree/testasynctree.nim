@@ -196,7 +196,7 @@ suite "Async progressive ArchivistTree builder":
     check testWorkerCompletions.load() == testSpawnCount.load()
 
     # The builder's defer must have run (not an abrupt abort): the iterator is
-    # disposed.  The taskpool must still be healthy -- a signal closed before
+    # disposed.  The taskpool must still be healthy - a signal closed before
     # its worker fired would leave the pool writing to a closed eventfd.
     check iter.disposed
     let tree = (await ArchivistTree.buildAsync(toAsyncIter(cids), tp)).tryGet
