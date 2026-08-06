@@ -282,7 +282,7 @@ proc tryDeleteBlocks*(
 
 type BlockLeafTuple =
   tuple[
-    index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ArchivistProof, data: seq[byte]
+    index: Natural, blkCid: Cid, cellCid: ?Cid, proof: ?ArchivistProof, data: seq[byte]
   ]
 
 proc putLeafBlockMetaImpl(
@@ -406,12 +406,8 @@ proc putLeafBlockMetaImpl(
         currentLeafRec.val.blkCid = incomingLeafRec.val.blkCid
 
         let
-          hasCurrentProof =
-            (not currentLeafRec.val.proof.isNil) and
-            currentLeafRec.val.proof.path.len > 0
-          hasIncomingProof =
-            (not incomingLeafRec.val.proof.isNil) and
-            incomingLeafRec.val.proof.path.len > 0
+          hasCurrentProof = currentLeafRec.val.proof.isSome
+          hasIncomingProof = incomingLeafRec.val.proof.isSome
 
         if hasIncomingProof or not hasCurrentProof:
           currentLeafRec.val.proof = incomingLeafRec.val.proof
@@ -490,16 +486,17 @@ proc putLeafBlockMetaImpl(
 proc putLeafBlockMeta*(
     self: RepoStore, treeCid: Cid, blocks: seq[(Natural, Cid, ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
-  ## Put or update leaf and block metadata (plain blocks).
+  ## Put or update leaf and block metadata (plain blocks, proofs always
+  ## present).
   ##
   self.putLeafBlockMetaImpl(
-    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2], newSeq[byte]()))
+    treeCid, blocks.mapIt((it[0], it[1], Cid.none, it[2].some, newSeq[byte]()))
   )
 
 proc putLeafBlockMeta*(
     self: RepoStore,
     treeCid: Cid,
-    blocks: seq[(Natural, Cid, ArchivistProof, seq[byte])],
+    blocks: seq[(Natural, Cid, ?ArchivistProof, seq[byte])],
 ): Future[?!void] {.async: (raises: [CancelledError], raw: true).} =
   ## Put or update leaf and block metadata with block data.
   ##
@@ -532,7 +529,7 @@ proc putCellLeafBlockMeta*(
         index: it[0],
         blkCid: it[2],
         cellCid: it[1].some,
-        proof: it[3],
+        proof: it[3].some,
         data: newSeq[byte](),
       )
     ),

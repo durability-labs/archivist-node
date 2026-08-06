@@ -50,26 +50,27 @@ proc stop*(traversal: NatTraversal) {.async: (raises: []).} =
   debug "stopped nat traversal"
 
 proc mapTask(
+    ctx: SharedPtr[TaskCtx[MultiAddress]],
     portmapping: ptr PortMapping,
-    address: MultiAddress,
-    signal: ThreadSignalPtr,
-    result: ptr [?!MultiAddress],
+    address: ptr MultiAddress,
 ) =
-  trace "started port mapping background task", address
-  result[] = portmapping[].map(address)
-  trace "finished port mapping background task", address, result = result[]
-  discard signal.fireSync()
+  defer:
+    if err =? ctx[].signal.fireSync().errorOption:
+      warn "Failed to fire port mapping completion signal", error = err
+
+  trace "started port mapping background task", address = address[]
+  var mapping = portmapping[].map(address[]).mapThreadSpawnErr
+  ctx[].result = isolate(move mapping)
+  trace "finished port mapping background task", address = address[], mapping
 
 proc map(
-    traversal: NatTraversal, address: MultiAddress
+    traversal: sink NatTraversal, address: sink MultiAddress
 ): Future[?!MultiAddress] {.async: (raises: [CancelledError]).} =
-  withThreadSignal(sig):
-    let portmapping = addr traversal.portmapping
-    var mapped: ?!MultiAddress
-    trace "spawning port mapping background task", address
-    traversal.taskpool.spawn mapTask(portmapping, address, sig, addr mapped)
-    ?await awaitSpawn(sig.wait())
-    return mapped
+  trace "spawning port mapping background task", address
+  await spawnJoin[MultiAddress](
+    proc(ctx: SharedPtr[TaskCtx[MultiAddress]]) {.gcsafe, raises: [].} =
+      traversal.taskpool.spawn mapTask(ctx, addr traversal.portmapping, addr address)
+  )
 
 proc map(
     traversal: NatTraversal, addresses: seq[MultiAddress]

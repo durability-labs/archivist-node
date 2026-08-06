@@ -151,7 +151,7 @@ proc testMetadata*(
       check (await repo.hasBlock(treeCid, 0.Natural)).tryGet() == false
 
       # Set with block
-      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof)])).tryGet()
+      (await repo.putBlocks(treeCid, @[(blk, 0.Natural, proof.some)])).tryGet()
       check (await repo.hasBlock(treeCid, 0.Natural)).tryGet() == true
       check repo.quotaUsedBytes == 100.NBytes
       check repo.totalBlocks == 1.Natural
@@ -170,7 +170,7 @@ proc testMetadata*(
         proof1 = tree1.getProof(0).tryGet()
 
       (await repo.putOverlay(treeCid1, status = Completed.some)).tryGet()
-      (await repo.putBlocks(treeCid1, @[(shared, 0.Natural, proof1)])).tryGet()
+      (await repo.putBlocks(treeCid1, @[(shared, 0.Natural, proof1.some)])).tryGet()
 
       let meta1 = (await repo.getOverlay(treeCid1)).tryGet()
       check meta1.blocks[0] == true
@@ -206,7 +206,7 @@ proc testMetadata*(
 
       # Put only index 5 (non-contiguous)
       let proof = tree.getProof(5).tryGet()
-      (await innerRepo.putBlocks(treeCid, @[(blk, 5.Natural, proof)])).tryGet()
+      (await innerRepo.putBlocks(treeCid, @[(blk, 5.Natural, proof.some)])).tryGet()
 
       # Verify block was stored
       check (await innerRepo.getBlock(blk.cid)).isOk

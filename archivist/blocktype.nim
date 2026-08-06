@@ -30,7 +30,7 @@ import ./archivisttypes
 export errors, logutils, units, archivisttypes
 
 type
-  Block* = ref object of RootObj
+  Block* {.acyclic.} = ref object of RootObj
     cid*: Cid
     data*: seq[byte]
 

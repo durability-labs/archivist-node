@@ -235,7 +235,7 @@ suite "Slot builder":
         let
           (cellCid, proof) =
             (await localStore.getCidAndProof(slotCid, cellIndex)).tryGet()
-          verifiableProof = proof.toVerifiableProof().tryGet()
+          verifiableProof = proof.unsafeGet().toVerifiableProof().tryGet()
           posProof = slotTree.getProof(cellIndex).tryGet()
 
         check:

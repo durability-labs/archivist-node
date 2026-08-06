@@ -188,7 +188,7 @@ method putBlock*(
   return success()
 
 method putBlocks*(
-    self: NetworkStore, treeCid: Cid, items: seq[(Block, Natural, ArchivistProof)]
+    self: NetworkStore, treeCid: Cid, items: seq[(Block, Natural, ?ArchivistProof)]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Store leafs and blocks locally and notify the network
   ##
@@ -197,12 +197,8 @@ method putBlocks*(
 
   var deliveries: seq[BlockDelivery]
   for (blk, index, proof) in items:
-    let proofOpt = if proof.isNil: ArchivistProof.none else: proof.some
-
     deliveries.add(
-      BlockDelivery(
-        address: BlockAddress.init(treeCid, index), blk: blk, proof: proofOpt
-      )
+      BlockDelivery(address: BlockAddress.init(treeCid, index), blk: blk, proof: proof)
     )
 
   await self.engine.completeBlocks(deliveries)
@@ -218,12 +214,9 @@ method putCidsAndProofs*(
     ?await self.localStore.getBlocksAndProofs(treeCid, items.mapIt(it[0]))
   var deliveries: seq[BlockDelivery]
   for item in storedItems:
-    if item[2].isNil:
-      continue
-
     deliveries.add(
       BlockDelivery(
-        address: BlockAddress.init(treeCid, item[0]), blk: item[1], proof: item[2].some
+        address: BlockAddress.init(treeCid, item[0]), blk: item[1], proof: item[2]
       )
     )
 
@@ -313,7 +306,9 @@ method delBlocks*(
 
 method getBlocksAndProofs*(
     self: NetworkStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[(Natural, Block, ArchivistProof)]] {.async: (raises: [CancelledError]).} =
+): Future[?!seq[(Natural, Block, ?ArchivistProof)]] {.
+    async: (raises: [CancelledError])
+.} =
   ## Get multiple blocks and proofs.
   ##
   ## Fetches all locally available blocks in one batch call.
@@ -342,7 +337,7 @@ method getBlocksAndProofs*(
       addresses.add(BlockAddress.init(treeCid, index))
 
   archivist_networkstore_blocks_network.inc(addresses.len.int64)
-  var blocks: seq[(Natural, Block, ArchivistProof)]
+  var blocks: seq[(Natural, Block, ?ArchivistProof)]
   let
     deliveries = ?self.engine.requestDeliveries(addresses)
     (succeeded, failed) = await allFinishedFailed[BlockDelivery](deliveries)
@@ -357,13 +352,15 @@ method getBlocksAndProofs*(
       warn "Skipping leaf delivery without proof", address = delivery.address
       continue
 
-    blocks.add((delivery.address.index, delivery.blk, proof))
+    blocks.add((delivery.address.index, delivery.blk, proof.some))
 
   success(localBlocks & blocks)
 
 method getCidsAndProofs*(
     self: NetworkStore, treeCid: Cid, indices: seq[Natural]
-): Future[?!seq[(Cid, ArchivistProof)]] {.async: (raw: true, raises: [CancelledError]).} =
+): Future[?!seq[(Cid, ?ArchivistProof)]] {.
+    async: (raw: true, raises: [CancelledError])
+.} =
   ## Get multiple CIDs and proofs
   ##
 

@@ -72,9 +72,9 @@ proc testConcurrent*(
       (await repo.putOverlay(treeCid, status = Completed.some)).tryGet()
 
       let
-        put1Future = repo.putBlocks(treeCid, @[(blk1, 0.Natural, proof1)])
-        put2Future = repo.putBlocks(treeCid, @[(blk2, 1.Natural, proof2)])
-        put3Future = repo.putBlocks(treeCid, @[(blk3, 2.Natural, proof3)])
+        put1Future = repo.putBlocks(treeCid, @[(blk1, 0.Natural, proof1.some)])
+        put2Future = repo.putBlocks(treeCid, @[(blk2, 1.Natural, proof2.some)])
+        put3Future = repo.putBlocks(treeCid, @[(blk3, 2.Natural, proof3.some)])
 
       await allFutures(@[put1Future, put2Future, put3Future])
 
@@ -123,7 +123,7 @@ proc testConcurrent*(
           else:
             proof3
 
-        (await repo.putBlocks(treeCid, @[(blk, 0.Natural, prf)])).tryGet()
+        (await repo.putBlocks(treeCid, @[(blk, 0.Natural, prf.some)])).tryGet()
 
         let meta = (await repo.getOverlay(treeCid)).tryGet()
         check meta.blocks[0] == true
@@ -178,12 +178,12 @@ proc testConcurrent*(
         )
       ).tryGet()
 
-      (await repo.putBlocks(treeCidB, @[(blk3, 0.Natural, proofB1)])).tryGet()
-      (await repo.putBlocks(treeCidB, @[(blk4, 1.Natural, proofB2)])).tryGet()
+      (await repo.putBlocks(treeCidB, @[(blk3, 0.Natural, proofB1.some)])).tryGet()
+      (await repo.putBlocks(treeCidB, @[(blk4, 1.Natural, proofB2.some)])).tryGet()
 
       let
         putFuture = repo.putBlocks(
-          treeCidA, @[(blk1, 0.Natural, proofA1), (blk2, 1.Natural, proofA2)]
+          treeCidA, @[(blk1, 0.Natural, proofA1.some), (blk2, 1.Natural, proofA2.some)]
         )
         dropFuture = repo.dropOverlay(treeCidB)
 
@@ -224,7 +224,7 @@ proc testConcurrent*(
       ).tryGet()
 
       let putResult = await repo.putBlocks(
-        treeCid, @[(blk1, 0.Natural, proof1), (blk2, 1.Natural, proof2)]
+        treeCid, @[(blk1, 0.Natural, proof1.some), (blk2, 1.Natural, proof2.some)]
       )
 
       check putResult.isErr
@@ -254,9 +254,9 @@ proc testConcurrent*(
       let putFuture = repo.putBlocks(
         treeCid,
         @[
-          (blk1, 0.Natural, proof1),
-          (blk2, 1.Natural, proof2),
-          (blk3, 2.Natural, proof3),
+          (blk1, 0.Natural, proof1.some),
+          (blk2, 1.Natural, proof2.some),
+          (blk3, 2.Natural, proof3.some),
         ],
       )
       (await repo.dropOverlay(treeCid)).tryGet

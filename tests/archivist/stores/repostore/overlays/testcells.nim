@@ -214,7 +214,7 @@ proc testCells*(
       check emptyBlk.cid.isEmpty == true
 
       (await repo.putOverlay(treeCid2, status = Completed.some)).tryGet()
-      (await repo.putBlocks(treeCid2, @[(emptyBlk, 0.Natural, proof3)])).tryGet()
+      (await repo.putBlocks(treeCid2, @[(emptyBlk, 0.Natural, proof3.some)])).tryGet()
 
       let leaf3 = (await repo.getLeafMetadata(treeCid2, 0.Natural)).tryGet()
       check:
@@ -250,7 +250,9 @@ proc testCells*(
         await innerRepo.putBlocks(
           treeCid,
           @[
-            (blk, 1.Natural, proof1), (blk, 3.Natural, proof3), (blk, 5.Natural, proof5)
+            (blk, 1.Natural, proof1.some),
+            (blk, 3.Natural, proof3.some),
+            (blk, 5.Natural, proof5.some),
           ],
         )
       ).tryGet()

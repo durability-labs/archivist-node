@@ -12,6 +12,7 @@
 import pkg/chronos
 import pkg/libp2p
 import pkg/taskpools
+import pkg/results
 
 import std/isolation
 import std/sequtils
@@ -48,20 +49,24 @@ proc connected*(self: NetworkPeer): bool =
   not (isNil(self.sendConn)) and not (self.sendConn.closed or self.sendConn.atEof)
 
 proc decodeMsgTask(
-    ctx: SharedPtr[TaskCtx[Message]], data: seq[byte]
+    ctx: SharedPtr[TaskCtx[Message]], data: ptr seq[byte]
 ) {.gcsafe, raises: [].} =
   defer:
-    discard ctx[].signal.fireSync()
-  var r = Message.protobufDecode(data).mapFailure
-  ctx[].result = unsafeIsolate(move r)
+    if err =? ctx[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
+
+  var r = Message.decode(data[]).mapThreadSpawnErr
+  ctx[].result = isolate(move r)
 
 proc encodeMsgTask(
-    ctx: SharedPtr[TaskCtx[seq[byte]]], msg: Message
+    ctx: SharedPtr[TaskCtx[seq[byte]]], msg: ptr Message
 ) {.gcsafe, raises: [].} =
   defer:
-    discard ctx[].signal.fireSync()
-  var r = success(protobufEncode(msg))
-  ctx[].result = unsafeIsolate(move r)
+    if err =? ctx[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
+
+  var r = ThreadSpawnRes[seq[byte]].ok(encode(msg[]))
+  ctx[].result = isolate(move r)
 
 proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   if isNil(conn):
@@ -71,19 +76,26 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   trace "Attaching read loop", peer = self.id, connId = conn.oid
   try:
     while not conn.atEof or not conn.closed:
-      let
+      var
         data = await conn.readLp(MaxMessageSize.int)
         decodeStart = Moment.now()
-        msg =
-          if not self.taskpool.isNil and data.len > OffloadThreshold:
-            (
-              await spawnJoin[Message](
-                proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
-                  self.taskpool.spawn decodeMsgTask(ctx, data)
-              )
-            ).tryGet()
-          else:
-            Message.protobufDecode(data).mapFailure().tryGet()
+
+      var msg: Message
+      if not self.taskpool.isNil and data.len > OffloadThreshold:
+        # Offload decode to the taskpool for large payloads. The worker
+        # borrows the payload by pointer (the caller's frame outlives
+        # the worker via awaitSpawn's drain - zero refcount operations
+        # on the payload). Block refs are created and moved on the
+        # worker. With `{.acyclic.}` on Block the decrefs are plain (no
+        # cycle-registry involvement), so cross-thread destroy is safe.
+        msg = (
+          await spawnJoin[Message](
+            proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
+              self.taskpool.spawn decodeMsgTask(ctx, addr data)
+          )
+        ).tryGet()
+      else:
+        msg = Message.decode(data).mapFailure().tryGet()
 
       archivist_block_exchange_recv_decode_seconds.observe(
         (Moment.now() - decodeStart).nanoseconds.float64 / 1e9
@@ -131,17 +143,23 @@ proc send*(
   let
     kind = messageKind(msg)
     encodeStart = Moment.now()
-    encoded =
-      if not self.taskpool.isNil and
-          foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
-        ?await spawnJoin[seq[byte]](
-          proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
-            self.taskpool.spawn encodeMsgTask(ctx, msg)
-        )
-      else:
-        protobufEncode(msg)
 
-    encodeNs = (Moment.now() - encodeStart).nanoseconds
+  var encoded: seq[byte]
+  if not self.taskpool.isNil and
+      foldl(msg.payload, a + b.blk.data.len, 0) > OffloadThreshold:
+    # Offload encode to the taskpool for payloads with significant block
+    # data. The worker borrows the message by pointer. The caller's message
+    # and the engine's blk refs survive to the main thread for deterministic
+    # destroy.
+    encoded =
+      ?await spawnJoin[seq[byte]](
+        proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
+          self.taskpool.spawn encodeMsgTask(ctx, addr msg)
+      )
+  else:
+    encoded = encode(msg)
+
+  let encodeNs = (Moment.now() - encodeStart).nanoseconds
 
   archivist_block_exchange_network_encode_seconds.observe(
     encodeNs.float64 / 1e9, labelValues = [kind]

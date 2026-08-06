@@ -5,6 +5,7 @@ import pkg/stew/objects
 import pkg/stew/byteutils
 import pkg/questionable
 import pkg/questionable/results
+import pkg/libp2p/protobuf/minprotobuf
 
 import pkg/archivist/clock
 import pkg/archivist/merkletree
@@ -52,7 +53,7 @@ suite "Test repostore coders":
     let
       nodes = @[newSeqWith(32, rand(byte)), newSeqWith(32, rand(byte))]
       proof = ArchivistProof.init(index = 0, nleaves = 4, nodes = nodes).tryGet()
-      val = LeafMetadata(deleted: false, blkCid: Cid.example, proof: proof)
+      val = LeafMetadata(deleted: false, blkCid: Cid.example, proof: proof.some)
       decoded = LeafMetadata.decode(encode(val)).tryGet()
 
     check:
@@ -62,13 +63,13 @@ suite "Test repostore coders":
 
   test "LeafMetadata encode/decode with nil proof":
     let
-      val = LeafMetadata(deleted: true, blkCid: Cid.example, proof: nil)
+      val = LeafMetadata(deleted: true, blkCid: Cid.example, proof: ArchivistProof.none)
       decoded = LeafMetadata.decode(encode(val)).tryGet()
 
     check:
       decoded.deleted == val.deleted
       decoded.blkCid == val.blkCid
-      decoded.proof.isNil
+      decoded.proof.isNone
 
   test "LeafMetadata encode/decode with cell variant":
     # Create two different CIDs using blocks
@@ -78,7 +79,11 @@ suite "Test repostore coders":
       nodes = @[newSeqWith(32, rand(byte)), newSeqWith(32, rand(byte))]
       proof = ArchivistProof.init(index = 1, nleaves = 8, nodes = nodes).tryGet()
       val = LeafMetadata(
-        deleted: false, blkCid: blkCid, proof: proof, isCell: true, cellCid: cellCid
+        deleted: false,
+        blkCid: blkCid,
+        proof: proof.some,
+        isCell: true,
+        cellCid: cellCid,
       )
       decoded = LeafMetadata.decode(encode(val)).tryGet()
 
@@ -91,10 +96,50 @@ suite "Test repostore coders":
 
   test "LeafMetadata cell variant backwards compatible (non-cell decodes correctly)":
     let
-      val = LeafMetadata(deleted: false, blkCid: Cid.example, proof: nil)
+      val =
+        LeafMetadata(deleted: false, blkCid: Cid.example, proof: ArchivistProof.none)
       decoded = LeafMetadata.decode(encode(val)).tryGet()
 
     check:
       decoded.deleted == val.deleted
       decoded.blkCid == val.blkCid
       decoded.isCell == false
+
+  test "LeafMetadata decode with absent proof field (old records load)":
+    # Simulate a pre-conversion record: field 3 never written.
+    let pb = block:
+      var pb = initProtoBuffer()
+      pb.write(1, 0'u32)
+      pb.write(2, Cid.example.data.buffer)
+      pb.finish()
+      pb.buffer
+    let decoded = LeafMetadata.decode(pb).tryGet()
+
+    check decoded.proof.isNone
+
+  test "LeafMetadata decode with present-but-empty proof field fails loudly":
+    # An encoder that writes an empty proof field is buggy - the decode
+    # must fail, not silently treat it as no-proof.
+    let pb = block:
+      var pb = initProtoBuffer()
+      pb.write(1, 0'u32)
+      pb.write(2, Cid.example.data.buffer)
+      pb.write(3, newSeq[byte]())
+      pb.finish()
+      pb.buffer
+
+    check LeafMetadata.decode(pb).isErr
+
+  test "Default object proof cannot pass the write side":
+    # A default-constructed proof encodes to non-empty bytes with
+    # InvalidMultiCodec - it must fail on decode, never silently
+    # round-trip as a valid proof.
+    let
+      defaultProof = ArchivistProof()
+      encoded = encode(
+        LeafMetadata(deleted: false, blkCid: Cid.example, proof: defaultProof.some)
+      )
+
+    check:
+      defaultProof.encode().len > 0
+      LeafMetadata.decode(encoded).isErr

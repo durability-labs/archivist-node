@@ -30,8 +30,8 @@
 
 {.push raises: [].}
 
-import std/sugar
 import pkg/libp2p/[cid, protobuf/minprotobuf]
+import pkg/questionable
 import pkg/questionable/results
 import pkg/stew/endians2
 
@@ -88,9 +88,8 @@ proc encode*(t: LeafMetadata): seq[byte] =
   pb.write(1, t.deleted.uint32)
   pb.write(2, t.blkCid.data.buffer)
 
-  let proofBytes = t.proof.encode()
-  if proofBytes.len > 0:
-    pb.write(3, proofBytes)
+  if proof =? t.proof:
+    pb.write(3, proof.encode())
 
   if t.isCell:
     pb.write(4, t.cellCid.data.buffer)
@@ -112,12 +111,15 @@ proc decode*(T: type LeafMetadata, bytes: openArray[byte]): ?!T =
   if pb.getField(2, blkCidBytes).isErr:
     return failure("Unable to decode `blkCid` from LeafMetadata")
 
-  discard pb.getField(3, proofBytes) # Optional field
   discard pb.getField(4, cellCidBytes) # Optional field (cell leaves only)
 
-  let
-    blkCid = ?Cid.init(blkCidBytes).mapFailure
-    proof = ?ArchivistProof.decode(proofBytes)
+  let blkCid = ?Cid.init(blkCidBytes).mapFailure
+
+  var proof: ?ArchivistProof
+  if ?pb.getField(3, proofBytes).mapFailure:
+    without decodedProof =? ArchivistProof.decode(proofBytes), err:
+      return failure(err)
+    proof = decodedProof.some
 
   if cellCidBytes.len > 0:
     let cellCid = ?Cid.init(cellCidBytes).mapFailure

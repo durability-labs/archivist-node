@@ -346,7 +346,8 @@ proc leopardEncodeTask(tp: Taskpool, task: ptr EncodeTask) {.gcsafe.} =
   )
   defer:
     encoder.release()
-    discard task[].signal.fireSync()
+    if err =? task[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
 
   if (let res = encoder.encode(task[].blocks[], task[].parity[]); res.isErr):
     warn "Error from leopard encoder backend!", error = $res.error
@@ -421,14 +422,14 @@ proc encodeData(
     ?await self.asyncEncode(params.blockSize.int, data, parity)
     var
       idx = params.rounded + step
-      blocks: seq[(bt.Block, Natural, ArchivistProof)]
+      blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
 
     for j in 0 ..< params.ecM:
       let blk = ?bt.Block.new(parity[j])
 
       trace "Adding parity block", cid = blk.cid, idx
       cids[idx] = blk.cid
-      blocks.add((blk, idx.Natural, nil))
+      blocks.add((blk, idx.Natural, ArchivistProof.none))
       idx.inc(params.steps)
 
     trace "Storing parity blocks", count = blocks.len
@@ -531,7 +532,8 @@ proc leopardDecodeTask(tp: Taskpool, task: ptr DecodeTask) {.gcsafe.} =
   )
   defer:
     decoder.release()
-    discard task[].signal.fireSync()
+    if err =? task[].signal.fireSync().errorOption:
+      warn "Failed to fire worker completion signal", error = err
 
   if (
     let res = decoder.decode(task[].blocks[], task[].parity[], task[].recovered[])
@@ -614,7 +616,7 @@ proc decodeInternal(
 
     trace "Erasure decoding data"
     ?await self.asyncDecode(params.blockSize.int, data, parityData, recovered)
-    var blocks: seq[(bt.Block, Natural, ArchivistProof)]
+    var blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
     for i in 0 ..< params.ecK:
       let idx = i * params.steps + step
       if data[i].len <= 0 and not cids[idx].isEmpty:
@@ -626,7 +628,7 @@ proc decodeInternal(
         await self.networkStore.completeBlock(encodedTreeCid, idx, blk)
 
         cids[idx] = blk.cid
-        blocks.add((blk, idx.Natural, nil))
+        blocks.add((blk, idx.Natural, ArchivistProof.none))
         recoveredIndices.add(idx)
 
     trace "Storing recovered blocks", count = blocks.len
