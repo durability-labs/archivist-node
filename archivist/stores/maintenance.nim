@@ -12,6 +12,8 @@
 
 {.push raises: [].}
 
+import std/sequtils
+
 import pkg/chronos
 import pkg/questionable
 import pkg/questionable/results
@@ -21,6 +23,7 @@ import ../utils/timer
 import ../clock
 import ../logutils
 import ../systemclock
+import ../errors
 
 logScope:
   topics = "archivist maintenance"
@@ -28,10 +31,12 @@ logScope:
 const
   DefaultBlockInterval* = 10.minutes
   DefaultNumBlocksPerInterval* = 1000
+  DefaultMaxConcurrentOverlayDrops* = 5
 
 type BlockMaintainer* = ref object of RootObj
   repoStore: RepoStore
   interval: Duration
+  maxConcurrent: int
   timer: Timer
   clock: Clock
 
@@ -39,6 +44,7 @@ proc new*(
     T: type BlockMaintainer,
     repoStore: RepoStore,
     interval: Duration,
+    maxConcurrent = DefaultMaxConcurrentOverlayDrops,
     timer = Timer.new("maintenance"),
     clock: Clock = SystemClock.new(),
 ): BlockMaintainer =
@@ -46,7 +52,20 @@ proc new*(
   ##
   ## Call `start` to begin scanning for expired overlays
   ##
-  BlockMaintainer(repoStore: repoStore, interval: interval, timer: timer, clock: clock)
+  BlockMaintainer(
+    repoStore: repoStore,
+    interval: interval,
+    maxConcurrent: maxConcurrent,
+    timer: timer,
+    clock: clock,
+  )
+
+proc dropAndLog(
+    self: BlockMaintainer, treeCid: Cid, status: OverlayStatus
+): Future[void] {.async: (raises: [CancelledError]).} =
+  trace "Dropping overlay", treeCid, status
+  if err =? (await self.repoStore.dropOverlay(treeCid)).errorOption:
+    error "Error dropping overlay", treeCid, status, err = err.msg
 
 proc dropExpiredOverlays(
     self: BlockMaintainer
@@ -58,6 +77,7 @@ proc dropExpiredOverlays(
     return
 
   let now = self.clock.now
+  var inFlight: seq[Future[void]]
 
   for (treeCid, meta) in overlays:
     # Deleting - finish cleanup, if delete in progress, dropOverlay will
@@ -69,11 +89,17 @@ proc dropExpiredOverlays(
       (meta.expiry > 0 and meta.expiry < now)
 
     if shouldDrop:
-      trace "Dropping overlay", treeCid, status = meta.status, expiry = meta.expiry
-      if err =? (await self.repoStore.dropOverlay(treeCid)).errorOption:
-        error "Error dropping overlay", treeCid, status = meta.status, err = err.msg
+      # Wait for a slot if at capacity
+      if inFlight.len >= self.maxConcurrent:
+        without completedFut =? catchAsync(await one(inFlight)), err:
+          error "Error waiting for overlay drop", err = err.msg
+          break
+        inFlight.keepItIf(it != completedFut)
 
-    await sleepAsync(1.millis) # cooperative scheduling
+      inFlight.add(self.dropAndLog(treeCid, meta.status))
+
+  # Drain remaining in-flight deletions
+  await noCancel allFutures(inFlight)
 
 proc start*(self: BlockMaintainer) =
   proc onTimer(): Future[void] {.async: (raises: []).} =
