@@ -20,13 +20,6 @@ import ./archivist/helpers/randomchunker
 export randomchunker
 export units
 
-proc exampleString*(length: int): string =
-  let chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-  result = newString(length) # Create a new empty string with a given length
-  for i in 0 ..< length:
-    result[i] = chars[rand(chars.len - 1)]
-      # Generate a random index and set the string's character
-
 proc example*[T: SomeInteger](_: type T): T =
   rand(T)
 
@@ -37,6 +30,12 @@ proc example*[T, N](_: type array[N, T]): array[N, T] =
 proc example*[T](_: type seq[T]): seq[T] =
   let length = uint8.example.int
   newSeqWith(length, T.example)
+
+proc example*(_: type string, length = uint8.example.int): string =
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  result = newString(length)
+  for i in 0 ..< length:
+    result[i] = chars[rand(chars.len - 1)]
 
 proc example*[bits](_: type StUint[bits]): StUint[bits] =
   StUint[bits].fromBytesBE(array[bits div 8, byte].example)
