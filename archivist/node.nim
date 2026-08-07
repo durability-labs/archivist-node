@@ -32,6 +32,7 @@ import pkg/libp2p/signed_envelope
 
 import ./metrics
 import ./chunker
+import ./archivisttypes
 import ./slots
 import ./clock
 import ./blocktype as bt
@@ -51,6 +52,7 @@ import ./logutils
 import ./utils/asynciter
 import ./utils/trackedfutures
 import ./utils/poseidon2digest
+import ./rng
 
 export logutils
 
@@ -59,8 +61,14 @@ logScope:
 
 const
   DefaultFetchBatch = 128
+  DefaultFetchPrefetch = 2 ## In-flight fetch batches (pipeline depth)
   DefaultStoreBatch* = 1024 ## Number of blocks to batch when storing data
   MaxInFlightBatches = 4 ## Maximum concurrent batch flushes for bounded parallelism
+
+type FetchOrder* {.pure.} = enum
+  Linear = "linear" ## iterate block indices 0 ..< count (stream-friendly default)
+  RandomizedCircular = "randomized-circular"
+    ## iterate circularly from a random linear start point
 
 type
   ArchivistNode* = object
@@ -190,9 +198,16 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
+    prefetch = DefaultFetchPrefetch,
 ): Future[?!void] {.async: (raises: [CancelledError]), gcsafe.} =
   ## Fetch blocks in batches of `batchSize`
   ##
+  ## Keeps up to `prefetch` batch fetches in flight so the network fetch for
+  ## batch N+1 overlaps consumption of batch N. prefetch=1 restores the old
+  ## stop-and-wait behavior.
+  ##
+
+  let prefetch = max(1, prefetch)
 
   await self.repoStore.withOverlay(
     cid,
@@ -208,7 +223,7 @@ proc fetchBatched*(
         else:
           BitSeq.init(0)
 
-      while not iter.finished:
+      proc collectBatch(): seq[Natural] =
         var batchIndices: seq[Natural]
         for i in 0 ..< batchSize:
           if not iter.finished:
@@ -216,19 +231,43 @@ proc fetchBatched*(
             # Include index if fetchLocal is set, or if it's not yet in the bitmap
             if fetchLocal or idx >= bits.len or not bits[idx]:
               batchIndices.add(idx.Natural)
+        batchIndices
 
-        if batchIndices.len == 0:
-          continue
+      var inFlight:
+        seq[(int, Future[?!seq[(Natural, bt.Block)]].Raising([CancelledError]))]
 
-        without blocks =? (await self.networkStore.getBlocks(cid, batchIndices)), err:
+      defer:
+        for (_, fut) in inFlight:
+          await noCancel fut.cancelAndWait()
+
+      proc fillWindow() =
+        while inFlight.len < prefetch and not iter.finished:
+          let batchIndices = collectBatch()
+          if batchIndices.len == 0:
+            continue
+          inFlight.add(
+            (batchIndices.len, self.networkStore.getBlocks(cid, batchIndices))
+          )
+
+      fillWindow()
+      while inFlight.len > 0:
+        # Await via inFlight[0] (not a popped copy) so that cancelling this
+        # proc mid-await still lets the defer below cancel the current batch.
+        let expected = inFlight[0][0]
+
+        without blocks =? (await inFlight[0][1]), err:
           trace "Some blocks failed to fetch", err = err.msg
           return failure(err)
 
-        if blocks.len != batchIndices.len:
+        if blocks.len != expected:
           return failure(
-            "Some blocks failed to fetch (" & $(batchIndices.len - blocks.len) &
-              " missing)"
+            "Some blocks failed to fetch (" & $(expected - blocks.len) & " missing)"
           )
+
+        inFlight.delete(0)
+
+        # Refill before consuming so the next fetch overlaps streaming out
+        fillWindow()
 
         if not onBatch.isNil and
             batchErr =? (await onBatch(blocks.mapIt(it[1]))).errorOption:
@@ -243,15 +282,31 @@ proc fetchBatched*(
     batchSize = DefaultFetchBatch,
     onBatch: BatchProc = nil,
     fetchLocal = true,
+    prefetch = DefaultFetchPrefetch,
+    fetchOrder: FetchOrder,
 ): Future[?!void] {.async: (raw: true, raises: [CancelledError]).} =
   ## Fetch manifest in batches of `batchSize`
   ##
+  ## With FetchOrder.RandomizedCircular, block indices are iterated
+  ## circularly from a random linear start point instead of always from
+  ## index 0, so concurrent downloaders of the same dataset work on
+  ## different regions and can re-serve blocks to each other.
+  ##
+
+  let
+    count = manifest.blocksCount
+    randomized = fetchOrder == FetchOrder.RandomizedCircular and count > 0
+    start =
+      if randomized:
+        Rng.instance.rand(count - 1)
+      else:
+        0
+    iter = Iter[int].new(0 ..< count, start)
 
   trace "Fetching blocks in batches of",
-    size = batchSize, blocksCount = manifest.blocksCount
+    size = batchSize, blocksCount = count, fetchOrder = $fetchOrder, start = start
 
-  let iter = Iter[int].new(0 ..< manifest.blocksCount)
-  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal)
+  self.fetchBatched(manifest.treeCid, iter, batchSize, onBatch, fetchLocal, prefetch)
 
 proc fetchDatasetAsync*(
     self: ArchivistNodeRef, manifest: Manifest, fetchLocal = true
@@ -262,7 +317,10 @@ proc fetchDatasetAsync*(
   try:
     if err =? (
       await self.fetchBatched(
-        manifest = manifest, batchSize = DefaultFetchBatch, fetchLocal = fetchLocal
+        manifest = manifest,
+        batchSize = DefaultFetchBatch,
+        fetchLocal = fetchLocal,
+        fetchOrder = FetchOrder.RandomizedCircular,
       )
     ).errorOption:
       error "Unable to fetch blocks", err = err.msg
@@ -277,7 +335,10 @@ proc fetchDatasetAsyncTask*(self: ArchivistNodeRef, manifest: Manifest) =
     try:
       if err =? (
         await self.fetchBatched(
-          manifest = manifest, batchSize = DefaultFetchBatch, fetchLocal = false
+          manifest = manifest,
+          batchSize = DefaultFetchBatch,
+          fetchLocal = false,
+          fetchOrder = FetchOrder.RandomizedCircular,
         )
       ).errorOption:
         error "Unable to fetch dataset", err = err.msg
@@ -343,7 +404,10 @@ proc streamEntireDataset(
       try:
         if err =? (
           await self.fetchBatched(
-            manifest = manifest, batchSize = DefaultFetchBatch, fetchLocal = false
+            manifest = manifest,
+            batchSize = DefaultFetchBatch,
+            fetchLocal = false,
+            fetchOrder = FetchOrder.Linear,
           )
         ).errorOption:
           error "Unable to fetch blocks", err = err.msg
@@ -1069,6 +1133,10 @@ proc new*(
     marketplace = MarketplaceNode.none,
 ): ArchivistNodeRef =
   ## Create new instance of a node, call `start` to run it
+  ##
+  ## Background downloads (fetchDatasetAsync/fetchDatasetAsyncTask) use
+  ## RandomizedCircular so concurrent downloaders of the same dataset work
+  ## on different regions; streaming retrieves always use Linear.
   ##
 
   ArchivistNodeRef(

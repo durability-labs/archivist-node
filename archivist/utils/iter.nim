@@ -139,6 +139,43 @@ proc new*[U, V: Ordinal](_: type Iter[U], slice: HSlice[U, V]): Iter[U] =
 
   Iter[U].new(slice.a.int, slice.b.int, 1)
 
+proc new*(T: type Iter[int], slice: HSlice[int, int], start: int): Iter[int] =
+  ## Creates a circular Iter from an int slice, starting at `start` and
+  ## wrapping around to the slice's first element after reaching its last.
+  ## Every element of the slice is yielded exactly once. `start` must lie
+  ## within the slice.
+  ##
+
+  var
+    i = start
+    wrapped = false
+    disposed = false
+
+  let
+    a = slice.a
+    b = slice.b
+
+  doAssert (i >= a and i <= b) or a > b, "start must lie within the slice"
+
+  proc genNext(): int =
+    let u = i
+    inc(i)
+    if i > b:
+      i = a
+      wrapped = true
+    u
+
+  proc isFinished(): bool =
+    a > b or (wrapped and i >= start)
+
+  proc onDispose() =
+    disposed = true
+
+  proc isDisposed(): bool =
+    disposed
+
+  T.new(genNext, isFinished, onDispose, isDisposed)
+
 proc new*[T](_: type Iter[T], items: seq[T]): Iter[T] =
   ## Creates a new Iter from a sequence
   ##
