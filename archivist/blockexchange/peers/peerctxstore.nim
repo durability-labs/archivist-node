@@ -79,6 +79,8 @@ proc remove*(self: PeerCtxStore, peerId: PeerId) =
 
     self.peers.del(peerId)
 
+    self.peers.del(peerId)
+
 func get*(self: PeerCtxStore, peerId: PeerId): BlockExcPeerCtx =
   self.peers.getOrDefault(peerId, nil)
 

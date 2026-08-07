@@ -250,6 +250,35 @@ proc topPeersByAggregate*(self: BlockExcEngine, topK: int): seq[BlockExcPeerCtx]
     return @[]
   ranked[0 ..< min(topK, ranked.len)]
 
+proc computeEffectiveScore(peer: BlockExcPeerCtx, now: Moment): float =
+  peer.score.computeScore(peer.blocksRequested.len)
+  return
+    applyDecay(peer.score.score, peer.score.lastUpdated, peer.blocksRequested.len, now)
+
+proc scoredPeer(
+    peers: seq[BlockExcPeerCtx], address: BlockAddress
+): BlockExcPeerCtx {.gcsafe, raises: [].} =
+  # Filter circuit-open peers.
+  var candidates: seq[BlockExcPeerCtx]
+  for peer in peers:
+    peer.score.maybeResetCircuit()
+    if not peer.score.circuitOpen:
+      candidates.add(peer)
+
+  if candidates.len == 0:
+    return @[]
+  let ranked = rankPeersByScore(candidates, cid)
+  if ranked.len == 0:
+    return @[]
+  ranked[0 ..< min(topK, ranked.len)]
+
+proc topPeersByAggregate*(self: BlockExcEngine, topK: int): seq[BlockExcPeerCtx] =
+  let allPeers = toSeq(self.peers.peers.values)
+  let ranked = rankPeersByAggregate(allPeers)
+  if ranked.len == 0:
+    return @[]
+  ranked[0 ..< min(topK, ranked.len)]
+
 proc failBlockRequest(
     self: BlockExcEngine,
     address: BlockAddress,
@@ -327,7 +356,7 @@ proc scheduleTasks(
 proc cancelBlocks(
     self: BlockExcEngine, addrs: seq[BlockAddress]
 ) {.async: (raises: [CancelledError]).} =
-  let toCancel = toHashSet(addrs)
+  let toCancell = toHashSet(addrs)
   var scheduledCancellations: Table[PeerId, HashSet[BlockAddress]]
 
   if self.peers.len == 0:
@@ -344,7 +373,7 @@ proc cancelBlocks(
     peerId
 
   for peerCtx in self.peers.peers.values:
-    let intersection = peerCtx.blocksRequested.intersection(toCancel)
+    let intersection = peerCtx.blocksRequested.intersection(toCancell)
     if intersection.len > 0:
       scheduledCancellations[peerCtx.id] = intersection
       peerCtx.cleanPresence(addrs)

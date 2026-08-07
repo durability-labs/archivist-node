@@ -226,6 +226,8 @@ proc setPresence*(self: BlockExcPeerCtx, presence: Presence) =
 
   self.blocks[presence.address] = presence
 
+  self.blocks[presence.address] = presence
+
 func cleanPresence*(self: BlockExcPeerCtx, addresses: seq[BlockAddress]) =
   for a in addresses:
     self.blocks.del(a)
@@ -238,6 +240,34 @@ proc blockRequestScheduled*(self: BlockExcPeerCtx, address: BlockAddress) =
 
 proc blockRequestCleared*(self: BlockExcPeerCtx, address: BlockAddress) =
   self.blocksRequested.excl(address)
+
+proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
+  address in self.blocksRequested
+
+proc recordDelivery*(
+    self: BlockExcPeerCtx, address: BlockAddress, bytes: int, latencyMs: float
+) =
+  self.ensureScoreFor(address.cidOrTreeCid).recordDelivery(bytes, latencyMs)
+
+proc recordFailure*(self: BlockExcPeerCtx, cid: Cid, isValidation: bool = false) =
+  var score = self.ensureScoreFor(cid)
+  let wasOpen = score.circuitOpen
+  score.recordFailure(isValidation)
+  if not wasOpen and score.circuitOpen:
+    trace "Peer circuit breaker tripped for dataset",
+      peer = self.id, cid, failures = score.consecutiveFailures
+    archivist_block_exchange_peer_circuit_open.inc(labelValues = [$self.id])
+    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
+
+proc sendBatchFailure*(self: BlockExcPeerCtx, cid: Cid) =
+  var score = self.ensureScoreFor(cid)
+  let wasOpen = score.circuitOpen
+  score.sendBatchFailure()
+  if not wasOpen and score.circuitOpen:
+    trace "Peer circuit breaker tripped for dataset (batch)",
+      peer = self.id, cid, failures = score.consecutiveFailures
+    archivist_block_exchange_peer_circuit_open.inc(labelValues = [$self.id])
+    archivist_block_exchange_peer_circuit_breaker_trips.inc(labelValues = [$self.id])
 
 proc isBlockRequested*(self: BlockExcPeerCtx, address: BlockAddress): bool =
   address in self.blocksRequested
