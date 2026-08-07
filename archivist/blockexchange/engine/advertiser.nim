@@ -27,6 +27,7 @@ import ../../discovery
 import ../../stores/blockstore
 import ../../logutils
 import ../../manifest
+import ../../errors
 
 logScope:
   topics = "archivist discoveryengine advertiser"
@@ -97,12 +98,12 @@ proc advertiseLocalStoreLoop(b: Advertiser) {.async: (raises: []).} =
         continue
 
       defer:
-        if err =? (await cidsIter.dispose()).errorOption:
+        if err =? catchAsync(await cidsIter.dispose()).errorOption:
           warn "Error disposing manifest iterator", err = err.msg
 
       trace "Advertiser begins iterating blocks..."
       for c in cidsIter:
-        if cid =? await c:
+        if cid =? catchAsync(await c):
           await b.advertiseBlock(cid)
       trace "Advertiser iterating blocks finished."
 

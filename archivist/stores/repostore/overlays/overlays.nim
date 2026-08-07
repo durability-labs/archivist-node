@@ -141,7 +141,7 @@ func toCid(key: Key): ?!Cid =
 
 proc listOverlays*(
     self: RepoStore
-): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
+): Future[?!AsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
   ## List all overlay CIDs.
   ##
 
@@ -149,22 +149,23 @@ proc listOverlays*(
     queryKey = ?overlayQueryKey()
     iter = ?(await query(self.metaDs, Query.init(queryKey), OverlayMetadata))
 
-  proc mapCids(
+  let queryIter = iter.toAsyncIter()
+
+  let mapCids = proc(
       iterRes: ?!(?KVRecord[OverlayMetadata])
-  ): Future[?(?!Cid)] {.async: (raises: [CancelledError]).} =
+  ): Future[Option[Cid]] {.async.} =
     if maybeRecord =? iterRes and record =? maybeRecord:
       without cid =? record.key.toCid, err:
         trace "Unable to construct Cid from key", error = err.msg
-        return none(?!Cid)
-      return some(success(cid))
-    return none(?!Cid)
+        return none(Cid)
+      return some(cid)
+    return none(Cid)
 
-  let safeQueryIter = iter.toSafeAsyncIter()
-  success await mapFilter[?KVRecord[OverlayMetadata], Cid](safeQueryIter, mapCids)
+  success await mapFilter[?!(?KVRecord[OverlayMetadata]), Cid](queryIter, mapCids)
 
 proc listOverlaysInState*(
     self: RepoStore, status: OverlayStatus
-): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
+): Future[?!AsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
   ## List all overlay CIDs by status.
   ##
 
@@ -172,23 +173,23 @@ proc listOverlaysInState*(
     queryKey = ?overlayQueryKey()
     iter = ?(await query(self.metaDs, Query.init(queryKey), OverlayMetadata))
 
-  let safeQueryIter = iter.toSafeAsyncIter()
+  let queryIter = iter.toAsyncIter()
 
-  proc filterBytStatus(
+  let filterByStatus = proc(
       iterRes: ?!(?KVRecord[OverlayMetadata])
-  ): Future[?(?!Cid)] {.async: (raises: [CancelledError]).} =
+  ): Future[Option[Cid]] {.async.} =
     if maybeRecord =? iterRes and record =? maybeRecord:
       if record.val.status == status:
         without cid =? record.key.toCid, err:
           trace "Unable to construct Cid from key", error = err.msg
-          return none(?!Cid)
+          return none(Cid)
 
-        return some(success(cid))
+        return some(cid)
 
-    return none(?!Cid)
+    return none(Cid)
 
-  success await mapFilter[?KVRecord[OverlayMetadata], Cid](
-    safeQueryIter, filterBytStatus, finishOnErr = false
+  success await mapFilter[?!(?KVRecord[OverlayMetadata]), Cid](
+    queryIter, filterByStatus
   )
 
 proc listOverlaysByExpiry*(
@@ -208,23 +209,24 @@ proc listOverlaysByExpiry*(
         )
       )
 
-  proc mapRecord(
+  let queryIter = iter.toAsyncIter()
+
+  let mapRecord = proc(
       iterRes: ?!(?KVRecord[OverlayMetadata])
-  ): Future[?(?!(Cid, OverlayMetadata))] {.async: (raises: [CancelledError]).} =
+  ): Future[Option[(Cid, OverlayMetadata)]] {.async.} =
     if maybeRecord =? iterRes and record =? maybeRecord:
       without cid =? record.key.toCid, err:
         trace "Unable to construct Cid from key", error = err.msg
-        return none(?!(Cid, OverlayMetadata))
+        return none((Cid, OverlayMetadata))
 
-      return (success((cid, record.val))).some
+      return some((cid, record.val))
 
-  let metadata = (
-    ?await collect(
-      await mapFilter[?KVRecord[OverlayMetadata], (Cid, OverlayMetadata)](
-        iter.toSafeAsyncIter(), mapRecord
-      )
-    )
+    return none((Cid, OverlayMetadata))
+
+  let mapped = await mapFilter[?!(?KVRecord[OverlayMetadata]), (Cid, OverlayMetadata)](
+    queryIter, mapRecord
   )
+  let metadata = (?await collectAsync(mapped))
   # Sort by expiry (ascending - earliest expiry first)
   .sorted(
     func (a, b: (Cid, OverlayMetadata)): int =

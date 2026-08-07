@@ -29,7 +29,7 @@ import pkg/questionable/results
 
 import ../errors
 import ../rng
-import ../utils/asynciter
+import pkg/iter
 
 import ./asyncbuilder
 import ./poseidon2

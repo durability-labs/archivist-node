@@ -39,8 +39,8 @@ import pkg/questionable
 import pkg/questionable/results
 
 import ../errors
-import ../utils/asynciter
-import ../utils/threadspawn
+import pkg/iter
+import pkg/threadspawn
 
 when defined(archivistAsynctreeTestHooks):
   ## Test-only instrumentation, compiled only into test builds (see

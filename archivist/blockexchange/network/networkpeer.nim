@@ -16,7 +16,7 @@ import pkg/results
 
 import std/isolation
 import std/sequtils
-import ../../utils/threadspawn
+import pkg/threadspawn
 
 import ../protobuf/blockexc
 import ../protobuf/message

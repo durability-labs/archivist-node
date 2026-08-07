@@ -55,7 +55,7 @@ proc overlayCount(
     repo: RepoStore
 ): Future[?!int] {.async: (raises: [CancelledError]).} =
   let iter = ?await repo.listOverlays()
-  let cids = ?await utils.collect(iter)
+  let cids = ?await collectAsync(iter)
   success(cids.len)
 
 proc assertOverlayCompleted(

@@ -48,7 +48,7 @@ import ./indexingstrategy
 import ./utils
 import ./errors
 import ./logutils
-import ./utils/asynciter
+import pkg/iter
 import ./utils/trackedfutures
 import ./utils/poseidon2digest
 
@@ -521,17 +521,16 @@ proc store*(
           allCidsQueued = false
           held: ?Cid
 
-        proc genNext(): Future[Cid] {.async.} =
-          let item = await cidQueue.popFirst()
-          if item.isLast:
-            allCidsQueued = true
-          item.cid
-
-        proc isFinished(): bool =
-          allCidsQueued
-
         let
-          treeIter = AsyncIter[Cid].new(genNext = genNext, isFinished = isFinished)
+          treeIter = AsyncIter[Cid].new(
+            proc(): Future[Cid] {.async.} =
+              let item = await cidQueue.popFirst()
+              if item.isLast:
+                allCidsQueued = true
+              item.cid,
+            proc(): bool =
+              allCidsQueued,
+          )
           treeFut = ArchivistTree.buildAsync(treeIter, self.taskpool)
 
         proc enqueueCid(
@@ -676,7 +675,7 @@ proc iterateManifests*(
     return
 
   for c in cidsIter:
-    if cid =? await c:
+    if cid =? catchAsync(await c):
       without blk =? await self.networkStore.getBlock(cid):
         warn "Failed to get manifest block by cid", cid
         return

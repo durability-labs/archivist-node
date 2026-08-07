@@ -31,7 +31,7 @@ import pkg/libp2p/[cid, multicodec, multihash]
 import ../../archivisttypes
 import ../../errors
 import ../../rng
-import ../../utils/asynciter
+import pkg/iter
 import ../../utils/digest
 import ../asyncbuilder
 

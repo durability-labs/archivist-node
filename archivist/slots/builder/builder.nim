@@ -27,13 +27,13 @@ import ../../stores
 import ../../manifest
 import ../../merkletree
 import ../../merkletree/asyncposeidon2
-import ../../utils/asynciter
+import pkg/iter
 import ../../indexingstrategy
 import ../../archivisttypes
 
 import ../converters
 
-export converters, asynciter, asyncposeidon2
+export converters, iter, asyncposeidon2
 
 logScope:
   topics = "archivist slotsbuilder"

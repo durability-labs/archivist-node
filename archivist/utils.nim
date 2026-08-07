@@ -18,15 +18,12 @@ import pkg/stew/bitseqs
 
 import ./utils/asyncheapqueue
 import ./utils/fileutils
-import ./utils/asynciter
-import ./utils/safeasynciter
+import pkg/iter
 import ./utils/asyncbarrier
 import ./utils/futures
-import ./utils/threadspawn
+import pkg/threadspawn
 
-export
-  asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs, asyncbarrier,
-  threadspawn
+export asyncheapqueue, fileutils, iter, chronos, bitseqs, asyncbarrier, threadspawn
 
 when defined(posix):
   import os, posix

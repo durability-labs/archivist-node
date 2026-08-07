@@ -15,6 +15,7 @@ import pkg/kvstore
 import pkg/taskpools
 
 import pkg/archivist/stores
+import pkg/archivist/errors
 import pkg/archivist/stores/keyutils
 import pkg/archivist/stores/repostore/operations
 import pkg/archivist/stores/repostore/types
@@ -26,8 +27,7 @@ import pkg/archivist/merkletree
 import pkg/archivist/merkletree/archivist
 import pkg/archivist/merkletree/archivist/asynctree
 import pkg/archivist/utils
-import pkg/archivist/utils/asynciter
-import pkg/archivist/utils/iter
+import pkg/iter
 
 import ../../../asynctest
 import ../../helpers
@@ -341,8 +341,11 @@ proc testRepoStore*(
       (await repo.putTreeNode(tmpTreeCid, 0.Natural, hash)).tryGet()
       (await repo.putTreeNode(realTreeCid, 0.Natural, hash)).tryGet()
 
-      expect KVConflictError:
+      try:
         (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+        check false # expected failure
+      except KVStoreError as err:
+        check "Move failed" in err.msg
 
       check:
         (await repo.getTreeNode(realTreeCid, 0.Natural)).tryGet() == hash
@@ -359,8 +362,11 @@ proc testRepoStore*(
       (await repo.putTreeNode(tmpTreeCid, 0.Natural, hashA)).tryGet()
       (await repo.putTreeNode(realTreeCid, 0.Natural, hashB)).tryGet()
 
-      expect KVConflictError:
+      try:
         (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+        check false # expected failure
+      except KVStoreError as err:
+        check "Move failed" in err.msg
 
       check:
         (await repo.getTreeNode(tmpTreeCid, 0.Natural)).tryGet() == hashA
@@ -378,8 +384,11 @@ proc testRepoStore*(
       (await repo.putTreeNode(realTreeCid, 0.Natural, hashA)).tryGet()
       (await repo.putTreeNode(realTreeCid, 1.Natural, hashB)).tryGet()
 
-      expect KVConflictError:
+      try:
         (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+        check false # expected failure
+      except KVStoreError as err:
+        check "Move failed" in err.msg
 
       check:
         (await repo.getTreeNode(tmpTreeCid, 0.Natural)).tryGet() == hashA
@@ -396,8 +405,11 @@ proc testRepoStore*(
       (await repo.putOverlay(realTreeCid, status = Completed.some)).tryGet()
       (await repo.putCidsAndProofs(tmpTreeCid, @[(0.Natural, blk.cid, proof)])).tryGet()
 
-      expect KVConflictError:
+      try:
         (await repo.finalizeOverlay(tmpTreeCid, realTreeCid)).tryGet()
+        check false # expected failure
+      except KVStoreError as err:
+        check "Move failed" in err.msg
 
       check:
         (await repo.getLeafMetadata(tmpTreeCid, 0.Natural)).isOk
@@ -1970,7 +1982,7 @@ proc testRepoStore*(
 
       var count = 0
       for c in cidsIter:
-        if cid =? await c:
+        if cid =? catchAsync(await c):
           check (await bigRepo.hasBlock(cid)).tryGet()
           count.inc
 
@@ -2002,7 +2014,7 @@ proc testRepoStore*(
 
       var count = 0
       for c in cidsIter:
-        if cid =? await c:
+        if cid =? catchAsync(await c):
           check manifestBlock.cid == cid
           check (await bigRepo.hasBlock(cid)).tryGet()
           count.inc
@@ -2044,7 +2056,7 @@ proc testRepoStore*(
 
       var count = 0
       for c in cidsIter:
-        if cid =? await c:
+        if cid =? catchAsync(await c):
           check (await bigRepo.hasBlock(cid)).tryGet()
           count.inc
 

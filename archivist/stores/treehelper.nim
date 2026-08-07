@@ -19,7 +19,7 @@ import pkg/questionable/results
 import pkg/libp2p/cid
 
 import ./blockstore
-import ../utils/asynciter
+import pkg/iter
 import ../merkletree
 
 proc putSomeProofs*(

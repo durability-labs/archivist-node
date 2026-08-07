@@ -25,7 +25,7 @@ import ../merkletree/archivist/asynctree
 import ../stores
 import ../blocktype as bt
 import ../utils
-import ../utils/asynciter
+import pkg/iter
 import ../indexingstrategy
 import ../errors
 
