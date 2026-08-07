@@ -65,6 +65,21 @@ proc formatManifestBlocks(node: ArchivistNodeRef): Future[JsonNode] {.async.} =
 
   return %RestContentList.init(content)
 
+proc formatDatasetSlots(
+    manifest: Manifest, repostore: RepoStore
+): Future[?!seq[RestDatasetStatusSlot]] {.async.} =
+  var slots = newSeq[RestDatasetStatusSlot]()
+  if not manifest.protected:
+    return success(slots)
+  if not manifest.verifiable:
+    return success(slots)
+  for cid in manifest.slotRoots:
+    if overlay =? (await repostore.getOverlay(cid)):
+      slots.add(
+        RestDatasetStatusSlot(cid: cid, status: overlay.status, expiry: overlay.expiry)
+      )
+  return success(slots)
+
 proc formatDatasetStatus(
     node: ArchivistNodeRef, repostore: RepoStore, cid: Cid
 ): Future[?!JsonNode] {.async.} =
@@ -76,12 +91,16 @@ proc formatDatasetStatus(
     error "Failed to fetch overlay", err = err.msg
     return failure(err)
 
+  without slots =? (await formatDatasetSlots(manifest, repoStore)), err:
+    error "Failed to format dataset slots", err = err.msg
+    return failure(err)
+
   let allIndices = toSeq(0.Natural ..< manifest.blocksCount.Natural)
   without hasBlocks =? (await repostore.hasBlocks(manifest.treeCid, allIndices)), err:
     error "Failed to run hasBlocks", err = err.msg
     return failure(err)
 
-  return success(%RestDatasetStatus.init(cid, overlay, hasBlocks))
+  return success(%RestDatasetStatus.init(cid, overlay, hasBlocks, slots))
 
 proc isPending(resp: HttpResponseRef): bool =
   ## Checks that an HttpResponseRef object is still pending; i.e.,
