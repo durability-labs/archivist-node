@@ -916,7 +916,7 @@ proc storeSlot*(
       self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
       self.taskpool,
     )
-    if err =? (await erasure.repair(manifest)).errorOption:
+    if err =? (await erasure.repair(manifest, expiry)).errorOption:
       error "Unable to erasure decode repairing manifest",
         cid = manifest.treeCid, exc = err.msg
       return failure(err)
