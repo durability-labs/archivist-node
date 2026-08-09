@@ -105,6 +105,16 @@ proc processSlot(
     sales: Sales, item: SlotQueueItem
 ) {.async: (raises: [CancelledError]).} =
   debug "Processing slot from queue", requestId = item.requestId, slot = item.slotIndex
+
+  # The onchain reservation allows several hosts per slot with first-fill-wins,
+  # so without a cap a single host can reserve most slots of a request and then
+  # race other hosts on the same slot. Process at most one slot per request.
+  for agent in sales.agents:
+    if agent.data.slotInfo.requestId == some item.requestId:
+      debug "Already processing a slot of this request, skipping",
+        requestId = item.requestId, slot = item.slotIndex
+      return
+
   var slotInfo = SlotInfo.init(item.requestId, item.slotIndex)
   slotInfo.ask = item.ask
   let agent = newSalesAgent(sales.context, slotInfo, some item)
