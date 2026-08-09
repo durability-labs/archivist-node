@@ -148,8 +148,15 @@ proc load(sales: Sales) {.async.} =
   let blocksAgo = int(requestDurationLimit.u64 div 12)
   let slotFilledEvents =
     await sales.context.marketplace.queryPastSlotFilledEvents(blocksAgo = blocksAgo)
+  let signer = await sales.context.marketplace.getSigner()
   for event in slotFilledEvents:
-    let slotInfo = SlotInfo.init(slotId(event.requestId, event.slotIndex))
+    let slotId = slotId(event.requestId, event.slotIndex)
+    # Only re-adopt slots we actually filled; other hosts' fills are not our sale.
+    without host =? (await sales.context.marketplace.getHost(slotId)):
+      continue
+    if host != signer:
+      continue
+    let slotInfo = SlotInfo.init(slotId)
     let agent = newSalesAgent(sales.context, slotInfo)
 
     agent.onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =
