@@ -143,8 +143,13 @@ proc getSlot*(sales: Sales, slotId: SlotId): Future[?SalesSlot] {.async.} =
       )
 
 proc load(sales: Sales) {.async.} =
-  for slotId in await sales.context.marketplace.mySlots():
-    let slotInfo = SlotInfo.init(slotId)
+  # Re-adopt slots from the onchain SlotFilled history after a restart.
+  let requestDurationLimit = sales.context.marketplace.requestDurationLimit()
+  let blocksAgo = int(requestDurationLimit.u64 div 12)
+  let slotFilledEvents =
+    await sales.context.marketplace.queryPastSlotFilledEvents(blocksAgo = blocksAgo)
+  for event in slotFilledEvents:
+    let slotInfo = SlotInfo.init(slotId(event.requestId, event.slotIndex))
     let agent = newSalesAgent(sales.context, slotInfo)
 
     agent.onCleanUp = proc(reprocessSlot = false) {.async: (raises: []).} =

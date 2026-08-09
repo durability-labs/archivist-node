@@ -43,7 +43,8 @@ method run*(
 
   try:
     let canReserve = await marketplace.canReserveSlot(slot.request.id, slot.slotIndex)
-    if canReserve:
+    let collateral = slot.request.ask.collateralPerSlot()
+    if canReserve and (await marketplace.tokensAvailable()) >= collateral.u256():
       try:
         trace "Reserving slot"
         await marketplace.reserveSlot(slot.request.id, slot.slotIndex)

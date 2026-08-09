@@ -230,6 +230,11 @@ method canReserveSlot*(
 ): Future[bool] {.base, async.} =
   raiseAssert("not implemented")
 
+method tokensAvailable*(
+    marketplace: AbstractMarketplace
+): Future[UInt256] {.base, async: (raises: [CancelledError, MarketplaceError]).} =
+  raiseAssert("not implemented")
+
 method subscribeFulfillment*(
     marketplace: AbstractMarketplace, callback: OnFulfillment
 ): Future[Subscription] {.base, async.} =

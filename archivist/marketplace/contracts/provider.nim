@@ -120,4 +120,11 @@ proc pastBlockTag*(
     provider: Provider, blocksAgo: int
 ): Future[BlockTag] {.async: (raises: [ProviderError, CancelledError]).} =
   let head = await provider.getBlockNumber()
-  return BlockTag.init(head - blocksAgo.abs.u256)
+  let blocksAgoU = blocksAgo.abs.u256
+  # Clamp to genesis: a fresh chain may be shorter than the requested window.
+  let fromBlock =
+    if blocksAgoU >= head:
+      0.u256
+    else:
+      head - blocksAgoU
+  return BlockTag.init(fromBlock)

@@ -366,6 +366,15 @@ method canReserveSlot*(
   convertEthersError("Unable to determine if slot can be reserved"):
     return await marketplace.contract.canReserveSlot(requestId, slotIndex)
 
+method tokensAvailable*(
+    marketplace: OnChainMarketplace
+): Future[UInt256] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  convertEthersError("Failed to get token balance"):
+    let tokenAddress = await marketplace.contract.token()
+    let token = Erc20Token.new(tokenAddress, marketplace.signer)
+    let owner = await marketplace.signer.getAddress()
+    return await token.balanceOf(owner)
+
 method subscribeRequests*(
     marketplace: OnChainMarketplace, callback: OnRequest
 ): Future[MarketSubscription] {.async.} =
