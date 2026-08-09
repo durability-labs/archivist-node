@@ -257,11 +257,15 @@ asyncchecksuite "Sales":
     check eventually queue.len > 0
       # queue starts paused, allow items to be added to the queue
     check eventually queue.paused
-    # Only one slot per request is processed: the remaining items are skipped
-    # while an agent for the request exists. One item stays parked in the
-    # queue (the paused worker readds the item it picked up).
-    check eventually queue.paused
-    check queue.len == 1
+    # The first processed item will be will have been re-pushed. Then, once this
+    # item is processed by the queue, the queue will be paused. This test could
+    # check item existence in the queue, but that would require inspecting
+    # onProcessSlot to see which item was first, and overridding onProcessSlot
+    # will prevent the queue working as expected in the Sales module.
+    check eventually queue.len == 4
+
+    for item in items:
+      check queue.contains(item)
 
   test "retrieves and stores data locally":
     await setAvailability()
