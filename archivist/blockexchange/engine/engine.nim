@@ -54,8 +54,8 @@ const
   DefaultConcurrentTasks = 30
   DefaultWantBlockBatchSize = DefaultMaxBatchBlocks
   # Serve slice sized so a full delivery message stays under the receiver's
-  # 32MB TCP window: 16 x 128KiB blocks = 2MiB.
-  DefaultMaxServeBatchBlocks = 16
+  # 32MB TCP window: 32 x 128KiB blocks = 4MiB.
+  DefaultMaxServeBatchBlocks = 32
   DefaultWantBlockBatchTimeout = 5.millis
   DiscoveryRateLimit = 3.seconds
   PresenceBatchSize = DefaultMaxWantListBatchSize
