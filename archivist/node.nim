@@ -59,7 +59,7 @@ logScope:
 
 const
   DefaultFetchBatch = 128
-  DefaultStoreBatch* = 1024 ## Number of blocks to batch when storing data
+  DefaultStoreBatch* = 256 ## Number of blocks to batch when storing data
   MaxInFlightBatches = 4 ## Maximum concurrent batch flushes for bounded parallelism
 
 type
