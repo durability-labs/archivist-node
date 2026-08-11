@@ -16,7 +16,7 @@ import pkg/questionable/results
 import ../errors
 
 type
-  CompressFn*[H, K] = proc(x, y: H, key: K): ?!H {.noSideEffect, raises: [].}
+  CompressFn*[H, K] = proc(x, y: H, key: K): ?!H {.nimcall, noSideEffect, raises: [].}
 
   # TODO: Make object, not ref
   MerkleTree*[H, K] = ref object of RootObj
