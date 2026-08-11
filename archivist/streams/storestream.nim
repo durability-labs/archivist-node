@@ -30,6 +30,12 @@ logScope:
 
 const StoreStreamTrackerName* = "StoreStream"
 
+# A block batch may miss blocks under load (a peer drops a want-batch, or a
+# concurrent store write retries out). Retry the fetch before aborting the
+# stream - one transient miss should not kill a whole download.
+const DefaultStreamRetries* = 5
+const DefaultStreamRetryDelay = 50.millis
+
 type
   # Make SeekableStream from a sequence of blocks stored in Manifest
   # (only original file data - see StoreStream.size)
@@ -100,11 +106,33 @@ method readOnce*(
     trace "No blocks returned from store!"
     raise newLPStreamReadError(newException(IOError, "No blocks returned from store!"))
 
-  # Build a lookup table from block CID to block data for ordered copying
-  # We copy block by block in index order using single-block getBlock fallback
-  # if a block is missing from the batch result.
+  # Build a lookup table from block index to block data, retrying any indices
+  # that came back missing (transient fetch/store misses under load).
+  var blocksMap = blocks.toTable
+  var missing: seq[Natural]
+  for idx in indices:
+    if not blocksMap.hasKey(idx):
+      missing.add(idx)
+
+  for attempt in 1 .. DefaultStreamRetries:
+    if missing.len == 0:
+      break
+    trace "Retrying missing blocks", missing = missing.len, attempt
+    without retried =? (await self.store.getBlocks(treeCid, missing)).tryGet.catch, err:
+      trace "Unable to retry blocks from store", err = err.msg
+      break
+    for (idx, blk) in retried:
+      blocksMap[idx] = blk
+    var stillMissing: seq[Natural]
+    for idx in missing:
+      if not blocksMap.hasKey(idx):
+        stillMissing.add(idx)
+    missing = stillMissing
+    if missing.len > 0 and attempt < DefaultStreamRetries:
+      await sleepAsync(DefaultStreamRetryDelay)
+
+  # Copy block by block in index order
   var read = 0
-  let blocksMap = blocks.toTable
 
   for idx in indices:
     if self.atEof or read >= nbytes:
