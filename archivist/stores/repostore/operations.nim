@@ -146,7 +146,7 @@ proc updateCounters*(
     success toSeq(refreshed.values)
 
   trace "Updating counters", quotaDelta, reservedDelta, blocksDelta
-  ?await self.metaDs.tryPutAtomic(updates, maxRetries = 10, updateCountersMiddleware)
+  ?await self.metaDs.tryPutAtomic(updates, maxRetries = 30, updateCountersMiddleware)
 
   if quotaDelta != 0:
     self.quotaUsage.used = max(0, self.quotaUsage.used.int + quotaDelta).NBytes
@@ -482,7 +482,7 @@ proc putLeafBlockMetaImpl(
 
   trace "Put or update leaf and block metadata", treeCid, recordsCount = updates.len
   if err =? (
-    await self.metaDs.tryPutAtomic(updates, maxRetries = 10, putLeafAndBlockMetaAtomic)
+    await self.metaDs.tryPutAtomic(updates, maxRetries = 30, putLeafAndBlockMetaAtomic)
   ).errorOption:
     trace "Unable to put or update leaf and block metadata", error = err.msg
     return failure(err)
