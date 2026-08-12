@@ -20,7 +20,7 @@ proc toAsyncIter*[T](queryIter: QueryIter[T]): AsyncIter[?!(?KVRecord[T])] =
       queryIter.finished,
     proc(): Future[void] {.async.} =
       if err =? (await dispose(queryIter)).errorOption:
-        raise err
+        raise toIteratorError(err)
     ,
     proc(): bool =
       queryIter.disposed,
