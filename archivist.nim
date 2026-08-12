@@ -39,6 +39,14 @@ when isMainModule:
   when defined(posix):
     import system/ansi_c
 
+  when defined(linux):
+    # Pin the mmap threshold below the block size: block buffers stay on
+    # the mmap path and return memory to the OS on free. Setting it
+    # explicitly also disables the dynamic ratchet that demotes them.
+    const M_MMAP_THRESHOLD = -3
+    proc mallopt(param: cint, value: cint): cint {.importc, header: "<malloc.h>".}
+    discard mallopt(M_MMAP_THRESHOLD, 64 * 1024)
+
   type NodeStatus {.pure.} = enum
     Stopped
     Stopping
