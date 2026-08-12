@@ -151,11 +151,11 @@ proc prepareEncodingData(
     treeCid: Cid,
     params: EncodingParams,
     step: Natural,
-    data: ref seq[seq[byte]],
+    data: sink seq[seq[byte]],
     cids: ref seq[Cid],
     emptyCid: Cid,
     emptyBlock: seq[byte],
-): Future[?!Natural] {.async: (raises: [CancelledError]).} =
+): Future[?!(Natural, seq[seq[byte]])] {.async: (raises: [CancelledError]).} =
   ## Prepare data for encoding
   ##
 
@@ -200,18 +200,20 @@ proc prepareEncodingData(
     data[pos] = emptyBlock
     cids[idx] = emptyCid
 
-  success(resolved.Natural)
+  success((resolved.Natural, move data))
 
 proc prepareDecodingData(
     self: Erasure,
     treeCid: Cid,
     params: EncodingParams,
     step: Natural,
-    data: ref seq[seq[byte]],
-    parityData: ref seq[seq[byte]],
+    data: sink seq[seq[byte]],
+    parityData: sink seq[seq[byte]],
     cids: ref seq[Cid],
     emptyBlock: seq[byte],
-): Future[?!(Natural, Natural)] {.async: (raises: [CancelledError]).} =
+): Future[?!(Natural, Natural, seq[seq[byte]], seq[seq[byte]])] {.
+    async: (raises: [CancelledError])
+.} =
   ## Prepare data for decoding
   ## `treeCid`    - the tree cid to fetch blocks from
   ## `params`     - encoding parameters
@@ -271,7 +273,7 @@ proc prepareDecodingData(
 
     resolved.inc
 
-  return success (dataPieces.Natural, parityPieces.Natural)
+  return success (dataPieces.Natural, parityPieces.Natural, move data, move parityData)
 
 proc init*(
     _: type EncodingParams,
@@ -323,7 +325,7 @@ proc initFromEncoded*(
     emptyCid: emptyCid,
   )
 
-proc leopardEncodeTask(
+proc leopardEncodeTask*(
     ctx: SharedPtr[TaskCtx[seq[seq[byte]]]],
     erasure: ptr Erasure,
     blockSize: int,
@@ -341,25 +343,6 @@ proc leopardEncodeTask(
     ctx[].result = unsafeIsolate(ThreadSpawnRes[seq[seq[byte]]].err($res.error))
   else:
     ctx[].result = unsafeIsolate(ThreadSpawnRes[seq[seq[byte]]].ok(move parity[]))
-
-proc asyncEncode*(
-    self: Erasure,
-    blockSize: int,
-    blocks: sink seq[seq[byte]],
-    parity: sink seq[seq[byte]],
-): Future[?!seq[seq[byte]]] {.async: (raises: [CancelledError]).} =
-  ## Encode `blocks` into `parity` parity blocks on the taskpool. Both
-  ## structures are moved in (sink) and the filled parity buffer is moved
-  ## back out through the result.
-  doAssert self.taskPool.numThreads > 1,
-    "Must have at least one separate thread or signal will never be fired"
-
-  success ?await spawnJoin[seq[seq[byte]]](
-    proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
-      self.taskPool.spawn leopardEncodeTask(
-        ctx, addr self, blockSize, addr blocks, addr parity
-      )
-  )
 
 proc encodeData(
     self: Erasure, originalTreeCid: Cid, tmpTreeCid: Cid, params: EncodingParams
@@ -387,19 +370,28 @@ proc encodeData(
   for step in 0 ..< params.steps:
     # TODO: Don't allocate a new seq every time, allocate once and zero out
     var
-      data = new seq[seq[byte]] # number of blocks to encode
-      parity = new seq[seq[byte]]
+      data: seq[seq[byte]] # number of blocks to encode
+      parity: seq[seq[byte]]
 
-    data[].setLen(params.ecK)
-    parity[] = newSeqWith(params.ecM, newSeqWith(params.blockSize.int, 0'u8))
+    data.setLen(params.ecK)
+    parity = newSeqWith(params.ecM, newSeqWith(params.blockSize.int, 0'u8))
 
-    let resolved =
+    let (resolved, filledData) =
       ?await self.prepareEncodingData(
-        originalTreeCid, params, step, data, cids, params.emptyCid, emptyBlock
+        originalTreeCid, params, step, move data, cids, params.emptyCid, emptyBlock
       )
+    data = filledData
 
-    trace "Erasure coding data", data = data[].len
-    parity[] = ?await self.asyncEncode(params.blockSize.int, move data[], move parity[])
+    trace "Erasure coding data", data = data.len
+    # Encode on the taskpool: the structures are moved through the
+    # spawnJoin result channel, no GC refs cross the boundary.
+    parity =
+      ?await spawnJoin[seq[seq[byte]]](
+        proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+          self.taskPool.spawn leopardEncodeTask(
+            ctx, addr self, params.blockSize.int, addr data, addr parity
+          )
+      )
     var
       idx = params.rounded + step
       blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
@@ -506,7 +498,7 @@ proc encode*(
 
   success(protected)
 
-proc leopardDecodeTask(
+proc leopardDecodeTask*(
     ctx: SharedPtr[TaskCtx[seq[seq[byte]]]],
     erasure: ptr Erasure,
     blockSize: int,
@@ -528,26 +520,6 @@ proc leopardDecodeTask(
   else:
     ctx[].result = unsafeIsolate(ThreadSpawnRes[seq[seq[byte]]].ok(move recovered))
 
-proc asyncDecode*(
-    self: Erasure,
-    blockSize: int,
-    blocks: ptr seq[seq[byte]],
-    parity: sink seq[seq[byte]],
-): Future[?!seq[seq[byte]]] {.async: (raises: [CancelledError]).} =
-  ## Decode `blocks`/`parity` on the taskpool. `blocks` is a read-only
-  ## borrow (the caller reads it after the await - lent views cannot cross
-  ## into a worker); `parity` moves in (sink); the recovered blocks move
-  ## back out through the result.
-  doAssert self.taskPool.numThreads > 1,
-    "Must have at least one separate thread or signal will never be fired"
-
-  success ?await spawnJoin[seq[seq[byte]]](
-    proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
-      self.taskPool.spawn leopardDecodeTask(
-        ctx, addr self, blockSize, blocks, addr parity
-      )
-  )
-
 proc decodeInternal(
     self: Erasure, encodedTreeCid: Cid, targetCid: Cid, params: EncodingParams
 ): Future[?!(ref seq[Cid], seq[Natural])] {.async: (raises: [CancelledError]).} =
@@ -566,18 +538,19 @@ proc decodeInternal(
   cids[].setLen(params.encodedBlocksCount)
   for step in 0 ..< params.steps:
     var
-      data = new seq[seq[byte]]
-      parityData = new seq[seq[byte]]
-      recovered = new seq[seq[byte]]
+      data: seq[seq[byte]]
+      parityData: seq[seq[byte]]
+      recovered: seq[seq[byte]]
 
-    data[].setLen(params.ecK) # set len to K
-    parityData[].setLen(params.ecM) # set len to M
-    recovered[] = newSeqWith(params.ecK, newSeqWith(params.blockSize.int, 0'u8))
+    data.setLen(params.ecK) # set len to K
+    parityData.setLen(params.ecM) # set len to M
 
-    let (dataPieces, parityPieces) =
+    let (dataPieces, parityPieces, filledData, filledParity) =
       ?await self.prepareDecodingData(
-        encodedTreeCid, params, step, data, parityData, cids, emptyBlock
+        encodedTreeCid, params, step, move data, move parityData, cids, emptyBlock
       )
+    data = filledData
+    parityData = filledParity
 
     if dataPieces + parityPieces < params.ecK:
       return failure(
@@ -593,8 +566,15 @@ proc decodeInternal(
       continue
 
     trace "Erasure decoding data"
-    recovered[] =
-      ?await self.asyncDecode(params.blockSize.int, addr data[], move parityData[])
+    # Decode on the taskpool: data stays a caller-side borrow (read after
+    # the await), the recovered blocks return through the result channel.
+    recovered =
+      ?await spawnJoin[seq[seq[byte]]](
+        proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+          self.taskPool.spawn leopardDecodeTask(
+            ctx, addr self, params.blockSize.int, addr data, addr parityData
+          )
+      )
     var blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
     for i in 0 ..< params.ecK:
       let idx = i * params.steps + step

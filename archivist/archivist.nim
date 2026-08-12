@@ -151,6 +151,8 @@ proc new*(
     if int(config.numThreads) == 0:
       countProcessors()
     else:
+      doAssert int(config.numThreads) > 1,
+        "At least one separate worker thread is required or the spawn signals will never fire"
       int(config.numThreads)
 
   var tp =
@@ -160,6 +162,9 @@ proc new*(
       raiseAssert("Failure in tp initialization:" & exc.msg)
 
   info "Threadpool started", numThreads = tp.numThreads
+
+  doAssert tp.numThreads > 1,
+    "At least one separate worker thread is required or the spawn signals will never fire"
 
   let discoveryDir = config.dataDir / ArchivistDhtNamespace
 
