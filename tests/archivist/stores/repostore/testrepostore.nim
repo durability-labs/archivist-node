@@ -8,6 +8,7 @@ import std/options
 import pkg/questionable
 import pkg/questionable/results
 
+import pkg/iter
 import pkg/chronos
 import pkg/stew/byteutils
 import pkg/stew/bitseqs
@@ -27,7 +28,6 @@ import pkg/archivist/merkletree
 import pkg/archivist/merkletree/archivist
 import pkg/archivist/merkletree/archivist/asynctree
 import pkg/archivist/utils
-import pkg/iter
 
 import ../../../asynctest
 import ../../helpers

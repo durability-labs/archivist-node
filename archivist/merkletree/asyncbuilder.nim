@@ -32,15 +32,15 @@
 import std/tables
 import std/typetraits
 
+import pkg/iter
 import pkg/chronicles
 import pkg/chronos
 import pkg/taskpools
+import pkg/threadspawn
 import pkg/questionable
 import pkg/questionable/results
 
 import ../errors
-import pkg/iter
-import pkg/threadspawn
 
 when defined(archivistAsynctreeTestHooks):
   ## Test-only instrumentation, compiled only into test builds (see

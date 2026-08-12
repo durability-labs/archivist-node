@@ -14,6 +14,7 @@ import std/sequtils
 import std/sugar
 import times
 
+import pkg/iter
 import pkg/taskpools
 import pkg/stew/bitseqs
 import pkg/questionable
@@ -48,7 +49,6 @@ import ./indexingstrategy
 import ./utils
 import ./errors
 import ./logutils
-import pkg/iter
 import ./utils/trackedfutures
 import ./utils/poseidon2digest
 

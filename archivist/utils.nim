@@ -13,15 +13,15 @@
 import std/parseutils
 import std/options
 
+import pkg/iter
 import pkg/chronos
+import pkg/threadspawn
 import pkg/stew/bitseqs
 
 import ./utils/asyncheapqueue
 import ./utils/fileutils
-import pkg/iter
 import ./utils/asyncbarrier
 import ./utils/futures
-import pkg/threadspawn
 
 export asyncheapqueue, fileutils, iter, chronos, bitseqs, asyncbarrier, threadspawn
 

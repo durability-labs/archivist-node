@@ -13,6 +13,7 @@ import std/math
 import std/sequtils
 import std/sugar
 
+import pkg/iter
 import pkg/libp2p
 import pkg/chronos
 import pkg/questionable
@@ -27,7 +28,6 @@ import ../../stores
 import ../../manifest
 import ../../merkletree
 import ../../merkletree/asyncposeidon2
-import pkg/iter
 import ../../indexingstrategy
 import ../../archivisttypes
 

@@ -1,5 +1,6 @@
 import std/sequtils
 
+import pkg/iter
 import pkg/chronicles
 import pkg/chronos
 import pkg/taskpools
@@ -11,7 +12,6 @@ import pkg/stew/byteutils
 
 import pkg/archivist/merkletree
 import pkg/archivist/merkletree/asyncposeidon2
-import pkg/iter
 
 import ../../asynctest
 
