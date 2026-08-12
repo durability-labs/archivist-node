@@ -315,32 +315,38 @@ suite "Erasure encode/decode":
     recovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
     cancelledTaskRecovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
 
-    # call asyncEncode to get the parity
-    let encFut = await erasure.asyncEncode(BlockSize.int, data, parity)
-    check encFut.isOk
+    # call asyncEncode to get the parity.  Pass the buffers as copies so
+    # the refs stay intact for the subsequent calls (sink params take
+    # ownership of the passed value).
+    let encRes = await erasure.asyncEncode(BlockSize.int, data[], parity[])
+    check encRes.isOk
+    parity[] = encRes.tryGet()
 
-    let decFut = await erasure.asyncDecode(BlockSize.int, data, parity, recovered)
-    check decFut.isOk
+    let decRes = await erasure.asyncDecode(BlockSize.int, addr data[], parity[])
+    check decRes.isOk
+    recovered[] = decRes.tryGet()
 
-    # call asyncEncode and cancel the task
-    let encodeFut = erasure.asyncEncode(BlockSize.int, data, cancelledTaskParity)
+    # call asyncEncode and cancel the task: the drain lets the worker
+    # finish, the future reports cancellation
+    let encodeFut = erasure.asyncEncode(BlockSize.int, data[], cancelledTaskParity[])
     await encodeFut.cancelAndWait()
 
     try:
       discard await encodeFut
     except CatchableError as exc:
       check exc of CancelledError
-    finally:
-      check parity[] == cancelledTaskParity[]
 
     # call asyncDecode and cancel the task
-    let decodeFut =
-      erasure.asyncDecode(BlockSize.int, data, parity, cancelledTaskRecovered)
+    let decodeFut = erasure.asyncDecode(BlockSize.int, addr data[], parity[])
     await decodeFut.cancelAndWait()
 
     try:
       discard await decodeFut
     except CatchableError as exc:
       check exc of CancelledError
-    finally:
-      check recovered[] == cancelledTaskRecovered[]
+
+    # The pool is still functional and the encoder is deterministic after
+    # the cancellations.
+    let enc2 = await erasure.asyncEncode(BlockSize.int, data[], parity[])
+    check enc2.isOk
+    check enc2.tryGet() == parity[]
