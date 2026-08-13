@@ -344,9 +344,9 @@ proc leopardEncodeTask*(
 
   if (let res = encoder.encode(blocks[], parity[]); res.isErr):
     warn "Error from leopard encoder backend!", error = $res.error
-    ctx[].result = unsafeIsolate(ThreadSpawnRes[seq[seq[byte]]].err($res.error))
+    ctx[].result = isolate(ThreadSpawnRes[seq[seq[byte]]].err($res.error))
   else:
-    ctx[].result = unsafeIsolate(ThreadSpawnRes[seq[seq[byte]]].ok(move parity[]))
+    ctx[].result = isolate(ThreadSpawnRes[seq[seq[byte]]].ok(move parity[]))
 
 proc encodeData(
     self: Erasure, originalTreeCid: Cid, tmpTreeCid: Cid, params: EncodingParams
@@ -520,9 +520,9 @@ proc leopardDecodeTask*(
   var recovered = newSeqWith(blocks[].len, newSeqWith(blockSize, 0'u8))
   if (let res = decoder.decode(blocks[], parity[], recovered); res.isErr):
     warn "Error from leopard decoder backend!", error = $res.error
-    ctx[].result = unsafeIsolate(ThreadSpawnRes[seq[seq[byte]]].err($res.error))
+    ctx[].result = isolate(ThreadSpawnRes[seq[seq[byte]]].err($res.error))
   else:
-    ctx[].result = unsafeIsolate(ThreadSpawnRes[seq[seq[byte]]].ok(move recovered))
+    ctx[].result = isolate(ThreadSpawnRes[seq[seq[byte]]].ok(move recovered))
 
 proc decodeInternal(
     self: Erasure, encodedTreeCid: Cid, targetCid: Cid, params: EncodingParams
