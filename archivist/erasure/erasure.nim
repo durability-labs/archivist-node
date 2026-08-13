@@ -62,10 +62,14 @@ type
   ## or any combination there of.
   ##
   EncoderProvider* =
-    proc(size, blocks, parity: int): EncoderBackend {.raises: [Defect], noSideEffect.}
+    proc(
+        size, blocks, parity: int
+    ): EncoderBackend {.raises: [Defect], noSideEffect, nimcall.}
 
   DecoderProvider* =
-    proc(size, blocks, parity: int): DecoderBackend {.raises: [Defect], noSideEffect.}
+    proc(
+        size, blocks, parity: int
+    ): DecoderBackend {.raises: [Defect], noSideEffect, nimcall.}
 
   Erasure* = ref object
     taskPool: Taskpool
