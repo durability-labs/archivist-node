@@ -151,11 +151,10 @@ proc send*(
     # data. The worker borrows the message by pointer. The caller's message
     # and the engine's blk refs survive to the main thread for deterministic
     # destroy.
-    encoded =
-      ?await spawnJoin[seq[byte]](
-        proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
-          self.taskpool.spawn encodeMsgTask(ctx, addr msg)
-      )
+    encoded = ?await spawnJoin[seq[byte]](
+      proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
+        self.taskpool.spawn encodeMsgTask(ctx, addr msg)
+    )
   else:
     encoded = encode(msg)
 

@@ -104,10 +104,9 @@ proc buildAsync*(
     # Explicit generics: U does not infer at some instantiation sites
     # (same workaround as mapAsync in erasure.nim).
     digests = map[Cid, ?!ByteHash](leaves, toDigest)
-    layers =
-      ?await buildLayersAsync(
-        digests, tp, Sha256Compressor(), ByteTreeKey, zero, batchSize
-      )
+    layers = ?await buildLayersAsync(
+      digests, tp, Sha256Compressor(), ByteTreeKey, zero, batchSize
+    )
 
   # Same compressor closure shape as ArchivistTree.init, stored on the
   # returned tree for getProof/verify.

@@ -61,15 +61,13 @@ type
   ## columns (with up to M blocks missing per column),
   ## or any combination there of.
   ##
-  EncoderProvider* =
-    proc(
-        size, blocks, parity: int
-    ): EncoderBackend {.raises: [Defect], noSideEffect, nimcall.}
+  EncoderProvider* = proc(size, blocks, parity: int): EncoderBackend {.
+    raises: [Defect], noSideEffect, nimcall
+  .}
 
-  DecoderProvider* =
-    proc(
-        size, blocks, parity: int
-    ): DecoderBackend {.raises: [Defect], noSideEffect, nimcall.}
+  DecoderProvider* = proc(size, blocks, parity: int): DecoderBackend {.
+    raises: [Defect], noSideEffect, nimcall
+  .}
 
   Erasure* = ref object
     taskPool: Taskpool
@@ -172,12 +170,11 @@ proc prepareEncodingData(
 
   trace "Preparing encoding data"
   let
-    strategy =
-      ?catch(
-        params.strategy.init(
-          firstIndex = 0, lastIndex = params.rounded - 1, iterations = params.steps
-        )
+    strategy = ?catch(
+      params.strategy.init(
+        firstIndex = 0, lastIndex = params.rounded - 1, iterations = params.steps
       )
+    )
     indices = toSeq(?catch(strategy.getIndices(step)))
     pendingBlocksIter =
       self.getPendingBlocks(treeCid, indices.filterIt(it < params.blocksCount))
@@ -229,14 +226,13 @@ proc prepareDecodingData(
   ##
 
   let
-    strategy =
-      ?catch(
-        params.strategy.init(
-          firstIndex = 0,
-          lastIndex = params.encodedBlocksCount - 1,
-          iterations = params.steps,
-        )
+    strategy = ?catch(
+      params.strategy.init(
+        firstIndex = 0,
+        lastIndex = params.encodedBlocksCount - 1,
+        iterations = params.steps,
       )
+    )
     indices = toSeq(?catch(strategy.getIndices(step)))
     pendingBlocksIter = self.getPendingBlocks(treeCid, indices)
 
@@ -380,22 +376,20 @@ proc encodeData(
     data.setLen(params.ecK)
     parity = newSeqWith(params.ecM, newSeqWith(params.blockSize.int, 0'u8))
 
-    let (resolved, filledData) =
-      ?await self.prepareEncodingData(
-        originalTreeCid, params, step, move data, cids, params.emptyCid, emptyBlock
-      )
+    let (resolved, filledData) = ?await self.prepareEncodingData(
+      originalTreeCid, params, step, move data, cids, params.emptyCid, emptyBlock
+    )
     data = filledData
 
     trace "Erasure coding data", data = data.len
     # Encode on the taskpool: the structures are moved through the
     # spawnJoin result channel, no GC refs cross the boundary.
-    parity =
-      ?await spawnJoin[seq[seq[byte]]](
-        proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
-          self.taskPool.spawn leopardEncodeTask(
-            ctx, addr self, params.blockSize.int, addr data, addr parity
-          )
-      )
+    parity = ?await spawnJoin[seq[seq[byte]]](
+      proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+        self.taskPool.spawn leopardEncodeTask(
+          ctx, addr self, params.blockSize.int, addr data, addr parity
+        )
+    )
     var
       idx = params.rounded + step
       blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
@@ -453,10 +447,9 @@ proc encode*(
         warn "Failed to dispose tree iterator", err = err.msg
 
     let
-      tree =
-        ?await ArchivistTree.buildAsync(
-          cidsIter, self.taskPool, mcodec = (?cids[][0].mhash.mapFailure).mcodec
-        )
+      tree = ?await ArchivistTree.buildAsync(
+        cidsIter, self.taskPool, mcodec = (?cids[][0].mhash.mapFailure).mcodec
+      )
       treeCid = ?tree.rootCid
 
     var proofItems: seq[(Natural, Cid, ArchivistProof)]
@@ -549,10 +542,9 @@ proc decodeInternal(
     data.setLen(params.ecK) # set len to K
     parityData.setLen(params.ecM) # set len to M
 
-    let (dataPieces, parityPieces, filledData, filledParity) =
-      ?await self.prepareDecodingData(
-        encodedTreeCid, params, step, move data, move parityData, cids, emptyBlock
-      )
+    let (dataPieces, parityPieces, filledData, filledParity) = ?await self.prepareDecodingData(
+      encodedTreeCid, params, step, move data, move parityData, cids, emptyBlock
+    )
     data = filledData
     parityData = filledParity
 
@@ -572,13 +564,12 @@ proc decodeInternal(
     trace "Erasure decoding data"
     # Decode on the taskpool: data stays a caller-side borrow (read after
     # the await), the recovered blocks return through the result channel.
-    recovered =
-      ?await spawnJoin[seq[seq[byte]]](
-        proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
-          self.taskPool.spawn leopardDecodeTask(
-            ctx, addr self, params.blockSize.int, addr data, addr parityData
-          )
-      )
+    recovered = ?await spawnJoin[seq[seq[byte]]](
+      proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+        self.taskPool.spawn leopardDecodeTask(
+          ctx, addr self, params.blockSize.int, addr data, addr parityData
+        )
+    )
     var blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
     for i in 0 ..< params.ecK:
       let idx = i * params.steps + step

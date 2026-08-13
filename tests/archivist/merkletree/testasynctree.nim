@@ -227,11 +227,10 @@ suite "Async progressive ArchivistTree builder":
     # `completed` before the drain runs: both must append.
     let r = testDrainCompletedInOrder[ByteHash, ByteTreeKey, Sha256Compressor](
       layers = @[newSeq[ByteHash](), newSeq[ByteHash]()],
-      completed =
-        @[
-          (level: 0, seqNum: 1, hashes: @[newSeq[byte](32), newSeq[byte](32)]),
-          (level: 0, seqNum: 0, hashes: @[newSeq[byte](32)]),
-        ],
+      completed = @[
+        (level: 0, seqNum: 1, hashes: @[newSeq[byte](32), newSeq[byte](32)]),
+        (level: 0, seqNum: 0, hashes: @[newSeq[byte](32)]),
+      ],
       batchSize = 4,
     )
     check r.isOk

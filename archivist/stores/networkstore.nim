@@ -114,10 +114,9 @@ method getBlock*(
       error "Error getting block from local store", treeCid, index, err = err.msg
       return failure err
 
-    let delivery =
-      ?catchAsync(
-        await (?self.engine.requestDelivery(BlockAddress.init(treeCid, index)))
-      )
+    let delivery = ?catchAsync(
+      await (?self.engine.requestDelivery(BlockAddress.init(treeCid, index)))
+    )
     return success delivery.blk
 
   return success blk

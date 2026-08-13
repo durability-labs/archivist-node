@@ -84,10 +84,9 @@ proc buildAsync*(
     # Explicit generics: U does not infer at some instantiation sites
     # (same workaround as mapAsync in erasure.nim).
     items = map[Poseidon2Hash, ?!Poseidon2Hash](leaves, lift)
-    layers =
-      ?await buildLayersAsync(
-        items, tp, Poseidon2Compressor(), PoseidonKeysEnum, Poseidon2Zero, batchSize
-      )
+    layers = ?await buildLayersAsync(
+      items, tp, Poseidon2Compressor(), PoseidonKeysEnum, Poseidon2Zero, batchSize
+    )
 
   # Same compressor closure shape as Poseidon2Tree.init, stored on the
   # returned tree for getProof/verify.

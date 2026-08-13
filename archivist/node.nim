@@ -483,165 +483,164 @@ proc store*(
     )
     success()
 
-  let treeCid =
-    ?await self.repoStore.withTmpOverlay(
-      body = proc(
-          tmpCid: Cid
-      ): Future[?!Cid] {.closure, gcsafe, async: (raises: [CancelledError]).} =
-        var
-          index = 0
-          cids: seq[Cid]
-          inFlight: seq[Future[?!void]] ## Track in-flight batch flushes
-          blockBatch: seq[(bt.Block, Natural)] ## (block, index) pairs for batching
+  let treeCid = ?await self.repoStore.withTmpOverlay(
+    body = proc(
+        tmpCid: Cid
+    ): Future[?!Cid] {.closure, gcsafe, async: (raises: [CancelledError]).} =
+      var
+        index = 0
+        cids: seq[Cid]
+        inFlight: seq[Future[?!void]] ## Track in-flight batch flushes
+        blockBatch: seq[(bt.Block, Natural)] ## (block, index) pairs for batching
 
-        proc fireBoundedBatch(
-            batch: sink seq[(bt.Block, Natural)]
-        ): Future[?!void] {.async: (raises: [CancelledError]).} =
-          # wait if at capacity before launching new batch
-          if inFlight.len >= MaxInFlightBatches:
-            # Remove first future and await it (cleanup before await to avoid leak)
-            let fut = ?catchAsync(await one(inFlight))
-            inFlight.keepItIf(FutureBase(it) != FutureBase(fut))
-            ?catchAsync(?await fut)
+      proc fireBoundedBatch(
+          batch: sink seq[(bt.Block, Natural)]
+      ): Future[?!void] {.async: (raises: [CancelledError]).} =
+        # wait if at capacity before launching new batch
+        if inFlight.len >= MaxInFlightBatches:
+          # Remove first future and await it (cleanup before await to avoid leak)
+          let fut = ?catchAsync(await one(inFlight))
+          inFlight.keepItIf(FutureBase(it) != FutureBase(fut))
+          ?catchAsync(?await fut)
 
-          # Launch batch flush without awaiting (adds to window)
-          inFlight.add(flushBatch(tmpCid, move batch))
-          archivist_upload_batches_total.inc()
-          archivist_upload_active_batches.set(inFlight.len.int64)
+        # Launch batch flush without awaiting (adds to window)
+        inFlight.add(flushBatch(tmpCid, move batch))
+        archivist_upload_batches_total.inc()
+        archivist_upload_active_batches.set(inFlight.len.int64)
 
-          success()
+        success()
 
-        # Progressive tree builder: consume cids as blocks are produced.  One
-        # cid is held back; at EOF it is enqueued flagged `isLast`, and the
-        # builder only finishes after consuming that flagged item - no race
-        # between a done-flag and a queue that can still be draining, and no
-        # permanently blocked popFirst.
-        var
-          cidQueue = newAsyncQueue[tuple[cid: Cid, isLast: bool]](storeBatchSize)
-          allCidsQueued = false
-          held: ?Cid
+      # Progressive tree builder: consume cids as blocks are produced.  One
+      # cid is held back; at EOF it is enqueued flagged `isLast`, and the
+      # builder only finishes after consuming that flagged item - no race
+      # between a done-flag and a queue that can still be draining, and no
+      # permanently blocked popFirst.
+      var
+        cidQueue = newAsyncQueue[tuple[cid: Cid, isLast: bool]](storeBatchSize)
+        allCidsQueued = false
+        held: ?Cid
+
+      let
+        treeIter = AsyncIter[Cid].new(
+          proc(): Future[Cid] {.async.} =
+            let item = await cidQueue.popFirst()
+            if item.isLast:
+              allCidsQueued = true
+            item.cid,
+          proc(): bool =
+            allCidsQueued,
+        )
+        treeFut = ArchivistTree.buildAsync(treeIter, self.taskpool)
+
+      proc enqueueCid(
+          item: tuple[cid: Cid, isLast: bool]
+      ): Future[?!void] {.async: (raises: [CancelledError]).} =
+        # Race the (potentially blocking) enqueue against the builder: a
+        # builder that failed mid-ingest stops consuming, and a full queue
+        # would then suspend the producer forever - the body defer cannot
+        # run while we are blocked here.
+        let enqFut = cidQueue.addLast(item)
+        await enqFut or treeFut
+        if enqFut.finished():
+          # The item landed in the queue. If the builder also finished in
+          # the meantime, it did so by consuming this very item (it only
+          # completes after the isLast marker), so this is a normal
+          # completion, not a premature one.
+          return success()
+
+        # The builder finished before our item could be enqueued.
+        await noCancel enqFut.cancelAndWait()
+        let treeRes = ?catchAsync(await treeFut)
+        if err =? treeRes.errorOption:
+          return failure(err)
+        return failure "Tree builder finished before upload completed"
+
+      defer:
+        if inFlight.len > 0:
+          warn "Early exit, cancelling outstanding upload batches",
+            batches = inFlight.len
+          await allFutures(inFlight.mapIt(it.cancelAndWait()))
+        # Stop the tree builder (it may be blocked on the empty queue) and
+        # release the iterator; both are no-ops on the success path.
+        await treeFut.cancelAndWait()
+        if err =? catchAsync(await treeIter.dispose()).errorOption:
+          warn "Error disposing tree iterator", err = err.msg
+
+      while true:
+        var chunk = ?await chunker.getBytes()
+        archivist_upload_bytes_total.inc(chunk.len.int64)
+        if chunk.len == 0:
+          trace "Chunker finished reading stream", read = NBytes(chunker.offset)
+          break
 
         let
-          treeIter = AsyncIter[Cid].new(
-            proc(): Future[Cid] {.async.} =
-              let item = await cidQueue.popFirst()
-              if item.isLast:
-                allCidsQueued = true
-              item.cid,
-            proc(): bool =
-              allCidsQueued,
-          )
-          treeFut = ArchivistTree.buildAsync(treeIter, self.taskpool)
+          mhash = ?MultiHash.digest($hcodec, chunk).mapFailure
+          cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
+          blk = ?bt.Block.new(cid, move chunk, verify = false)
 
-        proc enqueueCid(
-            item: tuple[cid: Cid, isLast: bool]
-        ): Future[?!void] {.async: (raises: [CancelledError]).} =
-          # Race the (potentially blocking) enqueue against the builder: a
-          # builder that failed mid-ingest stops consuming, and a full queue
-          # would then suspend the producer forever - the body defer cannot
-          # run while we are blocked here.
-          let enqFut = cidQueue.addLast(item)
-          await enqFut or treeFut
-          if enqFut.finished():
-            # The item landed in the queue. If the builder also finished in
-            # the meantime, it did so by consuming this very item (it only
-            # completes after the isLast marker), so this is a normal
-            # completion, not a premature one.
-            return success()
+        archivist_upload_blocks_total.inc()
+        cids.add(cid)
+        # Hold one back: enqueue the previous cid (non-final) when the next
+        # arrives; the final cid is enqueued flagged isLast at EOF.
+        if prev =? held:
+          ?await enqueueCid((prev, false))
+        held = some cid
+        blockBatch.add((blk, index.Natural))
+        index.inc
 
-          # The builder finished before our item could be enqueued.
-          await noCancel enqFut.cancelAndWait()
-          let treeRes = ?catchAsync(await treeFut)
-          if err =? treeRes.errorOption:
-            return failure(err)
-          return failure "Tree builder finished before upload completed"
-
-        defer:
-          if inFlight.len > 0:
-            warn "Early exit, cancelling outstanding upload batches",
-              batches = inFlight.len
-            await allFutures(inFlight.mapIt(it.cancelAndWait()))
-          # Stop the tree builder (it may be blocked on the empty queue) and
-          # release the iterator; both are no-ops on the success path.
-          await treeFut.cancelAndWait()
-          if err =? catchAsync(await treeIter.dispose()).errorOption:
-            warn "Error disposing tree iterator", err = err.msg
-
-        while true:
-          var chunk = ?await chunker.getBytes()
-          archivist_upload_bytes_total.inc(chunk.len.int64)
-          if chunk.len == 0:
-            trace "Chunker finished reading stream", read = NBytes(chunker.offset)
-            break
-
-          let
-            mhash = ?MultiHash.digest($hcodec, chunk).mapFailure
-            cid = ?Cid.init(CIDv1, dataCodec, mhash).mapFailure
-            blk = ?bt.Block.new(cid, move chunk, verify = false)
-
-          archivist_upload_blocks_total.inc()
-          cids.add(cid)
-          # Hold one back: enqueue the previous cid (non-final) when the next
-          # arrives; the final cid is enqueued flagged isLast at EOF.
-          if prev =? held:
-            ?await enqueueCid((prev, false))
-          held = some cid
-          blockBatch.add((blk, index.Natural))
-          index.inc
-
-          # Flush batch when full
-          if blockBatch.len >= storeBatchSize:
-            archivist_upload_active_batches.set(inFlight.len.int64)
-            ?await fireBoundedBatch(move blockBatch)
-            archivist_upload_active_batches.set(inFlight.len.int64)
-            blockBatch.setLen(0)
-
-        # Flush batch on last iteration
-        if blockBatch.len > 0:
+        # Flush batch when full
+        if blockBatch.len >= storeBatchSize:
+          archivist_upload_active_batches.set(inFlight.len.int64)
           ?await fireBoundedBatch(move blockBatch)
+          archivist_upload_active_batches.set(inFlight.len.int64)
           blockBatch.setLen(0)
 
-        await allFutures(inFlight)
-        for fut in inFlight:
-          if err =? catchAsync(?fut.read).errorOption:
-            error "Unable to store uploaded data", err = err.msg
-            return failure(err)
+      # Flush batch on last iteration
+      if blockBatch.len > 0:
+        ?await fireBoundedBatch(move blockBatch)
+        blockBatch.setLen(0)
 
-        inFlight.setLen(0)
+      await allFutures(inFlight)
+      for fut in inFlight:
+        if err =? catchAsync(?fut.read).errorOption:
+          error "Unable to store uploaded data", err = err.msg
+          return failure(err)
 
-        # Empty stream: matches sync ArchivistTree.init([]) behavior; the
-        # defer above cancels the tree builder blocked on the empty queue.
-        if cids.len == 0:
-          return failure "Empty leaves"
+      inFlight.setLen(0)
 
-        # Signal EOF to the tree builder: enqueue the held final cid flagged
-        # isLast, so the builder finishes only after consuming it.
-        if finalCid =? held:
-          ?await enqueueCid((finalCid, true))
+      # Empty stream: matches sync ArchivistTree.init([]) behavior; the
+      # defer above cancels the tree builder blocked on the empty queue.
+      if cids.len == 0:
+        return failure "Empty leaves"
 
-        let
-          treeStart = Moment.now()
-          tree = ?await treeFut
-          treeCid = ?tree.rootCid(CIDv1, dataCodec)
-          treeDone = Moment.now()
+      # Signal EOF to the tree builder: enqueue the held final cid flagged
+      # isLast, so the builder finishes only after consuming it.
+      if finalCid =? held:
+        ?await enqueueCid((finalCid, true))
 
-        archivist_upload_tree_build_duration_seconds.observe(
-          (treeDone - treeStart).milliseconds.float64 / 1000.0
-        )
+      let
+        treeStart = Moment.now()
+        tree = ?await treeFut
+        treeCid = ?tree.rootCid(CIDv1, dataCodec)
+        treeDone = Moment.now()
 
-        var proofItems: seq[(Natural, Cid, ArchivistProof)]
-        for index, cid in cids:
-          proofItems.add((index.Natural, cid, ?tree.getProof(index)))
-          if proofItems.len >= storeBatchSize:
-            ?await self.repoStore.putCidsAndProofs(tmpCid, proofItems)
-            proofItems.setLen(0)
+      archivist_upload_tree_build_duration_seconds.observe(
+        (treeDone - treeStart).milliseconds.float64 / 1000.0
+      )
 
-        if proofItems.len > 0:
+      var proofItems: seq[(Natural, Cid, ArchivistProof)]
+      for index, cid in cids:
+        proofItems.add((index.Natural, cid, ?tree.getProof(index)))
+        if proofItems.len >= storeBatchSize:
           ?await self.repoStore.putCidsAndProofs(tmpCid, proofItems)
           proofItems.setLen(0)
 
-        success treeCid
-    )
+      if proofItems.len > 0:
+        ?await self.repoStore.putCidsAndProofs(tmpCid, proofItems)
+        proofItems.setLen(0)
+
+      success treeCid
+  )
 
   let manifest = Manifest.new(
     treeCid = treeCid,
@@ -941,10 +940,9 @@ proc storeSlot*(
     return failure(newException(ArchivistError, "Slot root mismatch"))
 
   # Track verifiable manifest CID on the slot overlay for cleanup
-  discard
-    ?await self.repoStore.storeVerifiableManifest(
-      manifest, slotIdx = slotIndex.Natural.some, expiry = expiry
-    )
+  discard ?await self.repoStore.storeVerifiableManifest(
+    manifest, slotIdx = slotIndex.Natural.some, expiry = expiry
+  )
 
   trace "Slot successfully retrieved and reconstructed"
 
@@ -968,10 +966,9 @@ proc proveSlot*(
 
     let
       manifest = ?await self.repoStore.fetchManifest(cid)
-      builder =
-        ?Poseidon2Builder.new(
-          self.networkStore, self.repoStore, manifest, manifest.verifiableStrategy
-        )
+      builder = ?Poseidon2Builder.new(
+        self.networkStore, self.repoStore, manifest, manifest.verifiableStrategy
+      )
       sampler = ?Poseidon2Sampler.new(slotIdx, self.networkStore, builder)
 
     when defined(verify_circuit):

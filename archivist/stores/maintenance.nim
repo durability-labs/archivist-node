@@ -51,9 +51,8 @@ proc new*(
 proc dropExpiredOverlays(
     self: BlockMaintainer
 ): Future[void] {.async: (raises: [CancelledError]).} =
-  without raw =? (
-    catch(await self.repoStore.listOverlaysByExpiry(limit = -1, offset = 0))
-  ), err:
+  without raw =?
+    (catch(await self.repoStore.listOverlaysByExpiry(limit = -1, offset = 0))), err:
     warn "Unable to list overlays", err = err.msg
     return
 

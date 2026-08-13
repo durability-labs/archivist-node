@@ -200,14 +200,13 @@ proc listOverlaysByExpiry*(
 
   let
     queryKey = ?overlayQueryKey()
-    iter =
-      ?(
-        await query(
-          self.metaDs,
-          Query.init(queryKey, limit = limit, offset = offset),
-          OverlayMetadata,
-        )
+    iter = ?(
+      await query(
+        self.metaDs,
+        Query.init(queryKey, limit = limit, offset = offset),
+        OverlayMetadata,
       )
+    )
 
   let queryIter = iter.toAsyncIter()
 
@@ -228,7 +227,7 @@ proc listOverlaysByExpiry*(
   )
   let metadata = (await collectAsync(mapped))
   # Sort by expiry (ascending - earliest expiry first)
-  .sorted(
+    .sorted(
     func (a, b: (Cid, OverlayMetadata)): int =
       cmp(a[1].expiry, b[1].expiry)
   )
@@ -379,8 +378,9 @@ proc finalizeOverlay*(
       ]
     )
   ).errorOption:
-    if restoreErr =?
-        (await noCancel self.putOverlay(tmpCid, status = tmpOrigStatus.some)).errorOption:
+    if restoreErr =? (
+      await noCancel self.putOverlay(tmpCid, status = tmpOrigStatus.some)
+    ).errorOption:
       error "Unable to restore tmp overlay after finalization failure",
         exc = restoreErr.msg
       return failure(restoreErr)
