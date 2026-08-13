@@ -53,7 +53,7 @@ privateAccess(ArchivistNode) # enable access to private fields
 
 proc overlayCount(
     repo: RepoStore
-): Future[?!int] {.async: (raises: [CancelledError]).} =
+): Future[?!int] {.async: (raises: [IteratorError, CancelledError]).} =
   let iter = ?await repo.listOverlays()
   let cids = await collectAsync(iter)
   success(cids.len)
