@@ -194,7 +194,7 @@ proc listOverlaysInState*(
 
 proc listOverlaysByExpiry*(
     self: RepoStore, limit: int, offset: int
-): Future[?!seq[(Cid, OverlayMetadata)]] {.async: (raises: [CancelledError]).} =
+): Future[?!seq[(Cid, OverlayMetadata)]] {.async: (raises: [CatchableError]).} =
   ## List overlays sorted by expiry time (ascending).
   ##
 
@@ -226,7 +226,7 @@ proc listOverlaysByExpiry*(
   let mapped = await mapFilter[?!(?KVRecord[OverlayMetadata]), (Cid, OverlayMetadata)](
     queryIter, mapRecord
   )
-  let metadata = (?await collectAsync(mapped))
+  let metadata = (await collectAsync(mapped))
   # Sort by expiry (ascending - earliest expiry first)
   .sorted(
     func (a, b: (Cid, OverlayMetadata)): int =
