@@ -59,15 +59,14 @@ proc mapTask(
       warn "Failed to fire port mapping completion signal", error = err
 
   trace "started port mapping background task", address = address[]
-  var mapping = portmapping[].map(address[]).mapThreadSpawnErr
-  ctx[].result = isolate(move mapping)
-  trace "finished port mapping background task", address = address[], mapping
+  ctx[].result = mapThreadSpawnErr(portmapping[].map(address[]))
+  trace "finished port mapping background task", address = address[]
 
 proc map(
     traversal: sink NatTraversal, address: sink MultiAddress
 ): Future[?!MultiAddress] {.async: (raises: [CancelledError]).} =
   trace "spawning port mapping background task", address
-  await spawnJoin[MultiAddress](
+  await spawnJoin(
     proc(ctx: SharedPtr[TaskCtx[MultiAddress]]) {.gcsafe, raises: [].} =
       traversal.taskpool.spawn mapTask(ctx, addr traversal.portmapping, addr address)
   )

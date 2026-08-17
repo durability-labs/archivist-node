@@ -319,7 +319,7 @@ suite "Erasure encode/decode":
     # call the encode worker to get the parity (asyncEncode was inlined
     # into its callers).  The buffers are passed by pointer so the refs
     # stay intact for the subsequent calls.
-    let encRes = await spawnJoin[seq[seq[byte]]](
+    let encRes = await spawnJoin(
       proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
         tp.spawn leopardEncodeTask(
           ctx, addr erasure, BlockSize.int, addr data[], addr parity[]
@@ -328,7 +328,7 @@ suite "Erasure encode/decode":
     check encRes.isOk
     parity[] = encRes.tryGet()
 
-    let decRes = await spawnJoin[seq[seq[byte]]](
+    let decRes = await spawnJoin(
       proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
         tp.spawn leopardDecodeTask(
           ctx, addr erasure, BlockSize.int, addr data[], addr parity[]
@@ -339,7 +339,7 @@ suite "Erasure encode/decode":
 
     # call the encode worker and cancel the task: the drain lets the
     # worker finish, the future reports cancellation
-    let encodeFut = spawnJoin[seq[seq[byte]]](
+    let encodeFut = spawnJoin(
       proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
         tp.spawn leopardEncodeTask(
           ctx, addr erasure, BlockSize.int, addr data[], addr cancelledTaskParity[]
@@ -353,7 +353,7 @@ suite "Erasure encode/decode":
       check exc of CancelledError
 
     # call the decode worker and cancel the task
-    let decodeFut = spawnJoin[seq[seq[byte]]](
+    let decodeFut = spawnJoin(
       proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
         tp.spawn leopardDecodeTask(
           ctx, addr erasure, BlockSize.int, addr data[], addr parity[]
@@ -373,7 +373,7 @@ suite "Erasure encode/decode":
     var parityRef: seq[seq[byte]]
     for i in 0 ..< parity[].len:
       parityRef.add parity[][i]
-    let enc2 = await spawnJoin[seq[seq[byte]]](
+    let enc2 = await spawnJoin(
       proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
         tp.spawn leopardEncodeTask(
           ctx, addr erasure, BlockSize.int, addr data[], addr parity[]

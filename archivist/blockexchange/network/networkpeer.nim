@@ -14,7 +14,6 @@ import pkg/libp2p
 import pkg/taskpools
 import pkg/results
 
-import std/isolation
 import std/sequtils
 import pkg/threadspawn
 
@@ -55,8 +54,7 @@ proc decodeMsgTask(
     if err =? ctx[].signal.fireSync().errorOption:
       warn "Failed to fire worker completion signal", error = err
 
-  var r = Message.decode(data[]).mapThreadSpawnErr
-  ctx[].result = isolate(move r)
+  ctx[].result = mapThreadSpawnErr(Message.decode(data[]))
 
 proc encodeMsgTask(
     ctx: SharedPtr[TaskCtx[seq[byte]]], msg: ptr Message
@@ -65,8 +63,7 @@ proc encodeMsgTask(
     if err =? ctx[].signal.fireSync().errorOption:
       warn "Failed to fire worker completion signal", error = err
 
-  var r = ThreadSpawnRes[seq[byte]].ok(encode(msg[]))
-  ctx[].result = isolate(move r)
+  ctx[].result = ThreadSpawnRes[seq[byte]].ok(encode(msg[]))
 
 proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
   if isNil(conn):
@@ -85,11 +82,10 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
         # Offload decode to the taskpool for large payloads. The worker
         # borrows the payload by pointer (the caller's frame outlives
         # the worker via awaitSpawn's drain - zero refcount operations
-        # on the payload). Block refs are created and moved on the
-        # worker. With `{.acyclic.}` on Block the decrefs are plain (no
-        # cycle-registry involvement), so cross-thread destroy is safe.
+        # on the payload). Payload isolation is enforced by the
+        # ThreadSpawnRes constructors.
         msg = (
-          await spawnJoin[Message](
+          await spawnJoin(
             proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
               self.taskpool.spawn decodeMsgTask(ctx, addr data)
           )
@@ -151,10 +147,11 @@ proc send*(
     # data. The worker borrows the message by pointer. The caller's message
     # and the engine's blk refs survive to the main thread for deterministic
     # destroy.
-    encoded = ?await spawnJoin[seq[byte]](
-      proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
-        self.taskpool.spawn encodeMsgTask(ctx, addr msg)
-    )
+    encoded =
+      ?await spawnJoin(
+        proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
+          self.taskpool.spawn encodeMsgTask(ctx, addr msg)
+      )
   else:
     encoded = encode(msg)
 

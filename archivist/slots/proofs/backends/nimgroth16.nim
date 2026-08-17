@@ -10,7 +10,6 @@
 {.push raises: [].}
 
 import std/sugar
-import std/isolation
 import std/atomics
 
 import pkg/chronos
@@ -112,7 +111,6 @@ proc generateProofTask(
     if err =? ctx[].signal.fireSync().errorOption:
       warn "Failed to fire proof completion signal", error = err
 
-  var res = ThreadSpawnRes[NimGroth16Proof].err("Failed to generate proof")
   trace "Generating witness"
   let
     witnessValues = generateWitnessValues(self[].graph, inputs[])
@@ -125,9 +123,8 @@ proc generateProofTask(
 
   trace "Generating nim groth16 proof"
   var proof = generateProof(self[].zkey, witness, self[].tp)
-  trace "Proof generated, copying to main thread"
-  res = ThreadSpawnRes[NimGroth16Proof].ok(proof)
-  ctx[].result = isolate(move res)
+  trace "Proof generated, moving to main thread"
+  ctx[].result = ThreadSpawnRes[NimGroth16Proof].ok(move proof)
 
 proc prove*[SomeHash](
     self: NimGroth16BackendRef, input: ProofInputs[SomeHash]
@@ -136,7 +133,7 @@ proc prove*[SomeHash](
   ##
 
   var inputs = self.normalizeInput(input)
-  await spawnJoin[NimGroth16Proof](
+  await spawnJoin(
     proc(ctx: SharedPtr[TaskCtx[NimGroth16Proof]]) {.gcsafe, raises: [].} =
       self.tp.spawn generateProofTask(
         ctx, cast[ptr NimGroth16Backend](self), addr inputs
