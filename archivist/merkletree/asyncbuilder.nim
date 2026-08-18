@@ -326,9 +326,10 @@ proc flushTails[H, K, C](state: BuildState[H, K, C]): ?!void =
       var i = state.consumed[level]
       while i + 1 < state.layers[level].len:
         let key = if level == 0: K.KeyBottomLayer else: K.KeyNone
-        let hash = ?compress(
-          state.compressor, state.layers[level][i], state.layers[level][i + 1], key
-        )
+        let hash =
+          ?compress(
+            state.compressor, state.layers[level][i], state.layers[level][i + 1], key
+          )
         ensureLevel(state, level + 1)
         state.layers[level + 1].add(hash)
         i += 2

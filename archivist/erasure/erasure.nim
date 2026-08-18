@@ -387,13 +387,16 @@ proc encodeData(
     trace "Erasure coding data", data = data.len
     # Encode on the taskpool: the structures are moved through the
     # spawnJoin result channel, no GC refs cross the boundary.
-    parity =
-      ?await spawnJoin(
-        proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
-          self.taskPool.spawn leopardEncodeTask(
-            ctx, addr self, params.blockSize.int, addr data, addr parity
-          )
-      )
+    try:
+      parity =
+        ?await spawnJoin(
+          proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+            self.taskPool.spawn leopardEncodeTask(
+              ctx, addr self, params.blockSize.int, addr data, addr parity
+            )
+        )
+    except SpawnContractError as e:
+      return failure(e)
     var
       idx = params.rounded + step
       blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
@@ -570,13 +573,16 @@ proc decodeInternal(
     trace "Erasure decoding data"
     # Decode on the taskpool: data stays a caller-side borrow (read after
     # the await), the recovered blocks return through the result channel.
-    recovered =
-      ?await spawnJoin(
-        proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
-          self.taskPool.spawn leopardDecodeTask(
-            ctx, addr self, params.blockSize.int, addr data, addr parityData
-          )
-      )
+    try:
+      recovered =
+        ?await spawnJoin(
+          proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+            self.taskPool.spawn leopardDecodeTask(
+              ctx, addr self, params.blockSize.int, addr data, addr parityData
+            )
+        )
+    except SpawnContractError as e:
+      return failure(e)
     var blocks: seq[(bt.Block, Natural, ?ArchivistProof)]
     for i in 0 ..< params.ecK:
       let idx = i * params.steps + step

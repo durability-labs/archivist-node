@@ -133,12 +133,17 @@ proc prove*[SomeHash](
   ##
 
   var inputs = self.normalizeInput(input)
-  await spawnJoin(
-    proc(ctx: SharedPtr[TaskCtx[NimGroth16Proof]]) {.gcsafe, raises: [].} =
-      self.tp.spawn generateProofTask(
-        ctx, cast[ptr NimGroth16Backend](self), addr inputs
+  try:
+    let proof =
+      ?await spawnJoin(
+        proc(ctx: SharedPtr[TaskCtx[NimGroth16Proof]]) {.gcsafe, raises: [].} =
+          self.tp.spawn generateProofTask(
+            ctx, cast[ptr NimGroth16Backend](self), addr inputs
+          )
       )
-  )
+    return success(proof)
+  except SpawnContractError as e:
+    return failure(e)
 
 proc verify*(
     self: NimGroth16BackendRef, proof: NimGroth16Proof

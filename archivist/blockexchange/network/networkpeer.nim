@@ -84,12 +84,16 @@ proc readLoop*(self: NetworkPeer, conn: Connection) {.async: (raises: []).} =
         # the worker via awaitSpawn's drain - zero refcount operations
         # on the payload). Payload isolation is enforced by the
         # ThreadSpawnRes constructors.
-        msg = (
-          await spawnJoin(
-            proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
-              self.taskpool.spawn decodeMsgTask(ctx, addr data)
-          )
-        ).tryGet()
+        try:
+          msg = (
+            await spawnJoin(
+              proc(ctx: SharedPtr[TaskCtx[Message]]) {.gcsafe, raises: [].} =
+                self.taskpool.spawn decodeMsgTask(ctx, addr data)
+            )
+          ).tryGet()
+        except SpawnContractError as e:
+          trace "Failed to offload message decode", peer = self.id, error = e.msg
+          break
       else:
         msg = Message.decode(data).mapFailure().tryGet()
 
@@ -147,11 +151,14 @@ proc send*(
     # data. The worker borrows the message by pointer. The caller's message
     # and the engine's blk refs survive to the main thread for deterministic
     # destroy.
-    encoded =
-      ?await spawnJoin(
-        proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
-          self.taskpool.spawn encodeMsgTask(ctx, addr msg)
-      )
+    try:
+      encoded =
+        ?await spawnJoin(
+          proc(ctx: SharedPtr[TaskCtx[seq[byte]]]) {.gcsafe, raises: [].} =
+            self.taskpool.spawn encodeMsgTask(ctx, addr msg)
+        )
+    except SpawnContractError as e:
+      return failure(e)
   else:
     encoded = encode(msg)
 
