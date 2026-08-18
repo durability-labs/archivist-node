@@ -1231,14 +1231,15 @@ proc testLifecycle*(
         verManifest = !Manifest.new(protManifest, Cid.example, slotRoots)
         newExpiry = now + 3000
 
-      let futures = @[
-        repo.storeVerifiableManifest(
-          verManifest, slotIdx = 0.Natural.some, expiry = newExpiry
-        ),
-        repo.storeVerifiableManifest(
-          verManifest, slotIdx = 0.Natural.some, expiry = newExpiry
-        ),
-      ]
+      let futures =
+        @[
+          repo.storeVerifiableManifest(
+            verManifest, slotIdx = 0.Natural.some, expiry = newExpiry
+          ),
+          repo.storeVerifiableManifest(
+            verManifest, slotIdx = 0.Natural.some, expiry = newExpiry
+          ),
+        ]
 
       await allFutures(futures)
 

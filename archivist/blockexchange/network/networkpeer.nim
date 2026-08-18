@@ -54,7 +54,7 @@ proc decodeMsgTask(
     if err =? ctx[].signal.fireSync().errorOption:
       warn "Failed to fire worker completion signal", error = err
 
-  ctx[].result = mapThreadSpawnErr(Message.decode(data[]))
+  ctx[].result = Message.decode(data[]).mapThreadSpawnErr
 
 proc encodeMsgTask(
     ctx: SharedPtr[TaskCtx[seq[byte]]], msg: ptr Message

@@ -8,6 +8,7 @@ import pkg/poseidon2
 import pkg/serde/json
 import pkg/taskpools
 import pkg/kvstore
+import pkg/threading/smartptrs
 
 import pkg/archivist/slots {.all.}
 import pkg/archivist/slots/types {.all.}

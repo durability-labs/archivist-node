@@ -26,8 +26,8 @@ type
 template mapFailure*[T, V, E](
     exp: Result[T, V], exc: typedesc[E]
 ): Result[T, ref CatchableError] =
-  ## Convert `Result[T, E]` to `Result[E, ref CatchableError]`
-  ##
+  ## Convert `Result[T, V]` to `Result[T, ref CatchableError]`, wrapping
+  ## the error in `exc`.
 
   exp.mapErr(
     proc(e: V): ref CatchableError =

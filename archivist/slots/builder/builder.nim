@@ -387,13 +387,14 @@ proc new*[SomeTree, SomeHash](
     emptyBlock = newSeq[byte](manifest.blockSize.int)
     emptyDigestTree = ?SomeTree.digestTree(emptyBlock, cellSize.int)
 
-    strategy = ?strategy.init(
-      0,
-      manifest.blocksCount - 1,
-      manifest.numSlots,
-      manifest.numSlots,
-      numPadSlotBlocks,
-    ).catch
+    strategy =
+      ?strategy.init(
+        0,
+        manifest.blocksCount - 1,
+        manifest.numSlots,
+        manifest.numSlots,
+        numPadSlotBlocks,
+      ).catch
 
   logScope:
     numSlotBlocks = numSlotBlocks

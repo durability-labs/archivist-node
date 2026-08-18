@@ -59,7 +59,7 @@ proc mapTask(
       warn "Failed to fire port mapping completion signal", error = err
 
   trace "started port mapping background task", address = address[]
-  ctx[].result = mapThreadSpawnErr(portmapping[].map(address[]))
+  ctx[].result = portmapping[].map(address[]).mapThreadSpawnErr
   trace "finished port mapping background task", address = address[]
 
 proc map(
