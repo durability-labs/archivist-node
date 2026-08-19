@@ -1,5 +1,6 @@
 import std/sequtils
 
+import pkg/iter
 import pkg/chronicles
 import pkg/chronos
 import pkg/taskpools
@@ -11,8 +12,6 @@ import pkg/stew/byteutils
 
 import pkg/archivist/merkletree
 import pkg/archivist/merkletree/asyncposeidon2
-import pkg/archivist/utils/asynciter
-import pkg/archivist/utils/iter
 
 import ../../asynctest
 
@@ -27,7 +26,6 @@ proc makeLeaves(n: int): seq[Poseidon2Hash] =
     bytes[0] = byte(i and 0xff)
     bytes[1] = byte((i shr 8) and 0xff)
     bytes[2] = byte((i shr 16) and 0xff)
-    leaves[i] = Poseidon2Hash.fromBytes(bytes)
   leaves
 
 proc toAsyncIter(leaves: seq[Poseidon2Hash]): AsyncIter[Poseidon2Hash] =

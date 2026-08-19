@@ -13,6 +13,7 @@ import std/math
 import std/sequtils
 import std/sugar
 
+import pkg/iter
 import pkg/libp2p
 import pkg/chronos
 import pkg/questionable
@@ -27,13 +28,12 @@ import ../../stores
 import ../../manifest
 import ../../merkletree
 import ../../merkletree/asyncposeidon2
-import ../../utils/asynciter
 import ../../indexingstrategy
 import ../../archivisttypes
 
 import ../converters
 
-export converters, asynciter, asyncposeidon2
+export converters, iter, asyncposeidon2
 
 logScope:
   topics = "archivist slotsbuilder"

@@ -249,7 +249,7 @@ proc testMetadata*(
         ).tryGet()
 
       let iter = (await repo.listOverlays()).tryGet()
-      let cids = (await utils.collect(iter)).tryGet()
+      let cids = await collectAsync(iter)
 
       check cids.len == 3
       check cids.anyIt(it == cid1)
@@ -258,7 +258,7 @@ proc testMetadata*(
 
     test "Should return empty list when no overlays exist":
       let iter = (await repo.listOverlays()).tryGet()
-      let cids = (await utils.collect(iter)).tryGet()
+      let cids = await collectAsync(iter)
 
       check cids.len == 0
 
@@ -276,7 +276,7 @@ proc testMetadata*(
         ).tryGet()
 
       let iter = (await repo.listOverlaysInState(Completed)).tryGet()
-      let cids = (await utils.collect(iter)).tryGet()
+      let cids = await collectAsync(iter)
 
       check cids.len == 2
       check cids.anyIt(it == cid1)
@@ -293,7 +293,7 @@ proc testMetadata*(
       ).tryGet()
 
       let iter = (await repo.listOverlaysInState(Deleting)).tryGet()
-      let cids = (await utils.collect(iter)).tryGet()
+      let cids = await collectAsync(iter)
 
       check cids.len == 0
 

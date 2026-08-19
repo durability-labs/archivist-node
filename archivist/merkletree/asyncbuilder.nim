@@ -32,15 +32,18 @@
 import std/tables
 import std/typetraits
 
+import pkg/iter
 import pkg/chronicles
 import pkg/chronos
 import pkg/taskpools
+import pkg/threadspawn
+import pkg/threading/smartptrs
 import pkg/questionable
 import pkg/questionable/results
 
 import ../errors
-import ../utils/asynciter
-import ../utils/threadspawn
+
+export smartptrs
 
 when defined(archivistAsynctreeTestHooks):
   ## Test-only instrumentation, compiled only into test builds (see
@@ -76,19 +79,15 @@ type
     x, y: H
     key: K
 
-  BatchCtx[H, K, C] = object
-    signal: ThreadSignalPtr
-    compressor: C # plain value type - worker calls `compress(compressor, ...)` via mixin
-    jobs: seq[PairJob[H, K]]
-    results: seq[?!H]
-
   BatchKey = tuple[level: int, seqNum: int]
     # composite: per-level seqNums collide across levels
 
-  PendingBatch[H, K, C] = object
+  BatchResult[H] = Result[seq[?!H], SpawnUserError[string]]
+    # value delivered by a spawnJoin batch future
+
+  PendingBatch[H, K] = object
     key: BatchKey
-    fut: Future[?!void] # from awaitSpawn
-    ctx: SharedPtr[BatchCtx[H, K, C]]
+    fut: Future[BatchResult[H]] # from spawnJoin
 
   BuildState[H, K, C] = ref object
     layers: seq[seq[H]]
@@ -96,7 +95,7 @@ type
     nextSeqNum: seq[int] # per level: next batch seqNum
     completed: Table[BatchKey, seq[H]] # finished, awaiting in-order append
     appendSeqNum: seq[int] # per level: next seqNum to append
-    inFlight: seq[PendingBatch[H, K, C]]
+    inFlight: seq[PendingBatch[H, K]]
     maxOutstanding: int
       # outstanding batch budget (in-flight + completed-not-appended); 2x thread count
     batchSize: int
@@ -106,13 +105,19 @@ type
     err: ?ref CatchableError # first worker failure, propagated at drain
 
 proc compressBatchTask[H, K, C](
-    ctx: SharedPtr[BatchCtx[H, K, C]]
+    ctx: SharedPtr[TaskCtx[seq[?!H]]], compressor: C, jobs: seq[PairJob[H, K]]
 ) {.gcsafe, raises: [].} =
-  ## Taskpool worker: compress a batch of pairs, then fire the completion
-  ## signal.  Uses the family compressor `C` resolved via `mixin compress` -
-  ## not the tree's `CompressFn` closure, which is `noSideEffect` but not
-  ## `gcsafe`.
+  ## Taskpool worker: compress a batch of pairs, publishing the results
+  ## through the spawnJoin result channel.  Uses the family compressor `C`
+  ## resolved via `mixin compress` - not the tree's `CompressFn` closure,
+  ## which is `noSideEffect` but not `gcsafe`.
   mixin compress
+  mixin isNil
+
+  # Deref before the defer: defer bodies run in a hidden frame that cannot
+  # resolve smartptrs' isNil overload, so a SharedPtr deref inside a defer
+  # fails to compile under boundChecks.
+  let signal = ctx[].signal
 
   when defined(archivistAsynctreeTestHooks):
     # Test gate: spin until released so the cancellation test can hold
@@ -127,12 +132,13 @@ proc compressBatchTask[H, K, C](
     # fireSync is what releases the driver's wait: a hard error here would
     # hang the driver forever, so it must never be discarded.  Chronicles is
     # thread-safe from taskpool workers (threadvar TLS).
-    if err =? ctx[].signal.fireSync().errorOption:
+    if err =? signal.fireSync().errorOption:
       warn "Failed to fire worker completion signal", error = err
 
-  for i in 0 ..< ctx[].jobs.len:
-    ctx[].results[i] =
-      compress(ctx[].compressor, ctx[].jobs[i].x, ctx[].jobs[i].y, ctx[].jobs[i].key)
+  var results = newSeq[?!H](jobs.len)
+  for i in 0 ..< jobs.len:
+    results[i] = compress(compressor, jobs[i].x, jobs[i].y, jobs[i].key)
+  ctx[].result = ThreadSpawnRes[seq[?!H]].ok(move results)
 
 proc ensureLevel[H, K, C](state: BuildState[H, K, C], level: int) =
   ## Grow the per-level bookkeeping arrays up to `level` (inclusive).
@@ -152,29 +158,18 @@ proc spawnReadyBatches[H, K, C](state: BuildState[H, K, C], level: int): ?!void 
   ## appended results too, so out-of-order completions cannot accumulate
   ## unboundedly behind a delayed batch.
   ##
-  ## NOTE: do not use `withThreadSignal` here - its block-scoped
-  ## `defer: signal.close()` runs right after `tp.spawn`, closing the signal
-  ## fd while the worker still holds it.  Follow the kvstore multi-spawn
-  ## pattern instead: per-batch signal owned by the SharedPtr ctx, closed
-  ## after the worker has fired it.
+  ## Each batch is one `spawnJoin`: the signal lifecycle, the join, and the
+  ## signal close are encapsulated per future, so batches spawned here can be
+  ## awaited out of order by the driver without any signal bookkeeping.
   while state.layers[level].len - state.consumed[level] >= 2 * state.batchSize and
       state.inFlight.len + state.completed.len < state.maxOutstanding:
     let
-      signal = ?ThreadSignalPtr.new().mapFailure
       start = state.consumed[level]
       key = (level, state.nextSeqNum[level])
 
-    var ctx = newSharedPtr(
-      BatchCtx[H, K, C](
-        signal: signal,
-        compressor: state.compressor,
-        jobs: newSeqOfCap[PairJob[H, K]](state.batchSize),
-        results: newSeq[?!H](state.batchSize),
-      )
-    )
-
+    var jobs = newSeqOfCap[PairJob[H, K]](state.batchSize)
     for i in 0 ..< state.batchSize:
-      ctx[].jobs.add(
+      jobs.add(
         PairJob[H, K](
           x: state.layers[level][start + 2 * i],
           y: state.layers[level][start + 2 * i + 1],
@@ -184,25 +179,15 @@ proc spawnReadyBatches[H, K, C](state: BuildState[H, K, C], level: int): ?!void 
 
     state.consumed[level] += 2 * state.batchSize
     inc state.nextSeqNum[level]
-    let taskFut = signal.wait()
-    if taskFut.failed():
-      # wait() registration failed (register2/addReader2): awaitSpawn would
-      # return immediately without waiting for the worker, so spawning now
-      # would let us close the signal while the worker still holds it
-      # (use-after-free on fireSync).  Never spawn; close the signal and
-      # propagate the error.
-      if closeErr =? signal.close().errorOption:
-        warn "Failed to close thread signal", error = closeErr
+    let fut = spawnJoin(
+      proc(ctx: SharedPtr[TaskCtx[seq[?!H]]]) {.gcsafe, raises: [].} =
+        state.tp.spawn compressBatchTask(ctx, state.compressor, jobs)
+    )
 
-      return failure(taskFut.error())
-
-    state.tp.spawn compressBatchTask(ctx)
     when defined(archivistAsynctreeTestHooks):
       discard testSpawnCount.fetchAdd(1)
 
-    state.inFlight.add(
-      PendingBatch[H, K, C](key: key, fut: awaitSpawn(taskFut), ctx: ctx)
-    )
+    state.inFlight.add(PendingBatch[H, K](key: key, fut: fut))
 
   success()
 
@@ -232,11 +217,11 @@ proc oneCompletedBatch[H, K, C](
     state: BuildState[H, K, C]
 ): Future[?!void] {.async: (raises: [CancelledError]).} =
   ## Wait for one in-flight batch to finish, record its results (or the first
-  ## error), close its signal, then append everything that is now in order.
+  ## error), then append everything that is now in order.
   if state.inFlight.len == 0:
     return success()
 
-  var futs = newSeq[Future[?!void]](state.inFlight.len)
+  var futs = newSeq[Future[BatchResult[H]]](state.inFlight.len)
   for i in 0 ..< state.inFlight.len:
     futs[i] = state.inFlight[i].fut
 
@@ -254,10 +239,6 @@ proc oneCompletedBatch[H, K, C](
   let pb = state.inFlight[idx]
   state.inFlight.delete(idx)
 
-  # The worker has fired the signal; close its fd while the ctx is alive.
-  if closeErr =? pb.ctx[].signal.close().errorOption:
-    warn "Failed to close thread signal", error = closeErr
-
   if doneFut.cancelled():
     if state.err.isNone:
       let batchErr: ref CatchableError =
@@ -273,32 +254,30 @@ proc oneCompletedBatch[H, K, C](
     return success()
 
   let readRes = catchAsync(doneFut.read)
-  # readRes is Result[?!void, ref CatchableError]: outer error from read
-  # raising, inner ?!void from awaitSpawn returning a failure value.
-  if outerErr =? readRes.errorOption:
+  # readRes is Result[Result[seq[?!H], SpawnUserError[string]], ref CatchableError]:
+  # outer error from read raising, inner result from spawnJoin.
+  without innerRes =? readRes, outerErr:
     if state.err.isNone:
       state.err = some(outerErr)
 
     return success()
 
-  if innerRes =? readRes:
-    if err =? innerRes.errorOption:
-      if state.err.isNone:
-        state.err = some(err)
-      return success()
-  else:
+  if err =? innerRes.errorOption:
+    if state.err.isNone:
+      state.err = some((ref CatchableError)(err))
     return success()
 
+  let results = innerRes.get
   var
-    hashes = newSeq[H](pb.ctx[].results.len)
+    hashes = newSeq[H](results.len)
     allOk = true
 
-  for i in 0 ..< pb.ctx[].results.len:
-    if r =? pb.ctx[].results[i]:
+  for i in 0 ..< results.len:
+    if r =? results[i]:
       hashes[i] = r
     else:
       allOk = false
-      if e =? pb.ctx[].results[i].errorOption:
+      if e =? results[i].errorOption:
         if state.err.isNone:
           state.err = some(e)
       break
@@ -397,27 +376,20 @@ proc buildLayersAsync*[H, K, C](
   )
 
   defer:
-    # Cancellation-safe drain: awaitSpawn never cancels the underlying
-    # signal wait, so allFutures below completes only once every worker has
-    # written its results and fired the signal (fireSync is the worker's
-    # final act before its proc epilogue).  That ordering - results written
-    # and fireSync happened before signal.close() and before the driver reads
-    # ctx[].results - is what makes close/read safe.  The SharedPtr refcount
-    # already keeps each BatchCtx alive until the worker's own reference
-    # drops; the drain does not exist to protect the allocation.
+    # Cancellation-safe drain: spawnJoin never cancels the underlying
+    # worker (awaitSpawn's noCancel drain), so allFutures below completes
+    # only once every worker has written its results and fired its signal.
+    # Each future's signal is closed by spawnJoin's own lifecycle, so no
+    # signal bookkeeping is needed here.
     when defined(archivistAsynctreeTestHooks):
       testDrainStarted.store(true)
 
     if state.inFlight.len > 0:
-      var futs = newSeq[Future[?!void]](state.inFlight.len)
+      var futs = newSeq[Future[BatchResult[H]]](state.inFlight.len)
       for i in 0 ..< state.inFlight.len:
         futs[i] = state.inFlight[i].fut
 
       await noCancel allFutures(futs)
-
-      for pb in state.inFlight:
-        if closeErr =? pb.ctx[].signal.close().errorOption:
-          warn "Failed to close thread signal", error = closeErr
 
       state.inFlight.setLen(0)
 

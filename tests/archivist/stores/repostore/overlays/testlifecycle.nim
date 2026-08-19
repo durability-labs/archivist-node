@@ -248,7 +248,8 @@ proc testLifecycle*(
 
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
       check res.isErr
-      check res.error() of KVConflictError
+      check res.error() of KVStoreError
+      check "Move failed" in res.error().msg
 
       let tmpMeta = (await repo.getOverlay(tmpCid)).tryGet()
       check tmpMeta.status == Storing
@@ -285,7 +286,8 @@ proc testLifecycle*(
 
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
       check res.isErr
-      check res.error() of KVConflictError
+      check res.error() of KVStoreError
+      check "Move failed" in res.error().msg
 
       let tmpMeta = (await repo.getOverlay(tmpCid)).tryGet()
       check tmpMeta.status == Storing
@@ -309,7 +311,8 @@ proc testLifecycle*(
       let res = await repo.finalizeOverlay(tmpCid, realTreeCid)
 
       check res.isErr
-      check res.error() of KVConflictError
+      check res.error() of KVStoreError
+      check "Move failed" in res.error().msg
 
       let tmpMeta = (await repo.getOverlay(tmpCid)).tryGet()
       check tmpMeta.status == Storing
@@ -606,7 +609,8 @@ proc testLifecycle*(
       )
 
       check res.isErr
-      check res.error() of KVConflictError
+      check res.error() of KVStoreError
+      check "Move failed" in res.error().msg
 
       let tmpMetaRes = await repo.getOverlay(capturedTmpCid)
       check tmpMetaRes.isErr

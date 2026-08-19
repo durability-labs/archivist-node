@@ -12,6 +12,7 @@
 import std/sequtils
 import std/sets
 
+import pkg/iter
 import pkg/chronos
 import pkg/libp2p
 import pkg/metrics
@@ -24,7 +25,6 @@ import ../logutils
 import ../manifest
 import ../merkletree
 import ../utils/asyncheapqueue
-import ../utils/safeasynciter
 import ./blockstore
 
 export blockstore, blockexchange, asyncheapqueue
@@ -227,7 +227,7 @@ method putCidsAndProofs*(
 
 method listBlocks*(
     self: NetworkStore, blockType = BlockType.Manifest
-): Future[?!SafeAsyncIter[Cid]] {.async: (raw: true, raises: [CancelledError]).} =
+): Future[?!AsyncIter[Cid]] {.async: (raw: true, raises: [CancelledError]).} =
   self.localStore.listBlocks(blockType)
 
 method delBlock*(

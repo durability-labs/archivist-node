@@ -21,6 +21,7 @@
 
 {.push raises: [].}
 
+import pkg/iter
 import pkg/chronicles
 import pkg/chronos
 import pkg/taskpools
@@ -31,7 +32,6 @@ import pkg/libp2p/[cid, multicodec, multihash]
 import ../../archivisttypes
 import ../../errors
 import ../../rng
-import ../../utils/asynciter
 import ../../utils/digest
 import ../asyncbuilder
 

@@ -13,20 +13,17 @@
 import std/parseutils
 import std/options
 
+import pkg/iter
 import pkg/chronos
+import pkg/threadspawn
 import pkg/stew/bitseqs
 
 import ./utils/asyncheapqueue
 import ./utils/fileutils
-import ./utils/asynciter
-import ./utils/safeasynciter
 import ./utils/asyncbarrier
 import ./utils/futures
-import ./utils/threadspawn
 
-export
-  asyncheapqueue, fileutils, asynciter, safeasynciter, chronos, bitseqs, asyncbarrier,
-  threadspawn
+export asyncheapqueue, fileutils, iter, chronos, bitseqs, asyncbarrier, threadspawn
 
 when defined(posix):
   import os, posix

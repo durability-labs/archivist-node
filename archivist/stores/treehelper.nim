@@ -10,6 +10,8 @@
 {.push raises: [].}
 
 import std/sugar
+
+import pkg/iter
 import pkg/chronos
 import pkg/chronos/futures
 import pkg/metrics
@@ -19,7 +21,6 @@ import pkg/questionable/results
 import pkg/libp2p/cid
 
 import ./blockstore
-import ../utils/asynciter
 import ../merkletree
 
 proc putSomeProofs*(

@@ -1,6 +1,7 @@
 import std/atomics
 import std/sequtils
 
+import pkg/iter
 import pkg/chronicles
 import pkg/chronos
 import pkg/taskpools
@@ -14,8 +15,6 @@ import pkg/archivist/archivisttypes
 import pkg/archivist/errors
 import pkg/archivist/merkletree
 import pkg/archivist/merkletree/archivist/asynctree
-import pkg/archivist/utils/asynciter
-import pkg/archivist/utils/iter
 import pkg/stew/byteutils
 
 import ../../asynctest

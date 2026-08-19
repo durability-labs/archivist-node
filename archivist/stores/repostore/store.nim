@@ -459,7 +459,7 @@ method hasBlocks*(
 
 method listBlocks*(
     self: RepoStore, blockType = BlockType.Manifest
-): Future[?!SafeAsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
+): Future[?!AsyncIter[Cid]] {.async: (raises: [CancelledError]).} =
   ## Get the list of blocks in the RepoStore.
   ## This is an intensive operation
   ##
@@ -475,25 +475,25 @@ method listBlocks*(
     trace "Error querying cids in repo", blockType, err = err.msg
     return failure(err)
 
-  proc next(): Future[?!Cid] {.async: (raises: [CancelledError]).} =
-    await idleAsync()
-    if maybeRecord =? (await queryIter.next()):
-      if record =? maybeRecord:
-        trace "Retrieved record from repo", key = record.key
-        return Cid.init(record.key.value).mapFailure
-    return Cid.failure("No or invalid Cid")
-
-  proc isFinished(): bool =
-    queryIter.finished
-
-  proc onDispose(): Future[?!void] {.async: (raises: []).} =
-    # kvquery.dispose returns Future[?!void] - await and propagate errors
-    return await dispose(queryIter)
-
-  proc isDisposed(): bool =
-    queryIter.disposed
-
-  return success SafeAsyncIter[Cid].new(next, isFinished, onDispose, isDisposed)
+  return success AsyncIter[Cid].new(
+    proc(): Future[Cid] {.async.} =
+      await idleAsync()
+      if maybeRecord =? (await queryIter.next()):
+        if record =? maybeRecord:
+          trace "Retrieved record from repo", key = record.key
+          without cid =? Cid.init(record.key.value).mapFailure, err:
+            raise err
+          return cid
+      raise newException(CatchableError, "No or invalid Cid"),
+    proc(): bool =
+      queryIter.finished,
+    proc(): Future[void] {.async.} =
+      if err =? (await dispose(queryIter)).errorOption:
+        raise err
+    ,
+    proc(): bool =
+      queryIter.disposed,
+  )
 
 method delBlocks*(
     self: RepoStore, treeCid: Cid, indices: seq[Natural]

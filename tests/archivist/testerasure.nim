@@ -12,6 +12,7 @@ import pkg/archivist/rng as archivist_rng
 import pkg/archivist/utils
 import pkg/archivist/indexingstrategy
 import pkg/taskpools
+import pkg/threadspawn
 import pkg/kvstore
 
 import ../asynctest
@@ -315,32 +316,68 @@ suite "Erasure encode/decode":
     recovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
     cancelledTaskRecovered[] = newSeqWith(blocksLen, newSeqWith(BlockSize.int, 0'u8))
 
-    # call asyncEncode to get the parity
-    let encFut = await erasure.asyncEncode(BlockSize.int, data, parity)
-    check encFut.isOk
+    # call the encode worker to get the parity (asyncEncode was inlined
+    # into its callers).  The buffers are passed by pointer so the refs
+    # stay intact for the subsequent calls.
+    let encRes = await spawnJoin(
+      proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+        tp.spawn leopardEncodeTask(
+          ctx, addr erasure, BlockSize.int, addr data[], addr parity[]
+        )
+    )
+    check encRes.isOk
+    parity[] = encRes.tryGet()
 
-    let decFut = await erasure.asyncDecode(BlockSize.int, data, parity, recovered)
-    check decFut.isOk
+    let decRes = await spawnJoin(
+      proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+        tp.spawn leopardDecodeTask(
+          ctx, addr erasure, BlockSize.int, addr data[], addr parity[]
+        )
+    )
+    check decRes.isOk
+    recovered[] = decRes.tryGet()
 
-    # call asyncEncode and cancel the task
-    let encodeFut = erasure.asyncEncode(BlockSize.int, data, cancelledTaskParity)
+    # call the encode worker and cancel the task: the drain lets the
+    # worker finish, the future reports cancellation
+    let encodeFut = spawnJoin(
+      proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+        tp.spawn leopardEncodeTask(
+          ctx, addr erasure, BlockSize.int, addr data[], addr cancelledTaskParity[]
+        )
+    )
     await encodeFut.cancelAndWait()
 
     try:
       discard await encodeFut
     except CatchableError as exc:
       check exc of CancelledError
-    finally:
-      check parity[] == cancelledTaskParity[]
 
-    # call asyncDecode and cancel the task
-    let decodeFut =
-      erasure.asyncDecode(BlockSize.int, data, parity, cancelledTaskRecovered)
+    # call the decode worker and cancel the task
+    let decodeFut = spawnJoin(
+      proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+        tp.spawn leopardDecodeTask(
+          ctx, addr erasure, BlockSize.int, addr data[], addr parity[]
+        )
+    )
     await decodeFut.cancelAndWait()
 
     try:
       discard await decodeFut
     except CatchableError as exc:
       check exc of CancelledError
-    finally:
-      check recovered[] == cancelledTaskRecovered[]
+
+    # The pool is still functional and the encoder is deterministic after
+    # the cancellations.  The worker moves the parity buffer out, so
+    # compare against a deep copy taken after the cancellations (a
+    # shallow copy would alias the buffers the encoder writes into).
+    var parityRef: seq[seq[byte]]
+    for i in 0 ..< parity[].len:
+      parityRef.add parity[][i]
+    let enc2 = await spawnJoin(
+      proc(ctx: SharedPtr[TaskCtx[seq[seq[byte]]]]) {.gcsafe, raises: [].} =
+        tp.spawn leopardEncodeTask(
+          ctx, addr erasure, BlockSize.int, addr data[], addr parity[]
+        )
+    )
+    check enc2.isOk
+    check enc2.tryGet() == parityRef

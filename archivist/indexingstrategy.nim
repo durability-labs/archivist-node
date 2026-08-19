@@ -1,6 +1,7 @@
+import pkg/iter
+
 import ./errors
 import ./utils
-import ./utils/asynciter
 
 {.push raises: [].}
 
