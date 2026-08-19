@@ -38,6 +38,8 @@ proc rankPeersByScore*(peers: seq[BlockExcPeerCtx], cid: Cid): seq[BlockExcPeerC
     let s = effectiveScore(peer, cid, now)
     ranked.add((s, peer))
 
+  # Randomize equal-score groups (stable sort preserves shuffle order)
+  Rng.instance.shuffle(ranked)
   ranked.sort(
     proc(a, b: auto): int =
       cmp(b[0], a[0])
@@ -46,6 +48,8 @@ proc rankPeersByScore*(peers: seq[BlockExcPeerCtx], cid: Cid): seq[BlockExcPeerC
 
 proc rankPeersByAggregate*(peers: seq[BlockExcPeerCtx]): seq[BlockExcPeerCtx] =
   var ranked = peers.mapIt((aggregateScore(it), it))
+  # Randomize equal-score groups (stable sort preserves shuffle order)
+  Rng.instance.shuffle(ranked)
   ranked.sort(
     proc(a, b: auto): int =
       cmp(b[0], a[0])

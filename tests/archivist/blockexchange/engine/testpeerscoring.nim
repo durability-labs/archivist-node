@@ -93,3 +93,19 @@ suite "scoredPeer selector":
     let ranked = rankPeersByScore(@[peer], testCid)
     check ranked.len == 1
     check ranked[0] == peer
+
+  test "Should baseline aggregate score at ColdStartScore for new peers":
+    # A peer with no score entries at all must not rank at 0.0.
+    check aggregateScore(makeCtx()) == ColdStartScore
+
+  test "Should NOT count WantHave evidence in the aggregate score":
+    # A Have-reply creates a score entry (setPresence), but counting it
+    # would let a peer inflate its score by reporting Haves it never
+    # delivers. The entry contributes 0 until deliveries happen.
+    check aggregateScore(makeCtxWithScore()) == 0.0
+
+  test "Should rank delivered peers above the baseline in aggregate":
+    let busy = makeCtxWithScore()
+    busy.ensureScoreFor(testCid).recordDelivery(1024, 10.0)
+    busy.ensureScoreFor(testCid).recordDelivery(1024, 10.0)
+    check aggregateScore(busy) > ColdStartScore

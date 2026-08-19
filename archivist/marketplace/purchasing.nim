@@ -36,10 +36,19 @@ proc new*(
   )
 
 proc load*(purchasing: Purchasing) {.async.} =
-  let marketplace = purchasing.marketplace
-  let requestIds = await marketplace.myRequests()
-  for requestId in requestIds:
-    let purchase = Purchase.new(requestId, purchasing.marketplace, purchasing.clock)
+  # Re-adopt requests from the onchain StorageRequested history after a restart.
+  let requestDurationLimit = purchasing.marketplace.requestDurationLimit()
+  let blocksAgo = int(requestDurationLimit.u64 div 12)
+  let requestEvents =
+    await purchasing.marketplace.queryPastStorageRequestedEvents(blocksAgo = blocksAgo)
+  let signer = await purchasing.marketplace.getSigner()
+  for event in requestEvents:
+    without request =? (await purchasing.marketplace.getRequest(event.requestId)):
+      continue
+    if request.client != signer:
+      continue
+    let purchase =
+      Purchase.new(event.requestId, purchasing.marketplace, purchasing.clock)
     purchase.load()
     purchasing.purchases[purchase.id] = purchase
 

@@ -24,7 +24,10 @@ method run*(
 
   try:
     await purchase.errorBackoff.applyDelay()
-    if purchase.requestId in await purchase.marketplace.myRequests():
+    if request =? (await purchase.marketplace.getRequest(purchase.requestId)) and
+        request.client == (await purchase.marketplace.getSigner()) and
+        requestState =? (await purchase.marketplace.requestState(purchase.requestId)) and
+        requestState notin {RequestState.Failed, RequestState.Finished}:
       debug "Errored request is in myRequests. Restarting state machine"
       return some State(PurchaseUnknown())
     else:

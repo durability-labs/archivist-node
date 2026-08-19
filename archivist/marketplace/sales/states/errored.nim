@@ -45,7 +45,8 @@ method run*(
   try:
     await data.errorBackoff.applyDelay()
 
-    if data.slotInfo.slotId in await marketplace.mySlots():
+    let host = await marketplace.getHost(data.slotInfo.slotId)
+    if host.isSome and host.unsafeGet == (await marketplace.getSigner()):
       debug "Errored slot is in MySlots. Restarting state machine..."
       return some State(SaleUnknown())
 

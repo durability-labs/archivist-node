@@ -269,6 +269,122 @@ asyncchecksuite "NetworkStore engine handlers":
       check archivist_block_exchange_want_have_entries_received.value() ==
         beforeEntries + blocks.len.float64
 
+  test "Should rotate refresh targets past the query quarantine":
+    # Regression: the refresh fallback always asked the same aggregate top-K;
+    # a fresh provider with zero deliveries was never asked, never reported
+    # presence, and was never fetched from. Quarantine makes selection rotate.
+    let
+      testPeerStore = PeerCtxStore.new()
+      testDiscovery = DiscoveryEngine.new(
+        localStore, testPeerStore, network, blockDiscovery, pendingBlocks
+      )
+      testAdvertiser = Advertiser.new(localStore, blockDiscovery)
+      testEngine = BlockExcEngine.new(
+        localStore, network, testDiscovery, testAdvertiser, testPeerStore, pendingBlocks
+      )
+
+    var peerIds: seq[PeerId]
+    for i in 0 ..< 4:
+      let
+        key = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
+        id = PeerId.init(key.getPublicKey().tryGet()).tryGet()
+      peerIds.add(id)
+      let ctx = BlockExcPeerCtx.new(id)
+      testPeerStore.add(ctx)
+      if i < 3:
+        for _ in 0 ..< 2:
+          ctx.ensureScoreFor(blocks[0].cid).recordDelivery(1024, 10.0)
+
+    # Round 1: the three delivery-scored peers take all top-K slots.
+    let first = testEngine.topPeersByAggregate(DefaultWantHaveTopK)
+    check first.len == 3
+    for i in 0 ..< 3:
+      check peerIds[i] in first.mapIt(it.id)
+    check peerIds[3] notin first.mapIt(it.id)
+
+    # Quarantine them - the zero-score peer rotates in.
+    for peer in first:
+      peer.markQueried()
+    let second = testEngine.topPeersByAggregate(DefaultWantHaveTopK)
+    check peerIds[3] in second.mapIt(it.id)
+
+    # Quarantine everyone - nothing left to refresh.
+    for peer in second:
+      peer.markQueried()
+    check testEngine.topPeersByAggregate(DefaultWantHaveTopK).len == 0
+
+  test "Should randomize equal-score peers in the aggregate ranking":
+    # Equal-score peers (e.g. all at ColdStartScore) must not pin one top-K
+    # forever - a stable store order would starve the tail of the tie group.
+    let
+      testPeerStore = PeerCtxStore.new()
+      testDiscovery = DiscoveryEngine.new(
+        localStore, testPeerStore, network, blockDiscovery, pendingBlocks
+      )
+      testAdvertiser = Advertiser.new(localStore, blockDiscovery)
+      testEngine = BlockExcEngine.new(
+        localStore, network, testDiscovery, testAdvertiser, testPeerStore, pendingBlocks
+      )
+
+    for _ in 0 ..< 4:
+      let
+        key = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
+        id = PeerId.init(key.getPublicKey().tryGet()).tryGet()
+      testPeerStore.add(BlockExcPeerCtx.new(id))
+
+    var distinctTops: HashSet[string]
+    for _ in 0 ..< 200:
+      distinctTops.incl($testEngine.topPeersByAggregate(2).mapIt(it.id))
+
+    check distinctTops.len > 1 # equal-score peers never pin one top-K
+
+  test "Should still refresh quarantined peers when there are unsent wants":
+    # Regression pin: the query quarantine must not suppress WantHaves for
+    # addresses a peer has not been asked about yet. The connect-time Full
+    # send quarantines the only peer, and a later request for a new block
+    # must still reach it (decideSend would emit a Delta for the new wants).
+    var asked = newSeq[PeerId]()
+
+    proc sendWantList(
+        id: PeerId,
+        addresses: seq[BlockAddress],
+        priority: int32 = 0,
+        cancel: bool = false,
+        wantType: WantType = WantType.WantHave,
+        full: bool = false,
+        sendDontHave: bool = false,
+    ): Future[?!void] {.async: (raises: [CancelledError]).} =
+      asked.add(id)
+      success()
+
+    let
+      testPeerStore = PeerCtxStore.new()
+      testNetwork =
+        BlockExcNetwork(request: BlockExcRequest(sendWantList: sendWantList))
+      testDiscovery = DiscoveryEngine.new(
+        localStore, testPeerStore, network, blockDiscovery, pendingBlocks
+      )
+      testAdvertiser = Advertiser.new(localStore, blockDiscovery)
+      testEngine = BlockExcEngine.new(
+        localStore, testNetwork, testDiscovery, testAdvertiser, testPeerStore,
+        pendingBlocks,
+      )
+
+    # A fresh peer with no wants asked yet, quarantined.
+    let
+      key = PrivateKey.random(libp2p_rng.newBearSslRng(rng)).tryGet()
+      freshId = PeerId.init(key.getPublicKey().tryGet()).tryGet()
+    let fresh = BlockExcPeerCtx.new(freshId)
+    testPeerStore.add(fresh)
+    fresh.markQueried()
+
+    let pending = testEngine.requestDelivery(BlockAddress.init(blocks[0].cid)).tryGet()
+    await sleepAsync(200.millis)
+    check asked.len > 0 # unsent wants override the quarantine - WantHave sent
+    await pending.cancelAndWait()
+    expect CancelledError:
+      discard await pending
+
   test "Should handle want list - `dont-have`":
     let wantList = makeWantList(blocks.mapIt(it.cid), sendDontHave = true)
     var

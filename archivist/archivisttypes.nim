@@ -26,7 +26,7 @@ export tables
 
 const
   # Size of blocks for storage / network exchange,
-  DefaultBlockSize* = 512.KiBs
+  DefaultBlockSize* = 128.KiBs
   DefaultCellSize* = 2.KiBs
 
   # Proving defaults

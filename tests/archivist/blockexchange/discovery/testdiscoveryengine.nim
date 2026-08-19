@@ -220,3 +220,95 @@ asyncchecksuite "Test Discovery Engine":
 
     reqs.complete()
     await discoveryEngine.stop()
+
+  test "Should back off failed discovery requests":
+    var
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
+      discoveryEngine = DiscoveryEngine.new(
+        localStore,
+        peerStore,
+        network,
+        blockDiscovery,
+        pendingBlocks,
+        discoveryLoopSleep = 100.millis,
+      )
+      calls = 0
+
+    blockDiscovery.findBlockProvidersHandler = proc(
+        d: MockDiscovery, cid: Cid
+    ): Future[seq[SignedPeerRecord]] {.async: (raises: [CancelledError]).} =
+      calls.inc
+      # empty result is a failed discovery
+
+    pendingBlocks.getPeerForBlock = alwaysRequeue(30.seconds)
+    await pendingBlocks.start()
+    discard pendingBlocks.getWantHandle(blocks[0].cid)
+    check toSeq(pendingBlocks.wantListBlockCids).len == 1
+
+    await discoveryEngine.start()
+    discoveryEngine.queueFindBlocksReq(@[blocks[0].cid])
+    await sleepAsync(1.seconds)
+    check calls == 1
+
+    # Backoff (3s) has elapsed, the re-queued want is processed again
+    await sleepAsync(2.seconds + 300.millis)
+    check calls == 2
+
+    # Backoff doubles (3s -> 6s), so the third call must not happen yet
+    await sleepAsync(1.seconds)
+    check calls == 2
+
+    await discoveryEngine.stop()
+    await pendingBlocks.stop()
+
+  test "Should rediscover immediately once a block leaves the want list":
+    var
+      localStore = RepoStore.new(
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+        SQLiteKVStore.new(SqliteMemory, tp).tryGet(),
+      )
+      discoveryEngine = DiscoveryEngine.new(
+        localStore,
+        peerStore,
+        network,
+        blockDiscovery,
+        pendingBlocks,
+        discoveryLoopSleep = 100.millis,
+      )
+      calls = 0
+
+    blockDiscovery.findBlockProvidersHandler = proc(
+        d: MockDiscovery, cid: Cid
+    ): Future[seq[SignedPeerRecord]] {.async: (raises: [CancelledError]).} =
+      calls.inc
+      # empty result is a failed discovery
+
+    pendingBlocks.getPeerForBlock = alwaysRequeue(30.seconds)
+    await pendingBlocks.start()
+    discard pendingBlocks.getWantHandle(blocks[0].cid)
+    await discoveryEngine.start()
+
+    discoveryEngine.queueFindBlocksReq(@[blocks[0].cid])
+    await sleepAsync(1.seconds)
+    check calls == 1
+
+    # Second failure grows the backoff to 6s
+    discoveryEngine.queueFindBlocksReq(@[blocks[0].cid])
+    await sleepAsync(3.seconds + 300.millis)
+    check calls == 2
+
+    # Resolve the block - it leaves the want list; its backoff must be pruned
+    await pendingBlocks.resolve(BlockAddress.init(blocks[0].cid), blocks[0])
+    await sleepAsync(500.millis) # prune runs every discoveryLoopSleep (100ms)
+
+    # Re-request the same cid - discovery must fire without the stale 6s wait
+    discard pendingBlocks.getWantHandle(blocks[0].cid)
+    discoveryEngine.queueFindBlocksReq(@[blocks[0].cid])
+    await sleepAsync(1.seconds)
+    check calls == 3
+
+    await discoveryEngine.stop()
+    await pendingBlocks.stop()

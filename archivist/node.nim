@@ -59,7 +59,7 @@ logScope:
 
 const
   DefaultFetchBatch = 128
-  DefaultStoreBatch* = 1024 ## Number of blocks to batch when storing data
+  DefaultStoreBatch* = 256 ## Number of blocks to batch when storing data
   MaxInFlightBatches = 4 ## Maximum concurrent batch flushes for bounded parallelism
 
 type
@@ -916,7 +916,7 @@ proc storeSlot*(
       self.networkStore, self.repoStore, leoEncoderProvider, leoDecoderProvider,
       self.taskpool,
     )
-    if err =? (await erasure.repair(manifest)).errorOption:
+    if err =? (await erasure.repair(manifest, expiry)).errorOption:
       error "Unable to erasure decode repairing manifest",
         cid = manifest.treeCid, exc = err.msg
       return failure(err)

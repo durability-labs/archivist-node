@@ -133,9 +133,10 @@ suite "Purchasing state machine":
 
   test "loads active purchases from marketplace":
     let me = await marketplace.getSigner()
-    let request1, request2, request3 = StorageRequest.example
+    var request1, request2, request3 = StorageRequest.example
+    request1.client = me
+    request2.client = me
     marketplace.requested = @[request1, request2, request3]
-    marketplace.activeRequests[me] = @[request1.id, request2.id]
     await purchasing.load()
     check isSome purchasing.getPurchase(PurchaseId(request1.id))
     check isSome purchasing.getPurchase(PurchaseId(request2.id))
@@ -143,10 +144,13 @@ suite "Purchasing state machine":
 
   test "loads correct purchase.future state for purchases from marketplace":
     let me = await marketplace.getSigner()
-    let request1, request2, request3, request4, request5 = StorageRequest.example
+    var request1, request2, request3, request4, request5 = StorageRequest.example
+    request1.client = me
+    request2.client = me
+    request3.client = me
+    request4.client = me
+    request5.client = me
     marketplace.requested = @[request1, request2, request3, request4, request5]
-    marketplace.activeRequests[me] =
-      @[request1.id, request2.id, request3.id, request4.id, request5.id]
     marketplace.requestState[request1.id] = RequestState.New
     marketplace.requestState[request2.id] = RequestState.Started
     marketplace.requestState[request3.id] = RequestState.Cancelled
@@ -261,11 +265,12 @@ suite "Purchasing state machine":
     check next.isNone
 
   test "restarts state machine when error occurs while request is active":
-    let request = StorageRequest.example
+    var request = StorageRequest.example
+    request.client = await marketplace.getSigner()
     let purchase = Purchase.new(request, marketplace, clock)
     let error = newException(CatchableError, "some error")
-    let me = await marketplace.getSigner()
-    marketplace.activeRequests[me] = @[request.id]
+    marketplace.requested.add(request)
+    marketplace.requestState[request.id] = RequestState.New
     let next = await PurchaseErrored(error: error).run(purchase)
     check !next of PurchaseUnknown
 

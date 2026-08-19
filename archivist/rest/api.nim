@@ -155,15 +155,28 @@ proc retrieveCid(
       bytes += buff.len
 
       await resp.send(addr buff[0], buff.len)
+
+    if bytes != contentLength.int:
+      # The response would end short of the declared Content-Length. Abort
+      # without finishing so the client sees the truncation loudly instead of
+      # a clean short body.
+      error "Response body shorter than declared",
+        cid = cid, bytes, declared = contentLength.int
+      return
+
     await resp.finish()
     archivist_api_downloads.inc()
   except CancelledError as exc:
     raise exc
   except LPStreamError as exc:
     warn "Error streaming blocks", exc = exc.msg
-    resp.status = Http500
     if resp.isPending():
+      resp.status = Http500
       await resp.sendBody(exc.msg)
+    else:
+      # The response already started - abort so the client sees the truncation
+      # loudly instead of a clean short body.
+      error "Response aborted mid-stream", cid = cid, bytes, error = exc.msg
   finally:
     info "Sent bytes", cid = cid, bytes
     if not lpStream.isNil:

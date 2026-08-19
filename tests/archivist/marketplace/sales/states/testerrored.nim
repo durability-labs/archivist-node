@@ -53,7 +53,9 @@ asyncchecksuite "sales state 'errored'":
 
   test "transits to unknown state when slot is active":
     let me = await marketplace.getSigner()
-    marketplace.activeSlots[me] = @[slot.id]
+    marketplace.filled.add(
+      MockSlot(requestId: request.id, slotIndex: slotIndex, host: me)
+    )
 
     let nextState = await runState()
     check !nextState of SaleUnknown
@@ -74,5 +76,6 @@ asyncchecksuite "sales state 'errored'":
     check storage.deleteSlotCalls == @[(request.content.cid, slotIndex)]
 
   test "transits to error state when slots call fails":
+    marketplace.errorOnGetHost = some newException(MarketplaceError, "boom")
     let nextState = await runState()
     check !nextState of SaleErrored

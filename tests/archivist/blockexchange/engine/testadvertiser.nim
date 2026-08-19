@@ -110,3 +110,27 @@ asyncchecksuite "Advertiser":
 
     check:
       localStore.onBlockStored.isNone()
+
+  test "Should keep retrying while the routing table is below the minimum":
+    await advertiser.stop()
+    blockDiscovery.nodesDiscoveredHandler = proc(d: MockDiscovery): int =
+      2
+    advertiser = Advertiser.new(
+      localStore,
+      blockDiscovery,
+      minAdvertisePeers = 16,
+      advertiseRetrySleep = 500.millis,
+    )
+    await advertiser.start()
+
+    (await localStore.putBlock(manifestBlk)).tryGet()
+
+    await sleepAsync(2500.millis) # several retry rounds at 500ms cadence
+    check advertised.len >= 6 # initial 2 (manifest + tree) + retries
+
+    await sleepAsync(700.millis) # let any in-flight retry round drain
+    let count = advertised.len
+    blockDiscovery.nodesDiscoveredHandler = proc(d: MockDiscovery): int =
+      16
+    await sleepAsync(1500.millis)
+    check advertised.len == count # healthy table: retry cycle stops

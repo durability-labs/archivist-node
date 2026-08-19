@@ -48,6 +48,7 @@ type
     subscriptions: Subscriptions
     config*: MarketplaceConfig
     canReserveSlot*: bool
+    tokens*: UInt256
     errorOnReserveSlot*: ?(ref MarketplaceError)
     errorOnFillSlot*: ?(ref MarketplaceError)
     errorOnFreeSlot*: ?(ref MarketplaceError)
@@ -130,7 +131,11 @@ proc new*(_: type MockMarketplace, clock: Clock = MockClock.new()): MockMarketpl
     requestDurationLimit: StorageDuration.init(60 * 60 * 24 * 30.stuint(40)),
   )
   MockMarketplace(
-    signer: Address.example, config: config, canReserveSlot: true, clock: clock
+    signer: Address.example,
+    config: config,
+    canReserveSlot: true,
+    tokens: high(UInt256),
+    clock: clock,
   )
 
 method getSigner*(
@@ -393,6 +398,11 @@ method canReserveSlot*(
 ): Future[bool] {.async.} =
   return marketplace.canReserveSlot
 
+method tokensAvailable*(
+    marketplace: MockMarketplace
+): Future[UInt256] {.async: (raises: [CancelledError, MarketplaceError]).} =
+  return marketplace.tokens
+
 func setCanReserveSlot*(marketplace: MockMarketplace, canReserveSlot: bool) =
   marketplace.canReserveSlot = canReserveSlot
 
@@ -520,7 +530,8 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id],
+        expiry:
+          marketplace.requestExpiry.getOrDefault(request.id, StorageTimestamp.init(0)),
       )
   )
 
@@ -532,7 +543,8 @@ method queryPastStorageRequestedEvents*(
       StorageRequested(
         requestId: request.id,
         ask: request.ask,
-        expiry: marketplace.requestExpiry[request.id],
+        expiry:
+          marketplace.requestExpiry.getOrDefault(request.id, StorageTimestamp.init(0)),
       )
   )
 

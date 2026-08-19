@@ -48,6 +48,10 @@ export
   DefaultQuotaBytes, DefaultOverlayTtl, DefaultBlockInterval,
   DefaultNumBlocksPerInterval, DefaultRequestCacheSize, DefaultMaxPriorityFeePerGas
 
+const
+  DefaultMarketplaceConnectRetries* = 10
+  DefaultMarketplaceConnectRetryDelay* = 10
+
 type ThreadCount* = range[0 .. 256]
 
 proc defaultDataDir*(): string =
@@ -330,6 +334,20 @@ type
       defaultValue: false,
       name: "use-system-clock"
     .}: bool
+
+    marketplaceConnectRetries* {.
+      desc: "Number of marketplace connection retries before giving up",
+      defaultValue: DefaultMarketplaceConnectRetries,
+      defaultValueDesc: $DefaultMarketplaceConnectRetries,
+      name: "marketplace-connect-retries"
+    .}: int
+
+    marketplaceConnectRetryDelay* {.
+      desc: "Delay in seconds between marketplace connection retries",
+      defaultValue: DefaultMarketplaceConnectRetryDelay.seconds,
+      defaultValueDesc: $DefaultMarketplaceConnectRetryDelay,
+      name: "marketplace-connect-retry-delay"
+    .}: Duration
 
     validator* {.
       desc: "Enables validator, requires an Ethereum node",

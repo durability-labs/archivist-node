@@ -72,6 +72,7 @@ type
 
     scores*: Table[Cid, PeerScore] # scores per dataset (cid)
     disconnected: Future[void] # completed when peer is removed from store
+    lastQueriedAt: Moment # when this peer was last asked about wanted blocks
 
 proc openWindow*(self: BlockExcPeerCtx, now = Moment.now()) =
   self.state = WantListState.SendAll
@@ -149,6 +150,17 @@ proc markBlockAsNotSent*(self: BlockExcPeerCtx, address: BlockAddress) =
   ## a cancelled send never left the peer, so no cooldown applies.
   self.blocksSent.del(address)
 
+proc markQueried*(self: BlockExcPeerCtx, now = Moment.now()) =
+  self.lastQueriedAt = now
+
+proc queryQuarantineLeft*(
+    self: BlockExcPeerCtx,
+    quarantine: Duration = DefaultWantHaveResendTimeout,
+    now = Moment.now(),
+): ?Duration =
+  let left = (self.lastQueriedAt + quarantine) - now
+  if left.nanoseconds > 0: left.some else: Duration.none
+
 proc clearSentIfStale*(
     self: BlockExcPeerCtx, address: BlockAddress, cooldown: Duration
 ): bool =
@@ -201,6 +213,11 @@ proc ensureScoreFor*(self: BlockExcPeerCtx, cid: Cid): PeerScore =
   peerScore
 
 proc aggregateScore*(peer: BlockExcPeerCtx): float =
+  if peer.scores.len == 0:
+    # No evidence yet - baseline like the per-cid score path does, so a
+    # freshly discovered peer is not ranked below every known peer.
+    return ColdStartScore
+
   var total = 0.0
   for _, score in peer.scores:
     score.computeScore(peer.blocksRequested.len)
@@ -211,6 +228,7 @@ proc aggregateScore*(peer: BlockExcPeerCtx): float =
 proc effectiveScore*(peer: BlockExcPeerCtx, cid: Cid, now: Moment): float =
   without score =? peer.scoreFor(cid):
     return ColdStartScore
+
   score.computeScore(peer.blocksRequested.len)
   applyDecay(score.score, score.lastUpdated, peer.blocksRequested.len, now)
 
