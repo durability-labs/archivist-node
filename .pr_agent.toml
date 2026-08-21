@@ -1,0 +1,14 @@
+[config]
+model = "deepseek/deepseek-v4-pro"
+fallback_models = ["deepseek/deepseek-v4-flash"]
+verbosity_level = 1
+
+[pr_reviewer]
+require_score_review = true
+extra_instructions = """This is archivist-node: a Nim (2.2.x) codebase built on chronos async, libp2p, and Nim's ORC memory management, with taskpools-based threaded workers. Review for:
+- async correctness: chronos future lifetimes, no blocking calls in async procs
+- ORC/refcount safety across taskpool/thread boundaries: no raw ref transfers between threads
+- resource cleanup: defer usage, connection/stream leaks
+- concurrency: races on shared tables, lock discipline
+- error handling per Nim conventions: Result types, no bare asserts
+Flag severity explicitly and keep suggestions specific to the diff lines."""
