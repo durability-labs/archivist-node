@@ -1,0 +1,17 @@
+name: 'PR Agent (DeepSeek)'
+description: 'PR-Agent with full DeepSeek reasoning support (reasoning_effort low/high/max)'
+inputs:
+  artifact_path:
+    description: 'Path to a CI artifact file (relative to GITHUB_WORKSPACE or absolute) to include as extra context in PR analysis. Leave empty to disable artifact injection.'
+    required: false
+    default: ''
+  artifact_instructions:
+    description: 'Custom instructions telling the AI how to interpret the artifact. Leave empty for a sensible default.'
+    required: false
+    default: ''
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    ARTIFACT_PATH: ${{ inputs.artifact_path }}
+    ARTIFACT_INSTRUCTIONS: ${{ inputs.artifact_instructions }}

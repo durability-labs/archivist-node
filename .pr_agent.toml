@@ -2,6 +2,10 @@
 model = "deepseek/deepseek-v4-pro"
 fallback_models = ["deepseek/deepseek-v4-flash"]
 verbosity_level = 1
+reasoning_effort = "max"
+
+[pr_description]
+extra_instructions = """The changes_diagram field MUST contain a mermaid flowchart (```mermaid ... ```) of the PR's overall data or control flow when the change has any non-trivial flow; only leave it empty for trivial PRs. The changes walkthrough must list every changed file with a one-line impact summary."""
 
 [pr_reviewer]
 require_score_review = true
