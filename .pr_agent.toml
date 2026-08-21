@@ -5,10 +5,34 @@ verbosity_level = 1
 
 [pr_reviewer]
 require_score_review = true
-extra_instructions = """This is archivist-node: a Nim (2.2.x) codebase built on chronos async, libp2p, and Nim's ORC memory management, with taskpools-based threaded workers. Review for:
-- async correctness: chronos future lifetimes, no blocking calls in async procs
-- ORC/refcount safety across taskpool/thread boundaries: no raw ref transfers between threads
-- resource cleanup: defer usage, connection/stream leaks
-- concurrency: races on shared tables, lock discipline
-- error handling per Nim conventions: Result types, no bare asserts
-Flag severity explicitly and keep suggestions specific to the diff lines."""
+num_max_findings = 5
+extra_instructions = """archivist-node is a Nim 2.2.x codebase: chronos async, libp2p, ORC memory management, taskpools threaded workers.
+
+Scope: keep findings focused on the PR's changes; do not nitpick unrelated code. Exception: if you detect a serious bug (crash, data corruption, deadlock, race, security vulnerability, resource/connection leak, unbounded growth) in code the change touches or depends on — including pre-existing bugs in the affected code paths — flag it with severity Possible Bug or Security Concern even though it is outside the literal diff.
+
+Evaluate every change on three dimensions. Format each finding's issue_header as dimension + severity, e.g. '[Execution] Possible Bug', '[Architecture] Architectural Concern', '[Style] Style', '[Execution] Suggestion':
+
+1. Execution correctness:
+- chronos: no blocking calls in async procs, future lifetimes, await/cancellation discipline, bounded waits via withTimeout
+- ORC/refcount safety: no raw ref transfers across taskpool/thread boundaries; worker payloads are value types
+- resource cleanup: defer for async cleanup, stream/connection/queue leaks, tables that grow without pruning
+- concurrency: races on shared state, lock discipline, async-queue backpressure
+- error handling: Result/Opt propagation with =?/catch, no bare assert (use doAssert or Result)
+
+2. Architectural and logical soundness:
+- fits the existing layering (engine / peer / marketplace / store boundaries); no leaked abstractions
+- state machine logic (purchasing/sales states, discovery backoff): transitions, invariants, restart/error paths
+- protocol semantics (blockexchange, discovery/DHT, marketplace contracts): wire behavior, timeout/retry
+- no duplicated machinery: reuse existing queues/caches/helpers instead of reimplementing
+- configuration via constructor params with defaults, not new hardcoded module constants
+- scope discipline: no unrelated changes in the PR
+
+3. Codebase style and conventions:
+- method-call syntax for optionals (proof.some), paren-free move (move x), withValue/do instead of getOrDefault
+- grouped let/var declarations; accessor methods with private fields; no exported raw Tables
+- {.raises: [].} / {.async: (raises: []).} annotations where surrounding code uses them
+- minimal why-comments only; no plan/design-doc content in comments
+- std/ then pkg/ import grouping, naming consistent with surrounding modules
+- tests match suite conventions (unittest2 suite/test, check/require, mock helpers)
+
+Severities: Possible Bug / Architectural Concern / Style / Suggestion — always combined with the dimension in the issue_header as shown above, and keep every suggestion specific to the diff lines."""
